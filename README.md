@@ -1,6 +1,6 @@
 # TenonEdge
 
-基于 .NET 和 TenonAdmin 的边缘接入与转发网关，面向独立部署和二次开发。
+基于 .NET 的边缘接入与转发网关，面向独立部署和二次开发。
 
 ## 当前状态
 
@@ -8,17 +8,18 @@
 
 ## 设计方案
 
-- [接入、转发与平台联动设计方案 V1.5](docs/tenonedge-design.md)
+- [接入、转发与平台联动设计方案 V1.6](docs/tenonedge-design.md)
+- [架构评审记录（2026-09-28）](docs/reviews/2026-09-28-architecture-review.md)
 - [开发 Agent 阅读要求](AGENTS.md)
-- [TenonAdmin](https://github.com/Tenon-Net/TenonAdmin)
 
 ## 首版范围
 
-- 接入：Modbus TCP、MQTT 订阅、HTTP 拉取。
+- 接入：Modbus TCP（含 RTU over TCP）、MQTT 订阅、HTTP 拉取。
 - 处理：字段选择、重命名、JSON 提取和数值换算。
 - 输出：MQTT、HTTP，以及可选的 TenonIoT 平台连接。
 - 使用：产品内的可视化连线配置、数据预览和运行诊断。
 - 部署：一个 .NET 服务，自带 Web 界面，本地配置和有限发送缓存。
+- 管理：本地账号与三种角色（管理员、配置人员、只读），首次访问时设置管理员；不依赖 TenonAdmin。前端框架待选型。
 
 LoRa／LoRaWAN 优先接入现有无线网关或网络服务器已经处理好的应用数据，不自研无线协议栈。Node-RED 官方嵌入仅记录为待评估选项，首版不实施。
 
@@ -26,4 +27,4 @@ LoRa／LoRaWAN 优先接入现有无线网关或网络服务器已经处理好�
 
 ## 开发入口
 
-先阅读 `AGENTS.md` 和 `docs/tenonedge-design.md`，再按照文档第 12 节的 T0—T5 执行。涉及框架接口、第三方依赖及真实设备能力时，先核实再实现。
+先阅读 `AGENTS.md` 和 `docs/tenonedge-design.md`，再按照文档第 12 节的 T0—T5 执行。涉及第三方库与平台接口、真实设备能力时，先核实再实现。
