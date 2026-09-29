@@ -6,7 +6,7 @@
 - 术语：Agent 指执行本方案的开发代理，不限定具体工具或模型；`AGENTS.md` 保留为工作区规范文件名。
 - 产品名称：TenonEdge；配套物联网平台暂称 TenonIoT。
 - 状态：拟实施方案，不代表代码已经实现或测试通过。
-- 本版变更：合入 2026-09-28 架构评审的决策（第 22 节，评审全文见 `docs/reviews/2026-09-28-architecture-review.md`）。网关不再依赖 TenonAdmin，自带最小的账号、角色、首次设置与审计能力；前端为独立工程，框架与画布库待选型。补充投递目标与失败分类、发送缓存的持久化边界、配置应用的崩溃原子性、MQTT 会话与确认、时钟与时间来源、连接共享、出站校验、凭证保护等机制，并调整 T0—T5。1.5 的范围边界（接入、转发、自有画布、平台联动、版本交付、Node-RED 候选、LoRa 应用层接入）保持不变。2026-09-29 参考一份同类 .NET 网关的功能文档补充若干实用细节，并把 Modbus RTU over TCP 提前到首版（第 22 节）。
+- 本版变更：合入 2026-09-28 架构评审的决策（第 22 节，评审全文见 `docs/reviews/2026-09-28-architecture-review.md`）。网关不再依赖 TenonAdmin，自带最小的账号、角色、首次设置与审计能力；前端为独立工程，采用 React + shadcn/ui + Tailwind + React Flow（2026-09-29 选定）。补充投递目标与失败分类、发送缓存的持久化边界、配置应用的崩溃原子性、MQTT 会话与确认、时钟与时间来源、连接共享、出站校验、凭证保护等机制，并调整 T0—T5。1.5 的范围边界（接入、转发、自有画布、平台联动、版本交付、Node-RED 候选、LoRa 应用层接入）保持不变。2026-09-29 参考一份同类 .NET 网关的功能文档补充若干实用细节，并把 Modbus RTU over TCP 提前到首版（第 22 节）。
 - 实施顺序：继续按 T0—T5 完成开源核心；LoRa 场景优先复用既有适配器，补充配置示例与测试，再按实际设备开展联调。额外协议、HTTP 推送接收和多设备自动分流属于 G1；企业专有功能及 Node-RED 候选评估仍需另有明确授权。
 - 证据范围：原参考项目、许可来源及 Node-RED 记录沿用 1.4，本次未重新审计其全部代码或依赖；新增 LoRa 内容核查第 21.7 节官方文档与来源。未部署 LoRaWAN 网络服务器，未连接无线网关或传感器，未进行真实平台联调；样例和厂商资料不等于兼容性测试。1.6 中关于 MQTTnet、NModbus、SqlSugar、SQLite、ASP.NET Core Data Protection 和参考项目的结论，来自评审时对源码与官方文档的核对，没有编译或运行验证。
 
@@ -29,7 +29,7 @@
 15. 只在有明确需求、可验证的交付价值和合法分发权时增加企业扩展。不得擅自更改已有 LICENSE、将第三方代码改署为自研，或向公开仓库提交商业 SDK、客户资料和企业密钥。
 16. 第 20 节是候选技术记录，不属于 G0/L0、T0—T5 或首版验收项。不得因此新增 Node.js 运行服务、Node-RED 包依赖、认证桥接、双运行引擎、空适配工程或兼容格式；未来启动评估须另获明确授权。
 17. LoRa／LoRaWAN 按第 21 节接入已由上游处理的业务数据，优先复用 MQTT、HTTP 拉取或已实现的 Modbus TCP。不得自动实现无线驱动、网络服务器、入网密钥管理、原始包转发协议或下行控制；ChirpStack 不是默认依赖。通用接入的样例与测试可随 T2/T5 交付，新增能力与实物适配按 G1 和条件验收管理。
-18. 网关的认证、角色、首次设置与审计由本产品最小实现（第 3.3、10.3 节）。前端是独立工程，框架与画布库在 T3 前另行选定；选定前，后端以 API 与 OpenAPI 交付。
+18. 网关的认证、角色、首次设置与审计由本产品最小实现（第 3.3、10.3 节）。前端是独立工程（本仓库 web/），技术栈见第 3.1 节，于 T3 实施；T0—T2 期间后端以 API 与 OpenAPI 交付。
 19. 第 22 节列出 1.6 采纳的架构评审决策；实现中发现第 22 节与正文不一致时，先向维护者确认，不自行取舍。
 
 本文中的“必须”为验收约束；“默认”为可修改的初始配置，不是实测性能指标；“后续候选”不授权在首版实现。
@@ -121,7 +121,8 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
 
 | 能力 | 默认选择 | 地址 | 使用约束 |
 |---|---|---|---|
-| 画布 | 待选型，随前端框架确定 | — | 只提供前端编辑能力；运行逻辑属于 TenonEdge；T3 前选定 |
+| 前端界面 | React 19 + shadcn/ui + Tailwind CSS 4 | https://ui.shadcn.com | shadcn/ui 组件源码拷入 web/ 自行维护；数据表格用 TanStack Table，表单用 react-hook-form + zod。Tailwind 4 要求 Chrome/Edge 111+、Safari 16.4+、Firefox 128+，不支持 Win7 上的 Chrome 109 |
+| 画布 | React Flow（@xyflow/react） | https://reactflow.dev | 只提供前端编辑能力；运行逻辑属于 TenonEdge。节点外观可复用 React Flow UI 组件（https://reactflow.dev/ui ，基于 shadcn/ui 与 Tailwind）；复制组件源码前核实其许可，并按第 17 节记录 |
 | MQTT | MQTTnet（≥ 5.2.0） | https://github.com/dotnet/MQTTnet | 包装在适配器中。v5 已移除 ManagedClient，重连自行实现；默认协议是 MQTT 5.0，须显式指定 3.1.1；PublishAsync 没有默认超时，须传入带超时的取消令牌 |
 | Modbus | NModbus，或经 T0 比较后选 FluentModbus | https://github.com/NModbus/NModbus | 优先验证 Modbus TCP 与 RTU over TCP 的读取、超时和字节序；不直接声明支持所有设备。NModbus 读写超时默认无限、库内默认重试 3 次、Async 方法不支持取消：须显式设置超时，库内重试设为 0 或 1，连接循环使用专用线程 |
 | 配置存储 | SQLite + SqlSugar（SqlSugarCoreNoDrive） | https://github.com/DotNetNext/SqlSugar | 用于 config.db。NoDrive 包不带数据库驱动，由 Host 显式引用 Microsoft.Data.Sqlite。SqlSugarScope 单例，同一异步流程内并发执行时用 CopyNew()；不用全局 AOP 填审计字段；CodeFirst 只做新增，非新增变更写版本化迁移；SQLite 存储不等于 SQL 产品功能 |
@@ -129,7 +130,7 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
 | 秘密保护 | ASP.NET Core Data Protection | https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/overview | 固定 SetApplicationName("TenonEdge")；密钥环持久化在数据目录；不清理旧密钥 |
 | 有界内部队列 | System.Threading.Channels | https://learn.microsoft.com/en-us/dotnet/core/extensions/channels | 只做进程内有限缓冲，不把内存队列当持久化；丢弃模式下 TryWrite 仍返回 true，须用 itemDropped 回调计数 |
 
-画布组件随前端框架在 T3 前选定（候选之一是 Vue Flow：https://vueflow.dev/guide/ ）。选定后只保留一套画布。
+前端与画布已于 2026-09-29 选定（第 3.1 节），只保留一套画布。
 
 包版本在实施阶段核实并锁定到依赖锁文件，不在本文编造“最新版本”。使用直接包依赖前核对 LICENSE；移植源码时保留原版权、许可和必要的变更说明。MIT 与 Apache-2.0 的基础义务分别见 https://opensource.org/license/mit 和 https://www.apache.org/licenses/LICENSE-2.0 。带有额外源码交付义务或商业授权条件的组件，未经单独审查不进入默认依赖；不能仅因分出企业模块就视为合规。记录规则见第 17 节。
 
@@ -148,7 +149,8 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
                        config.db（SqlSugar）+ queue.db（Microsoft.Data.Sqlite）+ 密钥环
 ```
 
-- 后端使用 .NET 10。前端是独立工程，框架与组件库在 T3 前选定；构建产物由 .NET 宿主作为静态文件提供，与管理 API 同源，不需要 CORS。
+- 后端使用 .NET 10。前端是独立工程，放在本仓库 web/：React 19、TypeScript、Vite、shadcn/ui + Tailwind CSS 4、React Flow、TanStack Table、react-hook-form + zod、react-router、zustand、react-i18next。API 客户端用 openapi-typescript + openapi-fetch 从 OpenAPI 生成；测试用 Vitest 与 Playwright，静态检查用 oxlint。新建精简工程，沿用 TenonAdmin React 模板的这套工具链，不复制其页面。构建产物由 .NET 宿主作为静态文件提供，与管理 API 同源，不需要 CORS。
+- 界面文案一律经 i18n，首版只提供中文。浏览器最低 Chrome/Edge 111、Safari 16.4、Firefox 128（Tailwind 4 的要求），不支持 Win7 上的 Chrome 109；T3 用最低支持版本的浏览器做一次冒烟测试。
 - 首版 Node.js 只用于前端构建，发布后浏览器资源由 .NET 宿主提供；产品运行时不要求 Node.js。第 20 节候选记录不改变这项部署约束。
 - 网关无强制外部数据库、Redis、消息服务器或中心平台依赖。用户选择 MQTT 时自行提供 Broker。
 - 默认只启动一个服务；运行模块和界面在代码上隔离，不要求拆进程。
@@ -165,7 +167,7 @@ TenonEdge/
     TenonEdge.Runtime/         接入调度、连接管理、路由校验、转换、发送缓存与发送任务
     TenonEdge.Adapters/        Modbus、MQTT、HTTP、TenonIoT 适配器
     TenonEdge.Host/            ASP.NET Core 宿主、认证与角色、管理 API、配置存储
-  web/                        前端工程（框架待选型；也可放在独立仓库，发布时产物并入宿主）
+  web/                        前端工程（React + Vite），发布时构建产物并入宿主
   tests/
     UnitTests/
     IntegrationTests/
@@ -743,7 +745,7 @@ config.db 的实体主键用 64 位雪花 ID，复用 TenonAdmin 的 SnowflakeId
 - 完成连接、设备、点位、输入配置、CSV 点表导入导出和复制设备。
 - 实现自有图格式、节点配置、连线校验（允许扇入、按路径展开）、预览、保存与应用。
 - 实现单个输入复用、多输出分发、三指针应用与启动恢复、回滚。
-- 前端框架与画布库须在 T3 开始前选定。
+- 先做画布原型：输入、处理、输出三类节点，有类型的端口，环路与扇入校验，从节点面板拖入，删除与复制，小地图。原型可用后再铺开其他页面。
 
 完成条件：用户不编辑 JSON 文件也能完成一条路线；浏览器关闭和服务重启后仍按有效配置运行。
 
@@ -1040,7 +1042,7 @@ LoRa 场景的 LR-AT 条件验收见第 21.6 节，不冒充已通过的 G0 协�
 以真实接入和输出作为交付主线，不能用静态画布、假数据或空接口代替实现。
 网关不依赖 TenonAdmin；账号、三种角色、首次设置和审计按第 3.3、10.3 节最小实现，不扩展成菜单、组织或多租户系统。不要臆造第三方库 API。
 发送缓存按第 8.2 节实现（独立 queue.db、单写者、分组提交、四类结果）；配置应用按第 7.4 节实现（三指针、启动恢复）。
-前端框架与画布库在 T3 前另行选定；选定前，后端以 API 与 OpenAPI 交付。
+前端按第 3.1 节的技术栈在 T3 实施，先做画布原型；T0—T2 期间后端以 API 与 OpenAPI 交付。
 平台源码不可用时，只交付连接器、契约和测试接收端，注明真实联调未完成。
 第 21 节 LoRa 接入优先复用通用 MQTT、HTTP 拉取和已实现的 Modbus TCP。
 随 T2/T5 补单设备结构化报文样例和软件链路测试；无线实物缺失时如实标记未验证。
@@ -1291,5 +1293,6 @@ application/{applicationId}/device/{devEui}/event/up
 | 合入时更正 | 评审中三处建议照字面实现会出错，合入时已更正：QoS 1 通道满时改为限时等待，超时断开重连；毒消息只计目标已响应的非临时失败，并用后续记录探测判定；重定向与未列出的 4xx 默认暂停目标。说明见评审文件第 12 节 | §6.2、§8.2、§8.4 |
 | 补充决定（2026-09-29） | 配置人员可执行应用与回滚，记审计；同一目标连续 20 条被拒即暂停目标 | §8.2、§8.4、§10.3 |
 | 参考同类网关（2026-09-29） | 来源为他方内部资料，不具名，未复制其代码。复制设备、点表导入规则、请求间隔、补充数据类型、健康检查、标识字符集、枚举与雪花 ID、数据目录与单实例锁、连接状态口径；Modbus RTU over TCP 提前进首版；按变化上报列为 G1（GW-22），平台契约先预留部分字段语义 | §2.3、§3.1、§4、§5、§6.1、§6.4、§6.5、§8.1、§9.3、§9.4、§10.1、§10.2、§12、§13 |
+| 前端选型（2026-09-29） | React 19 + shadcn/ui + Tailwind 4 + React Flow，数据表格用 TanStack Table；新建精简工程，沿用 TenonAdmin React 模板的工具链；文案走 i18n，首版只出中文；代码放本仓库 web/；浏览器最低 Chrome/Edge 111 | §0 第 18 条、§2.3、§3.1、§3.2、§12、§19 |
 
-待定：前端框架与画布库，须在 T3 开始前选定。
+前端选型已完成，目前没有待定的架构决策。
