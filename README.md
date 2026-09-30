@@ -12,6 +12,7 @@
 - [后端工程实施规范：目录、Minimal API、生命周期与测试](docs/backend-implementation.md)
 - [前端实施基线：shadcn-admin 裁剪复用](docs/frontend-design.md)
 - [功能需求](docs/functional-spec.md)
+- [网页受控升级规划：GW-27 / G1 优先项](docs/software-upgrade.md)
 - [开发准备：结论、待确认事项与 T0 验证清单](docs/development-readiness.md)
 - [架构评审记录（2026-09-28）](docs/reviews/2026-09-28-architecture-review.md)
 - [开发 Agent 阅读要求](AGENTS.md)
@@ -35,6 +36,12 @@ LoRa／LoRaWAN 优先接入现有无线网关或网络服务器已经处理好�
 
 开源版、企业扩展和工控整机交付的边界以设计文档为准。本次不创建企业版工程、授权系统或其他应用代码。
 
+## 后续优先规划
+
+**GW-27 网页受控升级（G1，尚未实现）**：管理员在“系统设置 → 软件升级”中上传离线升级包，或检查可信源并下载；完成预检、二次确认后执行，并查看重启结果与历史。优先验证 Linux 原生安装和整机交付，Docker 网页安装须有受限宿主机执行器，否则继续外部更新。不会自动安装新版本，也不开展平台批量升级。功能、失败恢复与验收见[升级规划](docs/software-upgrade.md)。
+
+该规划补充总设计 G1 清单，不改变功能需求 §10.5、§10.7 中首版采用脚本/镜像升级的范围，也不阻塞当前 T0。
+
 ## 开发入口
 
-先按 `AGENTS.md` 阅读总设计、后端工程规范、功能需求和前端实施基线，再按照总设计第 12 节的 T0—T5 执行。T0 的工程验收同时参照 `docs/backend-implementation.md` 第 7 节与 `docs/development-readiness.md`。前端于 T3 创建 web/，T0—T2 不提前创建前端工程。涉及第三方库与平台接口、真实设备能力时，先核实再实现。
+先按 `AGENTS.md` 阅读总设计、后端工程规范、功能需求、前端实施基线和升级规划，再按照总设计第 12 节的 T0—T5 执行。T0 的工程验收同时参照 `docs/backend-implementation.md` 第 7 节与 `docs/development-readiness.md`。前端于 T3 创建 web/，T0—T2 不提前创建前端工程；GW-27 在 G1 实施。涉及第三方库与平台接口、真实设备能力时，先核实再实现。

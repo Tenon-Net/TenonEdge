@@ -7,13 +7,14 @@
 3. 阅读 `docs/backend-implementation.md`：这是对总设计的后端工程补充，明确内部目录、分组 Minimal API、依赖生命周期、公共构建设置和测试约定；按其第 7 节补充 T0 验收，不据此扩展业务范围或提前实现后续阶段。
 4. 阅读 `docs/functional-spec.md`：功能需求按使用流程分为 12 段（首轮梳理已完成），与设计文档冲突时先向维护者确认。
 5. 阅读 `docs/frontend-design.md`：这是维护者已确认的前端实施基线，明确采用裁剪后的 shadcn-admin、TanStack Router 与 TanStack Query。其第 1 节列出的前端旧约定已被替代，按本文档执行，不再将同一选型重复列为待确认；未列出的架构、安全、功能和阶段约束仍按原设计执行。
-6. 执行 T0 前阅读 `docs/reviews/2026-09-28-architecture-review.md`，了解 1.6 决策的来由；其正文针对 1.5，与当前设计不一致时以当前设计为准。
-7. 阅读 `docs/development-readiness.md`：T0 按其中的验证清单及后端实施规范第 7 节执行；前端资料核查和 T3 验证同时参照 `docs/frontend-design.md` 第 7、8 节。待确认事项在 T0 可以按第 4 节“未确认前按”开展可调整的实现与验证，但不视为已经获批；D-07 须在进入 T1 运行时实现前确认，D-05 须在连接与凭证 API 定稿前确认。本次前后端工程约定不代表其他 D-01—D-09 事项已经确认。
-8. 检查实际工作区、已有代码与依赖，再执行 T0；不得假设尚不存在的第三方库接口或平台接口。
+6. 阅读 `docs/software-upgrade.md`：UP-D01 / GW-27 是已确认的 G1 优先规划，要求在支持的部署中通过网页完成受控升级；首版仍采用手动脚本/镜像更新，不将升级页面、执行器或更新服务提前加入 T0—T5。
+7. 执行 T0 前阅读 `docs/reviews/2026-09-28-architecture-review.md`，了解 1.6 决策的来由；其正文针对 1.5，与当前设计不一致时以当前设计为准。
+8. 阅读 `docs/development-readiness.md`：T0 按其中的验证清单及后端实施规范第 7 节执行；前端资料核查和 T3 验证同时参照 `docs/frontend-design.md` 第 7、8 节。待确认事项在 T0 可以按第 4 节“未确认前按”开展可调整的实现与验证，但不视为已经获批；D-07 须在进入 T1 运行时实现前确认，D-05 须在连接与凭证 API 定稿前确认。本次前后端工程及升级规划不代表其他 D-01—D-09 事项已经确认。
+9. 检查实际工作区、已有代码与依赖，再执行 T0；不得假设尚不存在的第三方库接口或平台接口。
 
 ## 实施范围
 
-- 以 V1.6 方案、`docs/backend-implementation.md` 的工程补充及已确认的 `docs/frontend-design.md` 为设计基线，不因参考项目拥有某功能就扩大范围。
+- 以 V1.6 方案、`docs/backend-implementation.md` 的工程补充及已确认的 `docs/frontend-design.md` 为设计基线，不因参考项目拥有某功能就扩大范围。G1 的 GW-27 以 `docs/software-upgrade.md` 补充，不变更首版范围。
 - 首版聚焦接入、必要格式处理、输出和基本诊断，采用单个 .NET 服务与产品自有 Web 界面。
 - 网关不依赖 TenonAdmin。账号、三种角色、首次设置和审计按设计文档最小实现，不扩展成菜单、组织或多租户系统。
 - 后端保留 Host、Runtime、Adapters、Abstractions 四工程，内部按职责和功能组织，不机械增加多层空工程。管理 API 统一使用分组 Minimal API；Program.cs 只做装配，所有授权、事务、资源归属和后台生命周期按后端实施规范执行。
@@ -21,6 +22,8 @@
 - 前端以固定提交的 shadcn-admin 源码为界面基础，裁剪后放在 web/；保留 React 19、TypeScript、Vite、shadcn/ui、Tailwind CSS 4 和 React Flow。路由只用 TanStack Router，不同时安装 React Router；查询用 TanStack Query，API 客户端继续采用 openapi-typescript + openapi-fetch，本地编辑状态用 Zustand，文案用 react-i18next。
 - 前端仍于 T3 实施，先验证画布和点表原型，再铺开普通页面；T0—T2 期间后端以 API 与 OpenAPI 交付，不提前创建 web/ 或安装前端依赖。前端构建产物由 .NET 宿主提供，不增加 Node.js 运行服务。
 - 不使用 shadcn-admin 的模拟登录、前端 Access Token Cookie 或 Clerk 认证。移除无关演示页面、社交登录和外部字体请求，按本网关的本地会话、权限、API 和离线要求实现。
+- 网页升级为 G1 优先项：系统设置中由管理员上传或联网获取可信包，预检并确认后执行。原生/整机先行；Docker 只有经验证的受限宿主机执行器才允许网页安装，不向网关容器挂载 docker.sock，不借机增加任意远程命令或无人值守自动升级。
+- 软件版本恢复与配置回滚分开；G1 升级须保护程序、配置库和队列的一致检查点，成功放行业务后不自动覆盖旧检查点。具体规则见 UP-D01，不改写首版日常备份不含 queue.db 的范围。
 - Node-RED 嵌入是待评估选项，不安装其运行时、不添加认证桥接或兼容层。
 - 不增加 SQL 流计算、脚本引擎、微服务集群或完整 IoT 平台。
 - LoRa 接入以已解码业务数据为前提，不开发无线协议栈、网络服务器或下行控制。
@@ -39,4 +42,4 @@
 - 不提交凭证、商业 SDK、客户数据或真实设备配置中的秘密信息。
 - 区分设计、模拟验证、软件测试与真实设备测试；未执行的项目标记为未验证。
 - 分阶段记录实现内容、测试结果和待解决问题，不用静态页面或模拟数据冒充真实接入能力。
-- `docs/implementation-status.md` 在 T0 建立，统一记录原 V/FS 与 BE-AT 的命令、环境和测试证据；测试未发现任何用例、环境不足或尚未实现，都不能登记为通过。
+- `docs/implementation-status.md` 在 T0 建立，统一记录原 V/FS 与 BE-AT 的命令、环境和测试证据；测试未发现任何用例、环境不足或尚未实现，都不能登记为通过。GW-27 开发后再按 UP-AT 记录升级证据，不将规划写成已实现。
