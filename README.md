@@ -1,4 +1,4 @@
-# TenonEdge
+# <img src="assets/brand/tenonedge/icon-128.png" width="32" alt="TenonEdge"> TenonEdge
 
 基于 .NET 的边缘接入与转发网关，面向独立部署和二次开发。
 
