@@ -5,16 +5,19 @@
 1. 阅读 `README.md`。
 2. 完整阅读 `docs/tenonedge-design.md`，重点检查第 0 节约束、第 12 节实施顺序、第 19 节 Agent 指令和第 22 节评审决策。
 3. 阅读 `docs/functional-spec.md`：功能需求按使用流程分为 12 段（首轮梳理已完成），与设计文档冲突时先向维护者确认。
-4. 执行 T0 前阅读 `docs/reviews/2026-09-28-architecture-review.md`，了解 1.6 决策的来由；其正文针对 1.5，与设计文档不一致时以设计文档为准。
-5. 阅读 `docs/development-readiness.md`：待确认事项在确认前按其第 4 节“未确认前按”一列实现；T0 按其中的验证清单执行。
-6. 检查实际工作区、已有代码与依赖，再执行 T0；不得假设尚不存在的第三方库接口或平台接口。
+4. 阅读 `docs/frontend-design.md`：这是维护者已确认的前端实施基线，明确采用裁剪后的 shadcn-admin、TanStack Router 与 TanStack Query。其第 1 节列出的前端旧约定已被替代，按本文档执行，不再将同一选型重复列为待确认；未列出的架构、安全、功能和阶段约束仍按原设计执行。
+5. 执行 T0 前阅读 `docs/reviews/2026-09-28-architecture-review.md`，了解 1.6 决策的来由；其正文针对 1.5，与当前设计不一致时以当前设计为准。
+6. 阅读 `docs/development-readiness.md`：待确认事项在确认前按其第 4 节“未确认前按”一列实现；T0 按其中的验证清单执行。前端资料核查和 T3 验证同时参照 `docs/frontend-design.md` 第 7、8 节。本次前端选型不代表 D-01—D-09 等其他事项已经确认。
+7. 检查实际工作区、已有代码与依赖，再执行 T0；不得假设尚不存在的第三方库接口或平台接口。
 
 ## 实施范围
 
-- 以 V1.6 方案为本仓库的设计基线，不因参考项目拥有某功能就扩大范围。
+- 以 V1.6 方案及已确认的 `docs/frontend-design.md` 为设计基线，不因参考项目拥有某功能就扩大范围。
 - 首版聚焦接入、必要格式处理、输出和基本诊断，采用单个 .NET 服务与产品自有 Web 界面。
 - 网关不依赖 TenonAdmin。账号、三种角色、首次设置和审计按设计文档最小实现，不扩展成菜单、组织或多租户系统。
-- 前端采用 React + shadcn/ui + Tailwind + React Flow（设计文档第 3.1 节），放在 web/，于 T3 实施并先做画布原型；T0—T2 期间后端以 API 与 OpenAPI 交付，不提前创建前端工程。
+- 前端以固定提交的 shadcn-admin 源码为界面基础，裁剪后放在 web/；保留 React 19、TypeScript、Vite、shadcn/ui、Tailwind CSS 4 和 React Flow。路由只用 TanStack Router，不同时安装 React Router；查询用 TanStack Query，API 客户端继续采用 openapi-typescript + openapi-fetch，本地编辑状态用 Zustand，文案用 react-i18next。
+- 前端仍于 T3 实施，先验证画布和点表原型，再铺开普通页面；T0—T2 期间后端以 API 与 OpenAPI 交付，不提前创建 web/ 或安装前端依赖。前端构建产物由 .NET 宿主提供，不增加 Node.js 运行服务。
+- 不使用 shadcn-admin 的模拟登录、前端 Access Token Cookie 或 Clerk 认证。移除无关演示页面、社交登录和外部字体请求，按本网关的本地会话、权限、API 和离线要求实现。
 - Node-RED 嵌入是待评估选项，不安装其运行时、不添加认证桥接或兼容层。
 - 不增加 SQL 流计算、脚本引擎、微服务集群或完整 IoT 平台。
 - LoRa 接入以已解码业务数据为前提，不开发无线协议栈、网络服务器或下行控制。
@@ -23,7 +26,7 @@
 ## 参考项目
 
 - 本机若存在 `../参考项目/边缘网关/`（与本仓库同级，不入库、不提交），开发某类功能前先读其中的 `SUMMARY.md`，再读相关仓库的 `_TENON_REF.md`：笔记里的“主题索引”指向具体文件和行号，行号以笔记头部记录的提交为准。目录不存在时跳过。
-- 只借思路与模式，不复制源码。确需移植宽松许可的代码，先核对该仓 LICENSE，并按设计文档第 17 节登记来源、版权声明与变更；neuron（LGPL-3.0）、mosquitto 等只读不拷。
+- 一般参考项目只借思路与模式，不复制源码。shadcn-admin 的界面源码裁剪复用已获本次选型授权，范围、固定提交及许可登记按 `docs/frontend-design.md` 执行，不扩大为整仓照搬。其他源码确需移植时，先核对该仓 LICENSE，并按设计文档第 17 节登记来源、版权声明与变更；neuron（LGPL-3.0）、mosquitto 等只读不拷。
 - 笔记是静态阅读的结果，不等于验证：超时、确认、重连等关键行为仍按设计文档第 12 节 T0 的要求实测。参考项目有某功能，不等于本项目要做，范围以设计文档第 1.2 节为准。
 
 ## 变更与验证
