@@ -4,13 +4,14 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using TenonEdge.Host.Storage;
 
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
 /// <summary>
-/// 以独立进程运行已构建的宿主（与测试相同的构建配置，程序与 appsettings.json 位于测试输出目录），
-/// 检查进程内测试无法证明的真实端口监听、启动与停机行为。
-/// 监听端口由操作系统分配（端口 0），实际地址从宿主的启动日志读取，避免预先挑选端口带来的竞争。
+/// 以独立进程运行已构建的宿主（默认使用测试输出目录中的同一构建，程序与 appsettings.json 都在该目录），
+/// 检查进程内测试无法证明的真实端口监听、TLS、启动与停机行为。
+/// HTTP 与 HTTPS 都只监听回环地址，端口由操作系统分配（端口 0），实际地址从宿主的启动日志读取，避免预先挑选端口带来的竞争。
 /// </summary>
 public sealed partial class HostProcess : IAsyncDisposable
 {
@@ -22,7 +23,9 @@ public sealed partial class HostProcess : IAsyncDisposable
     private readonly Process _process;
     private readonly StringBuilder _output = new();
     private readonly Lock _outputLock = new();
-    private readonly TaskCompletionSource<Uri> _listeningAddress = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<Uri> _httpAddress = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<Uri> _httpsAddress = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private HostProcess(Process process) => _process = process;
 
@@ -39,11 +42,21 @@ public sealed partial class HostProcess : IAsyncDisposable
     }
 
     /// <summary>
-    /// 在指定工作目录启动宿主，只监听回环地址上由系统分配的端口。内容根固定为程序所在目录，与工作目录无关。
+    /// 在指定工作目录启动宿主。内容根固定为程序所在目录，与工作目录无关。
     /// </summary>
-    public static HostProcess Start(string workingDirectory, string environmentName)
+    /// <param name="dataDirectory">数据目录部署参数的原样取值；传 null 表示不配置。</param>
+    /// <param name="additionalArguments">追加在默认参数之后的命令行参数，可覆盖前面的同名参数。</param>
+    /// <param name="environmentVariables">额外设置的环境变量。</param>
+    /// <param name="programDirectory">宿主程序所在目录；默认为测试输出目录，模拟更换安装路径时传入复制后的目录。</param>
+    public static HostProcess Start(
+        string workingDirectory,
+        string environmentName,
+        string? dataDirectory,
+        IEnumerable<string>? additionalArguments = null,
+        IReadOnlyDictionary<string, string>? environmentVariables = null,
+        string? programDirectory = null)
     {
-        var programDirectory = AppContext.BaseDirectory;
+        programDirectory ??= AppContext.BaseDirectory;
         var startInfo = new ProcessStartInfo(DotNetExecutable.Path)
         {
             WorkingDirectory = workingDirectory,
@@ -52,15 +65,41 @@ public sealed partial class HostProcess : IAsyncDisposable
             RedirectStandardError = true,
         };
         startInfo.ArgumentList.Add(Path.Combine(programDirectory, HostAssemblyFileName));
-        startInfo.ArgumentList.Add("--urls");
-        startInfo.ArgumentList.Add("http://127.0.0.1:0");
+        string[] listeners =
+        [
+            "--TenonEdge:Http:Address", "127.0.0.1", "--TenonEdge:Http:Port", "0",
+            "--TenonEdge:Https:Address", "127.0.0.1", "--TenonEdge:Https:Port", "0",
+        ];
+        foreach (var argument in listeners)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
         startInfo.ArgumentList.Add("--contentRoot");
         startInfo.ArgumentList.Add(programDirectory);
         // 保证启动日志中的实际监听地址一定输出，不受日志配置变化影响。
         startInfo.ArgumentList.Add("--Logging:LogLevel:Microsoft.Hosting.Lifetime=Information");
+        if (dataDirectory is not null)
+        {
+            startInfo.ArgumentList.Add($"--{DataDirectory.ConfigurationKey}");
+            startInfo.ArgumentList.Add(dataDirectory);
+        }
+
+        foreach (var argument in additionalArguments ?? [])
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
         startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = environmentName;
-        startInfo.Environment.Remove("DOTNET_ENVIRONMENT");
-        startInfo.Environment.Remove("ASPNETCORE_URLS");
+        foreach (var inherited in new[] { "DOTNET_ENVIRONMENT", "ASPNETCORE_URLS", "DOTNET_URLS", "TenonEdge__DataDirectory" })
+        {
+            startInfo.Environment.Remove(inherited);
+        }
+
+        foreach (var (name, value) in environmentVariables ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
 
         var process = new Process { StartInfo = startInfo };
         try
@@ -84,30 +123,58 @@ public sealed partial class HostProcess : IAsyncDisposable
         }
     }
 
-    /// <summary>等待宿主报告实际监听地址；进程提前退出或超时均失败，并附带进程输出。</summary>
-    public async Task<Uri> WaitForListeningAddressAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    /// <summary>
+    /// 运行主机侧维护命令（例如 reset-admin）并等待结束，返回退出码与全部输出。命令使用与服务相同的构建。
+    /// </summary>
+    public static async Task<(int ExitCode, string Output)> RunCommandAsync(
+        string workingDirectory,
+        IEnumerable<string> arguments,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
+        var startInfo = new ProcessStartInfo(DotNetExecutable.Path)
+        {
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, HostAssemblyFileName));
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        startInfo.Environment.Remove("TenonEdge__DataDirectory");
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("维护命令未能启动。");
+        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(timeout);
         try
         {
-            var listening = _listeningAddress.Task.WaitAsync(timeoutSource.Token);
-            var exited = _process.WaitForExitAsync(timeoutSource.Token);
-            if (await Task.WhenAny(listening, exited) == listening)
-            {
-                return await listening;
-            }
-
-            // WaitForExitAsync 完成时已读完重定向的输出，错误信息包含完整日志。
-            await exited;
-            throw new InvalidOperationException(
-                $"宿主进程在开始监听前退出，退出码 {_process.ExitCode}。{Environment.NewLine}{Output}");
+            await process.WaitForExitAsync(timeoutSource.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException($"宿主在 {timeout.TotalSeconds} 秒内没有报告监听地址。{Environment.NewLine}{Output}");
+            process.Kill(entireProcessTree: true);
+            throw new TimeoutException($"维护命令在 {timeout.TotalSeconds} 秒内没有结束。");
         }
+
+        return (process.ExitCode, await standardOutput + await standardError);
     }
+
+    /// <summary>等待宿主报告 HTTP 监听地址；进程提前退出或超时均失败，并附带进程输出。</summary>
+    public Task<Uri> WaitForListeningAddressAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        WaitAsync(_httpAddress.Task, "开始监听 HTTP", timeout, cancellationToken);
+
+    /// <summary>等待宿主报告 HTTPS 监听地址。</summary>
+    public Task<Uri> WaitForHttpsAddressAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        WaitAsync(_httpsAddress.Task, "开始监听 HTTPS", timeout, cancellationToken);
+
+    /// <summary>等待宿主报告启动完成：全部监听都已建立。</summary>
+    public async Task WaitForApplicationStartedAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        await WaitAsync(_started.Task.ContinueWith(_ => true, TaskScheduler.Default), "完成启动", timeout, cancellationToken);
 
     /// <summary>
     /// 轮询就绪端点直到返回 200。开始监听与完成启动之间短暂返回 503 属于正常情况；
@@ -159,6 +226,13 @@ public sealed partial class HostProcess : IAsyncDisposable
         }
     }
 
+    /// <summary>强制终止进程（Linux 上为 SIGKILL），模拟崩溃：进程没有机会执行任何停机逻辑。</summary>
+    public async Task KillAsync(CancellationToken cancellationToken)
+    {
+        _process.Kill(entireProcessTree: false);
+        await _process.WaitForExitAsync(cancellationToken);
+    }
+
     /// <summary>等待进程退出并返回退出码；超时则失败，并附带进程输出。</summary>
     public async Task<int> WaitForExitAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -187,6 +261,30 @@ public sealed partial class HostProcess : IAsyncDisposable
         _process.Dispose();
     }
 
+    private async Task<T> WaitAsync<T>(Task<T> signal, string what, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(timeout);
+        try
+        {
+            var waiting = signal.WaitAsync(timeoutSource.Token);
+            var exited = _process.WaitForExitAsync(timeoutSource.Token);
+            if (await Task.WhenAny(waiting, exited) == waiting)
+            {
+                return await waiting;
+            }
+
+            // WaitForExitAsync 完成时已读完重定向的输出，错误信息包含完整日志。
+            await exited;
+            throw new InvalidOperationException(
+                $"宿主进程在{what}之前退出，退出码 {_process.ExitCode}。{Environment.NewLine}{Output}");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"宿主在 {timeout.TotalSeconds} 秒内没有{what}。{Environment.NewLine}{Output}");
+        }
+    }
+
     private void OnOutput(string? line)
     {
         if (line is null)
@@ -202,11 +300,17 @@ public sealed partial class HostProcess : IAsyncDisposable
         var match = ListeningAddressLine().Match(line);
         if (match.Success)
         {
-            _listeningAddress.TrySetResult(new Uri(match.Groups["address"].Value));
+            var address = new Uri(match.Groups["address"].Value);
+            (address.Scheme == Uri.UriSchemeHttps ? _httpsAddress : _httpAddress).TrySetResult(address);
+        }
+
+        if (line.Contains("Application started", StringComparison.Ordinal))
+        {
+            _started.TrySetResult();
         }
     }
 
-    [GeneratedRegex(@"Now listening on: (?<address>http://127\.0\.0\.1:\d+)")]
+    [GeneratedRegex(@"Now listening on: (?<address>https?://127\.0\.0\.1:\d+)")]
     private static partial Regex ListeningAddressLine();
 
     /// <summary>

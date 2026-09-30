@@ -5,9 +5,13 @@
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
-      "applicationUrl": "http://0.0.0.0:18080",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "TenonEdge__DataDirectory": "%HOME%/.local/share/TenonEdge/dev-data",
+        "TenonEdge__Http__Address": "0.0.0.0",
+        "TenonEdge__Http__Port": "18080",
+        "TenonEdge__Https__Address": "0.0.0.0",
+        "TenonEdge__Https__Port": "18443"
       }
     }
   }

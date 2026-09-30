@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)../tenonedge.runsettings</RunSettingsFilePath>
+    <!-- 与 Host 相同地排除 SQL Server 驱动栈，测试与发布物使用同一组程序集（见 Directory.Build.targets）。 -->
+    <ExcludeSqlServerDriverStack>true</ExcludeSqlServerDriverStack>
   </PropertyGroup>
 
   <ItemGroup>

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
 /// <summary>
-/// 列出宿主实际注册的全部路由端点及其访问级别，用于核对匿名例外清单。
+/// 列出宿主实际注册的全部路由端点及其访问级别，用于核对匿名例外清单；受保护的端点另列出所声明的授权策略（例如角色要求）。
 /// </summary>
 internal static class EndpointInventory
 {
@@ -30,7 +30,15 @@ internal static class EndpointInventory
     {
         var methods = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["*"];
         var route = "/" + endpoint.RoutePattern.RawText?.TrimStart('/');
-        var access = IsAnonymous(endpoint, fallbackPolicy) ? Anonymous : Protected;
+        var policies = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Select(data => data.Policy)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        var access = IsAnonymous(endpoint, fallbackPolicy)
+            ? Anonymous
+            : policies.Count == 0 ? Protected : $"{Protected}: {string.Join(", ", policies)}";
         return $"{string.Join(',', methods)} {route} ({access})";
     }
 

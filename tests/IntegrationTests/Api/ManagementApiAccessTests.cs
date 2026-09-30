@@ -5,8 +5,8 @@ using TenonEdge.IntegrationTests.Infrastructure;
 namespace TenonEdge.IntegrationTests.Api;
 
 /// <summary>
-/// 管理入口默认受保护，匿名例外逐项列出（后端实施规范 §3.2）。
-/// 真实登录与完整的 401/403 场景在认证任务中补充；这里只验证尚无登录能力时的默认保护。
+/// 管理入口默认受保护，匿名例外逐项列出（后端实施规范 §3.2）：健康检查、首次设置状态与提交、登录。
+/// 新增端点须同时更新清单并说明访问级别；登录后的访问与 401/403 场景见认证相关测试。
 /// </summary>
 public sealed class ManagementApiAccessTests(
     TenonEdgeApplicationFactory production,
@@ -16,13 +16,22 @@ public sealed class ManagementApiAccessTests(
     private const string ApiDocumentPath = "/api/edge-admin/v1/openapi/v1.json";
 
     [Fact]
-    public void ProductionMapsOnlyExpectedEndpointsAndOnlyHealthChecksAreAnonymous()
+    public void ProductionMapsOnlyExpectedEndpointsAndOnlyListedExceptionsAreAnonymous()
     {
         Assert.Equal(
             [
+                "GET /api/edge-admin/v1/audit (protected: role:administrator)",
+                "GET /api/edge-admin/v1/auth/session (protected)",
                 "GET /api/edge-admin/v1/openapi/{documentName}.json (protected)",
+                "GET /api/edge-admin/v1/runtime/events (protected)",
+                "GET /api/edge-admin/v1/setup (anonymous)",
+                "GET /api/edge-admin/v1/system/info (protected)",
                 "GET /healthz (anonymous)",
                 "GET /readyz (anonymous)",
+                "POST /api/edge-admin/v1/auth/login (anonymous)",
+                "POST /api/edge-admin/v1/auth/logout (protected)",
+                "POST /api/edge-admin/v1/auth/password (protected)",
+                "POST /api/edge-admin/v1/setup (anonymous)",
             ],
             EndpointInventory.Describe(production.Services));
     }
@@ -32,9 +41,18 @@ public sealed class ManagementApiAccessTests(
     {
         Assert.Equal(
             [
+                "GET /api/edge-admin/v1/audit (protected: role:administrator)",
+                "GET /api/edge-admin/v1/auth/session (protected)",
                 "GET /api/edge-admin/v1/openapi/{documentName}.json (anonymous)",
+                "GET /api/edge-admin/v1/runtime/events (protected)",
+                "GET /api/edge-admin/v1/setup (anonymous)",
+                "GET /api/edge-admin/v1/system/info (protected)",
                 "GET /healthz (anonymous)",
                 "GET /readyz (anonymous)",
+                "POST /api/edge-admin/v1/auth/login (anonymous)",
+                "POST /api/edge-admin/v1/auth/logout (protected)",
+                "POST /api/edge-admin/v1/auth/password (protected)",
+                "POST /api/edge-admin/v1/setup (anonymous)",
             ],
             EndpointInventory.Describe(development.Services));
     }

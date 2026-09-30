@@ -1,14 +1,38 @@
 using TenonEdge.Host.Bootstrap;
+using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Auth;
 using TenonEdge.Host.Features.Health;
+using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Features.SystemInfo;
 
-// 只负责启动装配；服务注册、请求管道和各功能端点分别在 Bootstrap 与 Features 中实现。
+// 只负责启动装配；服务注册、启动检查、请求管道和各功能端点分别在 Bootstrap 与 Features 中实现。
+// 主机侧维护命令（例如 reset-admin）使用独立的通用宿主，不启动 Web 服务。
+if (MaintenanceCommands.IsMaintenanceCommand(args))
+{
+    return await MaintenanceCommands.RunAsync(args);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.AddTenonEdgeHostServices();
 
 var app = builder.Build();
+
+// 取得数据目录的单实例锁等启动检查全部通过后，才开始接收请求；未通过时以约定的退出码结束。
+var startupExitCode = await app.PrepareAsync();
+if (startupExitCode != HostExitCodes.Success)
+{
+    return startupExitCode;
+}
+
 app.UseTenonEdgeRequestPipeline();
 
 app.MapHealthEndpoints();
-app.MapManagementApi();
+app.MapManagementApi()
+    .MapSetupEndpoints()
+    .MapAuthEndpoints()
+    .MapAuditEndpoints()
+    .MapRuntimeEventEndpoints()
+    .MapSystemInfoEndpoints();
 
-app.Run();
+await app.RunAsync();
+return HostExitCodes.Success;

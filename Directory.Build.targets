@@ -1,0 +1,32 @@
+<Project>
+  <!--
+    D-09（未确认前按推荐方案，可调整）：SqlSugarCoreNoDrive 经 SystemCommon 带入 SQL Server 驱动栈及其身份认证依赖；
+    SystemCommon 本身只含一个更旧的 SqlSugar.dll（5.1.4.169），被 SqlSugarCoreNoDrive 自带的 5.1.4.221 取代。
+    配置库只用 SQLite；SqlSugar 对各数据库驱动按需加载，本身也不自带 MySQL、PostgreSQL 等驱动。
+    设置 ExcludeSqlServerDriverStack=true 的工程（Host 以及引用 Host 的测试工程）以直接引用加 ExcludeAssets="all"
+    排除这些包的全部资产，使测试与发布物使用同一组程序集。这些包仍在还原图和锁文件中，漏洞审计照常覆盖；
+    版本见 Directory.Packages.props，试验结论见 docs/reference-notes.md。
+  -->
+  <ItemGroup Condition="'$(ExcludeSqlServerDriverStack)' == 'true'">
+    <PackageReference Include="Azure.Core" ExcludeAssets="all" />
+    <PackageReference Include="Azure.Identity" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Data.SqlClient" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Data.SqlClient.SNI.runtime" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Identity.Client" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.IdentityModel.Abstractions" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.IdentityModel.Logging" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.SqlServer.Server" ExcludeAssets="all" />
+    <PackageReference Include="System.ClientModel" ExcludeAssets="all" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" ExcludeAssets="all" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" ExcludeAssets="all" />
+    <PackageReference Include="System.Memory.Data" ExcludeAssets="all" />
+    <PackageReference Include="System.Runtime.Caching" ExcludeAssets="all" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" ExcludeAssets="all" />
+    <PackageReference Include="SystemCommon" ExcludeAssets="all" />
+  </ItemGroup>
+</Project>

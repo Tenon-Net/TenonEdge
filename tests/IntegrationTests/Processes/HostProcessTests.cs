@@ -21,7 +21,8 @@ public sealed class HostProcessTests(ITestOutputHelper output)
 
         var cancellationToken = TestContext.Current.CancellationToken;
         using var workingDirectory = TemporaryDirectory.Create();
-        await using var host = HostProcess.Start(workingDirectory.Path, Environments.Production);
+        using var dataDirectory = TemporaryDirectory.Create();
+        await using var host = HostProcess.Start(workingDirectory.Path, Environments.Production, dataDirectory.Path);
         try
         {
             var address = await host.WaitForListeningAddressAsync(StartupTimeout, cancellationToken);

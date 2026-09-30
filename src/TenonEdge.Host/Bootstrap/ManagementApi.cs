@@ -1,4 +1,6 @@
 using Microsoft.OpenApi;
+using TenonEdge.Host.Features.Auth;
+using TenonEdge.Host.Security;
 
 namespace TenonEdge.Host.Bootstrap;
 
@@ -37,6 +39,8 @@ internal static class ManagementApi
     {
         var api = endpoints.MapGroup(RoutePrefix)
             .RequireAuthorization()
+            .AddEndpointFilter<CsrfProtectionFilter>()
+            .AddEndpointFilter<PasswordChangeRequiredFilter>()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         var document = api.MapOpenApi(DocumentRoutePattern);

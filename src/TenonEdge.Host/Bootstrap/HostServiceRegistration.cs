@@ -1,6 +1,10 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
+using TenonEdge.Host.Features.Auth;
 using TenonEdge.Host.Features.Health;
 using TenonEdge.Host.Security;
+using TenonEdge.Host.Storage;
 
 namespace TenonEdge.Host.Bootstrap;
 
@@ -17,6 +21,21 @@ internal static class HostServiceRegistration
             options.ValidateScopes = true;
             options.ValidateOnBuild = true;
         });
+
+        builder.Services.AddDataServices();
+        builder.Services.AddSecretProtection();
+        builder.Services.AddSingleton(provider => ListenerSettings.Resolve(provider.GetRequiredService<IConfiguration>()));
+        builder.Services.AddSingleton<HttpsCertificateStore>();
+
+        // 审计与运行事件按保留期清理（T0-09）；保留期参数在启动检查中校验。
+        builder.Services.AddSingleton(provider => DataRetentionSettings.Resolve(provider.GetRequiredService<IConfiguration>()));
+        builder.Services.AddHostedService<DataRetentionService>();
+
+        builder.Services.AddAuthFeature();
+
+        // 枚举按字符串序列化（总设计 §10.1），OpenAPI 文档同样按字符串描述。
+        builder.Services.ConfigureHttpJsonOptions(options =>
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 
         builder.Services.AddProblemDetails();
         builder.Services.AddAuthorization();

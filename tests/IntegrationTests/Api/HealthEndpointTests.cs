@@ -46,6 +46,19 @@ public sealed class HealthEndpointTests(TenonEdgeApplicationFactory factory) : I
     }
 
     [Fact]
+    public void ReadinessConditionsIncludeRuntimeStartConditions()
+    {
+        // 阻止原因登记后返回 503 的行为见 ConfigStoreStartupTests；这里确认宿主把它登记为就绪条件。
+        var registrations = factory.Services.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations;
+        using var scope = factory.Services.CreateScope();
+
+        Assert.Contains(
+            registrations,
+            registration => registration.Tags.Contains(HealthEndpoints.ReadinessTag)
+                && registration.Factory(scope.ServiceProvider) is RuntimeStartConditionsReadinessCheck);
+    }
+
+    [Fact]
     public async Task FailingReadinessConditionReturnsServiceUnavailableWithoutReason()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

@@ -18,7 +18,20 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
     /// 当前契约的全部 operationId。新增或修改端点时显式更新本清单，
     /// 防止重命名内部类型等改动无意改变客户端契约。
     /// </summary>
-    private static readonly string[] ExpectedOperationIds = ["getLiveness", "getReadiness"];
+    private static readonly string[] ExpectedOperationIds =
+    [
+        "changePassword",
+        "completeSetup",
+        "getLiveness",
+        "getReadiness",
+        "getSession",
+        "getSetupStatus",
+        "getSystemInfo",
+        "listAuditRecords",
+        "listRuntimeEvents",
+        "login",
+        "logout",
+    ];
 
     [Fact]
     public async Task DocumentIsOpenApi31WithManagementApiInfo()

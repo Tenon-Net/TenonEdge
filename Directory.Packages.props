@@ -9,6 +9,38 @@
 
   <ItemGroup Label="Host">
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- 配置库：SqlSugarCoreNoDrive 不带 SQLite 驱动，由 Host 显式引用 Microsoft.Data.Sqlite（总设计 §2.3）。 -->
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageVersion Include="SqlSugarCoreNoDrive" Version="5.1.4.221" />
+  </ItemGroup>
+
+  <!--
+    D-09（未确认前按推荐方案）：SqlSugarCoreNoDrive 经 SystemCommon 带入的 SQL Server 驱动栈。
+    下列包只为排除资产而直接引用（见 Directory.Build.targets 的 ExcludeSqlServerDriverStack），不进入构建输出和发布物；
+    版本与 SqlSugarCoreNoDrive 5.1.4.221 的依赖解析结果一致。它们仍在还原图和锁文件中，漏洞审计照常覆盖。
+  -->
+  <ItemGroup Label="SqlServerDriverStack">
+    <PackageVersion Include="Azure.Core" Version="1.38.0" />
+    <PackageVersion Include="Azure.Identity" Version="1.11.4" />
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="1.1.1" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageVersion Include="Microsoft.Data.SqlClient.SNI.runtime" Version="5.2.0" />
+    <PackageVersion Include="Microsoft.Identity.Client" Version="4.61.3" />
+    <PackageVersion Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.61.3" />
+    <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="7.6.3" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.6.3" />
+    <PackageVersion Include="Microsoft.IdentityModel.Logging" Version="7.6.3" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols" Version="6.35.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="6.35.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="7.6.3" />
+    <PackageVersion Include="Microsoft.SqlServer.Server" Version="1.0.0" />
+    <PackageVersion Include="System.ClientModel" Version="1.0.0" />
+    <PackageVersion Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.6.3" />
+    <PackageVersion Include="System.Memory.Data" Version="1.0.2" />
+    <PackageVersion Include="System.Runtime.Caching" Version="8.0.0" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageVersion Include="SystemCommon" Version="8.5.0" />
   </ItemGroup>
 
   <ItemGroup Label="Tests">

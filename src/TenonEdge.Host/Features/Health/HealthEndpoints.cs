@@ -20,7 +20,8 @@ internal static class HealthEndpoints
     public static IServiceCollection AddHealthEndpointChecks(this IServiceCollection services)
     {
         services.AddHealthChecks()
-            .AddCheck<HostLifecycleReadinessCheck>("host-lifecycle", tags: [ReadinessTag]);
+            .AddCheck<HostLifecycleReadinessCheck>("host-lifecycle", tags: [ReadinessTag])
+            .AddCheck<RuntimeStartConditionsReadinessCheck>("runtime-start-conditions", tags: [ReadinessTag]);
 
         return services;
     }

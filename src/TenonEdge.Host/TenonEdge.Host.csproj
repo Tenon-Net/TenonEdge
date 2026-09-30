@@ -1,7 +1,31 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- D-09：排除 SQL Server 驱动栈，见 Directory.Build.targets。 -->
+    <ExcludeSqlServerDriverStack>true</ExcludeSqlServerDriverStack>
+    <!--
+      雪花 ID 时间戳的构建时间下限（总设计 §10.1：时间戳不早于本版本的构建时间）。
+      为保持确定性构建不读取构建机时钟，取固定值，随版本发布更新；构建时可用同名属性覆盖。
+    -->
+    <TenonEdgeBuildTimestampFloor Condition="'$(TenonEdgeBuildTimestampFloor)' == ''">2026-09-30T00:00:00Z</TenonEdgeBuildTimestampFloor>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="TenonEdge.BuildTimestampFloor" Value="$(TenonEdgeBuildTimestampFloor)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="SqlSugarCoreNoDrive" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.Bcl.AsyncInterfaces 在 Host 中只被已排除的 Azure.Core 引用，一并排除；
+      测试工程中 xUnit 需要它的 6.0 版本，因此只在 Host 中排除，并且不向引用方传递。
+    -->
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" ExcludeAssets="all" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
