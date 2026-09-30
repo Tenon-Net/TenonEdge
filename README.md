@@ -9,11 +9,14 @@
 ## 设计方案
 
 - [接入、转发与平台联动设计方案 V1.6](docs/tenonedge-design.md)
+- [后端工程实施规范：目录、Minimal API、生命周期与测试](docs/backend-implementation.md)
 - [前端实施基线：shadcn-admin 裁剪复用](docs/frontend-design.md)
 - [功能需求](docs/functional-spec.md)
 - [开发准备：结论、待确认事项与 T0 验证清单](docs/development-readiness.md)
 - [架构评审记录（2026-09-28）](docs/reviews/2026-09-28-architecture-review.md)
 - [开发 Agent 阅读要求](AGENTS.md)
+
+后端工程细节由[后端工程实施规范](docs/backend-implementation.md)补充，保留四工程依赖方向和既有运行机制；其中第 7 节与开发准备清单共同用于 T0 验收，不新增进入 T0 的前置门槛。
 
 前端选型以已确认的[前端实施基线](docs/frontend-design.md)为准；它替代 V1.6 中“新建精简前端、沿用 TenonAdmin 工具链”和 React Router 的旧约定。后端架构、功能范围、安全要求和 T0—T5 顺序不变。
 
@@ -24,6 +27,7 @@
 - 输出：MQTT、HTTP，以及可选的 TenonIoT 平台连接。
 - 使用：产品内的可视化连线配置、数据预览和运行诊断。
 - 部署：一个 .NET 服务，自带 Web 界面，本地配置和有限发送缓存。只支持 MQTT 的设备需要直连时，可在同一台机器上附带一个 Mosquitto。
+- 后端：.NET 10、ASP.NET Core 分组 Minimal API；Host、Runtime、Adapters、Abstractions 四工程；SQLite 配置库与发送缓存分离，具体依赖仍须 T0 验证。
 - 管理：本地账号与三种角色（管理员、配置人员、只读），首次访问时设置管理员；不依赖 TenonAdmin。
 - 界面：裁剪复用 shadcn-admin，采用 React 19、shadcn/ui、Tailwind CSS 4、TanStack Router 与 TanStack Query；路线画布使用 React Flow。需要 Chrome/Edge 111 及以上的浏览器，其他浏览器边界见设计文档；实际兼容性在 T3 验证。
 
@@ -33,4 +37,4 @@ LoRa／LoRaWAN 优先接入现有无线网关或网络服务器已经处理好�
 
 ## 开发入口
 
-先阅读 `AGENTS.md`、`docs/tenonedge-design.md` 和 `docs/frontend-design.md`，再按照设计文档第 12 节的 T0—T5 执行。前端于 T3 创建 web/，T0—T2 不提前创建前端工程。涉及第三方库与平台接口、真实设备能力时，先核实再实现。
+先按 `AGENTS.md` 阅读总设计、后端工程规范、功能需求和前端实施基线，再按照总设计第 12 节的 T0—T5 执行。T0 的工程验收同时参照 `docs/backend-implementation.md` 第 7 节与 `docs/development-readiness.md`。前端于 T3 创建 web/，T0—T2 不提前创建前端工程。涉及第三方库与平台接口、真实设备能力时，先核实再实现。
