@@ -1,0 +1,31 @@
+<Project>
+  <!--
+    公共构建与编译约定（后端实施规范 §5）。
+    语言版本跟随锁定的 SDK 与目标框架默认值，不使用 preview/latest 开关。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <!--
+      NU1900 表示还原时无法取得漏洞数据库（例如离线构建），不是已知漏洞；
+      不让它阻断构建。NU1901—NU1904（依赖存在已知漏洞）仍按错误处理。
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900</WarningsNotAsErrors>
+  </PropertyGroup>
+
+  <!-- 所有需要还原的工程都生成并提交 packages.lock.json。 -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <!-- CI 中锁文件只校验、不更新，并使用确定性的源码路径。 -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <RestoreLockedMode>true</RestoreLockedMode>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

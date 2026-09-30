@@ -1,0 +1,80 @@
+# 后端 Linux CI（后端实施规范 §6.2，任务 T0-02）。
+# 顺序：按 global.json 安装 SDK 并记录环境 → locked mode 还原 → 格式检查 → Release 构建
+# → 执行测试并输出 TRX → 核对报告（零用例、失败、跳过均不算通过）→ 上传报告与环境记录。
+# 只构建和测试，不发布版本、不推送、不修改其他仓库。第三方 Action 固定到提交 SHA。
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 只取消同一拉取请求中被新提交取代的运行；推送到 main 的每个提交都保留完整的 CI 结果。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  build-and-test:
+    name: Linux x64 build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK pinned by global.json
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Record environment
+        run: |
+          mkdir -p artifacts/environment
+          dotnet --info | tee artifacts/environment/dotnet-info.txt
+          { uname -a; cat /etc/os-release; } | tee artifacts/environment/os.txt
+
+      - name: Restore (locked mode)
+        run: dotnet restore TenonEdge.sln --locked-mode
+
+      - name: Check formatting and code style
+        run: dotnet format TenonEdge.sln --verify-no-changes --no-restore
+
+      - name: Build (Release)
+        run: dotnet build TenonEdge.sln --configuration Release --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test TenonEdge.sln
+          --configuration Release
+          --no-build
+          --results-directory artifacts/test-results
+          --logger "trx;LogFilePrefix=tenonedge"
+          --logger "console;verbosity=normal"
+
+      - name: Verify test results
+        if: ${{ !cancelled() }}
+        run: >-
+          python3 .github/scripts/verify-test-results.py artifacts/test-results
+          --require TenonEdge.UnitTests
+          --require TenonEdge.IntegrationTests
+
+      - name: Upload test results and environment
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-test-results
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30

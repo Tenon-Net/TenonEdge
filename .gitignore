@@ -6,6 +6,10 @@
 **/bin/
 **/obj/
 
+# Test results and CI artifacts
+**/TestResults/
+/artifacts/
+
 # Frontend
 **/node_modules/
 **/dist/

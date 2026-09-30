@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 全部测试工程共用的 VSTest 设置（由各测试工程的 RunSettingsFilePath 引用）。 -->
+<RunSettings>
+  <RunConfiguration>
+    <!-- 没有发现任何用例时以失败结束：零用例不能算作测试通过。 -->
+    <TreatNoTestsAsError>true</TreatNoTestsAsError>
+    <!-- 整个测试会话的上限（毫秒），防止挂起的测试无限占用 CI。 -->
+    <TestSessionTimeout>900000</TestSessionTimeout>
+  </RunConfiguration>
+</RunSettings>
