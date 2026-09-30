@@ -10,6 +10,7 @@
 
 - [接入、转发与平台联动设计方案 V1.6](docs/tenonedge-design.md)
 - [功能需求](docs/functional-spec.md)
+- [开发准备：结论、待确认事项与 T0 验证清单](docs/development-readiness.md)
 - [架构评审记录（2026-09-28）](docs/reviews/2026-09-28-architecture-review.md)
 - [开发 Agent 阅读要求](AGENTS.md)
 
