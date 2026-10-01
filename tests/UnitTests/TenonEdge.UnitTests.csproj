@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/TenonEdge.Abstractions/TenonEdge.Abstractions.csproj" />
     <ProjectReference Include="../../src/TenonEdge.Host/TenonEdge.Host.csproj" />
   </ItemGroup>
 

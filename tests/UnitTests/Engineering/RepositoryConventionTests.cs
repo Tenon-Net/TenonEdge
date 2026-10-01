@@ -33,7 +33,9 @@ public sealed partial class RepositoryConventionTests
         Assert.Contains("Microsoft.AspNetCore.App", host.FrameworkReferences);
 
         var unitTests = ProjectFileReader.Read(Path.Combine(RepositoryPaths.TestsDirectory, "UnitTests", "TenonEdge.UnitTests.csproj"));
-        Assert.Equal(["src/TenonEdge.Host/TenonEdge.Host.csproj"], unitTests.ProjectReferences);
+        Assert.Equal(
+            ["src/TenonEdge.Abstractions/TenonEdge.Abstractions.csproj", "src/TenonEdge.Host/TenonEdge.Host.csproj"],
+            unitTests.ProjectReferences);
     }
 
     [Fact]

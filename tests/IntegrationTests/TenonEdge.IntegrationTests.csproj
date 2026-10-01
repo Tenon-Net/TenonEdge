@@ -19,7 +19,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 协议候选库只用于 Probes 目录中的验证代码（T0-11、T0-12），不是正式适配器。 -->
+    <PackageReference Include="FluentModbus" />
+    <PackageReference Include="MQTTnet" />
+    <PackageReference Include="NModbus" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/TenonEdge.Abstractions/TenonEdge.Abstractions.csproj" />
     <ProjectReference Include="../../src/TenonEdge.Host/TenonEdge.Host.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- T0-11 测试 Broker 的配置，测试运行时复制进容器。 -->
+    <None Update="Probes/Mqtt/mosquitto.conf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

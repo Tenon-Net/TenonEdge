@@ -8,6 +8,12 @@
       为保持确定性构建不读取构建机时钟，取固定值，随版本发布更新；构建时可用同名属性覆盖。
     -->
     <TenonEdgeBuildTimestampFloor Condition="'$(TenonEdgeBuildTimestampFloor)' == ''">2026-09-30T00:00:00Z</TenonEdgeBuildTimestampFloor>
+    <!--
+      首版发布目标 linux-x64（总设计 §12 T5，T0-13 自包含最小发布）：还原时一并解析该平台相关的 NuGet 资产并写入锁文件，
+      CI 以 locked mode 还原后发布（后端实施规范 §5）。自包含发布用的运行时包不在锁文件中，版本由 global.json 固定的 SDK 决定。
+      不影响普通构建。
+    -->
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

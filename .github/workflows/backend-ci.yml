@@ -1,7 +1,9 @@
-# 后端 Linux CI（后端实施规范 §6.2，任务 T0-02）。
+# 后端 Linux CI（后端实施规范 §6.2，任务 T0-02、T0-13）。
 # 顺序：按 global.json 安装 SDK 并记录环境 → locked mode 还原 → 格式检查 → Release 构建
-# → 执行测试并输出 TRX → 核对报告（零用例、失败、跳过均不算通过）→ 上传报告与环境记录。
-# 只构建和测试，不发布版本、不推送、不修改其他仓库。第三方 Action 固定到提交 SHA。
+# → 执行测试并输出 TRX → 核对报告（零用例、失败、跳过均不算通过）
+# → linux-x64 自包含发布 → 在未预装 .NET 的干净容器中启动并复验持久化 → 上传报告、环境记录与发布核对证据。
+# 测试发布物只在作业中生成和验证，不作为制品上传：仓库公开，上传即对外提供下载，而许可待核查的组件在处理之前不得分发
+# （总设计 §17.3）。证据中含发布物的 SHA-256 清单。不推送、不修改其他仓库。第三方 Action 固定到提交 SHA。
 name: Backend CI
 
 on:
@@ -26,7 +28,7 @@ jobs:
   build-and-test:
     name: Linux x64 build and test
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out
@@ -54,11 +56,14 @@ jobs:
       - name: Build (Release)
         run: dotnet build TenonEdge.sln --configuration Release --no-restore
 
+      # RealBroker 类别是 T0-11 的真实 Broker 验证，需要本机 Docker 与固定的 Mosquitto 镜像，本批只在本机执行并记录；
+      # 正式 MQTT 适配器落地后再把真实 Broker 场景接入 CI（后端实施规范 §6.2 第 4 步）。其余类别全部执行。
       - name: Test
         run: >-
           dotnet test TenonEdge.sln
           --configuration Release
           --no-build
+          --filter "Category!=RealBroker"
           --results-directory artifacts/test-results
           --logger "trx;LogFilePrefix=tenonedge"
           --logger "console;verbosity=normal"
@@ -70,11 +75,30 @@ jobs:
           --require TenonEdge.UnitTests
           --require TenonEdge.IntegrationTests
 
-      - name: Upload test results and environment
+      # 还原在 locked mode 下进行（Directory.Build.props）：linux-x64 平台相关的 NuGet 资产在锁文件中；
+      # 自包含发布用的运行时包不在锁文件中，其版本由 global.json 固定的 SDK 决定。
+      - name: Publish self-contained (linux-x64)
+        run: >-
+          dotnet publish src/TenonEdge.Host/TenonEdge.Host.csproj
+          --configuration Release
+          --runtime linux-x64
+          --self-contained
+          --output artifacts/publish/linux-x64
+
+      # 干净镜像按 digest 固定，与 docs/implementation-status.md 记录的验证环境一致。
+      - name: Verify the published host in a clean container
+        env:
+          CLEAN_IMAGE: mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:099f6f87ed745377dd27bd722f0d1a352bca71b4fddaabfd75e7c064bcaa82da
+        run: bash .github/scripts/verify-published-host.sh artifacts/publish/linux-x64 artifacts/publish-check
+
+      - name: Upload test results, environment and publish check
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-test-results
-          path: artifacts/
+          path: |
+            artifacts/environment/
+            artifacts/test-results/
+            artifacts/publish-check/
           if-no-files-found: error
           retention-days: 30

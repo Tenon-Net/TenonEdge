@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Host 与 Runtime 之间的契约（总设计 §3.2，后端实施规范 §2）：不可变运行计划、运行消息与运行单元接口。
+    只依赖 .NET 基础类型，不引用 ASP.NET Core、ORM 或协议库，也不引用任何 NuGet 包（工程规则测试持续检查）。
+  -->
+
+</Project>

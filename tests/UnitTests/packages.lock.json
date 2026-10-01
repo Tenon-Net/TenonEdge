@@ -344,6 +344,9 @@
           "xunit.v3.runner.common": "[4.0.1]"
         }
       },
+      "tenonedge.abstractions": {
+        "type": "Project"
+      },
       "tenonedge.host": {
         "type": "Project",
         "dependencies": {

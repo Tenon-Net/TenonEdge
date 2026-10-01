@@ -3,13 +3,13 @@
 - 用途：按总设计 §17.2、§17.3 记录实际采用的第三方组件：通过包管理器的依赖、复制或修改的源码。只参考思路的项目仍在 `docs/reference-*` 与参考项目笔记中说明，不在本表重复。
 - 建立：T0-05，2026-09-30。每次新增依赖或复制代码时更新；许可或交付义务未明确的分发组件，其状态写“待核查”，并阻止对应发行包发布（§17.3）。
 - 本文整理证据、发现缺口，不代替专业许可审查；“已记录”只表示许可声明已从包元数据中取得并登记，不表示已完成法律审查。
-- 发布包附带的 `THIRD_PARTY_NOTICES.md` 与许可文本在 T0-13、T5-07 整理，本文不是该文件。
+- 发布包附带的 `THIRD_PARTY_NOTICES.md` 与许可文本在 T5-07 整理，本文不是该文件。T0-13 补充了自包含发布带入的运行时（§1.3）与只用于测试的依赖、镜像和测试夹具（§4）。
 
 ## 1. 宿主的 NuGet 依赖（V-06、D-09）
 
 - 依据：`src/TenonEdge.Host/packages.lock.json` 列出的全部直接与传递依赖（31 个）；许可取自本机 NuGet 缓存中各包 nuspec 的 license 元素，核查日期 2026-09-30。
 - 分发范围按 Host 的实际构建输出判定：`src/TenonEdge.Host/bin/Release/net10.0` 只含下表“随发布”的程序集（9 个 DLL）与 `runtimes/*/native` 下的 e_sqlite3 原生库。
-- 测试工程的依赖（xUnit.net、VSTest、Mvc.Testing 等）不随产品分发，见两个测试工程的锁文件，不在此逐项登记。
+- 测试框架（xUnit.net、VSTest、Mvc.Testing 等）不随产品分发，见两个测试工程的锁文件，不在此逐项登记；只为验证候选依赖而引用的包、测试用的镜像与夹具列在第 4 节。
 
 ### 1.1 随发布物分发
 
@@ -40,6 +40,15 @@ SqlSugarCoreNoDrive 依赖 SystemCommon 8.5.0，后者带入 SQL Server 驱动�
 | X-09 | System.ClientModel、System.Memory.Data | 1.0.0、1.0.2 | MIT | 否 | 已排除（只由 Azure.Core 引用） |
 | X-10 | System.Runtime.Caching、System.Configuration.ConfigurationManager、System.Security.Cryptography.ProtectedData | 8.0.0 | MIT | 否 | 已排除（只由 SqlClient 引用） |
 | X-11 | Microsoft.Bcl.AsyncInterfaces | 1.1.1 | MIT | 否 | Host 中已排除（只由 Azure.Core 引用）；测试工程中 xUnit 使用其 6.0.0 版本 |
+
+### 1.3 自包含发布带入的运行时（T0-13）
+
+linux-x64 自包含发布（`dotnet publish -r linux-x64 --self-contained`）除第 1.1 节的程序集外，还带入 .NET 运行时与 ASP.NET Core 共享框架；ICU、OpenSSL 等系统库由运行环境提供，不随发布物分发。
+
+| 编号 | 组件/项目 | 版本或提交 | 路径/包名与来源 | 采用方式 | 许可证/授权依据 | 是否修改 | 是否随包/整机分发 | 应附声明/源码等材料 | 状态与核查记录 |
+|---|---|---|---|---|---|---|---|---|---|
+| N-08 | Microsoft.NETCore.App.Runtime.linux-x64 | 10.0.12 | nuget.org，自包含发布时由 SDK 下载的运行时包 | 依赖 | MIT（nuspec 许可表达式）；包内另有 THIRD-PARTY-NOTICES.TXT | 否 | 是（自包含发布） | MIT 许可文本与包内的第三方声明 | 已记录；第三方声明随 T5-07 附带 |
+| N-09 | Microsoft.AspNetCore.App.Runtime.linux-x64 | 10.0.12 | 同上 | 依赖 | MIT；包内另有 THIRD-PARTY-NOTICES.TXT | 否 | 是（自包含发布） | 同上 | 同上 |
 
 ## 2. D-09 试验记录
 
@@ -74,3 +83,17 @@ S-01 的修改说明（按总设计 §10.1，边缘设备开机时时钟可能�
 - 删除与 TenonAdmin 种子数据相关的 `CurrentFloor`、`MinId` 和 `IIdGenerator` 接口；类型改为 internal，日志改用 LoggerMessage。
 - 公开 `TimestampShift`：按保留期清理审计记录与运行事件时，在 SQL 中由 ID 换算逻辑时间，判断保存的时间是否可信（T0-09）。
 - 测试：原实现的并发不重复测试改写后保留（`ParallelBurstIdsAreUnique`），其余测试按上述规则重写，见 `tests/UnitTests/Storage/SnowflakeIdGeneratorTests.cs`。
+
+## 4. 只用于测试的依赖、镜像与测试夹具（不分发）
+
+核查日期 2026-09-30。许可取自本机 NuGet 缓存中各包的 nuspec 与包内许可文件；镜像按标签与 digest 记录。
+
+| 编号 | 组件/项目 | 版本或摘要 | 来源 | 用途 | 许可证/授权依据 | 是否随包分发 | 状态 |
+|---|---|---|---|---|---|---|---|
+| T-01 | MQTTnet | 5.2.0.1603（源码标签 v5.2.0，提交 `14463d1`） | nuget.org | T0-11 验证代码（集成测试） | MIT（包内 LICENSE，版权 .NET Foundation and Contributors） | 否 | 已记录；正式 MQTT 适配器（T1-04）引用后移入第 1.1 节 |
+| T-02 | NModbus | 3.0.83（源码标签 v3.0.83，提交 `d96e770`） | nuget.org | T0-12 比较 | MIT（包内 LICENSE.txt，版权 2006 Scott Alexander、2015 Dmitry Turin） | 否 | 已记录；若选定（T2-02）移入第 1.1 节 |
+| T-03 | FluentModbus | 5.3.2（源码标签 v5.3.2，提交 `5e44710`） | nuget.org | T0-12 比较 | MIT（nuspec 许可表达式） | 否 | 已记录 |
+| T-04 | System.IO.Ports、runtime.native.System.IO.Ports 及各平台原生包、Microsoft.Extensions.Logging.Abstractions | 5.0.0 等 | nuget.org，T-03 的传递依赖 | 同上 | MIT | 否 | 已记录 |
+| T-05 | 镜像 eclipse-mosquitto | 2.1.2-alpine，digest `sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408` | Docker Hub | T0-11 测试 Broker | EPL-2.0 或 EDL-1.0（开发准备 S-03） | 否 | 已记录；附带 Broker 的分发与声明在 T5-04、T5-07 处理 |
+| T-06 | 镜像 mcr.microsoft.com/dotnet/runtime-deps | 10.0，digest `sha256:099f6f87ed745377dd27bd722f0d1a352bca71b4fddaabfd75e7c064bcaa82da`（Ubuntu 24.04.5） | mcr.microsoft.com | T0-13 未预装 .NET 的干净环境 | 镜像内各组件按其许可 | 否 | 只用于验证；产品基础镜像在 T5-04 另行选定并登记 |
+| T-07 | SQLitePCLRaw.lib.e_sqlite3 中的 linux-x64 原生库（SQLite 3.49.1） | 2.1.11 | nuget.org，验证时下载，包的 SHA-512 与 nuget.org 登记核对一致 | T0-13 验证“实际加载低版本 SQLite 时运行时不启动” | Apache-2.0（SQLite 本身为公有领域） | 否 | 只在验证的临时目录中使用，不进入仓库或发布物 |
