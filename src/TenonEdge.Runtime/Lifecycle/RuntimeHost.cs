@@ -172,41 +172,41 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             {
                 if (!outputFactories.TryGetValue(unit.Id.Kind, out var factory))
                 {
-                    throw new ArgumentException("未注册输出模块。");
+                    throw new PlanValidationException("未注册输出模块。");
                 }
 
                 var mapping = unit.Configuration.TryGetProperty("mapping", out var rules) ? FieldMappingConfiguration.Parse(rules) : null;
                 var target = factory.Build(unit);
                 if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
-                { throw new ArgumentException("输出格式化预算无效或超过全局在途预算。"); }
+                { throw new PlanValidationException("输出格式化预算无效或超过全局在途预算。"); }
                 if (target.MinimumSerializationReservationBytes < 0 || target.MinimumSerializationReservationBytes > _options.InFlightBytes)
-                { throw new ArgumentException("输出编码暂存预算无效或超过全局在途预算。"); }
+                { throw new PlanValidationException("输出编码暂存预算无效或超过全局在途预算。"); }
                 if (target.Id != unit.Id)
                 {
-                    throw new ArgumentException("输出工厂标识与计划不一致。");
+                    throw new PlanValidationException("输出工厂标识与计划不一致。");
                 }
 
                 var shared = outputs.FirstOrDefault(output => output.Target.ConnectionId == target.ConnectionId);
                 if (shared is not null && !shared.Target.CanShareSenderWith(target))
                 {
-                    throw new ArgumentException("同一连接的输出参数不一致或协议尚不支持共享发送者。");
+                    throw new PlanValidationException("同一连接的输出参数不一致或协议尚不支持共享发送者。");
                 }
 
                 if (target.ClientId is not null && outputs.Any(output => output.Target.ConnectionId != target.ConnectionId && output.Target.Recipient == target.Recipient && output.Target.ClientId == target.ClientId))
                 {
-                    throw new ArgumentException("同一 Broker 的 ClientId 冲突。");
+                    throw new PlanValidationException("同一 Broker 的 ClientId 冲突。");
                 }
 
                 foreach (var input in target.Inputs)
                 {
                     if (!units.Any(prepared => prepared.Id.Key == input && prepared.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
                     {
-                        throw new ArgumentException("输出引用了不存在的输入。");
+                        throw new PlanValidationException("输出引用了不存在的输入。");
                     }
 
                     if (outputs.Count(output => output.Target.Inputs.Contains(input, StringComparer.Ordinal)) >= 32)
                     {
-                        throw new ArgumentException("单输入最多 32 条投递路径。");
+                        throw new PlanValidationException("单输入最多 32 条投递路径。");
                     }
                 }
 
@@ -219,7 +219,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                units.Add(new PreparedUnit(unit.Id, null, exception.Message, null, null, null));
+                units.Add(new PreparedUnit(unit.Id, null, DescribeBuildFailure(exception), null, null, null));
             }
         }
 
@@ -433,7 +433,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             var instance = factory.Build(unit, context);
             if (instance.Id != id)
             {
-                throw new RuntimeUnitBuildException(id, $"工厂返回的单元标识为 {instance.Id}，与计划不符。");
+                throw new PlanValidationException("输入工厂标识与计划不一致。");
             }
 
             return instance;
@@ -443,18 +443,25 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         {
             return new PreparedUnit(id, Build(), null, Build, channel, reads);
         }
-        catch (RuntimeUnitBuildException exception)
-        {
-            return Failed(id, exception.Message);
-        }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            LogUnexpectedBuildError(_logger, exception, id.ToString());
-            return Failed(id, $"构建时发生未预期的错误：{exception.Message}");
+            if (exception is not RuntimeUnitBuildException and not PlanValidationException)
+            { LogUnexpectedBuildError(_logger, id.ToString()); }
+            return Failed(id, DescribeBuildFailure(exception));
         }
 
         static PreparedUnit Failed(RuntimeUnitId id, string error) => new(id, null, error, null, null, null);
     }
+
+    // 只有本类生成的固定验证说明可信；适配器、映射解析器与凭证提供程序的异常可能携带秘密。
+    private sealed class PlanValidationException(string message) : Exception(message);
+
+    private static string DescribeBuildFailure(Exception exception) => exception switch
+    {
+        PlanValidationException validation => validation.Message,
+        RuntimeUnitBuildException => "运行单元构建失败，请检查配置和凭证。",
+        _ => "运行单元构建失败，请检查配置、模块和依赖。",
+    };
 
     private DeliveryWriterUnit CreateWriter() => new(_deliveries, _time, _events, _logger);
 
@@ -546,7 +553,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     private static partial void LogUnitNotStarted(ILogger logger, string unitId, string reason);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "构建运行单元 {UnitId} 时发生未预期的错误。")]
-    private static partial void LogUnexpectedBuildError(ILogger logger, Exception exception, string unitId);
+    private static partial void LogUnexpectedBuildError(ILogger logger, string unitId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "停机步骤“{Step}”出错，继续执行后面的步骤。")]
     private static partial void LogStopStepFailed(ILogger logger, Exception exception, string step);

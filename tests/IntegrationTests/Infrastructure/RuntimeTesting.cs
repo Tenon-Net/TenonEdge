@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Runtime.Deliveries;
@@ -32,7 +33,8 @@ internal static class RuntimeTesting
         IClockSyncStatus? clock = null,
         Func<DeliveryCacheOptions, DeliveryCacheOptions>? configureCache = null,
         IEnumerable<IOutputAdapterFactory>? outputs = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapters = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapters = null,
+        ILogger<RuntimeHost>? logger = null)
     {
         time ??= TimeProvider.System;
         return new RuntimeHost(
@@ -42,7 +44,7 @@ internal static class RuntimeTesting
             events ?? new RecordingEventSink(),
             time,
             options ?? new RuntimeOptions { InitialRestartDelay = TimeSpan.FromMilliseconds(50), RestartJitter = 0 },
-            NullLogger<RuntimeHost>.Instance,
+            logger ?? NullLogger<RuntimeHost>.Instance,
             random: () => 0,
             outputFactories: outputs, planAdapterProviders: planAdapters);
     }

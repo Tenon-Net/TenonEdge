@@ -81,7 +81,7 @@ public sealed class RuntimeUnitContractTests
 
         var failure = Assert.Single(prepared.Failures);
         Assert.Equal(unit.Id, failure.Id);
-        Assert.Contains(unit.Id.ToString(), failure.Reason, StringComparison.Ordinal);
+        Assert.Equal("运行单元构建失败，请检查配置和凭证。", failure.Reason);
     }
 
     [Theory]

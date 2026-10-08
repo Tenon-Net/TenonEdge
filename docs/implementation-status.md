@@ -1856,6 +1856,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=supervisor-safe-repeat' --results-directory /tmp/tenonedge-supervisor-safe-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`：**882 单元 + 702 集成 = 1584 项测试断言通过，0 失败、0 跳过**；仍包含 §2.77 已知缺口刻画。日志 `/tmp/tenonedge-supervisor-full-repeat.log`，TRX Counters 已核对。四个改动 C# 文件限定 `--include` 的格式校验与 `git diff --check` 通过；环境同 §2.76。
 - 边界：本批处理监督者；RuntimeHost 首次构建的未知异常和其他调用层仍须单独核查，不能将本节当作所有日志脱敏验收完成。§7 待处理 22 尚未整体关闭。
 
+### 2.83 T2 首次构建失败的安全诊断（2026-10-09）
+
+- RuntimeHost 对输入/输出工厂、字段映射解析等构建异常采用固定安全说明，不再公开任意 Message，未知输入构建错误日志不再附带原异常对象。RuntimeUnitBuildException 也不视为可信文本；单元标识仍通过 Failure.Id / 状态 / 事件目标保留。
+- 运行时自己生成的固定验证说明使用私有异常类型，保留预算、缺少模块、引用与最多 32 条路径等诊断；不按异常类型 ArgumentException 或文本内容猜测是否含秘密。输入工厂标识不一致的说明也不回显工厂返回的任意标识。
+- 新增 4 项人工敏感标记测试，覆盖输入/输出及预期/未知异常，检查准备失败原因、激活状态、事件和日志异常参数。先修正测试编译的 CA2201（不用裸 Exception）后，4 项均确定性红灯，日志 `/tmp/tenonedge-build-safe-red.log`；修复后与 MappedOutputTests 共 23 项通过，日志 `/tmp/tenonedge-build-safe-green.log`。
+- 首轮全量 882 单元通过，集成 701 通过、5 失败：4 项旧契约测试要求 Reason 重复包含单元 ID，现改为检查固定安全说明，保留原有 Failure.Id 断言；另有 RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison 首次发送预期 Ack 实得 Retry，未修改该用例/协议代码，原因尚未确认。原始日志 `/tmp/tenonedge-build-safe-full.log`，不把该失败隐去。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=build-safe-repeat' --results-directory /tmp/tenonedge-build-safe-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`：**882 单元 + 706 集成 = 1588 项测试断言通过，0 失败、0 跳过**；包含 §2.77 已知缺口刻画，不代表订阅回滚风险已解决。日志 `/tmp/tenonedge-build-safe-full-repeat.log`，TRX Counters 已核对。限定四个 C# 文件的格式检查通过（首轮发现 using 排序，修正后 `/tmp/tenonedge-build-safe-format2.log` 为空），`git diff --check` 通过；环境同 §2.76。
+- 对首轮 MQTT 偶发失败另行单独复跑：`dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter FullyQualifiedName~RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison`，1 项通过（内部 8 路 × 10 轮），日志 `/tmp/tenonedge-build-safe-outage-repeat.log`；仍不据此判定偶发失败已修复。
+- 边界：只处理单元首次构建的捕获路径，不声称计划提供者 Create、激活/停止、协调者和所有应用日志均已脱敏；§7 待处理 22 尚未整体关闭。无真实秘密、无协议策略调整。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
