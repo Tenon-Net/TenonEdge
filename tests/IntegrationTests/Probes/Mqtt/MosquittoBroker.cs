@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
 using System.Net.Sockets;
 using MQTTnet;
 using MQTTnet.Exceptions;
@@ -11,7 +12,7 @@ namespace TenonEdge.IntegrationTests.Probes.Mqtt;
 /// T0-11 的真实测试 Broker（验证代码）：用 Docker 运行 <see cref="Image"/>，配置见同目录的 mosquitto.conf。
 /// 禁止匿名，用户名密码认证；明文 1883 与 TLS 8883 映射到 127.0.0.1 的随机端口；服务器证书由每个实例自己的测试 CA 签发。
 /// 容器名带 tenonedge-probe-mqtt- 前缀并带标签 tenonedge.probe=mqtt，释放时删除；启动失败时先收集容器的输出写进异常，再删除。
-/// 测试进程被强制结束而留下的容器，可用 <c>docker rm -f $(docker ps -aq --filter label=tenonedge.probe=mqtt)</c> 清理。
+/// 测试进程被强制结束而留下的容器，可用 <c>docker rm -fv $(docker ps -aq --filter label=tenonedge.probe=mqtt)</c> 清理。
 /// 服务器私钥在容器复制之后即从临时目录删除。
 /// 本机没有 Docker 或没有该镜像时，<see cref="UnavailableReason"/> 给出原因，测试据此跳过。
 /// </summary>
@@ -50,12 +51,18 @@ internal sealed class MosquittoBroker : IAsyncDisposable
     /// <summary>Broker 服务器证书的 SHA-256 指纹（十六进制大写）。</summary>
     public string ServerCertificateSha256 { get; }
 
-    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken)
+    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false)
     {
         var files = TemporaryDirectory.Create();
         var authority = TestCertificateAuthority.Create("TenonEdge Probe CA");
         var (certificate, key, fingerprint) = authority.IssueServerCertificate(ServerName);
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Probes", "Mqtt", "mosquitto.conf"), Path.Combine(files.Path, "mosquitto.conf"));
+        if (persistence)
+        {
+            // 不自动保存：分别实测正常停止的检查点与强杀前尚未保存的窗口。
+            await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
+                "\npersistence true\npersistence_location /mosquitto/data/\nautosave_interval 0\n", cancellationToken);
+        }
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.crt"), certificate, cancellationToken);
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.key"), key, cancellationToken);
 
@@ -64,14 +71,15 @@ internal sealed class MosquittoBroker : IAsyncDisposable
         {
             // 以 root 把配置、证书复制进容器并生成密码文件，交给 mosquitto 用户；Mosquitto 2.1 要求密码文件归运行用户所有且不可被其他人读取。
             const string Setup =
-                "set -e; cp /probe/mosquitto.conf /probe/server.crt /probe/server.key /mosquitto/config/; "
-                + $"mosquitto_passwd -b -c /mosquitto/config/passwd {UserName} {Password}; "
-                + "chown mosquitto:mosquitto /mosquitto/config/*; chmod 0600 /mosquitto/config/passwd /mosquitto/config/server.key; "
+                "set -e; if [ ! -f /mosquitto/config/server.key ]; then cp /probe/mosquitto.conf /probe/server.crt /probe/server.key /mosquitto/config/; "
+                + $"mosquitto_passwd -b -c /mosquitto/config/passwd {UserName} {Password}; fi; "
+                + "chown mosquitto:mosquitto /mosquitto/data /mosquitto/config/*; chmod 0600 /mosquitto/config/passwd /mosquitto/config/server.key; "
                 + "exec mosquitto -c /mosquitto/config/mosquitto.conf";
+            var ports = stablePorts ? SelectHostPorts() : (Plain: "", Tls: "");
             await RunDockerAsync(
                 [
                     "run", "-d", "--name", broker._containerName, "--label", "tenonedge.probe=mqtt",
-                    "-p", "127.0.0.1::1883", "-p", "127.0.0.1::8883", "-v", $"{files.Path}:/probe:ro", Image, "sh", "-c", Setup,
+                    "-p", $"127.0.0.1:{ports.Plain}:1883", "-p", $"127.0.0.1:{ports.Tls}:8883", "-v", $"{files.Path}:/probe:ro", Image, "sh", "-c", Setup,
                 ],
                 cancellationToken);
             broker.Port = await broker.MappedPortAsync(1883, cancellationToken);
@@ -110,13 +118,25 @@ internal sealed class MosquittoBroker : IAsyncDisposable
 
     public Task UnpauseAsync(CancellationToken cancellationToken) => RunDockerAsync(["unpause", _containerName], cancellationToken);
 
+    /// <summary>仅用于独占测试 Broker：保留容器文件系统，停止/强杀真实进程后重新启动。</summary>
+    internal async Task RestartAsync(bool forceKill, CancellationToken cancellationToken)
+    {
+        await RunDockerAsync(forceKill ? ["kill", "--signal", "KILL", _containerName] : ["stop", "--time", "10", _containerName], cancellationToken);
+        await RunDockerAsync(["start", _containerName], cancellationToken);
+        var port = await MappedPortAsync(1883, cancellationToken);
+        var tlsPort = await MappedPortAsync(8883, cancellationToken);
+        if (port != Port || tlsPort != TlsPort)
+        { throw new InvalidOperationException("测试 Broker 重启改变了映射端口，不能把不同接收方当作原持久会话验证。"); }
+        await WaitUntilReadyAsync(cancellationToken);
+    }
+
     public Task<string> LogsAsync(CancellationToken cancellationToken) => RunDockerAsync(["logs", _containerName], cancellationToken);
 
     public async ValueTask DisposeAsync()
     {
         try
         {
-            await RunDockerAsync(["rm", "-f", _containerName], CancellationToken.None);
+            await RunDockerAsync(["rm", "-f", "-v", _containerName], CancellationToken.None);
         }
         catch (InvalidOperationException)
         {
@@ -125,6 +145,18 @@ internal sealed class MosquittoBroker : IAsyncDisposable
 
         Authority.Dispose();
         _files.Dispose();
+    }
+
+    private static (string Plain, string Tls) SelectHostPorts()
+    {
+        // Docker 的随机映射会在 restart 时换端口。独占重启测试显式映射两个空闲端口。
+        // 释放监听器到 Docker 绑定之间若被其他进程抢占，启动明确失败，不悄悄更换 Broker 身份。
+        using var plain = new TcpListener(IPAddress.Loopback, 0);
+        using var tls = new TcpListener(IPAddress.Loopback, 0);
+        plain.Start();
+        tls.Start();
+        return (((IPEndPoint)plain.LocalEndpoint).Port.ToString(CultureInfo.InvariantCulture),
+            ((IPEndPoint)tls.LocalEndpoint).Port.ToString(CultureInfo.InvariantCulture));
     }
 
     private static string? DetectUnavailableReason()

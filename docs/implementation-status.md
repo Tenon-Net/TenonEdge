@@ -1790,6 +1790,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 恢复源码后全量重建：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-last-input' --results-directory /tmp/tenonedge-mqtt-last-input --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 684 集成 = 1564 通过，0 失败、0 跳过**；日志 `/tmp/tenonedge-mqtt-last-input-full.log`，TRX Counters 已核对。限定修改测试文件的 `dotnet format --verify-no-changes --no-restore --include …` 及 `git diff --check` 通过。
 - 环境沿用 §2.68；本批不修改产品认证、订阅或会话策略，不宣称完整 AT-25 / T2-03 验收。
 
+### 2.76 T2-07 / T2-08 Broker 进程重启与未保存窗口（2026-10-09）
+
+- 扩展真实 Mosquitto 夹具：独占重启测试可启用持久化并选择固定端口，正常停止或 SIGKILL 后启动同一个容器，保留其数据卷和 Broker 身份。启动脚本允许再次启动，不依赖已从宿主临时目录删除的私钥副本。
+- 四格矩阵使用正式 MqttSession + MqttInputReceiver + SQLite 订阅日志：持久化开/关 × 正常停止/SIGKILL。在 `autosave_interval 0` 且没有显式检查点的受控条件下，只有“持久化开启 + 正常停止”恢复 SessionPresent 和离线 QoS 1 积压；其余三格会话丢失，产品重订并记录 sessionLost，上游新消息恢复接收。以实际 barrier 消息核对顺序，不靠 sleep 判断消息丢失。
+- 这是 **Broker 进程** 终止与恢复的软件证据，不是整机断电、文件系统掉电一致性或生产默认保存间隔承诺。SIGKILL 用例特意暴露尚未保存窗口的丢失，不宣称 QoS 1 等同 Broker 落盘。
+- 首轮四格均在夹具身份检查处失败：Docker 的随机端口会在重启后重分配，未到协议验收。修正为重启测试显式映射空闲端口，仍检查重启前后端口相同；若端口被抢占则启动失败，不悄悄改变接收方。日志 `/tmp/tenonedge-broker-restart-focused.log` 保留。
+- `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~BrokerRestartRestoresOnlySessionsAndBacklogThatWereCheckpointed`：4 项通过，日志 `/tmp/tenonedge-broker-restart-focused2.log`。
+- 夹具清理修正：镜像 Config.Volumes 实际声明 `/mosquitto/data` 与 `/mosquitto/log`，原先 `docker rm -f` 会遗留匿名卷；改为 `docker rm -f -v`，只清除此测试容器关联的匿名卷。旧轮次已遗留且当前无法可靠追溯归属的卷未批量删除，不能继续沿用早期“测试卷均已删除”的笼统说法，也未执行全局 volume prune。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-restart' --results-directory /tmp/tenonedge-broker-restart --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 688 集成 = 1568 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-broker-restart-full.log`。全量前后 `docker volume ls -q | sort` 的名单 diff 为空（`/tmp/tenonedge-broker-volumes-before.txt`、`-after.txt`），本轮无新增遗留卷。修改文件限定 `--include` 的 `dotnet format --verify-no-changes --no-restore` 及 `git diff --check` 通过。
+- 环境：Linux x64、SDK 10.0.401、Mosquitto 2.1.2-alpine；本批不改产品会话策略与首版部署要求。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

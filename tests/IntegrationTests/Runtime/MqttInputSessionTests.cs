@@ -758,6 +758,57 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         }
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task BrokerRestartRestoresOnlySessionsAndBacklogThatWereCheckpointed(bool persistence, bool forceKill)
+    {
+        Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
+        await using var broker = await MosquittoBroker.StartAsync(Token, persistence, stablePorts: true);
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("broker-restart");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        using var deadline = MqttProbe.Timeout(Token, TimeSpan.FromSeconds(60));
+        var original = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var input = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await input.MaintainAsync(deadline.Token)).Status); }
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (publisher)
+        {
+            await MqttProbe.PublishAsync(publisher, topic, "offline"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            await MqttProbe.DisconnectAsync(publisher, deadline.Token);
+        }
+        await broker.RestartAsync(forceKill, deadline.Token);
+        var reports = new ConcurrentQueue<string>();
+        var messages = new ConcurrentQueue<string>();
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var restored = new MqttInputReceiver([new(topic, 1, (message, _) =>
+        {
+            var value = message.ConvertPayloadToString();
+            messages.Enqueue(value);
+            if (value == "barrier") { barrier.TrySetResult(); }
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        })], TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+        await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
+        Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+        var persisted = persistence && !forceKill;
+        Assert.Equal(persisted, restored.LastSessionPresent);
+        Assert.Equal(persisted ? 0 : 1, reports.Count(reason => reason == "sessionLost"));
+        Assert.Equal(persisted ? 0 : 1, reports.Count(reason => reason == "subscribed"));
+        var (after, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (after)
+        { await MqttProbe.PublishAsync(after, topic, "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
+        await barrier.Task.WaitAsync(deadline.Token);
+        Assert.Equal(persisted ? "offline,barrier" : "barrier", string.Join(',', messages));
+        Assert.Equal(new(topic, 1, true), Assert.Single(journal.Read(identity)));
+    }
+
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
     { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
     private static string NewId() => "input-session-" + Guid.NewGuid().ToString("N");
