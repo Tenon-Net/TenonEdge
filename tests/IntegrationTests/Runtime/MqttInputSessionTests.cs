@@ -984,6 +984,63 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal($"{A}:a,{B}:b,{A}:barrier", string.Join(',', values));
     }
 
+    [Fact]
+    public async Task ReloadedReadAclAppliesToExistingSubscriptionWithoutReconnecting()
+    {
+        Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
+        await using var broker = await MosquittoBroker.StartAsync(Token, deviceAcl: true);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(Token, deadline.Token);
+        var messages = System.Threading.Channels.Channel.CreateUnbounded<string>();
+        var reports = new ConcurrentQueue<string>();
+        var receiver = new MqttInputReceiver([new("devices/#", 1, (message, _) =>
+        {
+            Assert.True(messages.Writer.TryWrite(message.ConvertPayloadToString()));
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        })], TimeProvider.System, reports.Enqueue);
+        var connector = new CountingConnector();
+        await using var gateway = new MqttSession(Settings(broker), NewId(), new Credentials(), TimeProvider.System, connector, receiver);
+        Assert.Equal(OutputSendStatus.Ack, (await gateway.MaintainAsync(operation.Token)).Status);
+        using var sensor = new MqttClientFactory().CreateMqttClient();
+        var options = new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", broker.Port)
+            .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V311).WithClientId(NewId()).WithCleanSession()
+            .WithCredentials("sensor-a", MosquittoBroker.Password).Build();
+        Assert.Equal(MqttClientConnectResultCode.Success, (await sensor.ConnectAsync(options, operation.Token)).ResultCode);
+
+        async Task<string[]> PublishPhaseAsync(string phase)
+        {
+            foreach (var (topic, payload) in new[]
+            {
+                ("devices/sensor-a/private", phase + "-private"),
+                ("devices/sensor-a/barrier", phase + "-barrier"),
+            })
+            {
+                Assert.Equal(MqttClientPublishReasonCode.Success,
+                    (await MqttProbe.PublishAsync(sensor, topic, System.Text.Encoding.UTF8.GetBytes(payload),
+                        MqttQualityOfServiceLevel.AtLeastOnce, operation.Token)).ReasonCode);
+            }
+            var received = new List<string>();
+            while (true)
+            {
+                var payload = await messages.Reader.ReadAsync(operation.Token);
+                received.Add(payload);
+                if (payload == phase + "-barrier")
+                { return received.ToArray(); }
+            }
+        }
+
+        Assert.Equal(["before-private", "before-barrier"], await PublishPhaseAsync("before"));
+        await broker.ReloadDeviceAclAsync(denyPrivateTopic: true, operation.Token);
+        // 同一发布连接上先发被禁主题，再发仍允许的屏障；不以“睡眠后没有报文”判定拒绝。
+        Assert.Equal(["denied-barrier"], await PublishPhaseAsync("denied"));
+        await broker.ReloadDeviceAclAsync(denyPrivateTopic: false, operation.Token);
+        Assert.Equal(["restored-private", "restored-barrier"], await PublishPhaseAsync("restored"));
+        Assert.True(gateway.IsConnected);
+        Assert.True(sensor.IsConnected);
+        Assert.Equal(1, connector.Connections);
+        Assert.Single(reports, reason => reason == "subscribed");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

@@ -82,7 +82,7 @@ internal sealed class MosquittoBroker : IAsyncDisposable
             await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
                 "\nacl_file /mosquitto/config/acl\n", cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(files.Path, "acl"),
-                $"user {UserName}\ntopic read devices/#\nuser sensor-a\ntopic write devices/sensor-a/#\nuser sensor-b\ntopic write devices/sensor-b/#\n", cancellationToken);
+                DeviceAcl(denyPrivateTopic: false), cancellationToken);
         }
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.crt"), certificate, cancellationToken);
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.key"), key, cancellationToken);
@@ -168,6 +168,32 @@ internal sealed class MosquittoBroker : IAsyncDisposable
         if (port != Port || tlsPort != TlsPort)
         { throw new InvalidOperationException("测试 Broker 重启改变了映射端口，不能把不同接收方当作原持久会话验证。"); }
         await WaitUntilReadyAsync(cancellationToken);
+    }
+
+    private static string DeviceAcl(bool denyPrivateTopic) =>
+        $"user {UserName}\ntopic read devices/#\n"
+        + (denyPrivateTopic ? "topic deny devices/sensor-a/private\n" : string.Empty)
+        + "user sensor-a\ntopic write devices/sensor-a/#\nuser sensor-b\ntopic write devices/sensor-b/#\n";
+
+    /// <summary>独占 ACL 测试实例：原子替换 ACL 并 SIGHUP，不重启进程或现有客户端。</summary>
+    internal async Task ReloadDeviceAclAsync(bool denyPrivateTopic, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(Path.Combine(_files.Path, "acl")))
+        { throw new InvalidOperationException("该测试 Broker 未启用设备 ACL。"); }
+        var path = Path.Combine(_files.Path, "acl.next");
+        await File.WriteAllTextAsync(path, DeviceAcl(denyPrivateTopic), cancellationToken);
+        await RunDockerAsync(["cp", path, $"{_containerName}:/mosquitto/config/acl.next"], cancellationToken);
+        await RunDockerAsync(["exec", _containerName, "sh", "-c",
+            "chown mosquitto:mosquitto /mosquitto/config/acl.next; chmod 0600 /mosquitto/config/acl.next; mv /mosquitto/config/acl.next /mosquitto/config/acl"], cancellationToken);
+        const string Reload = "Reloading config.";
+        var before = (await LogsAsync(cancellationToken)).Split(Reload, StringSplitOptions.None).Length;
+        await RunDockerAsync(["kill", "--signal", "HUP", _containerName], cancellationToken);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(StartupTimeout);
+        while ((await LogsAsync(deadline.Token)).Split(Reload, StringSplitOptions.None).Length <= before)
+        { await Task.Delay(TimeSpan.FromMilliseconds(25), deadline.Token); }
+        // 重载日志在操作开始时输出；之后完成一次 MQTT 握手，确认主循环已继续处理网络。
+        await WaitUntilReadyAsync(deadline.Token);
     }
 
     public Task<string> LogsAsync(CancellationToken cancellationToken) => RunDockerAsync(["logs", _containerName], cancellationToken);

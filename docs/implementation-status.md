@@ -1884,6 +1884,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=storage-safe' --results-directory /tmp/tenonedge-storage-safe --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 713 集成 = 1601 项测试断言通过，0 失败、0 跳过**；仍包含 §2.77 已知订阅回滚缺口刻画。TRX Counters 已核对，日志 `/tmp/tenonedge-storage-safe-full.log`；两项 C# 文件的限定格式校验与 `git diff --check` 通过。环境同 §2.84。
 - 边界：只处理协调者已捕获的三个版本存储错误通道，不声称停止兜底、发送缓存错误、种子文件 I/O 或整个系统日志均已脱敏。T2 协议完整验收与 T3 可视化目标仍未完成；Modbus 定稿及 MQTT 重订策略的确认未到达，未据此修改既有协议规则。
 
+### 2.86 T2-07 / V-09 Broker ACL 在线重载（2026-10-09）
+
+- 在独占 Mosquitto 2.1.2 测试实例中，让正式 MqttSession / MqttInputReceiver 持有 devices/# 订阅。sensor-a 同一发布连接顺序发送 private 与 barrier；依次验证初始都可读、SIGHUP 加入 private 拒绝规则后只收到 barrier、撤销拒绝规则后再次都可读。发布者仍收到成功 PUBACK，不能以此推断订阅者有读权限。
+- 整个过程产品连接数为 1、subscribed 事件只有一次，两端保持连接；验证的是已有连接/已有订阅上的 ACL 即时生效，不是重新订阅后才生效。以同一发布连接上的有序屏障判定拒绝，不用睡眠后的“尚未收到”冒充拒绝证据。
+- 测试夹具以原子替换 ACL 文件后发 SIGHUP；等待新增重载日志，再完成一个独立 MQTT 就绪握手，确认主循环已继续。只支持固定测试 ACL profile，不新增产品远程命令、部署模板或管理 API。
+- 首次编译曾引用不存在的 SubscribeCount，修正为检查现有 subscribed 事件（`/tmp/tenonedge-acl-reload.log`）；聚焦命令 `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ReloadedReadAclAppliesToExistingSubscriptionWithoutReconnecting`，1 项通过（`/tmp/tenonedge-acl-reload2.log`）。
+- 变异：临时取消拒绝规则后，同一用例因收到 denied-private 而确定性失败；编译成功、用例实际执行，日志 `/tmp/tenonedge-acl-reload-mutation.log`。变异已恢复后再进行全量回归。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=acl-reload' --results-directory /tmp/tenonedge-acl-reload --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 714 集成 = 1602 项测试断言通过，0 失败、0 跳过**；含 §2.77 已知缺口刻画。TRX Counters 已核对，日志 `/tmp/tenonedge-acl-reload-full.log`。环境同 §2.84，未增加包或镜像。首轮格式检查指出一处 if 换行，修正后两项 C# 文件限定格式检查与 `git diff --check` 通过（`/tmp/tenonedge-acl-reload-format2.log`）。
+- 边界：只证明在线订阅的读权限收回/恢复；未证明设备账号读权限全矩阵、离线积存重连时的 ACL 重检、账号吊销或过期、实物接入。§2.77 订阅回滚风险与待确认决策没有改变。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
