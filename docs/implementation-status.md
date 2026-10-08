@@ -1734,6 +1734,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - `dotnet format TenonEdge.sln --verify-no-changes --no-restore --include src/TenonEdge.Adapters/Modbus/ModbusRegisterDecoder.cs tests/UnitTests/Adapters/ModbusRegisterDecoderTests.cs src/TenonEdge.Adapters/Modbus/ModbusAddress.cs tests/UnitTests/Adapters/ModbusAddressTests.cs` 与 `git diff --check` 通过。
 - 环境同 §2.68。本项仅内部地址纯函数，尚未接入草稿 API/点表/读取块；不代表 AT-02 或 T2-02 完整通过。接下来继续连续读取块及调度，UnitId 与库选型仍不擅自定稿。
 
+### 2.70 T2-02 连续读取块规划（2026-10-09）
+
+- 新增单个 UnitId / 采集组的内部规划器，调用者只传启用点；按功能码和地址排序，仅合并相邻或重叠范围，不跨未配置地址。01/02 上限 2000 位、03/04 上限 125 寄存器，可设更小设备上限；上限以下仍不拆分一个多寄存器点，必要时两块重叠读取。
+- 输出不可变读取块和原始点位序号/块内偏移；同地址取多个位不会丢点，排序不改变原点表，最高地址 65535 的末端用 int 计算，防止溢出。
+- AT-02 / V-05 软件子场景：11 项用例覆盖四个功能码边界、地址空隙、重叠、设备上限、末地址、非法配置；200 组固定种子点表逐地址核对“无空隙、每点恰好归属一块、不拆点”；人工寄存器响应经实际解码器切片验证原字段身份和整数精度。没有网络从站或调度，不代表正式协议/实物验收通过。
+- 首轮全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-planner' --results-directory /tmp/tenonedge-modbus-planner --blame-hang-timeout 5m --blame-hang-dump-type none`。861 单元通过；678 集成通过、1 失败（`NModbusLeavesAFollowingTcpFrameForTheNextRequest` 首次读取 300ms 超时），0 跳过。失败日志 `/tmp/tenonedge-modbus-planner-full.log` 与 TRX 保留，**该轮不算通过**。
+- 对失败用例以 `dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter FullyQualifiedName~NModbusLeavesAFollowingTcpFrameForTheNextRequest` 连跑 10 次，10/10 通过（`/tmp/tenonedge-modbus-stale-repeat-1.log` 至 `-10.log`）；未稳定复现，根因尚未确认，不改库行为、不放宽超时、不宣称已修复。
+- 初次局部格式校验发现 else 换行和 using 排序，已修正。局部 `dotnet format TenonEdge.sln --verify-no-changes --no-restore --include src/TenonEdge.Adapters/Modbus/ModbusReadPlanner.cs tests/UnitTests/Adapters/ModbusReadPlannerTests.cs` 与 `git diff --check` 通过。
+- 格式检查结束后顺序重跑上述全量命令（结果前缀 `modbus-planner-repeat`，目录 `/tmp/tenonedge-modbus-planner-repeat`）：**861 单元 + 679 集成 = 1540 通过，0 失败、0 跳过**，TRX Counters 已核对。日志 `/tmp/tenonedge-modbus-planner-repeat.log`；这次通过不抹去前次偶发超时。环境沿用 §2.68。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
