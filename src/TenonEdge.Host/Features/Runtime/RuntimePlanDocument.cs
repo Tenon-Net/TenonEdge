@@ -116,6 +116,16 @@ internal sealed class RuntimePlanDocument
             { throw new RuntimePlanDocumentException("同一 HTTP 连接的基础地址与超时必须一致。"); }
             httpConnections[settings.ConnectionId] = identity;
         }
+        var mqttConnections = new Dictionary<long, string>();
+        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind == "output.mqtt"))
+        {
+            var settings = MqttOutputSettings.Parse(unit.Configuration);
+            var identity = settings.ConnectionIdentity(settings.ClientId);
+            if (httpConnections.ContainsKey(settings.ConnectionId) ||
+                mqttConnections.TryGetValue(settings.ConnectionId, out var previous) && previous != identity)
+            { throw new RuntimePlanDocumentException("同一连接的协议与 MQTT 连接参数必须一致。"); }
+            mqttConnections[settings.ConnectionId] = identity;
+        }
         return new RuntimePlanDocument(plan.Units, Serialize(plan.Units));
     }
 

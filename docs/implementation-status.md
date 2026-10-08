@@ -1179,6 +1179,120 @@ T2-05 仍在进行中，没有运行路线/页面完成证据。
 
 边界：本用例验证不同 connectionId 的隔离，不宣称同一连接存在独立发送者或独立退避。同连接多路径尚未实现；其发送者、队列与暂停必须仍以 connectionId 为单位。后续须按总设计 §8.3 核对 HTTP 指纹的基础路径语义及冻结请求路由，不能直接删除重复连接保护。T2、T3 和可视化目标仍未完成。
 
+### 2.36 T2-06：HTTP 连接身份与输出路径分离
+
+前一轮已提交 `21f052b`，本轮继续同连接多路径的前置修正。总设计 §8.3 明确 HTTP 身份指纹由 scheme、主机、端口、基础路径和非秘密账户身份/标记组成；此前实现使用完整 endpoint，且把 API Key 参数名也计入，与该基线不符。本轮改用已规范化的 BaseAddress、认证类型、用户名和账户标记。路径、查询、超时、密钥版本与 API Key 参数名不改变连接身份。没有修改连接凭证失效、目标变更守卫或发送时冻结路径检查。
+
+- 单元验证：同连接不同路径/查询拥有同一指纹；主机、协议、端口、基础路径、用户名、认证类型和账户标记变化仍改变指纹；默认端口/主机大小写规范化、密钥版本与参数名变化不改变指纹。
+- 真实适配器负向验证：即使指纹一致，向不同路径或查询的输出适配器提交旧冻结记录仍被拒绝，TCP listener 没有收到连接。既有待发/失败区记录阻止改路径/查询的 Host 测试保持通过。
+- 开发检查点兼容边界：旧 endpoint 算法产生的记录不自动重写或发送，启动核对按“目标已变化”隔离，保留原指纹和正文。真实 RuntimeHost/SQLite 用例验证此行为；既有测试数据若有积压须先核查隔离区，而非当成已发送。不新增自动迁移策略。
+- 回归先验证旧实现确实失败：`dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~FingerprintUsesConnectionIdentity`，1 项失败（预期），日志 `/tmp/tenonedge-http-identity-red.log`。修正后 HTTP settings/output/target-change 定向 35 单元 + 21 集成通过，TRX 位于 `/tmp/tenonedge-http-identity`。随后旧记录隔离用例首次因属性名错误编译失败，修正为实际 StoredDelivery.Fingerprint 后独立 1/1 通过，日志 `/tmp/tenonedge-http-identity-legacy-r2.log`。
+
+- 最终回归：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=http-identity-full' --results-directory /tmp/tenonedge-http-identity-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**685 单元 + 555 集成 = 1240 项通过**，0 失败/跳过，两份 TRX 的 Counters 已核验。环境 Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-http-identity-full.log`。三个变更 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include …` 退出 0（`/tmp/tenonedge-http-identity-format-final.log`），`git diff --check` 通过。
+
+本轮不放开重复 connectionId，不宣称同连接多路径已实现。后续仍需一连接一发送者、路径独立映射及冻结报文路由的整体验证；T3/网页尚未开始。
+
+### 2.37 T2-06：MQTT 同连接多路径、单发送者
+
+继续既有授权。本轮实现 MQTT 同一 connectionId 下多个输出定义，不为每个定义创建发送者或客户端。HTTP 仍维持同连接单输出限制，待逐请求成功判定接线后再放开；不以 MQTT 的可共享判断直接套用 HTTP。
+
+- IOutputTarget 增加默认拒绝的共享发送者判断；MQTT 只在 connectionId、规范化主机/端口/TLS、认证模式、超时、PING 间隔与实际 ClientId 全部相同时允许。判断使用与共享会话租约相同的连接参数，路径的 Topic/QoS、映射和输入引用不作为连接身份。
+- RuntimeHost 每连接只构建一个 OutputSenderUnit；准备输出仍逐路径保存，投递上界按路径数量计算，启动隔离按 connectionId 去重。同 Broker 不同连接的 ClientId 冲突保护仍在。未支持的协议与参数冲突不会因 connectionId 一样而被错误合并。
+- 分发器映射索引改为输出定义 RuntimeUnitId，不再按 connectionId 覆盖或重复键异常。各路径分别冻结 Topic/QoS、报文与独立 deliveryId；保留同 sourceMessageId。路径计数增加 `route/<inputKey>/<outputKind>/<outputKey>/<counter>`；旧 `path/<inputKey>/<connectionId>/<counter>` 保留为连接汇总，全局 activity 不重复累加。
+- Host 在快照冻结前拒绝同连接协议或 MQTT 参数冲突；目标变更检查改为接收方/Topic 集合，而非 connectionId 唯一字典。有待发或失败记录时，已存在的接收方/Topic 不得消失；可增加路径，不因多 Topic 崩溃，不因节点排序变化误判接收方变化。
+
+验证范围：
+- 真实 Mosquitto：单输入的三条路径共用一个 connectionId，其中一条必填失败；另外两条独立映射为 42/84，分别实际发布到两个 Topic、QoS 1/0，由独立订阅者收到。检查只有一个 MQTT 发送者、一次真实 TCP 连接，确认后两条记录删除，失败路径独立计数，内存预算释放。
+- RuntimeHost/SQLite：同一连接 32 条路径各产生一条不同编号/不同映射正文的待发记录；仅启动一个输入和一个 MQTT 发送者，预算不超过 64 MiB。发送连接器拒绝网络，本项不冒充 Broker 确认。33 条路径构建拒绝。
+- 参数冲突七项（主机/端口/TLS/认证/超时/PING/ClientId）冻结前拒绝；多个 Topic 的增加、排序变化、修改/删除保护与失败区保护通过。
+- 初次真实 Broker 用例编译被 xUnit2031 规则拒绝（Assert.Single 前的 Where），改用谓词重载后，`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~MappedOutputTests|FullyQualifiedName~OutputPipelineTests|FullyQualifiedName~MultipleMappedPathsUseOneSender|FullyQualifiedName~HttpTargetChangeTests' --logger 'trx;LogFilePrefix=shared-mqtt-r2' --results-directory /tmp/tenonedge-shared-mqtt-r2`：37 项通过，0 失败/跳过；日志 `/tmp/tenonedge-shared-mqtt-r2.log`。
+
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=shared-mqtt-full' --results-directory /tmp/tenonedge-shared-mqtt-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**685 单元 + 566 集成 = 1251 项通过**，0 失败/跳过，两份 TRX Counters 已核验。环境 Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-shared-mqtt-full.log`。变更 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include $(cat /tmp/tenonedge-shared-mqtt-files)` 退出 0，`git diff --check` 通过。
+
+边界：运行计划仍为明确输入→输出定义，图编译及 HTTP 同连接多路径未完成；MQTT 输入仍未实现，不能据本轮宣称 T2 全部完成或 T3 网页已可访问。
+
+### 2.38 T2-06：HTTP 同连接多路径与冻结成功约定
+
+继续既有授权。HTTP 路径只有基础地址、超时及 connectionId 一致才共用发送者/客户端；Topic/QoS 直接冻结的 MQTT 机制不够表达 HTTP 的逐路径成功判定，本轮补齐它后才放开 HTTP 同连接多输出。
+
+- OutputMessage/DeliveryDraft/StoredDelivery 增加可空 ProtocolMetadata，保存协议专属的非秘密请求约定，UTF-8 上限 16 KiB；不是 HTTP 请求头，不保存认证秘密。唯一写者的 queue.db 迁移追加版本 5、protocol_metadata 列，旧记录为 null，不重写旧正文/指纹/配额。逻辑 ByteSize 包含该字段，HTTP 格式化预约相应增加；不修改配置库版本。
+- HttpFrozenRequest 固定版本 1，冻结本条路径、可选 JSON Pointer 与标量成功值；配置时拒绝超限，发送时严格校验版本、字段、大小、路径对应及规则。每条记录读取自己的规则，与当前节点或排序第一条路径的规则无关。路径仍经过基础地址约束检查，凭证仍由当前连接解析、不会入库。未知/损坏的冻结约定在联网前拒绝。
+- 共用发送者后仍按连接 seq 顺序发送、退避/暂停/配额也按连接。不能把同连接的多个路径当作互不影响的独立目标；不同连接隔离仍由 §2.35 覆盖。
+- 旧开发检查点的兼容边界：v4→v5 保留缺少约定的旧记录。完整 endpoint 旧指纹仍按 §2.36 隔离；指纹虽匹配但缺少冻结约定时不猜测成功规则——路径不匹配则沿用目标隔离，路径匹配则暂停连接，待核查清理或迁移，不按当前默认 2xx 静默确认旧记录。未新增自动迁移/重写。
+
+验证：
+- 实际 RuntimeHost→SQLite→重启→TCP keep-alive POST：两路径同连接，分别冻结不同映射值、静态头、成功值；重启后把配置中的映射、头和成功值均改为 999/changed，待发记录仍按旧报文、旧头和旧成功值送达并删除。覆盖不同路径和相同路径两种场景（相同路径可有不同成功约定，不能仅按 URL 查当前规则）。一个发送者、同一 TCP 连接完成两次请求，停机预算归零。
+- 非法元数据五项与旧记录缺少约定均无网络请求；过大的配置成功值冻结前拒绝。SQLite 验证 UTF-8 大小边界、配额字节、写者重启保持、v4 旧记录迁移后 null/正文/字节不变。
+- 首轮 HTTP/队列定向 50 项通过（`/tmp/tenonedge-http-multipath`）；元数据存储补充定向 1 单元+3 集成通过（`/tmp/tenonedge-http-metadata-storage`）。全量 r1 单元 686 通过，集成 576/577；失败是实际进程测试仍硬编码 schema 4，观察到新 schema 5。修正精确预期为 5，未放宽断言；过程日志 `/tmp/tenonedge-http-multipath-full.log` 保留。
+
+- 最终全量 r2：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=http-multipath-full-r2' --results-directory /tmp/tenonedge-http-multipath-full-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：**686 单元 + 577 集成 = 1263 项通过**，0 失败/跳过，两份 TRX Counters 已核验。环境 Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-http-multipath-full-r2.log`。变更 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include $(cat /tmp/tenonedge-http-multipath-files)` 退出 0，日志 `/tmp/tenonedge-http-multipath-format-final.log`；`git diff --check` 通过。
+
+边界：HTTP/MQTT 现在支持明确 RuntimePlan 的同连接多路径，但图编译、MQTT 输入、Modbus 正式适配器与其余 T2 验收仍未完成，T3 网页尚未开始。本轮不是软件升级/旧队列自动迁移功能的交付。
+
+### 2.39 T2-04/05/06：通用输出的三种报文格式
+
+继续既有授权，落实总设计 §6.5 与功能需求 §5.5 的后端格式能力。HTTP/MQTT 输出配置新增可选 `payload`；省略/null 或 `{"mode":"envelope"}` 为标准信封，`{"mode":"values"}` 仅输出值对象，`{"mode":"custom","fields":[...]}` 为显式字段组装。标准信封仍是默认，纯函数测试证明默认字节不变。只发数值的采集时间/质量丢失提示仍须在 T3 页面实现。
+
+- 自定义每字段指定 target，sourceField/constant/placeholder 三选一；支持固定 JSON 标量或 null，以及 `{messageId}`、`{sourceMessageId}`、`{collectedAt}` 三个精确白名单占位符。占位符在独立属性中显式选择，常量字符串中的花括号只当字面量，不解释表达式。例：`{"mode":"custom","fields":[{"target":"reading","sourceField":"voltage"},{"target":"id","placeholder":"{messageId}"}]}`。本实现组装一个字段对象，不引入脚本、任意字符串模板或 JSON 树变换语言。
+- 字段最多 1000 个，名称最多 64 字符、不能重复；未知字段/模式、来源冲突、非法占位符、非有限数字常量与超限常量合计在配置阶段拒绝。required 来源缺失/bad 时拒绝本路径，可选缺失/bad 省略，绝不补 0 或沿用旧值。
+- 使用 Utf8JsonWriter 与既有有界缓冲，不拼 JSON 文本；所有输出仍受 256 KiB 限制。来源 FieldValue 按既有数值规则写出，UInt64 最大值与 decimal 精度不经 double；常量的原始数字字面量也不重写成 double。配置编译后的常量独立持有，不依赖临时 JsonDocument。
+- 自定义可重复引用来源或附加常量，小输入也能扩张成大输出，所以增加最小编码暂存声明。各路径串行复用该声明的最大值，不逐路径叠加 32 份编码工作区；冻结正文仍按路径累加。在途预算验证覆盖 32 条同连接自定义路径，峰值在 32—64 MiB 内并最终归零。
+- 两协议在冻结快照前编译格式、在映射后生成正文；入库后重启/改格式不重新组装旧记录，HTTP 的 Idempotency-Key 不随正文模式改变。
+
+验证过程：
+- 纯函数初轮 15 项通过，补充静态常量合计上限后 16 项通过；覆盖默认信封、大整数/decimal、JSON 注入样例、白名单占位符、必填/可选、常量 null、坏配置、重复引用扩张与 UTF-8 转义超限。`/tmp/tenonedge-payload-limits` 为 16 单元+1 集成通过。
+- 真实网络 r1 的 HTTP 两个新增模式测试失败：测试配置遗漏了 payload 属性，实际仍为默认信封；补上实际配置后 HTTP 重启重放（旧格式→新配置默认信封）与真实 Mosquitto 独立订阅共 8 项全部通过，日志 `/tmp/tenonedge-payload-wire-r2.log`、TRX `/tmp/tenonedge-payload-wire-r2`。不以只测纯函数冒充协议输出接线。
+- SQLite/运行时还覆盖同连接上必填自定义组装失败仅拒绝该路径，另一条 values 路径正常入队，路径拒绝计数落盘；两种协议的非法 payload 在快照冻结前拒绝。
+
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=payload-full' --results-directory /tmp/tenonedge-payload-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**702 单元 + 585 集成 = 1287 项通过**，0 失败/跳过，两份 TRX Counters 已核验。环境 Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-payload-full.log`。所有变更 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include $(cat /tmp/tenonedge-payload-files)` 退出 0（`/tmp/tenonedge-payload-format.log`），`git diff --check` 通过。
+
+边界：这里只交付后端报文配置与发送，未交付网页提示、编辑器、预览页面；MQTT 输入与 Modbus 正式采集等剩余 T2 项仍未完成，未进入 T3。
+
+### 2.40 T2-03 前置：输入持久接管回执
+
+继续既有授权，先补齐 MQTT QoS 1 手动确认所依赖的运行时契约，不把轮询输入的“入内存通道即返回”当作 Broker 消息已被持久接管。正式 MQTT 输入适配器尚未接线，本节不是 AT-03/25 的 Broker 确认验收。
+
+- 输入工厂可声明 UsesDurableHandoff，InputMessageWriter 增加 ProduceConfirmedAsync；仍先预约全局预算再解析，返回 Committed/Rejected/StorageFailed/Stopped。Committed 表示已提交的有效分支（其他分支可能被明确拒绝），Rejected 表示没有需要持久接管的投递；后两种绝不允许确认上游。回调 null 表示输入已分类计数的明确丢弃。
+- BudgetedInputChannel 按消息对象身份保存回执，持久结果只有分发器完成入库或明确拒绝后才交出；每条声明持久接管的消息额外保守预约 1 KiB。调用方取消不提前释放已经转交运行时的报文/预约；最终由分发或停止清理释放回执索引与预算。入队失败则立即撤销索引，普通清理读取只能返回 Stopped，不能伪造提交。
+- 声明持久接管的输入即使没有输出也启动分发器，返回明确 Rejected 并计 noDeliveryMessages；全部映射失败同样处理。配额/保护拒绝属于明确策略丢弃，返回 Rejected；有效记录已提交且另一些分支明确被拒绝时返回 Committed。
+- 写入失败对可重投输入返回 StorageFailed，单独计 `input/<inputKey>/handoffFailed` 与 input.handoffFailed 事件，不记作轮询采样丢失；轮询/模拟输入的原 storageLostSourceMessages 语义不变。运行时不代替协议适配器发 ACK 或重连。
+
+验证：
+- 单元覆盖“进入通道与取走消息都不完成回执”、取消等待后运行时仍持有预算、满通道取消撤销索引、null 明确拒绝、停止清理不伪报提交、未声明工厂不能调用回执接口。
+- 真实 SQLite/RuntimeHost：持有外部写事务时回执不成功；释放锁后只有已提交记录才返回 Committed；无输出、全部映射拒绝、配额拒绝不永久等待；一条有效分支和一条拒绝分支的源消息等待有效记录提交；SQLITE_ERROR 触发整批回滚后返回 StorageFailed，未记录轮询丢失，计数落盘、预算归零。输出连接器拒绝联网以保留记录，不冒充 MQTT 手动确认。
+- 定向 r1 单元 18 通过，集成因 CA1869（测试重复创建 JsonSerializerOptions）未编译完成；改为静态共享选项。定向 r2：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~InputHandoffTests|FullyQualifiedName~InFlightBudgetTests' --logger 'trx;LogFilePrefix=handoff-r2' --results-directory /tmp/tenonedge-handoff-r2`，18 单元+5 集成通过，0 失败/跳过。后续补入部分分支提交与未声明工厂保护用例，见最终回归。
+
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=handoff-full' --results-directory /tmp/tenonedge-handoff-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**707 单元 + 591 集成 = 1298 项通过**，0 失败/跳过，两份 TRX Counters 已核验。随后仅加强未声明工厂测试，确保生产回调真的没执行（避免两处同类型异常造成假阳性）；该用例独立复验 1/1 通过，TRX `/tmp/tenonedge-handoff-guard`。Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-handoff-full.log`。变更 C# 文件 format --verify-no-changes 退出 0（`/tmp/tenonedge-handoff-format.log`），加强后的测试文件另验格式退出 0（`/tmp/tenonedge-handoff-guard-format.log`）；`git diff --check` 通过。
+
+边界：仍待 MQTT 共享会话/订阅协调、连接代次与按到达顺序确认、存储失败断连、QoS 0 背压策略、SessionPresent 与未确认重投的真实 Broker 验证。不可据本节宣称 QoS 1 可靠输入已实现。T2/T3 及网页目标仍未完成。
+
+### 2.41 T2-03 前置：MQTT 会话解除对输出节点的依赖
+
+继续既有授权。检查正式会话发现 MqttSession 构造依赖 MqttOutputTarget，输入订阅若复用它就必须伪造一个输出节点。本轮移除该依赖，不创建第二个客户端或第二套连接管理。
+
+- 提取 MqttConnectionSettings，仅承载主机/端口/TLS、认证模式、超时、PING、ClientId 与连接 ID。MqttOutputSettings 继承这部分，仍自行校验 Topic/QoS、输入引用、映射与报文格式；不改变已有配置字段与默认值。
+- 会话直接依赖连接参数、实际 ClientId、凭证解析、时钟和出站连接器；不读取任何输出节点的 Topic、映射或正文格式。MQTT 当前凭证、指纹复核、超时取消、显式 PING、TLS 与错误分类保持原语义。
+- ConnectionIdentity 的规范化计算在冻结前的一致性检查和实际共享租约两处共用，避免两份字段清单漂移。主机大小写规范化，Topic/QoS 不进入连接身份；超时或 ClientId 改变租约身份但不改变接收方指纹。
+- 新增真实 Mosquitto 用例：只创建连接参数和会话（没有输出定义/输出工厂），发布冻结消息，由独立订阅者接收并校验正文，实际只建一次 TCP 连接。既有多路径、认证轮换、超时、断网恢复与 TLS 拒绝用例继续执行。
+- 定向：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~MqttOutputTests|FullyQualifiedName~ConflictingSharedMqttParameters' --logger 'trx;LogFilePrefix=mqtt-connection' --results-directory /tmp/tenonedge-mqtt-connection`：30 单元+22 集成通过，0 失败/跳过，日志 `/tmp/tenonedge-mqtt-connection.log`。随后补充连接身份独立于输出/主机大小写、超时身份与接收方指纹区别的单元用例。
+
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-connection-full' --results-directory /tmp/tenonedge-mqtt-connection-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**708 单元 + 592 集成 = 1300 项通过**，0 失败/跳过，两份 TRX Counters 已核验。Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-mqtt-connection-full.log`。变更 C# 文件 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include $(cat /tmp/tenonedge-mqtt-connection-files)` 退出 0（`/tmp/tenonedge-mqtt-connection-format.log`），`git diff --check` 通过。
+
+边界与下一步：这仍是正式输入的前置工程，当前会话仍只发布、CleanSession=true。本轮没有提前声称订阅、持久会话或手动确认通过。下一步的关键是每连接在全部输入启动/失败后统一启用订阅，避免第一个输入启动时就抢先连接；不能让接收回调在持有共享串行执行器时等待自己的输出确认。MQTTnet 内部接收队列无界，必须保持设计规定的回调等待上限及资源保护。
+
+### 2.42 T2-03 子项：持久 MQTT 会话与手动确认检查点
+
+维护者再次要求“整理提交一下未提交的，然后继续”。本地整理 §2.36—§2.42 的共享输出、冻结报文、输入持久接管与 MQTT 会话前置，不推送，不将本检查点视为 T2-03 或网页完成。
+
+- MQTT 输入接收器按过滤器合并订阅，使用 QoS 0/1、CleanSession=false；同一接收器在 SessionPresent=true 时保留订阅记录，丢失会话时重新订阅并报告。输出独立使用时仍为 CleanSession=true。
+- 接收回调立即关闭自动确认；仅 Committed/Rejected 可确认，StorageFailed/Stopped 或 5 秒期限失败断开当前连接代次，不在回调内重连。不匹配、超大和默认忽略 retained 为显式丢弃。MaintainAsync 只表示连接维护成功，不表示输入持久提交。
+- 真实 Mosquitto 两用例：单个 TCP 会话既订阅又发布；接管失败不确认、断连后 SessionPresent=true，Broker 以 DUP 重投，第二次成功接管后才确认。接管回调此处返回测试结果，**不是实际 SQLite 与 Broker 联合验收**。
+- 修复新增测试将 string 传给 byte[] 发布参数导致的编译错误；定向 2/2 通过。
+- Linux x64 / .NET SDK 10.0.401，全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=checkpoint' --results-directory /tmp/tenonedge-checkpoint-1302 --blame-hang-timeout 5m --blame-hang-dump-type none`。**708 单元 + 594 集成 = 1302 通过，0 失败/跳过**；两份 TRX Counters 已独立核对，日志 `/tmp/tenonedge-checkpoint-1302.log`。
+- 首次格式验证发现新增接收器/会话的空白格式问题，使用 dotnet format whitespace 仅整理变更 C# 文件；最终验证见 `/tmp/tenonedge-checkpoint-format-final.log`。
+
+剩余：确认期限/取消的确定性覆盖、SQLite 联合接管、Host 输入工厂与 JSON 解码、每连接全部输入启动/失败后的订阅屏障、跨进程订阅增删协调、MQTTnet 内部无界接收队列的资源限制。当前接收器仅保存进程内已订阅集合，尚未接入 Host，不声称正式输入完成。继续 T2-03，不提前创建 web/。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -8,23 +8,34 @@ using TenonEdge.Abstractions.Contracts;
 namespace TenonEdge.Adapters.Mqtt;
 
 /// <summary>由运行时共享连接管理拥有客户端，经借用的串行执行器调用，无回调重连。所有外部 I/O 有显式期限；异常文本不向运行事件泄露秘密。</summary>
-internal sealed class MqttSession(MqttOutputTarget target) : IOutputAdapter
+internal sealed class MqttSession(MqttConnectionSettings settings, string clientId, ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector, MqttInputReceiver? input = null) : IOutputAdapter
 {
     private IMqttClient? _client;
     private string? _connectedVersion;
     private long _lastPing;
+    private CancellationTokenSource? _receiveCancellation;
+    private int _inputFailed;
+    private readonly Lock _receiveLock = new();
+    internal bool IsConnected => Volatile.Read(ref _inputFailed) == 0 && _client?.IsConnected == true;
 
-    public async Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken)
+    public Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken) => ExecuteAsync(message, cancellationToken);
+
+    /// <summary>输入拥有者经共享执行器定期调用；连接/订阅/保活有调用方提供的总期限，不从回调重连。</summary>
+    public Task<OutputSendResult> MaintainAsync(CancellationToken cancellationToken) => ExecuteAsync(null, cancellationToken);
+
+    private async Task<OutputSendResult> ExecuteAsync(OutputMessage? message, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var credential = target.Credential();
-        if (target.Settings.UsePassword && credential is null)
+        if (Volatile.Read(ref _inputFailed) != 0)
+        { Reset(); }
+        var credential = Credential();
+        if (settings.UsePassword && credential is null)
         {
             Reset();
             return new(OutputSendStatus.SuspendTarget, "MQTT 凭证未设置、已作废或无法解密。");
         }
 
-        if (!string.Equals(message.Fingerprint, target.Fingerprint(credential), StringComparison.Ordinal))
+        if (message is not null && !string.Equals(message.Fingerprint, settings.Fingerprint(credential?.Username, credential?.AccountMarker), StringComparison.Ordinal))
         {
             Reset();
             return new(OutputSendStatus.SuspendTarget, "接收方身份已变化，已停止发送旧记录。", FingerprintMismatch: true);
@@ -38,23 +49,43 @@ internal sealed class MqttSession(MqttOutputTarget target) : IOutputAdapter
                 Reset();
             }
 
-            _client ??= new MqttClientFactory().CreateMqttClient();
+            if (_client is null)
+            {
+                var client = new MqttClientFactory().CreateMqttClient();
+                _client = client;
+                if (input is not null)
+                {
+                    var generation = new CancellationTokenSource();
+                    lock (_receiveLock)
+                    { _receiveCancellation = generation; }
+                    var receiveToken = generation.Token;
+                    client.ApplicationMessageReceivedAsync += args => input.ReceiveAsync(args, () =>
+                    {
+                        lock (_receiveLock)
+                        { if (ReferenceEquals(_receiveCancellation, generation)) { Volatile.Write(ref _inputFailed, 1); } }
+                        try
+                        { generation.Cancel(); }
+                        catch (ObjectDisposedException) { }
+                        client.Dispose();
+                    }, receiveToken);
+                }
+            }
             if (!_client.IsConnected)
             {
                 var builder = new MqttClientOptionsBuilder()
-                    .WithTcpServer(target.Settings.Host, target.Settings.Port)
-                    .WithStreamProvider(new MqttStreamProvider(target.Connector))
+                    .WithTcpServer(settings.Host, settings.Port)
+                    .WithStreamProvider(new MqttStreamProvider(connector))
                     .WithProtocolVersion(MqttProtocolVersion.V311)
-                    .WithCleanSession(true)
-                    .WithClientId(target.ClientId)
-                    .WithKeepAlivePeriod(TimeSpan.FromMilliseconds(target.Settings.PingIntervalMs))
-                    .WithTimeout(TimeSpan.FromMilliseconds(target.Settings.TimeoutMs));
+                    .WithCleanSession(input is null)
+                    .WithClientId(clientId)
+                    .WithKeepAlivePeriod(TimeSpan.FromMilliseconds(settings.PingIntervalMs))
+                    .WithTimeout(TimeSpan.FromMilliseconds(settings.TimeoutMs));
                 if (credential is not null)
                 {
                     builder.WithCredentials(credential.Username, credential.Password);
                 }
 
-                if (target.Settings.Tls)
+                if (settings.Tls)
                 {
                     builder.WithTlsOptions(tls => tls.UseTls());
                 }
@@ -66,23 +97,27 @@ internal sealed class MqttSession(MqttOutputTarget target) : IOutputAdapter
                     return new(connected.ResultCode == MqttClientConnectResultCode.ServerUnavailable ? OutputSendStatus.Retry : OutputSendStatus.SuspendTarget, "MQTT Broker 拒绝连接，请检查身份或协议配置。");
                 }
 
+                if (input is not null)
+                { await input.SubscribeAsync(_client, connected.IsSessionPresent, cancellationToken); }
                 _connectedVersion = version;
-                _lastPing = target.Time.GetTimestamp();
+                _lastPing = time.GetTimestamp();
             }
 
             // 持续发送会抑制 MQTTnet 的保活；QoS 0 同样按固定间隔显式确认连接仍可用。
-            if (target.Time.GetElapsedTime(_lastPing) >= TimeSpan.FromMilliseconds(target.Settings.PingIntervalMs))
+            if (time.GetElapsedTime(_lastPing) >= TimeSpan.FromMilliseconds(settings.PingIntervalMs))
             {
                 await _client.PingAsync(cancellationToken);
-                _lastPing = target.Time.GetTimestamp();
+                _lastPing = time.GetTimestamp();
             }
 
-            if ((target.Credential()?.Version ?? "anonymous") != version)
+            if ((Credential()?.Version ?? "anonymous") != version)
             {
                 Reset();
                 return new(OutputSendStatus.Retry, "凭证已变化，使用当前凭证重新连接后发送。");
             }
 
+            if (message is null)
+            { return new(OutputSendStatus.Ack); }
             var result = await _client.PublishAsync(new MqttApplicationMessageBuilder()
                 .WithTopic(message.Address).WithPayload(message.Payload.ToArray())
                 .WithQualityOfServiceLevel(message.QualityOfService == 1 ? MqttQualityOfServiceLevel.AtLeastOnce : MqttQualityOfServiceLevel.AtMostOnce)
@@ -96,13 +131,14 @@ internal sealed class MqttSession(MqttOutputTarget target) : IOutputAdapter
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            var inputFailure = Volatile.Read(ref _inputFailed) != 0;
             Reset();
             if (HasAccessDenial(exception))
             {
                 return new(OutputSendStatus.SuspendTarget, "目标被出站访问规则拦截，请联系管理员。");
             }
             var suspend = HasAuthenticationFailure(exception);
-            var transient = exception is MqttCommunicationException or OperationCanceledException or TimeoutException
+            var transient = inputFailure || exception is MqttCommunicationException or OperationCanceledException or TimeoutException
                 or IOException or System.Net.Sockets.SocketException;
             return new(suspend ? OutputSendStatus.SuspendTarget : OutputSendStatus.Retry,
                 suspend ? "MQTT 认证或 TLS 验证失败，目标暂停。"
@@ -110,6 +146,8 @@ internal sealed class MqttSession(MqttOutputTarget target) : IOutputAdapter
                 CountsTowardPoison: !suspend && !transient);
         }
     }
+
+    private MqttCredential? Credential() => settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) : null;
 
     private static bool HasAccessDenial(Exception exception) =>
         exception is OutboundAccessDeniedException || exception.InnerException is { } inner && HasAccessDenial(inner);
@@ -119,6 +157,18 @@ internal sealed class MqttSession(MqttOutputTarget target) : IOutputAdapter
 
     private void Reset()
     {
+        CancellationTokenSource? generation;
+        lock (_receiveLock)
+        {
+            generation = _receiveCancellation;
+            _receiveCancellation = null;
+            Volatile.Write(ref _inputFailed, 0);
+        }
+        if (generation is not null)
+        {
+            generation.Cancel();
+            generation.Dispose();
+        }
         _client?.Dispose();
         _client = null;
         _connectedVersion = null;

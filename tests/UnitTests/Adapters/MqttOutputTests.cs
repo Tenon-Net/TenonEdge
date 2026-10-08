@@ -8,6 +8,28 @@ namespace TenonEdge.UnitTests.Adapters;
 
 public sealed class MqttOutputTests
 {
+    [Fact]
+    public void ConnectionIdentityIsIndependentOfOutputAndCanonicalAcrossHostCasing()
+    {
+        var output = MqttOutputSettings.Parse(Configuration("{}"));
+        var connection = new MqttConnectionSettings
+        {
+            ConnectionId = output.ConnectionId,
+            Host = output.Host.ToUpperInvariant(),
+            Port = output.Port,
+            Tls = output.Tls,
+            UsePassword = output.UsePassword,
+            TimeoutMs = output.TimeoutMs,
+            PingIntervalMs = output.PingIntervalMs,
+        };
+        Assert.Equal(output.ConnectionIdentity("client"), connection.ConnectionIdentity("client"));
+        Assert.Equal(output.Fingerprint("user", "account"), connection.Fingerprint("user", "account"));
+        Assert.NotEqual(connection.ConnectionIdentity("client"), (connection with { TimeoutMs = connection.TimeoutMs + 1 }).ConnectionIdentity("client"));
+        Assert.Equal(connection.Fingerprint("user", "account"), (connection with { TimeoutMs = connection.TimeoutMs + 1 }).Fingerprint("user", "account"));
+        Assert.NotEqual(connection.ConnectionIdentity("client"), connection.ConnectionIdentity("other-client"));
+        Assert.Equal(output.ConnectionIdentity("client"), (output with { Topic = "other", Qos = 0 }).ConnectionIdentity("client"));
+    }
+
     [Theory]
     [InlineData("{\"topic\":null}")]
     [InlineData("{\"topic\":\"out/+\"}")]
@@ -118,9 +140,8 @@ public sealed class MqttOutputTests
     {
         var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
         var connections = new TenonEdge.Runtime.Connections.SharedConnections();
-        var target = new MqttOutputFactory(new Credentials(), time, new NoNetwork(), connections)
-            .Build(Plan(Configuration("{}")));
-        await using var owner = connections.Acquire(1, "mqtt", "test", () => new MqttSession(Assert.IsType<MqttOutputTarget>(target)));
+        var settings = MqttOutputSettings.Parse(Configuration("{}"));
+        await using var owner = connections.Acquire(1, "mqtt", "test", () => new MqttSession(settings, "deadline-test", new Credentials(), time, new NoNetwork()));
         var borrower = connections.Acquire<MqttSession>(1, "mqtt", "test", () => throw new InvalidOperationException("must share"));
         await using var adapter = new MqttOutputAdapter(borrower, time, 1000);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -8,6 +8,8 @@ namespace TenonEdge.Adapters.Mqtt;
 internal sealed class MqttOutputTarget(
     RuntimeUnitId id, MqttOutputSettings settings, ICredentialResolver credentials, TimeProvider time, string defaultClientPrefix, IOutboundConnector connector, ISharedConnections connections) : IOutputTarget
 {
+    private readonly OutputPayloadFormat _payload = OutputPayloadFormat.Parse(settings.Payload);
+    public long MinimumSerializationReservationBytes => _payload.MinimumSerializationReservationBytes;
     public RuntimeUnitId Id => id;
     public long ConnectionId => settings.ConnectionId;
     public IReadOnlyList<string> Inputs { get; } = Array.AsReadOnly(settings.Inputs);
@@ -22,28 +24,21 @@ internal sealed class MqttOutputTarget(
             return settings.Fingerprint(identity?.Username, identity?.AccountMarker);
         }
     }
-    internal MqttOutputSettings Settings => settings;
-    internal TimeProvider Time => time;
-    internal IOutboundConnector Connector => connector;
     private MqttCredentialIdentity? Identity() => settings.UsePassword ? credentials.DescribeMqtt(ConnectionId) : null;
-    internal MqttCredential? Credential() => settings.UsePassword ? credentials.ResolveMqtt(ConnectionId, Recipient) : null;
-    internal string Fingerprint(MqttCredential? credential) => settings.Fingerprint(credential?.Username, credential?.AccountMarker);
 
     public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
     {
         // 暂停期间仍按当前非秘密账户身份入队；只有 SendAsync 才取得接收方绑定的秘密。
         var identity = Identity();
-        return new OutputMessage(StandardEnvelope.Serialize(message, deliveryId), settings.TopicFor(message.DeviceKey), settings.Qos,
+        return new OutputMessage(_payload.Serialize(message, deliveryId), settings.TopicFor(message.DeviceKey), settings.Qos,
             settings.Fingerprint(identity?.Username, identity?.AccountMarker), $"{Recipient}; authentication={(settings.UsePassword ? "password" : "anonymous")}; account={JsonSerializer.Serialize(identity?.Username ?? string.Empty)}");
     }
 
-    public IOutputAdapter CreateAdapter()
-    {
-        var identity = JsonSerializer.Serialize(new
-        {
-            settings.Host, settings.Port, settings.Tls, settings.UsePassword,
-            settings.TimeoutMs, settings.PingIntervalMs, ClientId,
-        });
-        return new MqttOutputAdapter(connections.Acquire(ConnectionId, "mqtt", identity, () => new MqttSession(this)), time, settings.TimeoutMs);
-    }
+    private string ConnectionSettings => settings.ConnectionIdentity(ClientId);
+
+    public bool CanShareSenderWith(IOutputTarget other) => other is MqttOutputTarget mqtt &&
+        ConnectionId == mqtt.ConnectionId && ConnectionSettings == mqtt.ConnectionSettings;
+
+    public IOutputAdapter CreateAdapter() => new MqttOutputAdapter(
+        connections.Acquire(ConnectionId, "mqtt", ConnectionSettings, () => new MqttSession(settings, ClientId, credentials, time, connector)), time, settings.TimeoutMs);
 }

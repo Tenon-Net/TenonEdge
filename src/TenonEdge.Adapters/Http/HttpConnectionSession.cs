@@ -28,8 +28,21 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
             if (message.Fingerprint != settings.Fingerprint(identity))
             { return new(OutputSendStatus.SuspendTarget, "HTTP 接收方身份已变化，旧记录未发送。", FingerprintMismatch: true); }
             var endpoint = HttpOutputSettings.ResolvePath(settings.BaseUri, message.Address);
-            if (endpoint != settings.Endpoint)
-            { return new(OutputSendStatus.SuspendTarget, "HTTP 冻结路径与当前目标不一致，旧记录未发送。", FingerprintMismatch: true); }
+            HttpSuccessRule? successRule;
+            if (message.ProtocolMetadata is { } metadata)
+            {
+                try
+                { successRule = HttpFrozenRequest.Read(metadata, message.Address); }
+                catch (Exception exception) when (exception is ArgumentException or JsonException)
+                { return new(OutputSendStatus.RejectMessage, "HTTP 冻结请求约定无效，记录未发送。"); }
+            }
+            else
+            {
+                // 旧记录没有逐请求约定，不能猜测另一条路径的成功规则。
+                if (endpoint != settings.Endpoint)
+                { return new(OutputSendStatus.SuspendTarget, "HTTP 旧记录缺少冻结请求约定且路径不匹配，未发送。", FingerprintMismatch: true); }
+                return new(OutputSendStatus.SuspendTarget, "HTTP 旧记录缺少冻结成功约定，须核查并清理或迁移，未发送。");
+            }
             if (message.Payload.IsEmpty || message.Payload.Length > StandardEnvelope.MaximumPayloadBytes || message.QualityOfService is not null)
             { return new(OutputSendStatus.RejectMessage, "HTTP 冻结报文无效。"); }
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
@@ -51,7 +64,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
                 { return new(OutputSendStatus.SuspendTarget, "HTTP 凭证格式无效或与固定请求参数冲突。"); }
             }
             using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var evaluator = new HttpOutputResponse(settings.SuccessPath is { } path ? new HttpSuccessRule(path, settings.SuccessValue) : null);
+            var evaluator = new HttpOutputResponse(successRule);
             return await evaluator.EvaluateAsync(response, time.GetUtcNow(), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }

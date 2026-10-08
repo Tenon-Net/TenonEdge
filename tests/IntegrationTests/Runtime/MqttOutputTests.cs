@@ -20,9 +20,11 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
 {
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    public async Task CommittedSimulatorInputReachesAnIndependentSubscriberAndIsDeletedAfterConfirmation(int qos)
+    [InlineData(0, "envelope")]
+    [InlineData(1, "envelope")]
+    [InlineData(1, "values")]
+    [InlineData(1, "custom")]
+    public async Task CommittedSimulatorInputReachesAnIndependentSubscriberAndIsDeletedAfterConfirmation(int qos, string mode)
     {
         var broker = fixture.Require();
         var topic = MqttProbe.NewTopic("production-pipeline");
@@ -35,21 +37,112 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
             var credentials = new Credentials();
             await using var runtime = RuntimeTesting.CreateRuntime([new SimulatorInputFactory()], directory.Path,
                 outputs: [new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections())]);
-            await using var plan = runtime.Prepare(OutputPipelineTests.Plan(Simulator(), Plan(broker.Port, topic, qos)));
+            await using var plan = runtime.Prepare(OutputPipelineTests.Plan(Simulator(), Plan(broker.Port, topic, qos, payloadMode: mode)));
             Assert.Empty(plan.Failures);
             runtime.StartCore();
             await runtime.ActivateAsync(plan);
             var wire = await received.NextAsync(Token);
             var payload = wire.ApplicationMessage.Payload.ToArray();
             using var json = JsonDocument.Parse(payload);
-            Assert.Equal("meter", json.RootElement.GetProperty("deviceKey").GetString());
-            Assert.Equal(42, json.RootElement.GetProperty("values").GetProperty("value").GetInt64());
-            Assert.Equal(1, json.RootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal(42, (mode == "envelope" ? json.RootElement.GetProperty("values") : json.RootElement).GetProperty("value").GetInt64());
+            if (mode == "envelope")
+            {
+                Assert.Equal("meter", json.RootElement.GetProperty("deviceKey").GetString());
+                Assert.Equal(1, json.RootElement.GetProperty("schemaVersion").GetInt32());
+            }
+            else
+            {
+                Assert.False(json.RootElement.TryGetProperty("schemaVersion", out _));
+                if (mode == "custom")
+                { Assert.NotEqual(Guid.Empty, json.RootElement.GetProperty("id").GetGuid()); }
+            }
             Assert.Equal(topic, wire.ApplicationMessage.Topic);
             Assert.False(wire.ApplicationMessage.Retain);
             await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords >= 1);
             Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
             Assert.True(runtime.Deliveries.GetStatus().CommittedRecords >= 1);
+        }
+    }
+
+    [Fact]
+    public async Task SharedSessionCanPublishUsingOnlyConnectionSettings()
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("connection-only");
+        var (subscriber, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewClientId()), Token);
+        using (subscriber)
+        {
+            var received = ReceivedMessages.Attach(subscriber);
+            await MqttProbe.SubscribeAsync(subscriber, topic, Token);
+            var settings = new MqttConnectionSettings { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
+            var credentials = new Credentials();
+            var connector = new CountingConnector();
+            await using var session = new MqttSession(settings, NewClientId(), credentials, TimeProvider.System, connector);
+            var fingerprint = settings.Fingerprint(credentials.Value.Username, credentials.Value.AccountMarker);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(10));
+            Assert.Equal(OutputSendStatus.Ack, (await session.SendAsync(new OutputMessage("{\"value\":42}"u8.ToArray(), topic, 1, fingerprint, "test"), deadline.Token)).Status);
+            var message = await received.NextAsync(Token);
+            Assert.Equal(topic, message.ApplicationMessage.Topic);
+            using var body = JsonDocument.Parse(message.ApplicationMessage.Payload.ToArray());
+            Assert.Equal(42, body.RootElement.GetProperty("value").GetInt64());
+            Assert.Equal(1, connector.Connections);
+        }
+    }
+
+    [Fact]
+    public async Task MultipleMappedPathsUseOneSenderAndOneRealBrokerConnection()
+    {
+        var broker = fixture.Require();
+        var prefix = MqttProbe.NewTopic("shared-paths");
+        var (subscriber, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewClientId()), Token);
+        using (subscriber)
+        using (var directory = TemporaryDirectory.Create())
+        {
+            var received = ReceivedMessages.Attach(subscriber);
+            await MqttProbe.SubscribeAsync(subscriber, prefix + "/#", Token);
+            var input = new OneShotInputFactory();
+            var connector = new CountingConnector();
+            await using var runtime = RuntimeTesting.CreateRuntime([input], directory.Path,
+                outputs: [new MqttOutputFactory(new Credentials(), TimeProvider.System, connector, new TenonEdge.Runtime.Connections.SharedConnections())]);
+            RuntimeUnitPlan Path(int index, bool invalid = false) => new(RuntimeUnitId.Create("output.mqtt", "path-" + index),
+                JsonSerializer.SerializeToElement(new
+                {
+                    connectionId = 1,
+                    host = "127.0.0.1",
+                    port = broker.Port,
+                    usePassword = true,
+                    topic = prefix + "/" + index,
+                    qos = index % 2,
+                    inputs = InputReferences,
+                    mapping = new[] { new { target = "mapped", type = "integer", sourceField = invalid ? "absent" : "value", scale = index, required = true } },
+                }));
+            await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(), Path(1), Path(2), Path(3, invalid: true)));
+            Assert.Empty(plan.Failures);
+            runtime.StartCore();
+            await runtime.ActivateAsync(plan);
+            var messages = new[] { await received.NextAsync(Token), await received.NextAsync(Token) };
+            var sources = new List<string?>();
+            foreach (var wire in messages)
+            {
+                using var json = JsonDocument.Parse(wire.ApplicationMessage.Payload.ToArray());
+                var index = wire.ApplicationMessage.Topic == prefix + "/1" ? 1 : 2;
+                Assert.Equal(prefix + "/" + index, wire.ApplicationMessage.Topic);
+                Assert.Equal(index % 2, (int)wire.ApplicationMessage.QualityOfServiceLevel);
+                Assert.Equal(42 * index, json.RootElement.GetProperty("values").GetProperty("mapped").GetInt64());
+                sources.Add(json.RootElement.GetProperty("sourceMessageId").GetString());
+            }
+            Assert.Equal(2, messages.Select(message => message.ApplicationMessage.Topic).Distinct().Count());
+            Assert.Single(sources.Distinct());
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords == 2);
+            Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "output.mqtt");
+            await runtime.StopAsync(Token);
+            Assert.Equal(1, connector.Connections);
+            Assert.Equal(1, input.Started);
+            Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+            var counters = runtime.Deliveries.GetPersistentCounters();
+            Assert.Equal(1, counters["route/meter/sim/output.mqtt/path-3/requiredFieldFailures"]);
+            Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
         }
     }
 
@@ -340,8 +433,23 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
     private static readonly string[] InputReferences = ["meter/sim"];
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static string NewClientId() => "t1-output-" + Guid.NewGuid().ToString("N");
-    private static RuntimeUnitPlan Plan(int port, string topic, int qos = 1, bool tls = false, bool useDefaultClientId = false) => new(RuntimeUnitId.Create("output.mqtt", "broker"),
-        JsonSerializer.SerializeToElement(new { connectionId = 1, host = "127.0.0.1", port, tls, usePassword = true, topic, qos, timeoutMs = 700, pingIntervalMs = 1000, clientId = useDefaultClientId ? null : NewClientId(), inputs = InputReferences }));
+    private static RuntimeUnitPlan Plan(int port, string topic, int qos = 1, bool tls = false, bool useDefaultClientId = false, string? payloadMode = null) => new(RuntimeUnitId.Create("output.mqtt", "broker"),
+        JsonSerializer.SerializeToElement(new
+        {
+            connectionId = 1,
+            host = "127.0.0.1",
+            port,
+            tls,
+            usePassword = true,
+            topic,
+            qos,
+            timeoutMs = 700,
+            pingIntervalMs = 1000,
+            clientId = useDefaultClientId ? null : NewClientId(),
+            inputs = InputReferences,
+            payload = JsonSerializer.Deserialize<JsonElement>(payloadMode is null or "envelope" ? "null" : payloadMode == "values" ? """{"mode":"values"}""" :
+                """{"mode":"custom","fields":[{"target":"value","sourceField":"value"},{"target":"id","placeholder":"{messageId}"}]}""")
+        }));
     private static EdgeMessage Message()
     {
         var at = DateTimeOffset.UtcNow;

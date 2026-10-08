@@ -158,17 +158,20 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var target = factory.Build(unit);
                 if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
                 { throw new ArgumentException("输出格式化预算无效或超过全局在途预算。"); }
+                if (target.MinimumSerializationReservationBytes < 0 || target.MinimumSerializationReservationBytes > _options.InFlightBytes)
+                { throw new ArgumentException("输出编码暂存预算无效或超过全局在途预算。"); }
                 if (target.Id != unit.Id)
                 {
                     throw new ArgumentException("输出工厂标识与计划不一致。");
                 }
 
-                if (outputs.Any(output => output.Target.ConnectionId == target.ConnectionId))
+                var shared = outputs.FirstOrDefault(output => output.Target.ConnectionId == target.ConnectionId);
+                if (shared is not null && !shared.Target.CanShareSenderWith(target))
                 {
-                    throw new ArgumentException("同一连接不能定义多个输出单元。");
+                    throw new ArgumentException("同一连接的输出参数不一致或协议尚不支持共享发送者。");
                 }
 
-                if (target.ClientId is not null && outputs.Any(output => output.Target.Recipient == target.Recipient && output.Target.ClientId == target.ClientId))
+                if (target.ClientId is not null && outputs.Any(output => output.Target.ConnectionId != target.ConnectionId && output.Target.Recipient == target.Recipient && output.Target.ClientId == target.ClientId))
                 {
                     throw new ArgumentException("同一 Broker 的 ClientId 冲突。");
                 }
@@ -190,7 +193,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
                     new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
                 outputs.Add(new PreparedOutput(target, mapping));
-                units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null));
+                if (shared is null)
+                { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null)); }
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
@@ -244,8 +248,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
         if (_coreStarted)
         {
-            var reconciled = await _deliveries.ReconcileAsync(prepared.Outputs.ToDictionary(output => output.Target.ConnectionId,
-                output => output.Target.CurrentFingerprint), quarantineMissing: prepared.Failures.All(failure => !failure.Id.Kind.StartsWith("output.", StringComparison.Ordinal)), CancellationToken.None);
+            var reconciled = await _deliveries.ReconcileAsync(prepared.Outputs.GroupBy(output => output.Target.ConnectionId).ToDictionary(group => group.Key,
+                group => group.First().Target.CurrentFingerprint), quarantineMissing: prepared.Failures.All(failure => !failure.Id.Kind.StartsWith("output.", StringComparison.Ordinal)), CancellationToken.None);
             if (!reconciled.Committed)
             {
                 foreach (var unit in prepared.Units)
@@ -268,6 +272,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
                 .Sum(output => output.Target.FormattingReservationBytes);
             channel.ReserveSerializationWorkspace = paths > 0;
+            channel.MinimumSerializationReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                .Select(output => output.Target.MinimumSerializationReservationBytes).DefaultIfEmpty().Max();
             channel.HasFieldMapping = prepared.Outputs.Any(output => output.Mapping is not null && output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
         }
 
@@ -298,11 +304,11 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 }
 
                 var targets = prepared.Outputs.Select(output => output.Target).Where(target => target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal)).ToArray();
-                if (targets.Length > 0)
+                if (targets.Length > 0 || ((BudgetedInputChannel)unit.Channel).UsesDurableHandoff)
                 {
                     var state = new InputDispatcherState();
                     var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
-                        .ToDictionary(output => output.Target.ConnectionId, output => output.Mapping!);
+                        .ToDictionary(output => output.Target.Id, output => output.Mapping!);
                     IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
                     _dispatchers.Add((unit.Channel, state));
                     _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
@@ -388,7 +394,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             return Failed(id, "输入单元的业务标识应为 deviceKey/inputKey 两段。");
         }
 
-        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight);
+        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight) { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
         var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer);
         IRuntimeUnit Build()

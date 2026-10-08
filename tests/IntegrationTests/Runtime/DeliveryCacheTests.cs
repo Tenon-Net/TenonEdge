@@ -29,7 +29,7 @@ public sealed class DeliveryCacheTests
         Assert.True(Version.Parse(info.SqliteVersion) >= new Version(3, 51, 3), info.SqliteVersion);
         Assert.Equal("wal", info.JournalMode);
         Assert.Equal(2, info.Synchronous);
-        Assert.Equal(4, info.SchemaVersion);
+        Assert.Equal(5, info.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, info.ConfigStoreId);
         if (!OperatingSystem.IsWindows())
         {
@@ -37,7 +37,7 @@ public sealed class DeliveryCacheTests
         }
 
         using var connection = Open(info.FilePath);
-        Assert.Equal(4L, Scalar(connection, "PRAGMA user_version;"));
+        Assert.Equal(5L, Scalar(connection, "PRAGMA user_version;"));
         Assert.Equal(RuntimeTesting.ConfigStoreId, Scalar(connection, "SELECT config_store_id FROM queue_meta;"));
     }
 
@@ -68,6 +68,48 @@ public sealed class DeliveryCacheTests
         Assert.Equal(DeliveryState.Pending, stored.State);
         Assert.Equal(0, stored.FailureCount);
         Assert.InRange(stored.CreatedAt, before, DateTimeOffset.UtcNow.AddSeconds(1));
+    }
+
+    [Fact]
+    public async Task ProtocolMetadataIsAccountedAndSurvivesWriterRestart()
+    {
+        using var directory = TemporaryDirectory.Create();
+        const string metadata = "{\"version\":1,\"path\":\"events\",\"successValue\":\"通过\"}";
+        var draft = Draft(protocolMetadata: metadata);
+        Assert.Equal(Draft().ByteSize + Encoding.UTF8.GetByteCount(metadata), draft.ByteSize);
+        await using (var first = WriterHarness.Start(directory.Path))
+        { Assert.True((await first.EnqueueAsync([draft])).Committed); }
+        await using var second = WriterHarness.Start(directory.Path);
+        await second.EnqueueAsync([Draft(connectionId: 2)]);
+        var stored = Assert.Single(second.Cache.ReadPending(1, 0, 10));
+        Assert.Equal(metadata, stored.ProtocolMetadata);
+        Assert.Equal(draft.ByteSize, stored.ByteSize);
+    }
+
+    [Fact]
+    public async Task VersionFourMigrationPreservesLegacyRecordWithoutInventingProtocolMetadata()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var draft = Draft();
+        await using (var first = WriterHarness.Start(directory.Path))
+        { Assert.True((await first.EnqueueAsync([draft])).Committed); }
+        using (var connection = Open(Path.Combine(directory.Path, "queue.db")))
+        { Execute(connection, "ALTER TABLE delivery DROP COLUMN protocol_metadata; PRAGMA user_version=4;"); }
+        await using var second = WriterHarness.Start(directory.Path);
+        await second.EnqueueAsync([Draft(connectionId: 2)]);
+        var stored = Assert.Single(second.Cache.ReadPending(1, 0, 10));
+        Assert.Null(stored.ProtocolMetadata);
+        Assert.Equal(draft.ByteSize, stored.ByteSize);
+        Assert.Equal(draft.Payload.ToArray(), stored.Payload.ToArray());
+        Assert.Equal(5, second.Cache.GetStatus().Store!.SchemaVersion);
+    }
+
+    [Fact]
+    public void ProtocolMetadataLimitIsMeasuredInUtf8Bytes()
+    {
+        var maximum = new string('é', 8192);
+        Assert.Equal(maximum, Draft(protocolMetadata: maximum).ProtocolMetadata);
+        Assert.Throws<ArgumentException>(() => Draft(protocolMetadata: maximum + "x"));
     }
 
     [Fact]
@@ -418,7 +460,8 @@ public sealed class DeliveryCacheTests
         string payload = """{"schemaVersion":1}""",
         IReadOnlyDictionary<string, string>? headers = null,
         long? routeId = null,
-        string? nodeLabel = null) =>
+        string? nodeLabel = null,
+        string? protocolMetadata = null) =>
         new(
             Guid.CreateVersion7(),
             connectionId,
@@ -432,7 +475,8 @@ public sealed class DeliveryCacheTests
             qualityOfService: 1,
             headers,
             routeId,
-            nodeLabel);
+            nodeLabel,
+            protocolMetadata);
 
     private static List<StoredDelivery> ReadAll(DeliveryCache cache, long connectionId)
     {

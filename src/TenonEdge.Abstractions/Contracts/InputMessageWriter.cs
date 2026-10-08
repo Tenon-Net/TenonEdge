@@ -14,9 +14,19 @@ public abstract class InputMessageWriter : ChannelWriter<EdgeMessage>
     public abstract ValueTask ProduceAsync(long maximumWorkingBytes, long maximumMessageBytes,
         Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default);
 
+    /// <summary>面向可重投输入：等待持久接管或明确拒绝，不以进入内存通道为成功。
+    /// 工厂须声明 UsesDurableHandoff。取消只结束调用方等待，已入通道的数据仍由运行时持有；取消或失败不能确认上游。
+    /// 回调返回 null 表示已由输入分类/计数的明确丢弃。返回 Committed/Rejected 才允许按输入到达顺序确认。
+    /// </summary>
+    public abstract ValueTask<InputHandoffStatus> ProduceConfirmedAsync(long maximumWorkingBytes, long maximumMessageBytes,
+        Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default);
+
     public abstract ValueTask ProduceAsync(long maximumBytes,
         Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default);
 }
 
 /// <summary>输入声明的大小超过总额度，或实际消息超过声明值；属于数据/配置错误，不应重启运行单元。</summary>
 public sealed class InputMessageSizeException(string message) : ArgumentException(message);
+
+/// <summary>确认面向整条源消息：Committed 可包含已明确按策略拒绝的分支；StorageFailed/Stopped 均不允许确认。</summary>
+public enum InputHandoffStatus { Committed, Rejected, StorageFailed, Stopped }

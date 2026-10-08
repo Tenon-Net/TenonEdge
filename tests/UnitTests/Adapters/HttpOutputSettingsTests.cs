@@ -95,6 +95,50 @@ public sealed class HttpOutputSettingsTests
         finally { release.TrySetResult(); await holding; }
     }
 
+    [Fact]
+    public void OversizedFrozenSuccessRuleIsRejectedAtConfigurationTime()
+    {
+        var json = JsonSerializer.SerializeToElement(new
+        {
+            connectionId = 1,
+            baseAddress = "https://example.com/",
+            inputs = Inputs,
+            successPath = "/code",
+            successValue = new string('x', OutputMessage.MaximumProtocolMetadataBytes),
+        });
+        Assert.Throws<ArgumentException>(() => HttpOutputSettings.Parse(json));
+    }
+
+    [Fact]
+    public void FingerprintUsesConnectionIdentityNotRouteOrRequestSettings()
+    {
+        var basis = Parse("https://EXAMPLE.com:443/api", "first?tenant=a");
+        var identity = new HttpCredentialIdentity(HttpCredentialKind.ApiKeyHeader, null, "X-Key", "account", "v1");
+        var next = Parse("https://example.com/api/", "second?tenant=b") with { TimeoutMs = 6000 };
+        Assert.Equal(basis.Fingerprint(identity), next.Fingerprint(identity));
+        Assert.Equal(basis.Fingerprint(identity), basis.Fingerprint(identity with { Version = "v2", Name = "X-New-Key" }));
+    }
+
+    [Theory]
+    [InlineData("http://example.com/api/")]
+    [InlineData("https://other.example/api/")]
+    [InlineData("https://example.com:8443/api/")]
+    [InlineData("https://example.com/other/")]
+    public void FingerprintChangesWhenConnectionRecipientChanges(string recipient) =>
+        Assert.NotEqual(Parse("https://example.com/api/", "events").Fingerprint(null), Parse(recipient, "events").Fingerprint(null));
+
+    [Fact]
+    public void FingerprintChangesForAccountOrAuthenticationIdentityButNotSecretVersion()
+    {
+        var settings = Parse("https://example.com/api/", "events");
+        var basic = new HttpCredentialIdentity(HttpCredentialKind.Basic, "alice", null, "a", "v1");
+        Assert.NotEqual(settings.Fingerprint(null), settings.Fingerprint(basic));
+        Assert.NotEqual(settings.Fingerprint(basic), settings.Fingerprint(basic with { Username = "bob" }));
+        Assert.NotEqual(settings.Fingerprint(basic), settings.Fingerprint(basic with { AccountMarker = "b" }));
+        Assert.NotEqual(settings.Fingerprint(basic), settings.Fingerprint(new(HttpCredentialKind.Bearer, null, null, "a", "v1")));
+        Assert.Equal(settings.Fingerprint(basic), settings.Fingerprint(basic with { Version = "v2" }));
+    }
+
     private sealed class NoNetwork : IOutboundConnector
     {
         public ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken) => throw new InvalidOperationException("Network must not run while queued.");

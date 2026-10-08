@@ -15,8 +15,12 @@ public interface IOutputTarget
     string CurrentFingerprint { get; }
     /// <summary>输入入队前预留的每路径格式化上界；默认包含报文及冻结拷贝，协议可增加非秘密元数据暂存。</summary>
     long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes;
+    /// <summary>字段组装可能放大很小的输入；各路径串行复用的编码暂存下限。</summary>
+    long MinimumSerializationReservationBytes => 0;
     OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId);
     IOutputAdapter CreateAdapter();
+    /// <summary>两个路径能否安全共用同一发送者；协议须核对全部连接参数，发送必须使用各记录冻结的地址与 QoS。</summary>
+    bool CanShareSenderWith(IOutputTarget other) => false;
 }
 
 /// <summary>由一个被监督的发送者独占；循环结束之后才释放。协议类型不越过适配器边界。</summary>
@@ -26,7 +30,11 @@ public interface IOutputAdapter : IAsyncDisposable
 }
 
 public sealed record OutputMessage(ReadOnlyMemory<byte> Payload, string Address, int? QualityOfService, string Fingerprint, string FingerprintSummary,
-    IReadOnlyDictionary<string, string>? Headers = null);
+    IReadOnlyDictionary<string, string>? Headers = null, string? ProtocolMetadata = null)
+{
+    /// <summary>协议专属的冻结请求约定，只含非秘密数据；由适配器解析，不作为 HTTP 请求头发送。</summary>
+    public const int MaximumProtocolMetadataBytes = 16 * 1024;
+}
 
 public enum OutputSendStatus { Ack, Retry, RejectMessage, SuspendTarget }
 

@@ -18,6 +18,9 @@ public interface IInputUnitFactory
     /// <summary>负责的单元种类，与 <see cref="RuntimeUnitId.Kind"/> 相同，例如 input.simulator。</summary>
     string Kind { get; }
 
+    /// <summary>需要持久接管结果的输入；没有输出时运行时也须消费并返回明确拒绝，不能让确认永久等待。</summary>
+    bool UsesDurableHandoff => false;
+
     /// <summary>构建一个尚未运行的输入单元。</summary>
     IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context);
 }

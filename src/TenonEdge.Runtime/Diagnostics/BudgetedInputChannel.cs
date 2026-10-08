@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using TenonEdge.Abstractions.Contracts;
@@ -16,8 +17,11 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     private readonly InFlightBudget _budget;
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Exception? _completionError;
+    private readonly ConcurrentDictionary<EdgeMessage, TaskCompletionSource<InputHandoffStatus>> _handoffs = new(ReferenceEqualityComparer.Instance);
+    internal bool UsesDurableHandoff { get; init; }
     internal long OutputReservationBytes { get; set; }
     internal bool ReserveSerializationWorkspace { get; set; }
+    internal long MinimumSerializationReservationBytes { get; set; }
     internal bool HasFieldMapping { get; set; }
 
     public BudgetedInputChannel(int capacity, InFlightBudget budget)
@@ -35,10 +39,17 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
     internal ChannelReader<EdgeMessage> HoldingReader => _inner.Reader;
     private long Charge(long sourceBytes) => checked(sourceBytes + OutputReservationBytes
+        + (UsesDurableHandoff ? 1024 : 0) // 回执、异步等待与索引项的保守固定预约。
         + (HasFieldMapping ? FieldMapping.WorkingReservationBytes : 0)
-        + (ReserveSerializationWorkspace ? StandardEnvelope.SerializationReservationBytes(HasFieldMapping ? FieldMapping.MaximumResultBytes : sourceBytes) : 0));
+        + (ReserveSerializationWorkspace ? Math.Max(MinimumSerializationReservationBytes, StandardEnvelope.SerializationReservationBytes(HasFieldMapping ? FieldMapping.MaximumResultBytes : sourceBytes)) : 0));
     internal long Charge(EdgeMessage message) => Charge(message.BudgetBytes);
-    internal void Release(EdgeMessage message) => _budget.Release(Charge(message));
+    internal bool HasHandoff(EdgeMessage message) => _handoffs.ContainsKey(message);
+    internal void Release(EdgeMessage message, InputHandoffStatus status = InputHandoffStatus.Stopped)
+    {
+        _budget.Release(Charge(message));
+        if (_handoffs.TryRemove(message, out var completion))
+        { completion.TrySetResult(status); }
+    }
 
     private sealed class BudgetWriter(BudgetedInputChannel owner) : InputMessageWriter
     {
@@ -46,14 +57,24 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
         private long _requiredBytes = 1;
         public override ValueTask ProduceAsync(long maximumBytes,
             Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default) =>
-            ProduceCoreAsync(maximumBytes, maximumBytes, produce, false, cancellationToken);
+            ProduceCoreAsync(maximumBytes, maximumBytes, produce, false, null, cancellationToken);
 
         public override ValueTask ProduceAsync(long maximumWorkingBytes, long maximumMessageBytes,
             Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default) =>
-            ProduceCoreAsync(maximumWorkingBytes, maximumMessageBytes, produce, true, cancellationToken);
+            ProduceCoreAsync(maximumWorkingBytes, maximumMessageBytes, produce, true, null, cancellationToken);
+
+        public override async ValueTask<InputHandoffStatus> ProduceConfirmedAsync(long maximumWorkingBytes, long maximumMessageBytes,
+            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default)
+        {
+            if (!owner.UsesDurableHandoff)
+            { throw new InvalidOperationException("输入工厂未声明持久接管契约。"); }
+            var completion = new TaskCompletionSource<InputHandoffStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await ProduceCoreAsync(maximumWorkingBytes, maximumMessageBytes, produce, true, completion, cancellationToken);
+            return await completion.Task.WaitAsync(cancellationToken);
+        }
 
         private async ValueTask ProduceCoreAsync(long maximumWorkingBytes, long maximumMessageBytes,
-            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, bool capOutputPhase, CancellationToken cancellationToken)
+            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, bool capOutputPhase, TaskCompletionSource<InputHandoffStatus>? completion, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(produce);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumMessageBytes);
@@ -71,7 +92,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
                 { throw new ChannelClosedException(owner._completionError); }
                 var message = await produce(cancellationToken);
                 if (message is null)
-                { return; }
+                { completion?.TrySetResult(InputHandoffStatus.Rejected); return; }
                 if (message.BudgetBytes > maximumMessageBytes)
                 { throw new InputMessageSizeException("输入消息超过结果大小上限。"); }
                 var charge = owner.Charge(message);
@@ -83,7 +104,16 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
                     reserved = charge;
                 }
 
-                await owner._inner.Writer.WriteAsync(message, cancellationToken);
+                if (completion is not null && !owner._handoffs.TryAdd(message, completion))
+                { throw new InvalidOperationException("同一消息对象不能同时等待两次接管。"); }
+                try
+                { await owner._inner.Writer.WriteAsync(message, cancellationToken); }
+                catch
+                {
+                    if (completion is not null)
+                    { owner._handoffs.TryRemove(message, out _); }
+                    throw;
+                }
                 reserved = 0; // 所有权移交给通道/分发器，直到存储接管或明确拒绝。
             }
             finally

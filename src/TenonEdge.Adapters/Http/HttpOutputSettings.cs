@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 
 namespace TenonEdge.Adapters.Http;
@@ -15,6 +16,8 @@ public sealed record HttpOutputSettings : HttpRequestSettings
     public ImmutableArray<string> Inputs { get; init; } = [];
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Mapping { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement Payload { get; init; }
     public string? SuccessPath { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement SuccessValue { get; init; }
@@ -34,10 +37,13 @@ public sealed record HttpOutputSettings : HttpRequestSettings
         { throw new ArgumentException("HTTP 业务成功位置和值须同时配置。"); }
         if (settings.SuccessPath is { } path)
         { _ = new HttpSuccessRule(path, settings.SuccessValue); }
+        _ = OutputPayloadFormat.Parse(settings.Payload);
+        _ = HttpFrozenRequest.Freeze(settings);
         return settings with { SuccessValue = settings.SuccessValue.ValueKind == JsonValueKind.Undefined ? default : settings.SuccessValue.Clone() };
     }
 
+    // §8.3：身份属于连接；输出路径由冻结报文与配置变更保护单独检查。凭证版本/头名称不代表接收账户。
     internal string Fingerprint(HttpCredentialIdentity? identity) => "sha256:" + Convert.ToHexStringLower(SHA256.HashData(
-        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { Endpoint.AbsoluteUri, identity?.Kind.ToString() ?? "none",
-            identity?.Username ?? "", identity?.Name ?? "", identity?.AccountMarker ?? "" }))));
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { BaseAddress, identity?.Kind.ToString() ?? "none",
+            identity?.Username ?? "", identity?.AccountMarker ?? "" }))));
 }

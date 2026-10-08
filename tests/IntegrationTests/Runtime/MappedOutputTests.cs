@@ -2,6 +2,7 @@ using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
+using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Connections;
@@ -149,6 +150,149 @@ public sealed class MappedOutputTests
         { configuration["host"] = "localhost"; configuration["topic"] = "test"; }
         var bytes = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units = new[] { new { kind, key = "out", configuration } } });
         Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(bytes));
+    }
+
+    [Theory]
+    [InlineData("host", "other.example")]
+    [InlineData("port", 1884)]
+    [InlineData("tls", true)]
+    [InlineData("usePassword", true)]
+    [InlineData("timeoutMs", 6000)]
+    [InlineData("pingIntervalMs", 20000)]
+    [InlineData("clientId", "other-client")]
+    public void ConflictingSharedMqttParametersAreRejectedBeforeFreeze(string property, object value)
+    {
+        var first = new Dictionary<string, object?> { ["connectionId"] = 1, ["host"] = "localhost", ["topic"] = "a", ["inputs"] = Inputs };
+        var second = new Dictionary<string, object?>(first) { [property] = value, ["topic"] = "b" };
+        var units = new[] { new { kind = "output.mqtt", key = "a", configuration = first }, new { kind = "output.mqtt", key = "b", configuration = second } };
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units })));
+    }
+
+    [Theory]
+    [InlineData(32)]
+    [InlineData(33)]
+    public async Task SharedMqttConnectionStillCountsEveryPathAgainstTheFanoutLimit(int count)
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path,
+            outputs: [new MqttOutputFactory(new NoMqttCredentials(), TimeProvider.System, new DeniedConnector(), new SharedConnections())]);
+        var outputs = Enumerable.Range(1, count).Select(index => new RuntimeUnitPlan(RuntimeUnitId.Create("output.mqtt", "path-" + index),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = 1,
+                host = "localhost",
+                topic = "path/" + index,
+                inputs = Inputs,
+                mapping = new[] { new { target = "n", type = "integer", sourceField = "value", scale = index } },
+            })));
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan([OutputPipelineTests.Input(), .. outputs]));
+        if (count == 33)
+        {
+            Assert.Single(plan.Failures);
+            Assert.Contains("32", plan.Failures[0].Reason, StringComparison.Ordinal);
+            return;
+        }
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 32);
+        Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "output.mqtt");
+        await runtime.StopAsync(Token);
+        var records = runtime.Deliveries.ReadPending(1, 0, 100);
+        Assert.Equal(32, records.Count);
+        Assert.Equal(32, records.Select(record => record.DeliveryId).Distinct().Count());
+        Assert.Single(records.Select(record => record.SourceMessageId).Distinct());
+        foreach (var record in records)
+        {
+            var index = int.Parse(record.TargetAddress!.AsSpan("path/".Length), System.Globalization.CultureInfo.InvariantCulture);
+            using var document = JsonDocument.Parse(record.Payload);
+            Assert.Equal(42 * index, document.RootElement.GetProperty("values").GetProperty("n").GetInt64());
+        }
+        Assert.Equal(1, input.Started);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        Assert.InRange(runtime.InFlight.Status.PeakReservedBytes, 1, 64L * 1024 * 1024);
+    }
+
+    [Fact]
+    public async Task CustomPayloadWorkspaceIsReservedOnceForThirtyTwoSharedHttpPaths()
+    {
+        using var data = TemporaryDirectory.Create();
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], data.Path, outputs: [Factory()]);
+        var outputs = Enumerable.Range(1, 32).Select(index => new RuntimeUnitPlan(RuntimeUnitId.Create("output.http", "custom-" + index),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = 1,
+                baseAddress = "http://localhost/",
+                path = "events",
+                inputs = Inputs,
+                payload = new { mode = "custom", fields = new[] { new { target = "fixed", constant = new string('x', 1000) } } },
+            })));
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan([OutputPipelineTests.Input(), .. outputs]));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 32);
+        await runtime.StopAsync(Token);
+        Assert.Equal(32, runtime.Deliveries.ReadPending(1, 0, 100).Count);
+        Assert.InRange(runtime.InFlight.Status.PeakReservedBytes, 32L * 1024 * 1024, 64L * 1024 * 1024);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
+    [Theory]
+    [InlineData("output.http")]
+    [InlineData("output.mqtt")]
+    public void InvalidPayloadFormatIsRejectedBeforeSnapshotFreeze(string kind)
+    {
+        var configuration = new Dictionary<string, object?>
+        {
+            ["connectionId"] = 1,
+            ["inputs"] = Inputs,
+            ["payload"] = new { mode = "custom", fields = new[] { new { target = "bad", placeholder = "{script}" } } },
+        };
+        if (kind == "output.http")
+        { configuration["baseAddress"] = "http://localhost/"; }
+        else
+        { configuration["host"] = "localhost"; configuration["topic"] = "test"; }
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units = new[] { new { kind, key = "out", configuration } } });
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(bytes));
+    }
+
+    [Fact]
+    public async Task CustomRequiredFailureDoesNotRejectAnotherFormatOnSameConnection()
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, outputs: [Factory()]);
+        RuntimeUnitPlan Path(string key, string payload) => new(RuntimeUnitId.Create("output.http", key),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = 1,
+                baseAddress = "http://localhost/",
+                path = "events",
+                inputs = Inputs,
+                payload = JsonSerializer.Deserialize<JsonElement>(payload),
+            }));
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(),
+            Path("a", """{"mode":"custom","fields":[{"target":"n","sourceField":"missing","required":true}]}"""),
+            Path("b", """{"mode":"values"}""")));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 1);
+        await runtime.StopAsync(Token);
+        var record = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
+        using var json = JsonDocument.Parse(record.Payload);
+        Assert.Equal(42, json.RootElement.GetProperty("value").GetInt64());
+        Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["route/meter/sim/output.http/a/dataRejected"]);
+        Assert.Equal(1, input.Started);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
+    private sealed class NoMqttCredentials : ICredentialResolver
+    {
+        public MqttCredentialIdentity? DescribeMqtt(long connectionId) => null;
+        public MqttCredential? ResolveMqtt(long connectionId, string recipient) => null;
     }
 
     private static RuntimeUnitPlan Output(int connectionId, string rules) => new(RuntimeUnitId.Create("output.http", $"out-{connectionId}"),

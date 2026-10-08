@@ -86,7 +86,8 @@ public static class StandardEnvelope
             { throw TooLarge(); }
         }
 
-        if (message.Quality.Keys.Any(name => name.Length > MaximumPayloadBytes)) { throw TooLarge(); }
+        if (message.Quality.Keys.Any(name => name.Length > MaximumPayloadBytes))
+        { throw TooLarge(); }
         var buffer = new BoundedBuffer();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -102,7 +103,7 @@ public static class StandardEnvelope
     /// IBufferWriter 的 sizeHint 是编码最坏情况，而非实际字节数；容许有限的额外暂存，
     /// 以 Advance 的实际字节判定 256 KiB，不能因 sizeHint 过大就误拒绝合法报文。
     /// </summary>
-    private sealed class BoundedBuffer : IBufferWriter<byte>
+    internal sealed class BoundedBuffer : IBufferWriter<byte>
     {
         private const int MaximumCapacity = 32 * MaximumPayloadBytes + 4096;
         private byte[] _bytes = new byte[1024];
@@ -112,7 +113,8 @@ public static class StandardEnvelope
         public void Advance(int count)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(count);
-            if (count > MaximumPayloadBytes - _written) { throw TooLarge(); }
+            if (count > MaximumPayloadBytes - _written)
+            { throw TooLarge(); }
             ArgumentOutOfRangeException.ThrowIfGreaterThan(count, _bytes.Length - _written);
             _written += count;
         }
@@ -133,8 +135,10 @@ public static class StandardEnvelope
         {
             ArgumentOutOfRangeException.ThrowIfNegative(sizeHint);
             sizeHint = Math.Max(sizeHint, 1);
-            if (sizeHint > MaximumCapacity - _written) { throw TooLarge(); }
-            if (sizeHint <= _bytes.Length - _written) { return; }
+            if (sizeHint > MaximumCapacity - _written)
+            { throw TooLarge(); }
+            if (sizeHint <= _bytes.Length - _written)
+            { return; }
             var capacity = Math.Min(MaximumCapacity, Math.Max(_written + sizeHint, _bytes.Length * 2));
             Array.Resize(ref _bytes, capacity);
         }

@@ -88,6 +88,176 @@ public sealed class HttpOutputTests
         Assert.False(server.Pending());
     }
 
+    [Theory]
+    [InlineData(false, "envelope")]
+    [InlineData(true, "envelope")]
+    [InlineData(false, "values")]
+    [InlineData(true, "custom")]
+    public async Task SharedSenderReplaysEachFrozenPathHeadersMappingAndSuccessRuleAfterRestart(bool samePath, string mode)
+    {
+        using var directory = TemporaryDirectory.Create();
+        using var server = Listen();
+        var input = new RuntimeUnitPlan(RuntimeUnitId.Create("input.test", "device/input"), JsonSerializer.SerializeToElement(new { }));
+        RuntimeUnitPlan Output(int index, bool changed) => new(RuntimeUnitId.Create("output.http", "route-" + index),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = 1,
+                baseAddress = Base(server),
+                path = samePath ? "events" : "events-" + index,
+                inputs = Inputs,
+                successPath = "/code",
+                successValue = changed ? 999 : index,
+                payload = JsonSerializer.Deserialize<JsonElement>(changed || mode == "envelope" ? "null" : mode == "values" ? """{"mode":"values"}""" :
+                    """{"mode":"custom","fields":[{"target":"mapped","sourceField":"mapped"},{"target":"id","placeholder":"{messageId}"}]}"""),
+                headers = new Dictionary<string, string> { ["X-Route"] = changed ? "changed" : index.ToString(CultureInfo.InvariantCulture) },
+                mapping = new[] { new { target = "mapped", type = "integer", sourceField = "value", scale = changed ? 999 : index } },
+            }));
+        StoredDelivery[] frozen;
+        var inputFactory = new OneShotInputFactory();
+        await using (var first = RuntimeTesting.CreateRuntime([inputFactory], directory.Path,
+            outputs: [new HttpOutputFactory(new Credentials(), TimeProvider.System, new BlockedConnector(), new SharedConnections())]))
+        {
+            await using var plan = first.Prepare(new RuntimePlan(1, [input, Output(1, false), Output(2, false)]));
+            Assert.Empty(plan.Failures);
+            first.StartCore();
+            await first.ActivateAsync(plan);
+            await OutputPipelineTests.UntilAsync(() => first.Deliveries.GetStatus().CommittedRecords == 2);
+            await first.StopAsync(Token);
+            frozen = first.Deliveries.ReadPending(1, 0, 10).ToArray();
+            Assert.Equal(2, frozen.Length);
+            Assert.All(frozen, record => Assert.NotNull(record.ProtocolMetadata));
+            Assert.NotEqual(frozen[0].ProtocolMetadata, frozen[1].ProtocolMetadata);
+            Assert.Equal(1, inputFactory.Started);
+        }
+        var peer = Task.Run(async () =>
+        {
+            using var socket = await server.AcceptTcpClientAsync(Token);
+            var requests = new List<(string Header, byte[] Body)>();
+            for (var index = 1; index <= 2; index++)
+            {
+                requests.Add(await ReadAsync(socket.GetStream()));
+                var body = "{\"code\":" + index + "}";
+                await socket.GetStream().WriteAsync(Encoding.ASCII.GetBytes(
+                    $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\n\r\n{body}"), Token);
+            }
+            return requests;
+        }, Token);
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory(0)], directory.Path,
+            outputs: [new HttpOutputFactory(new Credentials(), TimeProvider.System, new OutboundConnector(new LoopbackPolicy()), new SharedConnections())]);
+        await using var next = runtime.Prepare(new RuntimePlan(2, [input, Output(1, true), Output(2, true)]));
+        Assert.Empty(next.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(next);
+        var observed = await peer.WaitAsync(TimeSpan.FromSeconds(15), Token);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords == 2);
+        Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "output.http");
+        await runtime.StopAsync(Token);
+        for (var index = 1; index <= 2; index++)
+        {
+            var request = observed[index - 1];
+            Assert.Contains("POST /api/" + (samePath ? "events" : "events-" + index) + " ", request.Header, StringComparison.Ordinal);
+            Assert.Contains("X-Route: " + index, request.Header, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("success", request.Header, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(frozen[index - 1].Payload.ToArray(), request.Body);
+            using var document = JsonDocument.Parse(request.Body);
+            Assert.Equal(42 * index, (mode == "envelope" ? document.RootElement.GetProperty("values") : document.RootElement).GetProperty("mapped").GetInt64());
+            if (mode == "custom")
+            { Assert.Equal(frozen[index - 1].DeliveryId, document.RootElement.GetProperty("id").GetGuid()); }
+        }
+        Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+        Assert.False(server.Pending());
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"version\":2,\"path\":\"events\"}")]
+    [InlineData("{\"version\":1,\"path\":\"other\"}")]
+    [InlineData("{\"version\":1,\"path\":\"events\",\"successPath\":\"/code\"}")]
+    [InlineData("{\"version\":1,\"path\":\"events\",\"unknown\":1}")]
+    public async Task InvalidFrozenRequestMetadataIsRejectedWithoutNetwork(string metadata)
+    {
+        using var server = Listen();
+        var target = new HttpOutputFactory(new Credentials(), TimeProvider.System,
+            new OutboundConnector(new LoopbackPolicy()), new SharedConnections()).Build(Plan(server, "events"));
+        await using var adapter = target.CreateAdapter();
+        var result = await adapter.SendAsync(target.CreateMessage(Message(), Guid.NewGuid()) with { ProtocolMetadata = metadata }, Token);
+        Assert.Equal(OutputSendStatus.RejectMessage, result.Status);
+        Assert.False(server.Pending());
+    }
+
+    [Fact]
+    public async Task LegacyRecordWithoutSuccessContractIsNotAcknowledgedUsingCurrentSettings()
+    {
+        using var server = Listen();
+        var target = new HttpOutputFactory(new Credentials(), TimeProvider.System,
+            new OutboundConnector(new LoopbackPolicy()), new SharedConnections()).Build(Plan(server, "events"));
+        await using var adapter = target.CreateAdapter();
+        var result = await adapter.SendAsync(target.CreateMessage(Message(), Guid.NewGuid()) with { ProtocolMetadata = null }, Token);
+        Assert.Equal(OutputSendStatus.SuspendTarget, result.Status);
+        Assert.False(result.FingerprintMismatch);
+        Assert.False(server.Pending());
+    }
+
+    private sealed class BlockedConnector : IOutboundConnector
+    {
+        public ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken) => throw new OutboundAccessDeniedException();
+    }
+
+    [Theory]
+    [InlineData("other")]
+    [InlineData("events?tenant=other")]
+    public async Task SameConnectionFingerprintDoesNotBypassLegacyFrozenPathProtection(string replacementPath)
+    {
+        using var server = Listen();
+        var factory = new HttpOutputFactory(new Credentials(), TimeProvider.System,
+            new OutboundConnector(new LoopbackPolicy()), new SharedConnections());
+        var old = factory.Build(Plan(server, "events"));
+        var originalPlan = Plan(server, "events");
+        var replacement = factory.Build(new RuntimeUnitPlan(originalPlan.Id, JsonSerializer.SerializeToElement(new
+        { connectionId = 1, baseAddress = Base(server), path = replacementPath, inputs = Inputs })));
+        Assert.Equal(old.CurrentFingerprint, replacement.CurrentFingerprint);
+        await using var adapter = replacement.CreateAdapter();
+        var result = await adapter.SendAsync(old.CreateMessage(Message(), Guid.NewGuid()) with { ProtocolMetadata = null }, Token);
+        Assert.Equal(OutputSendStatus.SuspendTarget, result.Status);
+        Assert.True(result.FingerprintMismatch);
+        Assert.False(result.CountsTowardPoison);
+        Assert.False(server.Pending());
+    }
+
+    [Fact]
+    public async Task LegacyEndpointFingerprintIsQuarantinedWithoutRewritingOrSendingRecord()
+    {
+        using var directory = TemporaryDirectory.Create();
+        using var server = Listen();
+        var factory = new HttpOutputFactory(new Credentials(), TimeProvider.System,
+            new OutboundConnector(new LoopbackPolicy()), new SharedConnections());
+        var outputPlan = Plan(server, "events");
+        var target = factory.Build(outputPlan);
+        var id = Guid.NewGuid();
+        var source = Message();
+        var message = target.CreateMessage(source, id);
+        // §2.28—2.35 开发检查点使用完整 endpoint 和 API Key 名称，不能默默将旧身份改写为新身份。
+        var legacy = "sha256:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { Base(server) + "events", "none", "", "", "" }))));
+        Assert.NotEqual(legacy, target.CurrentFingerprint);
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory(0)], directory.Path, outputs: [factory]);
+        var input = new RuntimeUnitPlan(RuntimeUnitId.Create("input.test", "device/input"), JsonSerializer.SerializeToElement(new { }));
+        await using var plan = runtime.Prepare(new RuntimePlan(1, [input, outputPlan]));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        var write = await runtime.Deliveries.EnqueueAsync([new DeliveryDraft(id, 1, source.SourceMessageId, source.DeviceKey,
+            1, message.Payload, legacy, message.FingerprintSummary, message.Address, null, message.Headers)], Token);
+        Assert.Single(write.Seqs);
+        await runtime.ActivateAsync(plan);
+        await runtime.StopAsync(Token);
+        var quarantined = Assert.Single(runtime.Deliveries.ReadQuarantined(1, 0, 10));
+        Assert.Equal(legacy, quarantined.Fingerprint);
+        Assert.Equal(message.Payload.ToArray(), quarantined.Payload.ToArray());
+        Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+        Assert.False(server.Pending());
+    }
+
     [Fact]
     public async Task ChangedAccountAndMissingCredentialsNeverConnectOrCountAsPoison()
     {

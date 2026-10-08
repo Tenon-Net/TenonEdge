@@ -24,7 +24,8 @@ public sealed record StoredDelivery(
     long? MigrationId,
     DateTimeOffset? FailedAt = null,
     long ByteSize = 0,
-    bool ClockAnomaly = false);
+    bool ClockAnomaly = false,
+    string? ProtocolMetadata = null);
 
 /// <summary>投递记录的状态（总设计 §8.2）：待发、失败区、隔离。</summary>
 public enum DeliveryState

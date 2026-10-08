@@ -32,7 +32,7 @@ internal sealed partial class DeliveryStore
     private const string SelectColumns = """
         seq, delivery_id, connection_id, source_message_id, device_key, route_id, node_label, revision, payload,
         target_address, qos, headers, fingerprint, fingerprint_summary, created_at, failure_count, state,
-        quarantine_reason, last_error, migration_id, failed_at, byte_size, clock_anomaly
+        quarantine_reason, last_error, migration_id, failed_at, byte_size, clock_anomaly, protocol_metadata
         """;
 
     /// <summary>各版本的迁移语句；只追加，不修改已发布的版本。</summary>
@@ -101,6 +101,10 @@ internal sealed partial class DeliveryStore
         // 版本 4（T1-07）：全局策略/运行计数，由唯一写者维护。
         """
         CREATE TABLE queue_counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL DEFAULT 0);
+        """,
+        // 版本 5（T2-06）：非秘密协议约定随报文冻结；旧记录保留 null，既有配额字节不变。
+        """
+        ALTER TABLE delivery ADD COLUMN protocol_metadata TEXT;
         """,
     ];
 
@@ -284,6 +288,7 @@ internal sealed partial class DeliveryStore
         command.Parameters["$fingerprintSummary"].Value = draft.FingerprintSummary;
         command.Parameters["$createdAt"].Value = createdAt;
         command.Parameters["$bytes"].Value = draft.ByteSize;
+        command.Parameters["$protocolMetadata"].Value = (object?)draft.ProtocolMetadata ?? DBNull.Value;
         return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
     }
 
@@ -294,15 +299,15 @@ internal sealed partial class DeliveryStore
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO delivery (delivery_id, connection_id, source_message_id, device_key, route_id, node_label, revision, payload,
-                target_address, qos, headers, fingerprint, fingerprint_summary, created_at, byte_size)
+                target_address, qos, headers, fingerprint, fingerprint_summary, created_at, byte_size, protocol_metadata)
             VALUES ($deliveryId, $connectionId, $sourceMessageId, $deviceKey, $routeId, $nodeLabel, $revision, $payload,
-                $targetAddress, $qos, $headers, $fingerprint, $fingerprintSummary, $createdAt, $bytes)
+                $targetAddress, $qos, $headers, $fingerprint, $fingerprintSummary, $createdAt, $bytes, $protocolMetadata)
             RETURNING seq;
             """;
         foreach (var name in new[]
         {
             "$deliveryId", "$connectionId", "$sourceMessageId", "$deviceKey", "$routeId", "$nodeLabel", "$revision", "$payload",
-            "$targetAddress", "$qos", "$headers", "$fingerprint", "$fingerprintSummary", "$createdAt", "$bytes",
+            "$targetAddress", "$qos", "$headers", "$fingerprint", "$fingerprintSummary", "$createdAt", "$bytes", "$protocolMetadata",
         })
         {
             command.Parameters.Add(new SqliteParameter { ParameterName = name });
@@ -352,7 +357,8 @@ internal sealed partial class DeliveryStore
         MigrationId: reader.IsDBNull(19) ? null : reader.GetInt64(19),
         FailedAt: reader.IsDBNull(20) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(20)),
         ByteSize: reader.GetInt64(21),
-        ClockAnomaly: reader.GetInt64(22) != 0);
+        ClockAnomaly: reader.GetInt64(22) != 0,
+        ProtocolMetadata: reader.IsDBNull(23) ? null : reader.GetString(23));
 
     private static SqliteConnection Open(string connectionString)
     {

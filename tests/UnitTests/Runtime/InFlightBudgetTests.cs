@@ -8,6 +8,82 @@ namespace TenonEdge.UnitTests.Runtime;
 public sealed class InFlightBudgetTests
 {
     [Fact]
+    public async Task UndeclaredConfirmationCannotSilentlyWaitWithoutADispatcher()
+    {
+        var budget = new InFlightBudget(10000);
+        var channel = new BudgetedInputChannel(1, budget);
+        var invoked = false;
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await ((InputMessageWriter)channel.Writer).ProduceConfirmedAsync(1000, 1000,
+            _ => { invoked = true; return ValueTask.FromResult<EdgeMessage?>(null); }, TestContext.Current.CancellationToken));
+        Assert.False(invoked);
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DurableConfirmationWaitsForConsumerAndCancellationDoesNotReleaseOwnedMessage(bool cancel)
+    {
+        var budget = new InFlightBudget(10000);
+        var channel = new BudgetedInputChannel(1, budget) { UsesDurableHandoff = true };
+        var message = Message();
+        using var caller = new CancellationTokenSource();
+        var receipt = ((InputMessageWriter)channel.Writer).ProduceConfirmedAsync(10000, 10000,
+            _ => ValueTask.FromResult<EdgeMessage?>(message), caller.Token).AsTask();
+        Assert.True(channel.HoldingReader.TryRead(out var held));
+        Assert.False(receipt.IsCompleted);
+        Assert.True(channel.HasHandoff(message));
+        if (cancel)
+        {
+            await caller.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receipt);
+            Assert.True(budget.Status.ReservedBytes > 0);
+        }
+        channel.Release(held!, InputHandoffStatus.Committed);
+        if (!cancel)
+        { Assert.Equal(InputHandoffStatus.Committed, await receipt); }
+        Assert.False(channel.HasHandoff(message));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
+    public async Task CancelledPublicationIntoFullChannelRemovesConfirmationAndItsBudget()
+    {
+        var budget = new InFlightBudget(20000);
+        var channel = new BudgetedInputChannel(1, budget) { UsesDurableHandoff = true };
+        var first = Message();
+        Assert.True(channel.Writer.TryWrite(first));
+        var second = Message();
+        using var caller = new CancellationTokenSource();
+        var receipt = ((InputMessageWriter)channel.Writer).ProduceConfirmedAsync(10000, 10000,
+            _ => ValueTask.FromResult<EdgeMessage?>(second), caller.Token).AsTask();
+        Assert.True(channel.HasHandoff(second));
+        await caller.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receipt);
+        Assert.False(channel.HasHandoff(second));
+        Assert.Equal(channel.Charge(first), budget.Status.ReservedBytes);
+        Assert.True(channel.Reader.TryRead(out _));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
+    public async Task NullProductionIsExplicitRejectionAndDrainWithoutDispatchNeverConfirms()
+    {
+        var budget = new InFlightBudget(10000);
+        var channel = new BudgetedInputChannel(1, budget) { UsesDurableHandoff = true };
+        var writer = (InputMessageWriter)channel.Writer;
+        Assert.Equal(InputHandoffStatus.Rejected, await writer.ProduceConfirmedAsync(10000, 10000,
+            _ => ValueTask.FromResult<EdgeMessage?>(null), TestContext.Current.CancellationToken));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+        var receipt = writer.ProduceConfirmedAsync(10000, 10000,
+            _ => ValueTask.FromResult<EdgeMessage?>(Message()), TestContext.Current.CancellationToken).AsTask();
+        channel.Writer.TryComplete();
+        Assert.True(channel.Reader.TryRead(out _));
+        Assert.Equal(InputHandoffStatus.Stopped, await receipt);
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
     public async Task CappedTwoPhaseReservationStillRejectsAnActualOutputPhaseThatCannotFit()
     {
         var budget = new InFlightBudget(2000);

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 
 namespace TenonEdge.Runtime.Deliveries;
@@ -31,7 +32,8 @@ public sealed class DeliveryDraft
         int? qualityOfService = null,
         IReadOnlyDictionary<string, string>? headers = null,
         long? routeId = null,
-        string? nodeLabel = null)
+        string? nodeLabel = null,
+        string? protocolMetadata = null)
     {
         if (deliveryId == Guid.Empty)
         {
@@ -63,6 +65,10 @@ public sealed class DeliveryDraft
             throw new ArgumentException("请求头名称不能为空。", nameof(headers));
         }
 
+        if (protocolMetadata is not null && Encoding.UTF8.GetByteCount(protocolMetadata) > OutputMessage.MaximumProtocolMetadataBytes)
+        { throw new ArgumentException("冻结协议元数据超过 16 KiB。", nameof(protocolMetadata)); }
+
+        ProtocolMetadata = protocolMetadata;
         DeliveryId = deliveryId;
         ConnectionId = connectionId;
         SourceMessageId = sourceMessageId;
@@ -82,7 +88,8 @@ public sealed class DeliveryDraft
     public long ByteSize => Payload.Length + 256L + Encoding.UTF8.GetByteCount(DeviceKey)
         + Encoding.UTF8.GetByteCount(NodeLabel ?? string.Empty) + Encoding.UTF8.GetByteCount(TargetAddress ?? string.Empty)
         + Encoding.UTF8.GetByteCount(Fingerprint) + Encoding.UTF8.GetByteCount(FingerprintSummary)
-        + (Headers is null ? 0 : Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(Headers)));
+        + (Headers is null ? 0 : Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(Headers)))
+        + Encoding.UTF8.GetByteCount(ProtocolMetadata ?? string.Empty);
 
     public Guid DeliveryId { get; }
 
@@ -115,4 +122,6 @@ public sealed class DeliveryDraft
     public long? RouteId { get; }
 
     public string? NodeLabel { get; }
+
+    public string? ProtocolMetadata { get; }
 }

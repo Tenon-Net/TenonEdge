@@ -131,10 +131,10 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         }
 
         var previous = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
-        var current = OutputRecipients(next).ToDictionary(target => target.ConnectionId);
+        var current = OutputRecipients(next).ToHashSet();
         foreach (var old in OutputRecipients(previous))
         {
-            if (current.TryGetValue(old.ConnectionId, out var replacement) && replacement == old)
+            if (current.Contains(old))
             {
                 continue;
             }

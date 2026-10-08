@@ -19,7 +19,7 @@ internal sealed class InputDispatcherState
 internal sealed class InputDispatcherUnit(
     RuntimeUnitId inputId, ChannelReader<EdgeMessage> input, IReadOnlyList<IOutputTarget> targets,
     InputDispatcherState state, long revision, DeliveryCache deliveries,
-    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<long, FieldMapping>? mappings = null) : IRuntimeUnit
+    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMapping>? mappings = null) : IRuntimeUnit
 {
     public RuntimeUnitId Id { get; } = RuntimeUnitId.Create("delivery.dispatcher", inputId.Key);
 
@@ -53,15 +53,14 @@ internal sealed class InputDispatcherUnit(
                     try
                     {
                         var source = state.Message;
-                        if (mappings?.TryGetValue(target.ConnectionId, out var mapping) == true)
+                        if (mappings?.TryGetValue(target.Id, out var mapping) == true)
                         {
                             var mapped = mapping.Apply(source);
-                            var prefix = $"path/{inputId.Key}/{target.ConnectionId}/";
-                            deliveries.PendingCounters.Add(prefix + "mappingInvalidFields", mapped.Issues.Count(issue => issue.Reason is not null));
-                            deliveries.PendingCounters.Add(prefix + "mappingMissingFields", mapped.Issues.Count(issue => issue.Reason is null));
+                            CountPath(target, "mappingInvalidFields", mapped.Issues.Count(issue => issue.Reason is not null));
+                            CountPath(target, "mappingMissingFields", mapped.Issues.Count(issue => issue.Reason is null));
                             if (mapped.Message is null)
                             {
-                                deliveries.PendingCounters.Add(prefix + "requiredFieldFailures");
+                                CountPath(target, "requiredFieldFailures");
                                 RejectPath(target, "必填映射字段缺失或转换失败，本路径未入队。");
                                 continue;
                             }
@@ -70,7 +69,7 @@ internal sealed class InputDispatcherUnit(
                         var output = target.CreateMessage(source, id);
                         drafts.Add(new DeliveryDraft(id, target.ConnectionId, state.Message.SourceMessageId, state.Message.DeviceKey,
                             revision, output.Payload, output.Fingerprint, output.FingerprintSummary,
-                            output.Address, output.QualityOfService, output.Headers));
+                            output.Address, output.QualityOfService, output.Headers, protocolMetadata: output.ProtocolMetadata));
                     }
                     catch (ArgumentException)
                     {
@@ -81,13 +80,25 @@ internal sealed class InputDispatcherUnit(
                 state.Drafts = drafts;
             }
 
+            var handoff = InputHandoffStatus.Rejected;
             if (state.Drafts.Count > 0)
             {
                 var result = await deliveries.EnqueueAsync(state.Drafts, stoppingToken);
-                if (result.Status == DeliveryWriteStatus.StorageFailed)
+                handoff = result.Status switch
+                {
+                    DeliveryWriteStatus.Committed => result.Seqs.Count > 0 ? InputHandoffStatus.Committed : InputHandoffStatus.Rejected,
+                    DeliveryWriteStatus.Rejected => InputHandoffStatus.Rejected,
+                    DeliveryWriteStatus.StorageFailed => InputHandoffStatus.StorageFailed,
+                    _ => InputHandoffStatus.Stopped,
+                };
+                if (result.Status == DeliveryWriteStatus.StorageFailed && budgetedChannel?.HasHandoff(state.Message) == true)
+                {
+                    deliveries.PendingCounters.Add($"input/{inputId.Key}/handoffFailed");
+                    events.Record(RuntimeEventSeverity.Error, "input.handoffFailed", inputId.ToString(), "发送缓存未提交，可重投输入未被接管，不允许确认上游。");
+                }
+                else if (result.Status == DeliveryWriteStatus.StorageFailed)
                 {
                     // T1 的轮询/模拟输入按总设计 §8.5：接管前丢失的是这次采样，不无限重试旧数据。
-                    // T2 的 MQTT QoS 1 输入须以其确认契约断开并让 Broker 重投，不能复用本分支假装确认。
                     deliveries.PendingCounters.Add("storageLostSourceMessages");
                     deliveries.PendingCounters.Add("storageLostDeliveryRecords", state.Drafts.Count);
                     events.Record(RuntimeEventSeverity.Error, "input.storageLoss", inputId.ToString(),
@@ -96,6 +107,9 @@ internal sealed class InputDispatcherUnit(
 
                 if (result.Status == DeliveryWriteStatus.Stopped)
                 {
+                    budgetedChannel?.Release(state.Message, InputHandoffStatus.Stopped);
+                    state.Message = null;
+                    state.Drafts = null;
                     return;
                 }
 
@@ -105,7 +119,12 @@ internal sealed class InputDispatcherUnit(
                 }
             }
 
-            budgetedChannel?.Release(state.Message);
+            else
+            {
+                deliveries.PendingCounters.Add($"input/{inputId.Key}/noDeliveryMessages");
+            }
+
+            budgetedChannel?.Release(state.Message, handoff);
             state.Message = null;
             state.Drafts = null;
         }
@@ -114,8 +133,15 @@ internal sealed class InputDispatcherUnit(
     private void RejectPath(IOutputTarget target, string reason)
     {
         deliveries.PendingCounters.RecordActivity(RuntimeActivity.RejectedPath);
-        deliveries.PendingCounters.Add($"path/{inputId.Key}/{target.ConnectionId}/dataRejected");
+        CountPath(target, "dataRejected");
         events.Record(RuntimeEventSeverity.Warning, "output.rejected", target.Id.ToString(), reason);
+    }
+
+    private void CountPath(IOutputTarget target, string counter, long value = 1)
+    {
+        // 保留旧连接汇总，并以输出定义标识区分同连接上的路径；不重复计全局 activity。
+        deliveries.PendingCounters.Add($"path/{inputId.Key}/{target.ConnectionId}/{counter}", value);
+        deliveries.PendingCounters.Add($"route/{inputId.Key}/{target.Id}/{counter}", value);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

@@ -220,7 +220,7 @@ internal sealed class OutputSenderUnit(
         try
         {
             var result = await _adapter.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService,
-                record.Fingerprint, record.FingerprintSummary, record.Headers), token);
+                record.Fingerprint, record.FingerprintSummary, record.Headers, record.ProtocolMetadata), token);
             return Enum.IsDefined(result.Status) ? result : new(OutputSendStatus.Retry, "输出返回未知结果。", CountsTowardPoison: true);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

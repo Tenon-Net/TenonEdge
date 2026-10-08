@@ -21,14 +21,17 @@ public sealed class HttpOutputFactory(IHttpCredentialResolver credentials, TimeP
 internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings settings, IHttpCredentialResolver credentials,
     TimeProvider time, IOutboundConnector connector, ISharedConnections connections) : IOutputTarget
 {
+    private readonly string _frozenRequest = HttpFrozenRequest.Freeze(settings);
+    private readonly OutputPayloadFormat _payload = OutputPayloadFormat.Parse(settings.Payload);
+    public long MinimumSerializationReservationBytes => _payload.MinimumSerializationReservationBytes;
     public RuntimeUnitId Id => id;
     public long ConnectionId => settings.ConnectionId;
     public IReadOnlyList<string> Inputs => settings.Inputs;
     public string? ClientId => null;
-    public string Recipient => settings.Endpoint.AbsoluteUri;
+    public string Recipient => settings.BaseAddress;
     public string CredentialVersion => credentials.DescribeHttp(ConnectionId)?.Version ?? "anonymous";
     // 16 KiB 静态头的 JSON 转义暂存、字典节点与幂等编号额外保守预约。
-    public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024;
+    public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024 + 2L * OutputMessage.MaximumProtocolMetadataBytes;
     public string CurrentFingerprint => settings.Fingerprint(credentials.DescribeHttp(ConnectionId));
 
     public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
@@ -37,9 +40,13 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
         if (identity is { Kind: HttpCredentialKind.ApiKeyHeader, Name: { } name } && settings.Headers.ContainsKey(name))
         { throw new ArgumentException("API Key 请求头不能同时保存在非秘密静态请求头中。"); }
         var headers = settings.Headers.SetItem("Idempotency-Key", deliveryId.ToString("D"));
-        return new(StandardEnvelope.Serialize(message, deliveryId), settings.Path, null, settings.Fingerprint(identity),
-            $"{settings.BaseAddress}; authentication={identity?.Kind.ToString() ?? "none"}", headers);
+        return new(_payload.Serialize(message, deliveryId), settings.Path, null, settings.Fingerprint(identity),
+            $"{settings.BaseAddress}; authentication={identity?.Kind.ToString() ?? "none"}", headers, _frozenRequest);
     }
+
+    private HttpOutputSettings Settings => settings;
+    public bool CanShareSenderWith(IOutputTarget other) => other is HttpOutputTarget http &&
+        ConnectionId == http.ConnectionId && settings.BaseAddress == http.Settings.BaseAddress && settings.TimeoutMs == http.Settings.TimeoutMs;
 
     public IOutputAdapter CreateAdapter()
     {

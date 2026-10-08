@@ -61,6 +61,37 @@ public sealed class HttpTargetChangeTests
         Assert.Single(cache.ReadQuarantined(1, 0, 10));
     }
 
+    [Fact]
+    public async Task MultipleTopicsOnOneConnectionCanBeAddedButExistingRecipientsCannotDisappearWithBacklog()
+    {
+        RuntimePlanDocument Topics(params string[] topics) => RuntimePlanDocument.Parse(JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schemaVersion = 1,
+            units = topics.Select((topic, index) => new
+            {
+                kind = "output.mqtt",
+                key = "path-" + index,
+                configuration = new { connectionId = 1, host = "localhost", topic, inputs = InputKeys },
+            }),
+        }));
+        await using var factory = new TenonEdgeApplicationFactory();
+        var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
+        var before = versions.Freeze(Topics("a", "b"), RuntimeSnapshotOrigins.Seed, null, "test");
+        versions.Commit(before, null);
+        var cache = factory.Services.GetRequiredService<DeliveryCache>();
+        var seq = Assert.Single((await cache.EnqueueAsync([new DeliveryDraft(Guid.NewGuid(), 1, Guid.NewGuid(), "device", 1,
+            "{}"u8.ToArray(), "fp", "summary", "a", 1)], TestContext.Current.CancellationToken)).Seqs);
+        Assert.Null(versions.TargetChangeProblem(Topics("a", "b", "c")));
+        Assert.Null(versions.TargetChangeProblem(Topics("b", "a")));
+        Assert.NotNull(versions.TargetChangeProblem(Topics("a")));
+        Assert.NotNull(versions.TargetChangeProblem(Topics("a", "replacement")));
+        await cache.RecordFailureAsync(new(seq, 0, "rejected", true, false), TestContext.Current.CancellationToken);
+        Assert.NotNull(versions.TargetChangeProblem(Topics("a")));
+        var added = versions.Freeze(Topics("a", "b", "c"), RuntimeSnapshotOrigins.Seed, null, "test");
+        versions.Commit(added, null);
+        Assert.Equal(added, versions.ReadPointers().EffectiveRevision);
+    }
+
     private static RuntimePlanDocument Document(string? change = null)
     {
         var units = new List<object>();
