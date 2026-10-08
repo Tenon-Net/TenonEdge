@@ -1167,6 +1167,18 @@ T2-05 仍在进行中，没有运行路线/页面完成证据。
 
 本地提交整理：按维护者“整理提交一下未提交的，然后继续”的授权，将 §2.29—§2.34 交织的 HTTP 凭证、GET 输入、时间映射、原文所有权与输出映射作为整体回归检查点提交，不推送。不代表 T2 全部完成或已达到网页访问目标。
 
+### 2.35 T2-06：无响应输出与正常输出的真实网络隔离
+
+继续本地提交 `9dba961` 之后的既有授权，补充 AT-06/GW-13 的软件网络验收：单次输入分别映射到两个不同 HTTP 连接，慢端接收 POST 后被测试屏障阻止返回响应；正常端实际收到另一份映射后的 POST 并返回 204。保持慢端请求仍未结束时，检查正常端队列记录已删除、慢端记录仍待发；随后慢端返回 503、停机后仍保持待发。两路数值分别为 84 和 126，sourceMessageId 相同，输入只启动一次，在途预算最终归零。不是真实外部设备验证。
+
+- 用例：`HttpOutputTests.UnresponsiveMappedTargetDoesNotBlockAnotherTargetsAcknowledgement`，复用正式 HTTP 适配器、RuntimeHost、SQLite 与两个 loopback TCP 服务，不使用模拟发送确认。
+- 定向：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~UnresponsiveMappedTarget --logger 'trx;LogFilePrefix=mapping-isolation' --results-directory /tmp/tenonedge-mapping-isolation`，1/1 通过，0 失败/跳过。
+- 格式：`dotnet format TenonEdge.sln --no-restore --verify-no-changes --include tests/IntegrationTests/Runtime/HttpOutputTests.cs` 退出 0。
+
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mapping-isolation-full' --results-directory /tmp/tenonedge-mapping-isolation-full --blame-hang-timeout 5m --blame-hang-dump-type none`：679 单元 + 552 集成 = **1231 项通过**，0 失败/跳过。两份 TRX 的 Counters 已独立核验，日志 `/tmp/tenonedge-mapping-isolation-full.log`；Linux x64 / SDK 10.0.401。`git diff --check` 通过。
+
+边界：本用例验证不同 connectionId 的隔离，不宣称同一连接存在独立发送者或独立退避。同连接多路径尚未实现；其发送者、队列与暂停必须仍以 connectionId 为单位。后续须按总设计 §8.3 核对 HTTP 指纹的基础路径语义及冻结请求路由，不能直接删除重复连接保护。T2、T3 和可视化目标仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

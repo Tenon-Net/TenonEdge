@@ -174,6 +174,70 @@ public sealed class HttpOutputTests
         Assert.False(server.Pending());
     }
 
+    [Fact]
+    public async Task UnresponsiveMappedTargetDoesNotBlockAnotherTargetsAcknowledgement()
+    {
+        using var directory = TemporaryDirectory.Create();
+        using var slowServer = Listen();
+        using var healthyServer = Listen();
+        var inputFactory = new OneShotInputFactory();
+        var factory = new HttpOutputFactory(new Credentials(), TimeProvider.System,
+            new OutboundConnector(new LoopbackPolicy()), new SharedConnections());
+        await using var runtime = RuntimeTesting.CreateRuntime([inputFactory], directory.Path, outputs: [factory]);
+        var input = new RuntimeUnitPlan(RuntimeUnitId.Create("input.test", "device/input"), JsonSerializer.SerializeToElement(new { }));
+        RuntimeUnitPlan MappedTarget(TcpListener server, long connectionId, string target, int scale) =>
+            new(RuntimeUnitId.Create("output.http", target), JsonSerializer.SerializeToElement(new
+            {
+                connectionId,
+                baseAddress = Base(server),
+                path = "events",
+                inputs = Inputs,
+                timeoutMs = 30000,
+                mapping = new[] { new { target, type = "integer", sourceField = "value", scale } },
+            }));
+        await using var plan = runtime.Prepare(new RuntimePlan(1,
+            [input, MappedTarget(slowServer, 1, "slow", 2), MappedTarget(healthyServer, 2, "healthy", 3)]));
+        Assert.Empty(plan.Failures);
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slowPeer = Task.Run(async () =>
+        {
+            using var socket = await slowServer.AcceptTcpClientAsync(Token);
+            var request = await ReadAsync(socket.GetStream());
+            received.TrySetResult();
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(20), Token);
+            await ReplyAsync(socket.GetStream(), 503, close: true);
+            return request;
+        }, Token);
+        var healthyPeer = ServeOnceAsync(healthyServer, 204);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        try
+        {
+            await received.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            var healthy = await healthyPeer.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.ReadPending(2, 0, 1).Count == 0);
+            Assert.False(slowPeer.IsCompleted);
+            var pending = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 2));
+            using var frozen = JsonDocument.Parse(pending.Payload);
+            using var delivered = JsonDocument.Parse(healthy.Body);
+            Assert.Equal(84, frozen.RootElement.GetProperty("values").GetProperty("slow").GetInt64());
+            Assert.Equal(126, delivered.RootElement.GetProperty("values").GetProperty("healthy").GetInt64());
+            Assert.Equal(frozen.RootElement.GetProperty("sourceMessageId").GetString(),
+                delivered.RootElement.GetProperty("sourceMessageId").GetString());
+            Assert.Equal(1, inputFactory.Started);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await slowPeer.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            await runtime.StopAsync(Token);
+        }
+        Assert.Single(runtime.Deliveries.ReadPending(1, 0, 2));
+        Assert.Empty(runtime.Deliveries.ReadPending(2, 0, 2));
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
     private static RuntimeUnitPlan Plan(TcpListener server, string path) => new(RuntimeUnitId.Create("output.http", path),
         JsonSerializer.SerializeToElement(new { connectionId = 1, baseAddress = Base(server), path, inputs = Inputs, headers = new Dictionary<string, string> { ["X-Static"] = "frozen" } }));
     [Fact]
