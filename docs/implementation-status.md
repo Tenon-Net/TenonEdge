@@ -1486,6 +1486,125 @@ Host 尚未注册新的提供者或开放 input.mqtt 配置；正式注册时必
 
 未完成边界保持：跨进程订阅集合持久化与协调、旧 ClientId 会话清理、MQTTnet 接收队列内存边界、故障成员订阅协调及异常停止场景仍需继续；T2-03、AT-25、T2 和可视化访问目标均未标为完成。
 
+
+### 2.59 T2-03 / AT-25 子项：持久订阅日志与宿主重建协调
+
+继续 §2.58，新增 `IMqttSubscriptionStore` 契约、Host 的 `MqttSubscriptionStore` 和 config.db schema 11 的 `mqtt_subscription` 表。表以规范化 Broker 接收方、实际 ClientId、Topic Filter 三个文本字段联合寻址，不分配雪花 ID，不保存密码，也不按计划版本隔离。Host 通过现有计划工厂/共享连接注入日志；Prepare 不读写订阅日志，激活后的订阅协调才访问。每次数据库操作使用独立短客户端，不跨网络等待持有事务。
+
+订阅协议：
+
+- 连接后重新读取日志。SessionPresent=1 时，已确认落盘且 Filter/QoS 未变的项不重复 SUBSCRIBE；新增/变更项重新订阅。SessionPresent=0 时清除旧集合并重新订阅，存在历史项时记录会话丢失事件。
+- 对新版本不再使用的已知 Filter 先 UNSUBSCRIBE，收到成功 UNSUBACK 后才删除日志，再协调新增项；新增有限诊断计数 `unsubscribed`，不新增每消息事件。
+- SUBSCRIBE **之前**持久化未确认意图，SUBACK 后才置为已确认。这样网络成功、本地确认提交失败时，日志仍保留可能已经安装的 Filter，下次可重新订阅或退订。未确认意图不会被当作成功订阅而跳过。
+- UNSUBACK 后本地删除失败时，保留日志并断开，后续重试幂等退订。不宣称 Broker 与 SQLite 可以原子提交；应答/本地提交窗口中断后，重订可能重复回放保留消息，这是显式保留的不确定性，不宣称 exactly-once。
+
+新增 10 个软件测试，另扩充产品 Host 用例：
+
+- 数据库完整关闭/重开后，已确认与未确认项、Unicode/引号 Filter、Broker/ClientId 隔离、幂等删除保持；非法 QoS 更新不覆盖旧项；旧 schema 10 数据升级保留。
+- 真实 Mosquitto + 重新打开 config.db + 新接收器：保留未变 Filter 不重复回放 retained，新增 Filter 安装，删除 Filter 退订后不再收到该主题的实时消息；用同一 Broker 的后续 barrier 消息确认接收顺序，不用固定 sleep 判定“没有消息”。
+- QoS 变更实测新的接收 QoS；测试主动清除 Broker 会话后，SessionPresent=0 触发重订及丢失诊断。这是测试清理，不是产品旧 ClientId 清理实现。
+- 用真实 SQLite 触发器分别拒绝订阅意图、SUBACK 后确认更新、UNSUBACK 后删除：意图失败时借用 Broker 持久会话验证没有安装未登记订阅；确认失败后分别验证重订和退订；删除失败后验证再次退订。触发器仅存在于测试临时库。
+- 产品 Host 用 `WebApplicationFactory` 完整释放/重建两次，同一数据目录、稳定默认 ClientId、真实凭证与混合 MQTT 输入/输出；两次均能转发实际消息，累计 subscribed/retainedIgnored 均保持 1。此项是同一测试进程内的宿主重建，**不是独立 OS 进程或 SIGKILL 恢复测试**。
+
+验证环境：Linux x64、SDK 10.0.401、真实 Mosquitto 测试夹具。命令与实际结果：
+
+1. `dotnet build TenonEdge.sln -c Release --no-restore`：退出 0，0 警告/错误；日志 `/tmp/tenonedge-subscriptions-build.log`。
+2. `dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~MqttSubscriptionStoreTests|FullyQualifiedName~MqttInputSessionTests|FullyQualifiedName~MqttHostInputTests'`：首轮 20 通过，0 失败/跳过；日志 `/tmp/tenonedge-subscriptions-focused.log`。后加的边界用例包含在最终全量运行中。
+3. 首次全量回归：739 单元通过、集成 652 通过/1 失败，日志 `/tmp/tenonedge-subscriptions-full.log`。失败是新增文本联合主键表未登记到 `GatewayIdentityTests` 的非雪花主键表清单；已增加明确登记和三个 TEXT 主键字段的断言，没有放宽雪花 ID 表检查。
+4. 后续全量回归：739 单元通过、集成 653 通过/1 失败，日志 `/tmp/tenonedge-subscriptions-final.log`。既有 `BrokerNetworkOutageBoundsTheQueueAndRecoveryDeliversFrozenBacklog` 发现网络冻结期间一条记录 FailureCount=1，预期为 0；这不是本轮订阅测试失败，但作为未决回归问题保留，**没有通过重跑将它标为已修复**。
+5. 该断网用例隔离执行一次通过（`/tmp/tenonedge-subscriptions-outage-repeat.log`）；临时仅记录异常类型/堆栈后又连续 9 次通过（`/tmp/tenonedge-outage-debug-1.log` 至 `-9.log`），带临时诊断的全量 1393 项通过（`/tmp/tenonedge-subscriptions-debug-full.log`）。未捕获导致毒消息误计数的异常类型，根因仍待定位；临时 `[DEBUG-subscription-outage]` / sender 输出已全部移除，没有据猜测修改网络异常分类。
+6. 移除临时诊断后的正式命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-subscriptions-clean' --results-directory /tmp/tenonedge-subscriptions-clean --blame-hang-timeout 5m --blame-hang-dump-type none`：**739 单元 + 654 集成 = 1393 通过**，0 失败/跳过；日志 `/tmp/tenonedge-subscriptions-clean.log`，TRX 计数已独立核对。该次全绿不消除第 4 项的偶发失败记录。
+7. `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include $(git diff --name-only -- '*.cs') $(git ls-files --others --exclude-standard -- '*.cs')`：退出 0；日志 `/tmp/tenonedge-subscriptions-format-final.log`；`git diff --check` 通过。
+
+仍未完成：独立进程强杀/重启与完整 AT-25；删除最后一个输入或整个连接时的退订、旧 ClientId 会话清理、故障成员动态协调；旧部署/外部创建但没有日志的订阅无法凭空重建清单。T5 恢复旧 config.db 时须处理日志相对 Broker 会话过期的问题，不能无条件信任备份中的 confirmed 标记。MQTTnet 无界接收队列与配置切换失败恢复等既有缺口保持。T2-03、T2 和可视化访问目标仍未完成；本轮不创建 web/，不推进 T4/T5/G1 实现。
+
+
+### 2.60 T2-03 / AT-25 子场景：MQTT 输入独立进程强杀恢复
+
+在 §2.59 的持久订阅实现上新增 `MqttInputRecoveryProcessTests`，这次不使用 `WebApplicationFactory` 代替进程重启：首次设置、保存 MQTT 凭证、运行种子计划和重启均通过独立 `dotnet` 宿主进程完成，使用真实 HTTP 管理 API、config.db/queue.db、产品输入/输出适配器和真实 Mosquitto。测试拥有的宿主由 `HostProcess.KillAsync` 在 Linux 上发送 SIGKILL；没有向产品加入退出开关或测试单元。
+
+两个场景均使用稳定默认 ClientId、同一个 Broker 持久会话和混合输入/输出连接：
+
+- **已确认并清空输出后强杀**：先验证保留值 7 被忽略、实时值 1 已转发，等待 SQLite 中 ACK 计数和输出删除落盘，再强杀宿主。确认进程退出后发布值 84；新进程补收 84，再正确转发实时 barrier 值 126。订阅/忽略保留消息的持久计数各保持 1，没有再收到保留值 7 或旧实时值 1。
+- **已解码但提交前强杀**：同样完成上述基线，然后由测试持有 queue.db 的真实独占写事务，发布值 42。通过运行状态 API 等待输入完成第二次解码，确认投递表为空且 ACK 计数仍是基线值，持锁强杀宿主，再释放事务。退出后发布 84；重启进程依次收到 Broker 重投的 42、离线积存的 84 和新发布的 126，输出最终清空。重启前的空投递表证明 42 不是从旧 queue.db 记录重放，而是由上游持久会话重新接管。
+
+**反向验证**：临时把 QoS 1 输入由 `ProduceConfirmedAsync` 改成 `ProduceAsync` 后直接返回 Committed（错误的“入内存即确认”）。运行同一进程测试，已确认场景通过，提交前强杀场景明确失败：重启后的第一条值预期 42、实际 84，证明提前确认会丢失未落盘输入，且本测试能发现。变异随后恢复；`MqttInputHandoff.cs` 与变异前无 diff，不保留测试旁路。
+
+实际验证（Linux x64、SDK 10.0.401）：
+
+1. 初次编译被 CA1859 阻止，尚未执行测试；将测试私有 PublishAsync 辅助方法的返回类型改为实际的 `Task<MqttClientPublishResult>`，未关闭分析器。
+2. `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MqttInputRecoveryProcessTests --logger 'trx;LogFilePrefix=mqtt-input-process' --results-directory /tmp/tenonedge-mqtt-input-process`：**2 通过，0 失败/跳过**，日志 `/tmp/tenonedge-mqtt-input-process.log`，约 33 秒。
+3. 错误变异下运行同一 filter（不加 TRX 参数）：**1 通过、1 失败**；日志 `/tmp/tenonedge-mqtt-input-process-mutation.log`，失败为 Expected 42 / Actual 84，不是编译失败或环境跳过。
+4. 恢复后的 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-input-process-full' --results-directory /tmp/tenonedge-mqtt-input-process-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**739 单元 + 656 集成 = 1395 通过，0 失败/跳过**；日志 `/tmp/tenonedge-mqtt-input-process-full.log`，TRX 计数已独立核对。
+5. 新文件的格式检查最初报告一处 if 后的换行，已仅调整空白；最终 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include tests/IntegrationTests/Processes/MqttInputRecoveryProcessTests.cs`：退出 0；日志 `/tmp/tenonedge-mqtt-input-process-format-final.log`；`git diff --check` 通过。
+
+边界：这里只强杀网关进程，**Broker 一直存活**；不证明 Broker 强杀/重启或断电下的离线数据落盘，不覆盖磁盘满、已提交但上游尚未收到 ACK 的所有重复窗口，也不宣称 exactly-once。旧 ClientId 清理、删除最后一个输入/连接、故障成员协调、接收队列内存边界及完整配置切换仍未完成。§2.59 的既有断网误计毒消息偶发失败本轮全量运行未复现，但未定位、未宣称修复。T2-03 / AT-25 整体、T2 与可视化访问目标继续保持未完成。
+
+
+### 2.61 T2 MQTT 重连：修复旧客户端仍在断开时再次 Connect 的竞态
+
+针对 §2.59 记录的“断网期间毒消息次数增加”继续建立可重复反馈。先新增有限并发的 `RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison`：8 条独立连接各进行 10 轮 TCP 双向冻结，每轮验证两次失败发送只 Retry、不计毒消息。先后错开发送与保活的时间窗口（250–950 ms、950–1090 ms、1450–1820 ms），这些探针以及带诊断的全量运行均未重现原偶发失败；它们通过不能作为已经修复的依据。
+
+随后用真实 Broker 和真实 MQTTnet 状态机缩小关闭窗口：
+
+- 新增 `MqttDisconnectRaceTests`。第二个测试客户端以同一 ClientId 连接，使 Broker 关闭产品的原连接；测试只在原 TCP 流的首次释放处设置有界门闩，将异步清理窗口拉宽，不伪造 MQTTnet 的 IsConnected 或 ConnectAsync 返回。
+- 已观察到原会话 IsConnected=false，但 MQTTnet 仍在 DisconnectCore 中。此时产品发送再次调用旧客户端的 ConnectAsync，稳定抛出 `System.InvalidOperationException`；临时堆栈明确指向 `MQTTnet.MqttClient.ConnectAsync → MqttSession.ExecuteAsync`。旧实现两次运行均因 CountsTowardPoison=true 失败，非超时/零用例/跳过。
+- 现有检查错误地把“未连接”等同“旧客户端已完成断开，可以再次 Connect”。修正为：不再在旧对象上重连；发现未连接后先 Reset/释放旧传输，创建新的客户端及接收代次，然后连接。实际 ClientId、共享连接租约、接收器和持久订阅日志保持，不创建第二套运行时或连接管理。
+- 不把所有 InvalidOperationException/未知本地异常改成网络错误，不放宽毒消息分类规则。回归要求新发送获得实际 Ack、CountsTowardPoison=false，并确认出站连接计数为 2（首次连接 + 新代次）。
+
+实际命令与证据（Linux x64、SDK 10.0.401）：
+
+1. 缩小窗口前的重复故障探针：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison --logger 'console;verbosity=detailed'`。三组均 1 通过，日志 `/tmp/tenonedge-mqtt-poison-race.log`、`/tmp/tenonedge-mqtt-poison-ping-race.log`、`/tmp/tenonedge-mqtt-poison-cleanup-race.log`；最终用例保留第三组窗口。探针期间带临时诊断的全量通过，日志 `/tmp/tenonedge-mqtt-poison-full-1.log`，不据此宣称竞态消失。
+2. 修复前：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MqttDisconnectRaceTests --logger 'console;verbosity=detailed'`：两次均 **1 失败**，日志 `/tmp/tenonedge-mqtt-disconnect-red.log` 与 `/tmp/tenonedge-mqtt-disconnect-red-repeat.log`；用例本身约 0.14 秒即可触发错误分类。
+3. 修复后：同一 filter，加 `--logger 'trx;LogFilePrefix=mqtt-disconnect-fixed' --results-directory /tmp/tenonedge-mqtt-disconnect-fixed`：**1 通过，0 失败/跳过**；日志 `/tmp/tenonedge-mqtt-disconnect-fixed.log`。随后 `--no-build` 连续运行该 filter 5 次，均 1 通过，日志 `/tmp/tenonedge-mqtt-disconnect-repeat-1.log` 至 `-5.log`。
+4. 移除所有临时诊断后的 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-disconnect-full' --results-directory /tmp/tenonedge-mqtt-disconnect-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**739 单元 + 658 集成 = 1397 通过，0 失败/跳过**；日志 `/tmp/tenonedge-mqtt-disconnect-full.log`，TRX 计数已独立核对，包含原断网队列恢复用例和 §2.60 的真实进程强杀用例。
+5. 对本轮三个 C# 文件执行 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include src/TenonEdge.Adapters/Mqtt/MqttSession.cs tests/IntegrationTests/Runtime/MqttOutputTests.cs tests/IntegrationTests/Runtime/MqttDisconnectRaceTests.cs`：退出 0；日志 `/tmp/tenonedge-mqtt-disconnect-format-final.log`；`git diff --check` 通过。临时 `[DEBUG-mqtt-poison]` / sender 输出已移除，`OutputSenderUnit.cs` 无遗留改动。
+
+对历史失败的归因边界：§2.59 的那次失败只有最终计数、没有原始异常堆栈，不能追溯证明它唯一由本竞态引起。本轮确认并修复的是一个能确定性产生相同误计的真实重连缺陷，并让原场景与完整回归通过；其他断开/取消边界仍须持续观察。T2-03、接收队列内存边界、旧 ClientId 清理、完整 AT-25 和可视化访问目标不因此标为完成。
+
+
+### 2.62 T2-03 / V-04 子项：MQTT 单帧正文分配前的长度保护
+
+开始处理接收内存边界时，回读 MQTTnet 5.2 的公开通道接口及实际接收路径：库先读固定头，再按 Remaining Length 分配正文；原有业务回调的 1 MiB 校验晚于这次分配。只限制后续排队条数不能防止单个超大声明先触发分配，因此本轮先补这层前置保护，**不把它当作接收队列总量已经有界**。
+
+- 新增自有 `MqttFrameLimitChannel`，放在库的 TCP/TLS 明文通道与库帧解码器之间，只跟踪固定头、Remaining Length 和正文边界。初始两字节可合并读，其余长度字节逐个检查；超限时不把完整头交给库，不读取正文，直接终止本连接代次。正文内容不被当作下一帧头，零正文帧与分片/粘连均可处理；超限后锁定失败状态，不能继续读并重复计数。
+- 新增 `MqttBoundedAdapterFactory`，通过 MQTTnet 的公开 `IMqttClientAdapterFactory` / `IMqttChannel` 扩展点装配，继续使用库的 `MqttTcpChannel`、TLS、编码器、通道适配器及包检查器。沿用出站 StreamProvider、原目标主机名与 TLS 信任设置；没有复制第三方协议栈、没有修改依赖版本或增加包。实际编译和测试仍是锁定的 MQTTnet **5.2.0.1603**。
+- 保护用于产品 MQTT 会话的所有新客户端，包括混合输入/输出连接。首版只支持已声明的 MQTT 3.1.1 TCP/TLS；不趁机开放 WebSocket 或 MQTT 5。
+- Remaining Length 上限为 **1,114,115 字节**：完整 1 MiB 载荷 + 65,535 字节 Topic + Topic 长度字段 2 字节 + QoS 1 PacketId 2 字节。固定头另最多 5 字节。业务层的 **1 MiB 载荷上限仍独立执行**，没有把业务载荷上限放宽到该帧上限。
+- 新增有限诊断 `connection/<id>/mqtt/wireOversized`，经既有计数写者持久化，已测运行时重建后保留。业务回调中的 `oversized` 仍表示已解码出消息后按载荷上限拒绝；`wireOversized` 表示帧在正文分配前就被拒绝，**不 ACK、不读取整个超大正文**。Broker 侧消息大小限制仍是部署前提，否则超大 QoS 1 消息可能反复重投，不能声称已替代 Broker 限制。
+
+新增验证：
+
+- 13 个单元用例：单字节与合并读取、正文内类似帧头的字节、零长度控制帧、1–4 字节长度编码、超过四字节编码、精确上限、超限后的读取锁定/只计一次、取消与写入/传输元数据转发。
+- 直接调用真实 MQTTnet 解码器：超限头触发长度拒绝且底层没有一次正文读取请求；另构造合法的最长 Topic + 完整 1 MiB QoS 1 载荷，确认解码器仍取得正确 Topic 长度、PacketId 和载荷长度，避免只测“拒绝”而误伤上限内合法消息。
+- 5 个集成用例：脚本化 TCP/TLS 对端（不是实物或 Broker 容器）只发 CONNACK 和超限头，**完全不发所声明的正文**。TCP/TLS、头分片/完整发送四种组合均须主动断开、计一次超限且无应用消息回调；TLS 使用测试 CA 的显式信任链，没有关闭证书校验。另用实际 `MqttSession` 完成 CONNECT/SUBSCRIBE 后发送超限头，验证产品确实接入保护并报告 `wireOversized`，没有把保护留在独立探针里。
+
+实际命令与结果（Linux x64、SDK 10.0.401）：
+
+1. `dotnet build TenonEdge.sln -c Release --no-restore`：退出 0，0 警告/错误；日志 `/tmp/tenonedge-mqtt-frame-build.log`。
+2. 初始单元构建被 CA1859 拒绝（未执行），已把私有读取辅助参数改为具体类型。随后一个测试对第三方异常包装的假设失败：MQTTnet 同步完成路径通过 Task.Result 产生 AggregateException，并包装为 MqttCommunicationException；异步路径可直接传播。回读实际源码后改为断言根异常必须为长度拒绝，同时保留“零正文读取”和计数断言，没有放宽为任意异常即通过。失败日志 `/tmp/tenonedge-mqtt-frame-unit-final.log`、`/tmp/tenonedge-mqtt-frame-unit-boundary.log`。
+3. `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~MqttFrameLimitTests`：**13 通过，0 失败/跳过**；日志 `/tmp/tenonedge-mqtt-frame-unit-passed.log`。
+4. `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MqttFrameLimitTests`：**5 通过，0 失败/跳过**；日志 `/tmp/tenonedge-mqtt-frame-integration.log`。
+5. `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-frame-full' --results-directory /tmp/tenonedge-mqtt-frame-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**752 单元 + 663 集成 = 1415 通过，0 失败/跳过**；日志 `/tmp/tenonedge-mqtt-frame-full.log`，TRX 计数已独立核对；包括此前真实 Broker、重连竞态和独立进程强杀恢复回归。
+6. `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include src/TenonEdge.Adapters/Mqtt/MqttFrameLimitChannel.cs src/TenonEdge.Adapters/Mqtt/MqttBoundedAdapterFactory.cs src/TenonEdge.Adapters/Mqtt/MqttSession.cs src/TenonEdge.Adapters/Mqtt/MqttInputReceiver.cs src/TenonEdge.Runtime/Deliveries/DeliveryCache.cs tests/UnitTests/Adapters/MqttFrameLimitTests.cs tests/IntegrationTests/Runtime/MqttFrameLimitTests.cs tests/IntegrationTests/Runtime/RuntimeCounterTests.cs`：退出 0；日志 `/tmp/tenonedge-mqtt-frame-format-final.log`；`git diff --check` 通过。
+
+尚未解决：多个合法帧仍可能积存在 MQTTnet 内部接收队列。本轮只限制每帧分配前的声明长度，不证明跨连接/跨代次总字节额度、队列条数或进程 RSS 达标。下一步仍须把库接收队列纳入全局在途预算，验证 QoS 0 丢弃、QoS 1 不确认断连以及连接代次切换的额度释放；不得以本节替代该验收。旧 ClientId 清理、完整 T2-03 / AT-25、T2 及可视化访问目标仍未完成。
+
+### 本地提交整理（2026-10-09，§2.59—§2.62）
+
+维护者再次授权“整理提交一下未提交的，然后继续”。本次将持久订阅日志与独立进程恢复验证、断开/重连竞态修复、单帧分配前限长及其测试整理为一个本地检查点；各项共用 MQTT 会话装配，保留整体回归过的状态，不人为拆出未验证的中间态。不推送，不宣称 T2 或可视化访问已完成。
+
+提交前在 Linux x64、SDK 10.0.401 上重新执行：
+
+```sh
+dotnet test TenonEdge.sln -c Release --no-restore \
+  --logger 'trx;LogFilePrefix=mqtt-checkpoint' \
+  --results-directory /tmp/tenonedge-mqtt-checkpoint \
+  --blame-hang-timeout 5m --blame-hang-dump-type none
+```
+
+结果：**752 单元 + 663 集成 = 1415 通过，0 失败/跳过**。退出码 0，两个 TRX 的 Counters 已独立核对；日志 `/tmp/tenonedge-mqtt-checkpoint.log`。`git diff --check` 通过。继续点仍是 T2-03 接收队列/总原始内存有界，不把单帧限长当成全局预算验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

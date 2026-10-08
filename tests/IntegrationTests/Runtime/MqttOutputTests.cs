@@ -421,6 +421,37 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
         }
     }
 
+    [Fact]
+    public async Task RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison()
+    {
+        var broker = fixture.Require();
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(async lane =>
+        {
+            await using var proxy = TcpFaultProxy.Start(broker.Port);
+            for (var round = 0; round < 10; round++)
+            {
+                var target = new MqttOutputFactory(new Credentials(), TimeProvider.System, LoopbackConnector,
+                    new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(proxy.Port, MqttProbe.NewTopic("outage-race")));
+                await using var adapter = target.CreateAdapter();
+                var message = target.CreateMessage(Message(), Guid.NewGuid());
+                Assert.Equal(OutputSendStatus.Ack, (await adapter.SendAsync(message, Token)).Status);
+                proxy.Freeze();
+                try
+                {
+                    // 刻意错开保活与发送期限，覆盖后台断线清理和应用发送重叠；不是以 sleep 判断就绪。
+                    await Task.Delay(1450 + ((round % 4) * 100) + (lane * 10), Token);
+                    for (var attempt = 0; attempt < 2; attempt++)
+                    {
+                        var result = await adapter.SendAsync(message, Token);
+                        Assert.Equal(OutputSendStatus.Retry, result.Status);
+                        Assert.False(result.CountsTowardPoison, $"lane={lane}, round={round}, attempt={attempt}: {result.Error}");
+                    }
+                }
+                finally { proxy.Thaw(); }
+            }
+        }));
+    }
+
     private static IOutboundConnector LoopbackConnector => new TenonEdge.Runtime.Connections.OutboundConnector(new LoopbackPolicy());
     private sealed class LoopbackPolicy : IOutboundAddressPolicy
     {

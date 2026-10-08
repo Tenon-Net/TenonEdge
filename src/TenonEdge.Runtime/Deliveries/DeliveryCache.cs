@@ -55,7 +55,7 @@ public sealed class DeliveryCache
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(connectionId, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(connectionId, 9007199254740991L);
-        if (reason is not ("quiescing" or "subscribed" or "sessionLost" or "acknowledged" or "oversized" or "retainedIgnored" or "unmatched" or "handoffTimeout" or "handoffFailed"))
+        if (reason is not ("quiescing" or "subscribed" or "unsubscribed" or "sessionLost" or "acknowledged" or "oversized" or "wireOversized" or "retainedIgnored" or "unmatched" or "handoffTimeout" or "handoffFailed"))
         { throw new ArgumentException("未知的 MQTT 输入诊断类型。", nameof(reason)); }
         PendingCounters.Add($"connection/{connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture)}/mqtt/{reason}");
     }

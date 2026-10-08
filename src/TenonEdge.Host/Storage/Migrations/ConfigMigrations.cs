@@ -167,5 +167,18 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        // T2-03：先记订阅意图，再发 SUBSCRIBE；网络应答与本地提交不宣称原子性。
+        new(11, "mqtt_subscriptions", [
+            """
+            CREATE TABLE mqtt_subscription (
+                recipient TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                topic_filter TEXT NOT NULL,
+                qos INTEGER NOT NULL CHECK (qos IN (0, 1)),
+                confirmed INTEGER NOT NULL CHECK (confirmed IN (0, 1)),
+                PRIMARY KEY (recipient, client_id, topic_filter)
+            )
+            """,
+        ]),
     ];
 }

@@ -46,6 +46,7 @@ internal static class RuntimeRegistration
         services.AddSingleton<OutputControlStore>();
         services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());
         services.AddSingleton<MqttCredentialStore>();
+        services.AddSingleton<IMqttSubscriptionStore, MqttSubscriptionStore>();
         services.AddSingleton<HttpCredentialStore>();
         services.AddSingleton<IHttpCredentialResolver>(provider => provider.GetRequiredService<HttpCredentialStore>());
         services.AddSingleton<OutboundPolicyStore>();
@@ -72,7 +73,7 @@ internal static class RuntimeRegistration
                             connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                             "MQTT 会话丢失，断线期间的消息可能已丢失；需要重新订阅。");
                     }
-                });
+                }, provider.GetRequiredService<IMqttSubscriptionStore>());
         });
         services.AddSingleton<IOutputAdapterFactory>(provider => new HttpOutputFactory(
             provider.GetRequiredService<IHttpCredentialResolver>(),

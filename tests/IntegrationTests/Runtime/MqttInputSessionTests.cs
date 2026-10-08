@@ -7,6 +7,7 @@ using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
@@ -458,6 +459,229 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal(1, connector.Connections);
         Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
         Assert.DoesNotContain(runtime.GetStatus().Units, unit => unit.State == RuntimeUnitState.StopTimedOut);
+    }
+
+    [Fact]
+    public async Task ReopenedJournalSkipsUnchangedRetainedFilterAndUnsubscribesRemovedFilter()
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("subscription-journal");
+        using var directory = TemporaryDirectory.Create();
+        using var deadline = MqttProbe.Timeout(Token);
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), Token);
+        using (publisher)
+        {
+            await publisher.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(topic + "/keep").WithPayload("retained")
+                .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(), deadline.Token);
+            using (var database = TestConfigStore.Open(directory.Path))
+            {
+                database.Initialize();
+                var journal = new MqttSubscriptionStore(database.Database);
+                var retained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var receiver = new MqttInputReceiver([
+                    new(topic + "/keep", 1, (message, _) =>
+                    {
+                        if (message.Retain) { retained.TrySetResult(); }
+                        return Task.FromResult(InputHandoffStatus.Committed);
+                    }, true),
+                    new(topic + "/remove", 1, (_, _) => Task.FromResult(InputHandoffStatus.Committed))],
+                    TimeProvider.System, _ => { }, journal, identity);
+                await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), receiver);
+                Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+                await retained.Task.WaitAsync(deadline.Token);
+                Assert.Equal(2, journal.Read(identity).Count);
+            }
+            using (var database = TestConfigStore.Open(directory.Path))
+            {
+                database.Initialize();
+                var journal = new MqttSubscriptionStore(database.Database);
+                var reports = new ConcurrentQueue<string>();
+                var received = new ConcurrentQueue<string>();
+                var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var receiver = new MqttInputReceiver([
+                    new(topic + "/keep", 1, (message, _) =>
+                    {
+                        received.Enqueue(message.ConvertPayloadToString());
+                        if (message.ConvertPayloadToString() == "barrier") { barrier.TrySetResult(); }
+                        return Task.FromResult(InputHandoffStatus.Committed);
+                    }, true),
+                    new(topic + "/added", 0, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+                    TimeProvider.System, reports.Enqueue, journal, identity);
+                await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), receiver);
+                Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+                Assert.True(receiver.LastSessionPresent);
+                Assert.Single(reports, reason => reason == "subscribed");
+                Assert.Single(reports, reason => reason == "unsubscribed");
+                await MqttProbe.PublishAsync(publisher, topic + "/remove", "removed"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+                await MqttProbe.PublishAsync(publisher, topic + "/keep", "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+                await barrier.Task.WaitAsync(deadline.Token);
+                Assert.Equal("barrier", Assert.Single(received)); // 未变订阅没有再次回放 retained。
+                Assert.DoesNotContain("unmatched", reports); // 已退订，不再收到删除主题的实时消息。
+                Assert.DoesNotContain(journal.Read(identity), item => item.Filter == topic + "/remove");
+                Assert.All(journal.Read(identity), item => Assert.True(item.Confirmed));
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SubackWithFailedLocalCommitLeavesIntentForResubscribeOrRemoval(bool remove)
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("uncertain-suback");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        database.Database.Client.Ado.ExecuteCommand("""
+            CREATE TRIGGER fail_subscription_confirmation BEFORE UPDATE ON mqtt_subscription
+            WHEN NEW.confirmed = 1 BEGIN SELECT RAISE(ABORT, 'injected confirmation failure'); END
+            """);
+        using var deadline = MqttProbe.Timeout(Token);
+        var original = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        {
+            Assert.Equal(OutputSendStatus.Retry, (await session.MaintainAsync(deadline.Token)).Status);
+            Assert.False(session.IsConnected);
+        }
+        Assert.Equal(new(topic, 1, false), Assert.Single(journal.Read(identity)));
+        database.Database.Client.Ado.ExecuteCommand("DROP TRIGGER fail_subscription_confirmation");
+        var reports = new ConcurrentQueue<string>();
+        var desired = remove ? topic + "/replacement" : topic;
+        var restarted = new MqttInputReceiver([new(desired, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+        await using (var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restarted))
+        {
+            Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+            Assert.True(restarted.LastSessionPresent);
+            Assert.Single(reports, reason => reason == "subscribed");
+            Assert.Equal(remove ? 1 : 0, reports.Count(reason => reason == "unsubscribed"));
+            Assert.Equal(new(desired, 1, true), Assert.Single(journal.Read(identity)));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReopenedJournalResubscribesForQosChangeOrLostBrokerSession(bool sessionLost)
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("subscription-change");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        using var deadline = MqttProbe.Timeout(Token);
+        var original = new MqttInputReceiver([new(topic, 0, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status); }
+        if (sessionLost)
+        {
+            // 测试主动清理 Broker 会话；不是产品旧 ClientId 清理的实现或证据。
+            var (cleaner, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, identity.ClientId, cleanSession: true), deadline.Token);
+            using (cleaner)
+            { await MqttProbe.DisconnectAsync(cleaner, deadline.Token); }
+        }
+        var qos = sessionLost ? 0 : 1;
+        var received = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reports = new ConcurrentQueue<string>();
+        var restarted = new MqttInputReceiver([new(topic, qos, (message, _) =>
+        {
+            received.TrySetResult((int)message.QualityOfServiceLevel);
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        })], TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+        await using var current = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restarted);
+        Assert.Equal(OutputSendStatus.Ack, (await current.MaintainAsync(deadline.Token)).Status);
+        Assert.Equal(!sessionLost, restarted.LastSessionPresent);
+        Assert.Single(reports, reason => reason == "subscribed");
+        Assert.Equal(sessionLost ? 1 : 0, reports.Count(reason => reason == "sessionLost"));
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (publisher)
+        { await MqttProbe.PublishAsync(publisher, topic, "{}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
+        Assert.Equal(qos, await received.Task.WaitAsync(deadline.Token));
+        Assert.Equal(new(topic, qos, true), Assert.Single(journal.Read(identity)));
+    }
+
+    [Fact]
+    public async Task UnsubackWithFailedLocalDeleteIsRetriedAfterReconnect()
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("uncertain-unsuback");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        using var deadline = MqttProbe.Timeout(Token);
+        var original = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status); }
+        database.Database.Client.Ado.ExecuteCommand("""
+            CREATE TRIGGER fail_subscription_delete BEFORE DELETE ON mqtt_subscription
+            BEGIN SELECT RAISE(ABORT, 'injected deletion failure'); END
+            """);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var reports = new ConcurrentQueue<string>();
+            var receiver = new MqttInputReceiver([new(topic + "/new", 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+                TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+            await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), receiver);
+            var result = await session.MaintainAsync(deadline.Token);
+            if (attempt == 0)
+            {
+                Assert.Equal(OutputSendStatus.Retry, result.Status);
+                Assert.Equal(topic, Assert.Single(journal.Read(identity)).Filter);
+                Assert.DoesNotContain("subscribed", reports);
+                database.Database.Client.Ado.ExecuteCommand("DROP TRIGGER fail_subscription_delete");
+            }
+            else
+            {
+                Assert.Equal(OutputSendStatus.Ack, result.Status);
+                Assert.Single(reports, reason => reason == "unsubscribed");
+                Assert.Equal(new(topic + "/new", 1, true), Assert.Single(journal.Read(identity)));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task FailedIntentCommitNeverInstallsAnUntrackedBrokerSubscription()
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("failed-subscribe-intent");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        database.Database.Client.Ado.ExecuteCommand("""
+            CREATE TRIGGER fail_subscription_intent BEFORE INSERT ON mqtt_subscription
+            BEGIN SELECT RAISE(ABORT, 'injected intent failure'); END
+            """);
+        using var deadline = MqttProbe.Timeout(Token);
+        var receiver = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), receiver))
+        { Assert.Equal(OutputSendStatus.Retry, (await session.MaintainAsync(deadline.Token)).Status); }
+        Assert.Empty(journal.Read(identity));
+        // 借用同一 Broker 持久会话直接观察：若先发 SUBSCRIBE 再写意图，原主题消息会排在 barrier 前到达。
+        var (probe, result) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, identity.ClientId, cleanSession: false), deadline.Token);
+        using (probe)
+        {
+            Assert.True(result.IsSessionPresent);
+            var received = ReceivedMessages.Attach(probe);
+            await MqttProbe.SubscribeAsync(probe, topic + "/barrier", deadline.Token);
+            await MqttProbe.PublishAsync(probe, topic, "unexpected"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            await MqttProbe.PublishAsync(probe, topic + "/barrier", "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            Assert.Equal(topic + "/barrier", (await received.NextAsync(deadline.Token)).ApplicationMessage.Topic);
+        }
     }
 
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()

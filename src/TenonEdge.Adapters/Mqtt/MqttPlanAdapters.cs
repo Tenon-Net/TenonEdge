@@ -17,9 +17,10 @@ internal sealed class MqttPlanAdapters
     private readonly TimeProvider _time;
     private readonly string _clientPrefix;
     private readonly Action<long, string> _report;
+    private readonly IMqttSubscriptionStore? _subscriptions;
 
     public MqttPlanAdapters(ICredentialResolver credentials, IJsonInputDecoderFactory decoders, ISharedConnections shared,
-        IOutboundConnector connector, TimeProvider time, string gatewayNodeId, Action<long, string> report)
+        IOutboundConnector connector, TimeProvider time, string gatewayNodeId, Action<long, string> report, IMqttSubscriptionStore? subscriptions = null)
     {
         _credentials = credentials;
         _decoders = decoders;
@@ -28,6 +29,7 @@ internal sealed class MqttPlanAdapters
         _time = time;
         _clientPrefix = "tenon-" + Guid.Parse(gatewayNodeId).ToString("N");
         _report = report;
+        _subscriptions = subscriptions;
         InputFactory = new Inputs(this);
         OutputFactory = new MqttOutputFactory(credentials, time, connector, shared, gatewayNodeId)
         { InputGroups = ResolveOutputGroup };
@@ -73,7 +75,7 @@ internal sealed class MqttPlanAdapters
             connection.Group = new Lazy<MqttConnectionGroup>(() => new MqttConnectionGroup(settings, clientId,
                 captured.Inputs.Select(input => new MqttInputBinding(input.Settings.TopicFilter, input.Settings.Qos,
                     input.ReceiveAsync, input.Settings.ProcessRetained)), _shared, _credentials, _time, _connector,
-                captured.WaitForActivationAsync, reason => _report(settings.ConnectionId, reason)));
+                captured.WaitForActivationAsync, reason => _report(settings.ConnectionId, reason), _subscriptions));
             _connections.Add(settings.ConnectionId, connection);
         }
         if (connection.Settings.ConnectionIdentity(connection.ClientId) != settings.ConnectionIdentity(clientId))

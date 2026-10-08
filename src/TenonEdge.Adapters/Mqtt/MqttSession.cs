@@ -63,9 +63,12 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 Reset();
             }
 
-            if (_client is null)
+            if (_client?.IsConnected != true)
             {
-                var client = new MqttClientFactory().CreateMqttClient();
+                // IsConnected=false 也可能仍在异步 DisconnectCore 中；旧对象不能再次 Connect。
+                // 用新的客户端代次重连，保留接收器中的持久订阅状态和实际 ClientId。
+                Reset();
+                var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => input?.RecordWireOversized()));
                 _client = client;
                 if (input is not null)
                 {
@@ -83,9 +86,6 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                         client.Dispose();
                     }, receiveToken);
                 }
-            }
-            if (!_client.IsConnected)
-            {
                 var builder = new MqttClientOptionsBuilder()
                     .WithTcpServer(settings.Host, settings.Port)
                     .WithStreamProvider(new MqttStreamProvider(connector))
