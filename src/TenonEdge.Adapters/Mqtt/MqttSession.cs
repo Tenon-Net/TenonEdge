@@ -94,7 +94,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     { _receiveBuffer = new MqttReceiveBuffer(input.BufferBudget, 100, receive, input.ReportBuffer, time); }
                 }
                 client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => input?.RecordWireOversized(), receiveBuffer: _receiveBuffer));
+                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer));
                 _client = client;
                 if (_receiveBuffer is null && receive is not null)
                 { client.ApplicationMessageReceivedAsync += args => receive(args, CancellationToken.None); }
@@ -174,6 +174,14 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     : transient ? "MQTT 网络中断或操作超时，记录保持待发。" : "MQTT 本地未知异常或无法识别的响应。",
                 CountsTowardPoison: !suspend && !transient);
         }
+    }
+
+    private static bool AdmitOutputFrame(byte header, int remainingLength)
+    {
+        // 输出专用会话使用 CleanSession 且从不订阅；不要让意外 PUBLISH 进入库的无界队列。
+        if ((header >> 4) == 3)
+        { throw new MqttCommunicationException("未配置 MQTT 输入的连接收到 PUBLISH，已关闭连接。"); }
+        return true;
     }
 
     private MqttCredential? Credential() => settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) : null;

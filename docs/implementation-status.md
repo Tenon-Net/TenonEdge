@@ -1678,6 +1678,22 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 本地检查点：沿用维护者“整理提交后继续”的本地提交授权，将 §2.63—§2.65 的准入、预算分区、自有队列、产品装配和测试作为同一已回归状态提交；不推送，不将本检查点当作 T2 或可视化访问完成。
 
+### 2.66 T2-03 / T2-08 子项：输出专用连接拒绝非预期 PUBLISH、TLS 接收压力
+
+- 补 §2.65 的输出专用连接边界：它使用 CleanSession 且不订阅，现在从完整固定头识别非预期 PUBLISH，并在正文读取/分配前关闭连接。不让这些帧绕过输入预算进入库的无界队列；QoS 0/1 都拒绝。输入/输出共享连接仍使用已配置输入的有界接收器，没有误禁正常订阅。
+- 新增两个真实 TCP 对端用例：实际 `MqttSession` 建连成功后，只发 QoS 0 或 QoS 1 PUBLISH 头，完全不发正文；必须在 3 秒内关闭、没有 ACK，随后同一产品会话可重新 CONNECT 成功且不计毒消息。保活间隔 15 秒，因此不能靠保活超时冒充头部拒绝。
+- 先运行新用例：两个均因 3 秒读取等待取消而失败，日志 `/tmp/tenonedge-output-receive-red.log`。实现固定头拒绝后通过，没有放宽等待时间或改成任意异常即通过。
+- 将 §2.65 的四个慢回调/条数与字节压力场景扩展为 TCP/TLS 两组，共八项。TLS 使用测试 CA 的显式信任链与正确服务器名/SAN，没有关闭验证；同样检查 QoS 0 丢弃后 Ping 成功、QoS 1 只发头时满预算超时断连、正在执行的回调保留额度、实际结束后释放及没有库应用回调。这是脚本化 TLS 对端软件测试，不是实物或长期 RSS 压测。
+
+环境：Linux x64、SDK 10.0.401、锁定 MQTTnet 5.2.0.1603。
+
+1. `dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~OutputOnlySessionRejectsUnsolicited|FullyQualifiedName~MqttReceiveBufferTests'`：**13 通过、0 失败/跳过**；日志 `/tmp/tenonedge-receive-tls-focused.log`。
+2. `dotnet format TenonEdge.sln --no-restore --include src/TenonEdge.Adapters/Mqtt/MqttSession.cs tests/IntegrationTests/Runtime/MqttFrameLimitTests.cs tests/IntegrationTests/Runtime/MqttReceiveBufferTests.cs`：退出 0；日志 `/tmp/tenonedge-receive-tls-format.log`。
+
+3. `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=receive-tls' --results-directory /tmp/tenonedge-receive-tls --blame-hang-timeout 5m --blame-hang-dump-type none`：**768 单元 + 678 集成 = 1446 通过，0 失败/跳过**，退出 0；日志 `/tmp/tenonedge-receive-tls-full.log`，两个 TRX Counters 独立核对。`git diff --check` 通过。
+
+上述新增证据不代表 MQTT 全部连接生命周期、T2-08 长期资源验收或 T3 已完成。Modbus 选型及 TCP UnitId 冲突仍以维护者明确答复为准，未把建议当成批准；已异步提交建议，继续不受影响的任务，不因等待答复停止整个开发。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

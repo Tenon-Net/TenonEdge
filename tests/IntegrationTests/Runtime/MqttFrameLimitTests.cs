@@ -133,6 +133,40 @@ public sealed class MqttFrameLimitTests
         Assert.Equal(0, Volatile.Read(ref callbacks));
     }
 
+    [Theory]
+    [InlineData(0x30)]
+    [InlineData(0x32)]
+    public async Task OutputOnlySessionRejectsUnsolicitedPublishHeaderBeforeBodyAndCanReconnect(byte header)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var settings = new MqttConnectionSettings { ConnectionId = 1, Host = "127.0.0.1", Port = port };
+        await using var session = new MqttSession(settings, "output-only-frame", new NoCredentials(), TimeProvider.System,
+            new OutboundConnector(new Loopback()));
+        using var deadline = MqttProbe.Timeout(Token);
+        var maintaining = session.MaintainAsync(deadline.Token);
+        using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
+        var stream = peer.GetStream();
+        Assert.Equal(0x10, (await ReadPacketAsync(stream, deadline.Token)).Header);
+        await stream.WriteAsync(new byte[] { 0x20, 2, 0, 0 }, deadline.Token);
+        Assert.Equal(OutputSendStatus.Ack, (await maintaining).Status);
+        // 没有订阅，且完全不发送正文；应只凭固定头拒绝，不能留给库分配/排队。
+        await stream.WriteAsync(new byte[] { header, 100 }, deadline.Token);
+        using var rejectDeadline = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        rejectDeadline.CancelAfter(TimeSpan.FromSeconds(3));
+        Assert.Equal(0, await stream.ReadAsync(new byte[1], rejectDeadline.Token));
+        await OutputPipelineTests.UntilAsync(() => !session.IsConnected);
+        maintaining = session.MaintainAsync(deadline.Token);
+        using var nextPeer = await listener.AcceptTcpClientAsync(deadline.Token);
+        var next = nextPeer.GetStream();
+        Assert.Equal(0x10, (await ReadPacketAsync(next, deadline.Token)).Header);
+        await next.WriteAsync(new byte[] { 0x20, 2, 0, 0 }, deadline.Token);
+        var result = await maintaining;
+        Assert.Equal(OutputSendStatus.Ack, result.Status);
+        Assert.False(result.CountsTowardPoison);
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static byte[] OversizedHeader()
     {

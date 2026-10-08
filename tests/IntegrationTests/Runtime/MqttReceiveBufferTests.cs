@@ -1,8 +1,11 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates;
 using MQTTnet;
 using MQTTnet.Formatter;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Diagnostics;
 
 namespace TenonEdge.IntegrationTests.Runtime;
@@ -10,15 +13,23 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class MqttReceiveBufferTests
 {
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task SlowCallbackKeepsBudgetAfterDisconnectAndNeverEntersLibraryQueue(bool qosOne, bool byteLimited)
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task SlowCallbackKeepsBudgetAfterDisconnectAndNeverEntersLibraryQueue(bool qosOne, bool byteLimited, bool tls)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(15));
         var token = deadline.Token;
+        using var authority = TestCertificateAuthority.Create("MQTT bounded receive test");
+        using var root = authority.RootCertificate;
+        var issued = authority.IssueServerCertificate("localhost");
+        using var certificate = X509Certificate2.CreateFromPem(issued.CertificatePem, issued.KeyPem);
         var budget = new InFlightBudget(1024 * 1024, byteLimited ? 5000 : 65536);
         var entered = Signal();
         var release = Signal();
@@ -37,10 +48,17 @@ public sealed class MqttReceiveBufferTests
         client.DisconnectedAsync += _ => { disconnected.TrySetResult(); return Task.CompletedTask; };
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
-        var connecting = client.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", ((IPEndPoint)listener.LocalEndpoint).Port)
-            .WithProtocolVersion(MqttProtocolVersion.V311).WithClientId("bounded-receive-test").Build(), token);
+        var options = new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", ((IPEndPoint)listener.LocalEndpoint).Port)
+            .WithProtocolVersion(MqttProtocolVersion.V311).WithClientId("bounded-receive-test");
+        if (tls)
+        { options.WithTlsOptions(value => value.UseTls().WithTrustChain([root])); }
+        var connecting = client.ConnectAsync(options.Build(), token);
         using var peer = await listener.AcceptTcpClientAsync(token);
-        var stream = peer.GetStream();
+        using var network = peer.GetStream();
+        using var secure = tls ? new SslStream(network, leaveInnerStreamOpen: true) : null;
+        if (secure is not null)
+        { await secure.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate }, token); }
+        var stream = (Stream?)secure ?? network;
         await ReadPacketAsync(stream, token);
         await stream.WriteAsync(new byte[] { 0x20, 2, 0, 0 }, token);
         await connecting;
