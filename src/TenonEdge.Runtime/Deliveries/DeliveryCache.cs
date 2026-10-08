@@ -50,6 +50,16 @@ public sealed class DeliveryCache
 
     public StorageProtection StorageProtection { get; }
 
+    /// <summary>MQTT 接收器的有限诊断计数，由原有唯一写者合并持久化；不逐条写运行事件或另开事务。</summary>
+    public void RecordMqttInputDiagnostic(long connectionId, string reason)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(connectionId, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(connectionId, 9007199254740991L);
+        if (reason is not ("quiescing" or "subscribed" or "sessionLost" or "acknowledged" or "oversized" or "retainedIgnored" or "unmatched" or "handoffTimeout" or "handoffFailed"))
+        { throw new ArgumentException("未知的 MQTT 输入诊断类型。", nameof(reason)); }
+        PendingCounters.Add($"connection/{connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture)}/mqtt/{reason}");
+    }
+
     public IReadOnlyDictionary<string, long> GetPersistentCounters() => Store.ReadCounters();
     public IReadOnlyDictionary<string, long> GetUnpersistedCounters() => PendingCounters.Snapshot();
     public RuntimeActivityTotals GetActivityTotals() => PendingCounters.ActivitySnapshot();

@@ -1,17 +1,25 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using MQTTnet;
 using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
+using TenonEdge.Runtime.Lifecycle;
+using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
 [Trait("Category", "RealBroker")]
 public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
 {
+    private static readonly string[] PlanInputKeys = ["device/one", "device/two"];
+    private static readonly string[] InputKeys = ["device/input"];
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -40,8 +48,10 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal(1, connector.Connections);
     }
 
-    [Fact]
-    public async Task FailedHandoffDisconnectsWithoutAckAndBrokerRedeliversInPersistentSession()
+    [Theory]
+    [InlineData(InputHandoffStatus.StorageFailed)]
+    [InlineData(InputHandoffStatus.Buffered)]
+    public async Task FailedHandoffDisconnectsWithoutAckAndBrokerRedeliversInPersistentSession(InputHandoffStatus firstResult)
     {
         var broker = fixture.Require();
         var topic = MqttProbe.NewTopic("handoff-replay");
@@ -51,7 +61,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         var failures = new ConcurrentQueue<string>();
         var input = new MqttInputReceiver([new(topic, 1, (message, _) =>
         {
-            if (Interlocked.Increment(ref attempts) == 1) { return Task.FromResult(InputHandoffStatus.StorageFailed); }
+            if (Interlocked.Increment(ref attempts) == 1) { return Task.FromResult(firstResult); }
             replay.TrySetResult(message.Dup);
             return Task.FromResult(InputHandoffStatus.Committed);
         })], TimeProvider.System, reason =>
@@ -115,6 +125,339 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         // The receiver has already terminated and disposed this connection generation.
         Assert.DoesNotContain("acknowledged", reports);
         Assert.False(session.IsConnected);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NeitherInputMaintenanceNorOutputCanConnectBeforeActivation(bool send)
+    {
+        var broker = fixture.Require();
+        var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connector = new CountingConnector();
+        var settings = Settings(broker);
+        var topic = MqttProbe.NewTopic("activation-gate");
+        var input = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { });
+        await using var session = new MqttSession(settings, NewId(), new Credentials(), TimeProvider.System, connector, input,
+            token => { waiting.TrySetResult(); return activation.Task.WaitAsync(token); });
+        using var deadline = MqttProbe.Timeout(Token);
+        var pending = send
+            ? session.SendAsync(new("{}"u8.ToArray(), topic, 1, settings.Fingerprint(MosquittoBroker.UserName, "account"), "test"), deadline.Token)
+            : session.MaintainAsync(deadline.Token);
+        await waiting.Task.WaitAsync(deadline.Token);
+        Assert.False(pending.IsCompleted);
+        Assert.Equal(0, connector.Connections);
+        Assert.False(session.IsConnected);
+        activation.SetResult();
+        Assert.Equal(OutputSendStatus.Ack, (await pending).Status);
+        Assert.Equal(1, connector.Connections);
+    }
+
+    [Fact]
+    public async Task TimedOutOutputWaitingForActivationDoesNotConnectOrPoisonSharedSession()
+    {
+        var broker = fixture.Require();
+        var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var connector = new CountingConnector();
+        var settings = Settings(broker);
+        var input = new MqttInputReceiver([new(MqttProbe.NewTopic("activation-timeout"), 1,
+            (_, _) => Task.FromResult(InputHandoffStatus.Rejected))], time, _ => { });
+        var shared = new SharedConnections();
+        var clientId = NewId();
+        await using var output = new MqttOutputAdapter(shared.Acquire(1, "mqtt", settings.ConnectionIdentity(clientId),
+            () => new MqttSession(settings, clientId, new Credentials(), time, connector, input,
+                token => { waiting.TrySetResult(); return activation.Task.WaitAsync(token); })), time, 5000);
+        var message = new OutputMessage("{}"u8.ToArray(), MqttProbe.NewTopic("output-after-activation"), 1,
+            settings.Fingerprint(MosquittoBroker.UserName, "account"), "test");
+        var pending = output.SendAsync(message, Token);
+        await waiting.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+        time.Advance(TimeSpan.FromSeconds(5));
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(10), Token);
+        Assert.Equal(OutputSendStatus.Retry, result.Status);
+        Assert.False(result.CountsTowardPoison);
+        Assert.Equal(0, connector.Connections);
+        Assert.False(activation.Task.IsCompleted);
+        activation.SetResult();
+        Assert.Equal(OutputSendStatus.Ack, (await output.SendAsync(message, Token)).Status);
+        Assert.Equal(1, connector.Connections);
+    }
+
+    [Fact]
+    public async Task CompiledInputGroupSharesOneClientAcrossTwoInputBindingsAndTwoOutputBorrowers()
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("compiled-group");
+        var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connector = new CountingConnector();
+        var shared = new SharedConnections();
+        var settings = Settings(broker);
+        var clientId = NewId();
+        var group = new MqttConnectionGroup(settings, clientId,
+            [new(topic + "/one", 1, (message, _) => { first.TrySetResult(message.ConvertPayloadToString()); return Task.FromResult(InputHandoffStatus.Committed); }),
+             new(topic + "/two", 1, (message, _) => { second.TrySetResult(message.ConvertPayloadToString()); return Task.FromResult(InputHandoffStatus.Committed); })],
+            shared, new Credentials(), TimeProvider.System, connector, token => activation.Task.WaitAsync(token), _ => { });
+        await using var inputLease = group.Acquire();
+        var outputFactory = new MqttOutputFactory(new Credentials(), TimeProvider.System, connector, shared) { InputGroups = _ => group };
+        IOutputTarget BuildOutput(string name) => outputFactory.Build(new RuntimeUnitPlan(RuntimeUnitId.Create("output.mqtt", name),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = settings.ConnectionId,
+                host = settings.Host,
+                port = settings.Port,
+                usePassword = true,
+                clientId,
+                topic = topic + "/" + name,
+                inputs = InputKeys,
+            })));
+        var targetOne = BuildOutput("one");
+        var targetTwo = BuildOutput("two");
+        Assert.True(targetOne.CanShareSenderWith(targetTwo));
+        await using var outputOne = targetOne.CreateAdapter();
+        await using var outputTwo = targetTwo.CreateAdapter();
+        Assert.Equal(0, connector.Connections);
+        using var deadline = MqttProbe.Timeout(Token);
+        activation.SetResult();
+        Assert.Equal(OutputSendStatus.Ack, (await inputLease.ExecuteAsync((session, token) => session.MaintainAsync(token), deadline.Token)).Status);
+        var fingerprint = settings.Fingerprint(MosquittoBroker.UserName, "account");
+        Assert.Equal(OutputSendStatus.Ack, (await outputOne.SendAsync(new("one"u8.ToArray(), topic + "/one", 1, fingerprint, "test"), deadline.Token)).Status);
+        Assert.Equal(OutputSendStatus.Ack, (await outputTwo.SendAsync(new("two"u8.ToArray(), topic + "/two", 1, fingerprint, "test"), deadline.Token)).Status);
+        Assert.Equal("one", await first.Task.WaitAsync(deadline.Token));
+        Assert.Equal("two", await second.Task.WaitAsync(deadline.Token));
+        Assert.Equal(1, connector.Connections);
+        Assert.Throws<ArgumentException>(() => group.ValidateMember(settings with { Port = broker.Port + 1 }, clientId));
+        Assert.Throws<ArgumentException>(() => group.ValidateMember(settings, clientId + "-changed"));
+    }
+
+    [Fact]
+    public async Task PreparedGroupCannotBorrowOldPlansReceiverEvenWithIdenticalConnectionSettings()
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var clientId = NewId();
+        var shared = new SharedConnections();
+        var connector = new CountingConnector();
+        MqttConnectionGroup Create() => new(settings, clientId,
+            [new(MqttProbe.NewTopic("plan-isolation"), 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            shared, new Credentials(), TimeProvider.System, connector, _ => Task.CompletedTask, _ => { });
+        var oldPlan = Create();
+        var prepared = Create();
+        var oldLease = oldPlan.Acquire();
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => prepared.Acquire());
+            Assert.Equal(0, connector.Connections);
+        }
+        finally { await oldLease.DisposeAsync(); }
+        await using var replacement = prepared.Acquire();
+        using var deadline = MqttProbe.Timeout(Token);
+        Assert.Equal(OutputSendStatus.Ack, (await replacement.ExecuteAsync((session, token) => session.MaintainAsync(token), deadline.Token)).Status);
+        Assert.Equal(1, connector.Connections);
+    }
+
+    [Fact]
+    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput()
+    {
+        var broker = fixture.Require();
+        using var data = TemporaryDirectory.Create();
+        var topic = MqttProbe.NewTopic("plan-pipeline");
+        var subscribed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var confirmed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var subscriptions = 0;
+        var confirmations = 0;
+        var connector = new CountingConnector();
+        var adapters = new MqttPlanAdapterProvider(new Credentials(), new JsonInputDecoderFactory(), new SharedConnections(), connector,
+            TimeProvider.System, Guid.NewGuid().ToString(), (_, reason) =>
+            {
+                if (reason == "subscribed" && Interlocked.Increment(ref subscriptions) == 2)
+                { subscribed.TrySetResult(); }
+                if (reason == "acknowledged" && Interlocked.Increment(ref confirmations) == 2)
+                { confirmed.TrySetResult(); }
+            });
+        RuntimeUnitPlan Input(string name) => new(RuntimeUnitId.Create("input.mqtt", "device/" + name),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = 1,
+                host = "127.0.0.1",
+                port = broker.Port,
+                usePassword = true,
+                topicFilter = topic + "/" + name,
+                fields = new[] { new { key = "value", path = "/v", type = "integer" } },
+            }));
+        var output = new RuntimeUnitPlan(RuntimeUnitId.Create("output.mqtt", "out"), JsonSerializer.SerializeToElement(new
+        {
+            connectionId = 1,
+            host = "127.0.0.1",
+            port = broker.Port,
+            usePassword = true,
+            topic = topic + "/out",
+            inputs = PlanInputKeys,
+        }));
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, planAdapters: [adapters]);
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(Input("one"), Input("two"), output));
+        Assert.Empty(plan.Failures);
+        Assert.Equal(0, connector.Connections);
+        var (peer, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), Token);
+        using (peer)
+        {
+            var received = ReceivedMessages.Attach(peer);
+            await MqttProbe.SubscribeAsync(peer, topic + "/out", Token);
+            runtime.StartCore();
+            await runtime.ActivateAsync(plan);
+            await subscribed.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            // 再次 Prepare 获得独立工厂；放弃草稿不能改动原订阅或取消原计划。
+            await using (var draft = runtime.Prepare(OutputPipelineTests.Plan(Input("one"), Input("two"), output)))
+            { Assert.Empty(draft.Failures); }
+            Assert.Equal(1, connector.Connections);
+            await MqttProbe.PublishAsync(peer, topic + "/one", "{\"v\":9223372036854775807}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, Token);
+            await MqttProbe.PublishAsync(peer, topic + "/two", "{\"v\":42}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, Token);
+            var values = new List<long>();
+            for (var i = 0; i < 2; i++)
+            {
+                var delivered = await received.NextAsync(Token);
+                using var payload = JsonDocument.Parse(delivered.ApplicationMessage.ConvertPayloadToString());
+                Assert.Equal("device", payload.RootElement.GetProperty("deviceKey").GetString());
+                values.Add(payload.RootElement.GetProperty("values").GetProperty("value").GetInt64());
+            }
+            Assert.Contains(long.MaxValue, values);
+            Assert.Contains(42L, values);
+            await confirmed.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.ReadPending(1, 0, 10).Count == 0);
+            Assert.Equal(1, connector.Connections);
+            await runtime.StopAsync(Token);
+            Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QuiesceDrainsAcceptedMessageButLeavesLaterMessagesForPersistentRedelivery(bool cancelWait)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("quiesce-drain");
+        var clientId = NewId();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commit = new TaskCompletionSource<InputHandoffStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callbacks = 0;
+        var acknowledgements = 0;
+        var receiver = new MqttInputReceiver([new(topic, 1, (_, _) =>
+        {
+            Interlocked.Increment(ref callbacks);
+            entered.TrySetResult();
+            return commit.Task;
+        })], TimeProvider.System, reason => { if (reason == "acknowledged") { Interlocked.Increment(ref acknowledgements); } });
+        var connector = new CountingConnector();
+        using var deadline = MqttProbe.Timeout(Token);
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), Token);
+        using (publisher)
+        {
+            await using (var session = new MqttSession(Settings(broker), clientId, new Credentials(), TimeProvider.System, connector, receiver))
+            {
+                Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+                await MqttProbe.PublishAsync(publisher, topic, "accepted"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+                await entered.Task.WaitAsync(deadline.Token);
+                using var waiter = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+                var drain = receiver.QuiesceAsync(waiter.Token);
+                Assert.False(drain.IsCompleted);
+                if (cancelWait)
+                {
+                    await waiter.CancelAsync();
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => drain);
+                    drain = receiver.QuiesceAsync(deadline.Token);
+                    Assert.False(drain.IsCompleted);
+                }
+                await MqttProbe.PublishAsync(publisher, topic, "after-quiesce"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+                commit.SetResult(InputHandoffStatus.Committed);
+                await drain;
+                Assert.Equal(1, callbacks);
+                Assert.Equal(1, acknowledgements);
+                Assert.True(session.IsConnected); // 排空本身不抢先断开，关闭由生命周期拥有者负责。
+            }
+            var replay = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var replacement = new MqttInputReceiver([new(topic, 1, (message, _) =>
+            {
+                replay.TrySetResult(message.ConvertPayloadToString());
+                return Task.FromResult(InputHandoffStatus.Committed);
+            })], TimeProvider.System, _ => { });
+            await using var restarted = new MqttSession(Settings(broker), clientId, new Credentials(), TimeProvider.System, connector, replacement);
+            Assert.Equal(OutputSendStatus.Ack, (await restarted.MaintainAsync(deadline.Token)).Status);
+            Assert.True(replacement.LastSessionPresent);
+            Assert.Equal("after-quiesce", await replay.Task.WaitAsync(deadline.Token));
+            Assert.Equal(1, callbacks);
+            Assert.Equal(1, acknowledgements);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeStopKeepsMixedConnectionUntilBlockedSqliteHandoffIsCommittedAndAcknowledged()
+    {
+        var broker = fixture.Require();
+        using var data = TemporaryDirectory.Create();
+        var topic = MqttProbe.NewTopic("runtime-drain");
+        var subscribed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var quiescing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var confirmed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connector = new CountingConnector();
+        var provider = new MqttPlanAdapterProvider(new Credentials(), new JsonInputDecoderFactory(), new SharedConnections(), connector,
+            TimeProvider.System, Guid.NewGuid().ToString(), (_, reason) =>
+            {
+                if (reason == "subscribed")
+                { subscribed.TrySetResult(); }
+                if (reason == "quiescing")
+                { quiescing.TrySetResult(); }
+                if (reason == "acknowledged")
+                { confirmed.TrySetResult(); }
+            });
+        var inputId = RuntimeUnitId.Create("input.mqtt", "device/input");
+        var input = new RuntimeUnitPlan(inputId, JsonSerializer.SerializeToElement(new
+        {
+            connectionId = 1,
+            host = "127.0.0.1",
+            port = broker.Port,
+            usePassword = true,
+            topicFilter = topic + "/in",
+            fields = new[] { new { key = "value", path = "/v", type = "integer" } },
+        }));
+        var output = new RuntimeUnitPlan(RuntimeUnitId.Create("output.mqtt", "out"), JsonSerializer.SerializeToElement(new
+        { connectionId = 1, host = "127.0.0.1", port = broker.Port, usePassword = true, topic = topic + "/out", inputs = InputKeys }));
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, planAdapters: [provider]);
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(input, output));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        using var deadline = MqttProbe.Timeout(Token);
+        await subscribed.Task.WaitAsync(deadline.Token);
+        Task stopped;
+        using (var database = new SqliteConnection($"Data Source={Path.Combine(data.Path, "queue.db")};Pooling=False"))
+        {
+            database.Open();
+            using var transaction = database.BeginTransaction();
+            using var command = database.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE queue_meta SET config_store_id=config_store_id WHERE id=1";
+            command.ExecuteNonQuery();
+            var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), Token);
+            using (publisher)
+            { await MqttProbe.PublishAsync(publisher, topic + "/in", "{\"v\":42}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
+            await OutputPipelineTests.UntilAsync(() => runtime.GetStatus().Units.Single(unit => unit.Id == inputId).Reads?.ReadsCompleted == 1);
+            stopped = runtime.StopAsync(Token);
+            await quiescing.Task.WaitAsync(deadline.Token);
+            Assert.False(stopped.IsCompleted);
+            Assert.False(confirmed.Task.IsCompleted);
+            transaction.Rollback();
+        }
+        await stopped.WaitAsync(deadline.Token);
+        Assert.True(confirmed.Task.IsCompletedSuccessfully);
+        Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10)); // 旧输出已静默，冻结记录留给下次启动。
+        Assert.Equal(1, connector.Connections);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        Assert.DoesNotContain(runtime.GetStatus().Units, unit => unit.State == RuntimeUnitState.StopTimedOut);
     }
 
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()

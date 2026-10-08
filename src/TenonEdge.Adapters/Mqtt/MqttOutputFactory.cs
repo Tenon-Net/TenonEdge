@@ -12,6 +12,10 @@ public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvi
 
     public string Kind => "output.mqtt";
 
+    // 仅计划范围装配使用；默认输出独立路径不访问或修改输入组。
+    internal Func<MqttOutputSettings, MqttConnectionGroup?>? InputGroups { get; init; }
+
+
     public IOutputTarget Build(RuntimeUnitPlan plan)
     {
         try
@@ -22,7 +26,9 @@ public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvi
                 throw new ArgumentException("MQTT 认证凭证未设置或接收方已变化，须重新填写凭证。");
             }
 
-            return new MqttOutputTarget(plan.Id, settings, credentials, time, _defaultClientPrefix, connector, connections);
+            var inputGroup = InputGroups?.Invoke(settings);
+            inputGroup?.ValidateMember(settings, settings.ClientId ?? $"{_defaultClientPrefix}-{settings.ConnectionId}");
+            return new MqttOutputTarget(plan.Id, settings, credentials, time, _defaultClientPrefix, connector, connections, inputGroup);
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)
         {

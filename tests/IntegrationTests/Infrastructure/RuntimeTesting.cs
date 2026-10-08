@@ -31,7 +31,8 @@ internal static class RuntimeTesting
         RuntimeOptions? options = null,
         IClockSyncStatus? clock = null,
         Func<DeliveryCacheOptions, DeliveryCacheOptions>? configureCache = null,
-        IEnumerable<IOutputAdapterFactory>? outputs = null)
+        IEnumerable<IOutputAdapterFactory>? outputs = null,
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapters = null)
     {
         time ??= TimeProvider.System;
         return new RuntimeHost(
@@ -43,7 +44,7 @@ internal static class RuntimeTesting
             options ?? new RuntimeOptions { InitialRestartDelay = TimeSpan.FromMilliseconds(50), RestartJitter = 0 },
             NullLogger<RuntimeHost>.Instance,
             random: () => 0,
-            outputFactories: outputs);
+            outputFactories: outputs, planAdapterProviders: planAdapters);
     }
 }
 

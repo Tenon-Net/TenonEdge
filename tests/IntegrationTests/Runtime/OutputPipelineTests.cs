@@ -117,8 +117,12 @@ public sealed class OutputPipelineTests
         var output = new FakeOutputFactory { OnSend = _ => new(OutputSendStatus.SuspendTarget, "test") };
         var events = new RecordingEventSink();
         await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, events, outputs: [output],
-            options: new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(200),
-                InitialRestartDelay = TimeSpan.FromMilliseconds(10), RestartJitter = 0 });
+            options: new RuntimeOptions
+            {
+                UnitStopTimeout = TimeSpan.FromMilliseconds(200),
+                InitialRestartDelay = TimeSpan.FromMilliseconds(10),
+                RestartJitter = 0
+            });
         _ = runtime.Deliveries.GetPersistentCounters();
         using (var connection = Open(data.Path))
         using (var command = connection.CreateCommand())
@@ -200,7 +204,7 @@ public sealed class OutputPipelineTests
     }
 
     [Fact]
-    public async Task ARejectedPreparedPlanDisposesAllConstructedSendersWithoutNetwork()
+    public async Task ARejectedPreparedPlanNeverCreatesAdaptersOrBorrowsConnections()
     {
         using var data = TemporaryDirectory.Create();
         var output = new FakeOutputFactory();
@@ -208,11 +212,11 @@ public sealed class OutputPipelineTests
         await using (var plan = runtime.Prepare(Plan(Input(), Output("out-a", 1), Output("out-b", 1))))
         {
             Assert.Single(plan.Failures);
-            Assert.Equal(1, output.Created);
+            Assert.Equal(0, output.Created);
             Assert.Equal(0, output.Sent);
         }
 
-        Assert.Equal(1, output.Disposed);
+        Assert.Equal(0, output.Disposed);
     }
 
     [Fact]

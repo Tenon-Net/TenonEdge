@@ -39,11 +39,14 @@ internal sealed class OutputSenderUnit(
 {
     internal const int PoisonThreshold = 10;
     internal const int RejectThreshold = 20;
-    private readonly IOutputAdapter _adapter = target.CreateAdapter();
+    private readonly Lazy<IOutputAdapter> _adapter = new(target.CreateAdapter);
     public RuntimeUnitId Id => target.Id;
 
     public async Task RunAsync(CancellationToken stoppingToken)
     {
+        stoppingToken.ThrowIfCancellationRequested();
+        // 准备草稿不借用运行中的物理连接；只有监督者实际启动本实例后才取得租约。
+        _ = _adapter.Value;
         while (!stoppingToken.IsCancellationRequested)
         {
             if (state.AcknowledgedSeq is { } acknowledged)
@@ -219,7 +222,7 @@ internal sealed class OutputSenderUnit(
     {
         try
         {
-            var result = await _adapter.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService,
+            var result = await _adapter.Value.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService,
                 record.Fingerprint, record.FingerprintSummary, record.Headers, record.ProtocolMetadata), token);
             return Enum.IsDefined(result.Status) ? result : new(OutputSendStatus.Retry, "输出返回未知结果。", CountsTowardPoison: true);
         }
@@ -255,5 +258,5 @@ internal sealed class OutputSenderUnit(
         }
     }
 
-    public ValueTask DisposeAsync() => _adapter.DisposeAsync();
+    public ValueTask DisposeAsync() => _adapter.IsValueCreated ? _adapter.Value.DisposeAsync() : ValueTask.CompletedTask;
 }

@@ -117,15 +117,28 @@ internal sealed class RuntimePlanDocument
             httpConnections[settings.ConnectionId] = identity;
         }
         var mqttConnections = new Dictionary<long, string>();
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind == "output.mqtt"))
+        var mqttClients = new Dictionary<(string Recipient, string ClientId), long>();
+        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind is "input.mqtt" or "output.mqtt"))
         {
-            var settings = MqttOutputSettings.Parse(unit.Configuration);
+            MqttConnectionSettings settings = unit.Id.Kind == "input.mqtt"
+                ? MqttInputSettings.Parse(unit.Configuration) : MqttOutputSettings.Parse(unit.Configuration);
             var identity = settings.ConnectionIdentity(settings.ClientId);
             if (httpConnections.ContainsKey(settings.ConnectionId) ||
                 mqttConnections.TryGetValue(settings.ConnectionId, out var previous) && previous != identity)
             { throw new RuntimePlanDocumentException("同一连接的协议与 MQTT 连接参数必须一致。"); }
             mqttConnections[settings.ConnectionId] = identity;
+            if (settings.ClientId is { } clientId)
+            {
+                var client = (settings.Recipient, clientId);
+                if (mqttClients.TryGetValue(client, out var other) && other != settings.ConnectionId)
+                { throw new RuntimePlanDocumentException("同一 Broker 的不同连接不能使用相同 ClientId。"); }
+                mqttClients[client] = settings.ConnectionId;
+            }
         }
+        try
+        { MqttFeedbackGuard.Validate(plan.Units); }
+        catch (ArgumentException exception)
+        { throw new RuntimePlanDocumentException(exception.Message, exception); }
         return new RuntimePlanDocument(plan.Units, Serialize(plan.Units));
     }
 
@@ -163,6 +176,11 @@ internal sealed class RuntimePlanDocument
 
             if (kind.GetString() is "output.http" or "output.mqtt" && configuration.TryGetProperty("mapping", out var mapping))
             { FieldMappingConfiguration.Parse(mapping); }
+            if (kind.GetString() == "input.mqtt")
+            {
+                var settings = MqttInputSettings.Parse(configuration);
+                new JsonInputDecoderFactory().Build(settings.Fields, settings.UpstreamTime);
+            }
             if (kind.GetString() == "input.http")
             {
                 var settings = HttpInputSettings.Parse(configuration);

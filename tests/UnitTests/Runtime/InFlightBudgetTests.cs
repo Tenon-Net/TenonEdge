@@ -8,6 +8,24 @@ namespace TenonEdge.UnitTests.Runtime;
 public sealed class InFlightBudgetTests
 {
     [Fact]
+    public void NonWaitingProductionReleasesBudgetOnExceptionsAndExactChargeWorks()
+    {
+        var message = Message();
+        var budget = new InFlightBudget(10000);
+        var channel = new BudgetedInputChannel(1, budget);
+        var writer = (InputMessageWriter)channel.Writer;
+        Assert.Throws<InvalidOperationException>(() => writer.TryProduce(10000, 10000, () => throw new InvalidOperationException(), TestContext.Current.CancellationToken));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+        Assert.True(writer.TryProduce(message.BudgetBytes, message.BudgetBytes, () => message, TestContext.Current.CancellationToken));
+        Assert.Equal(message.BudgetBytes, budget.Status.ReservedBytes);
+        Assert.True(channel.Reader.TryRead(out _));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+        channel.Writer.TryComplete();
+        Assert.Throws<ChannelClosedException>(() => writer.TryProduce(10000, 10000, () => message, TestContext.Current.CancellationToken));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
     public async Task UndeclaredConfirmationCannotSilentlyWaitWithoutADispatcher()
     {
         var budget = new InFlightBudget(10000);

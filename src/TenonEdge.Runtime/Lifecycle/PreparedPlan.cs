@@ -18,9 +18,11 @@ public sealed class PreparedPlan : IAsyncDisposable
 {
     private readonly Lock _lock = new();
     private bool _handedOver;
+    private readonly TaskCompletionSource _activation;
 
-    internal PreparedPlan(long revision, IReadOnlyList<PreparedUnit> units, IReadOnlyList<PreparedOutput> outputs)
+    internal PreparedPlan(long revision, IReadOnlyList<PreparedUnit> units, IReadOnlyList<PreparedOutput> outputs, TaskCompletionSource activation)
     {
+        _activation = activation;
         Revision = revision;
         Units = units;
         Outputs = outputs;
@@ -47,6 +49,7 @@ public sealed class PreparedPlan : IAsyncDisposable
             _handedOver = true;
         }
 
+        _activation.TrySetCanceled();
         foreach (var unit in Units)
         {
             if (unit.Instance is not null)
@@ -55,6 +58,9 @@ public sealed class PreparedPlan : IAsyncDisposable
             }
         }
     }
+
+    internal void CompleteActivation() => _activation.TrySetResult();
+    internal void CancelActivation() => _activation.TrySetCanceled();
 
     /// <summary>把已构建的实例交给监督者；每个计划只能交出一次，交出之后释放计划不再释放实例。</summary>
     internal void HandOver()

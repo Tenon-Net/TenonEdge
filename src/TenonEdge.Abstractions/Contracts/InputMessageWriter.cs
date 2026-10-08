@@ -14,6 +14,11 @@ public abstract class InputMessageWriter : ChannelWriter<EdgeMessage>
     public abstract ValueTask ProduceAsync(long maximumWorkingBytes, long maximumMessageBytes,
         Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default);
 
+    /// <summary>不可重投输入的非等待入口。先检查通道与预算，再同步解析；false 表示容量不足且未转交消息。
+    /// true 仅表示已入内存通道（或解析器明确返回 null），不表示持久提交。单写者调用，不另建缓冲。</summary>
+    public abstract bool TryProduce(long maximumWorkingBytes, long maximumMessageBytes,
+        Func<EdgeMessage?> produce, CancellationToken cancellationToken = default);
+
     /// <summary>面向可重投输入：等待持久接管或明确拒绝，不以进入内存通道为成功。
     /// 工厂须声明 UsesDurableHandoff。取消只结束调用方等待，已入通道的数据仍由运行时持有；取消或失败不能确认上游。
     /// 回调返回 null 表示已由输入分类/计数的明确丢弃。返回 Committed/Rejected 才允许按输入到达顺序确认。
@@ -29,4 +34,5 @@ public abstract class InputMessageWriter : ChannelWriter<EdgeMessage>
 public sealed class InputMessageSizeException(string message) : ArgumentException(message);
 
 /// <summary>确认面向整条源消息：Committed 可包含已明确按策略拒绝的分支；StorageFailed/Stopped 均不允许确认。</summary>
-public enum InputHandoffStatus { Committed, Rejected, StorageFailed, Stopped }
+// Buffered 仅用于 QoS 0 已入内存通道，绝不能据此确认 QoS 1。
+public enum InputHandoffStatus { Committed, Rejected, StorageFailed, Stopped, Buffered }

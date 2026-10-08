@@ -27,6 +27,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
     private readonly Dictionary<string, IInputUnitFactory> _inputFactories;
     private readonly Dictionary<string, IOutputAdapterFactory> _outputFactories;
+    private readonly IRuntimePlanAdapterProvider[] _planAdapterProviders;
     private readonly List<(Channel<EdgeMessage> Channel, InputDispatcherState State)> _dispatchers = [];
     private readonly DeliveryCache _deliveries;
     private readonly IClockSyncStatus _clock;
@@ -55,8 +56,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         TimeProvider time,
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
-        IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls)
+        IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders)
     {
     }
 
@@ -70,10 +72,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         Func<double>? random,
-        IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null)
+        IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null)
     {
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
+        _planAdapterProviders = (planAdapterProviders ?? []).ToArray();
         ArgumentNullException.ThrowIfNull(inputFactories);
         _inputFactories = new Dictionary<string, IInputUnitFactory>(StringComparer.Ordinal);
         foreach (var factory in inputFactories)
@@ -138,10 +142,27 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     public PreparedPlan Prepare(RuntimePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+        var inputFactories = new Dictionary<string, IInputUnitFactory>(_inputFactories, StringComparer.Ordinal);
+        var outputFactories = new Dictionary<string, IOutputAdapterFactory>(_outputFactories, StringComparer.Ordinal);
+        foreach (var provider in _planAdapterProviders)
+        {
+            var adapters = provider.Create();
+            foreach (var factory in adapters.Inputs)
+            {
+                if (!factory.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal) || !inputFactories.TryAdd(factory.Kind, factory))
+                { throw new ArgumentException("计划输入工厂种类无效或重复注册。"); }
+            }
+            foreach (var factory in adapters.Outputs)
+            {
+                if (!factory.Kind.StartsWith("output.", StringComparison.Ordinal) || !outputFactories.TryAdd(factory.Kind, factory))
+                { throw new ArgumentException("计划输出工厂种类无效或重复注册。"); }
+            }
+        }
+        var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var units = new List<PreparedUnit>(plan.Units.Length);
         foreach (var unit in plan.Units.Where(unit => !unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
         {
-            units.Add(PrepareUnit(unit));
+            units.Add(PrepareUnit(unit, activation.Task, inputFactories));
         }
 
         var outputs = new List<PreparedOutput>();
@@ -149,7 +170,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         {
             try
             {
-                if (!_outputFactories.TryGetValue(unit.Id.Kind, out var factory))
+                if (!outputFactories.TryGetValue(unit.Id.Kind, out var factory))
                 {
                     throw new ArgumentException("未注册输出模块。");
                 }
@@ -202,7 +223,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             }
         }
 
-        return new PreparedPlan(plan.Revision, units, outputs);
+        return new PreparedPlan(plan.Revision, units, outputs, activation);
     }
 
     /// <summary>启动发送缓存写者；重复调用无效。</summary>
@@ -246,77 +267,87 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             _activeRevision = prepared.Revision;
         }
 
-        if (_coreStarted)
+        try
         {
-            var reconciled = await _deliveries.ReconcileAsync(prepared.Outputs.GroupBy(output => output.Target.ConnectionId).ToDictionary(group => group.Key,
-                group => group.First().Target.CurrentFingerprint), quarantineMissing: prepared.Failures.All(failure => !failure.Id.Kind.StartsWith("output.", StringComparison.Ordinal)), CancellationToken.None);
-            if (!reconciled.Committed)
+            if (_coreStarted)
             {
-                foreach (var unit in prepared.Units)
+                var reconciled = await _deliveries.ReconcileAsync(prepared.Outputs.GroupBy(output => output.Target.ConnectionId).ToDictionary(group => group.Key,
+                    group => group.First().Target.CurrentFingerprint), quarantineMissing: prepared.Failures.All(failure => !failure.Id.Kind.StartsWith("output.", StringComparison.Ordinal)), CancellationToken.None);
+                if (!reconciled.Committed)
                 {
-                    if (unit.Instance is not null)
-                    { await unit.Instance.DisposeAsync(); }
-                }
+                    prepared.CancelActivation();
+                    foreach (var unit in prepared.Units)
+                    {
+                        if (unit.Instance is not null)
+                        { await unit.Instance.DisposeAsync(); }
+                    }
 
-                lock (_lock)
-                { _activeRevision = null; }
-                throw new DeliveryStoreException("启动目标隔离未提交，运行计划没有启动；修复存储后重启以重新核对。");
-            }
-        }
-
-        foreach (var input in prepared.Units.Where(unit => unit.Channel is BudgetedInputChannel))
-        {
-            var channel = (BudgetedInputChannel)input.Channel!;
-            var paths = prepared.Outputs.Count(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
-            // 按协议声明预留报文、冻结拷贝及非秘密元数据；不代表实际堆占用。
-            channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
-                .Sum(output => output.Target.FormattingReservationBytes);
-            channel.ReserveSerializationWorkspace = paths > 0;
-            channel.MinimumSerializationReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
-                .Select(output => output.Target.MinimumSerializationReservationBytes).DefaultIfEmpty().Max();
-            channel.HasFieldMapping = prepared.Outputs.Any(output => output.Mapping is not null && output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
-        }
-
-        foreach (var unit in prepared.Units)
-        {
-            if (unit.Instance is null)
-            {
-                RecordNotStarted(unit.Id, unit.Error ?? "构建失败。", unit.Reads);
-                LogUnitNotStarted(_logger, unit.Id.ToString(), unit.Error ?? string.Empty);
-                _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), $"运行单元没有启动：{unit.Error}");
-                continue;
-            }
-
-            if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads))
-            {
-                const string reason = "同一单元的上一个实例仍在运行，没有启动新实例（单实例规则）。";
-                RecordNotStarted(unit.Id, reason, unit.Reads);
-                _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), reason);
-                await unit.Instance.DisposeAsync();
-                continue;
-            }
-
-            if (unit.Channel is not null)
-            {
-                lock (_lock)
-                {
-                    _inputChannels[unit.Id] = unit.Channel.Reader;
-                }
-
-                var targets = prepared.Outputs.Select(output => output.Target).Where(target => target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal)).ToArray();
-                if (targets.Length > 0 || ((BudgetedInputChannel)unit.Channel).UsesDurableHandoff)
-                {
-                    var state = new InputDispatcherState();
-                    var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
-                        .ToDictionary(output => output.Target.Id, output => output.Mapping!);
-                    IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
-                    _dispatchers.Add((unit.Channel, state));
-                    _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
+                    lock (_lock)
+                    { _activeRevision = null; }
+                    throw new DeliveryStoreException("启动目标隔离未提交，运行计划没有启动；修复存储后重启以重新核对。");
                 }
             }
-        }
 
-        LogActivated(_logger, prepared.Revision, prepared.Units.Count - prepared.Failures.Count, prepared.Failures.Count);
+            foreach (var input in prepared.Units.Where(unit => unit.Channel is BudgetedInputChannel))
+            {
+                var channel = (BudgetedInputChannel)input.Channel!;
+                var paths = prepared.Outputs.Count(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
+                // 按协议声明预留报文、冻结拷贝及非秘密元数据；不代表实际堆占用。
+                channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                    .Sum(output => output.Target.FormattingReservationBytes);
+                channel.ReserveSerializationWorkspace = paths > 0;
+                channel.MinimumSerializationReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                    .Select(output => output.Target.MinimumSerializationReservationBytes).DefaultIfEmpty().Max();
+                channel.HasFieldMapping = prepared.Outputs.Any(output => output.Mapping is not null && output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
+            }
+
+            foreach (var unit in prepared.Units)
+            {
+                if (unit.Instance is null)
+                {
+                    RecordNotStarted(unit.Id, unit.Error ?? "构建失败。", unit.Reads);
+                    LogUnitNotStarted(_logger, unit.Id.ToString(), unit.Error ?? string.Empty);
+                    _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), $"运行单元没有启动：{unit.Error}");
+                    continue;
+                }
+
+                if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads))
+                {
+                    const string reason = "同一单元的上一个实例仍在运行，没有启动新实例（单实例规则）。";
+                    RecordNotStarted(unit.Id, reason, unit.Reads);
+                    _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), reason);
+                    await unit.Instance.DisposeAsync();
+                    continue;
+                }
+
+                if (unit.Channel is not null)
+                {
+                    lock (_lock)
+                    {
+                        _inputChannels[unit.Id] = unit.Channel.Reader;
+                    }
+
+                    var targets = prepared.Outputs.Select(output => output.Target).Where(target => target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal)).ToArray();
+                    if (targets.Length > 0 || ((BudgetedInputChannel)unit.Channel).UsesDurableHandoff)
+                    {
+                        var state = new InputDispatcherState();
+                        var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
+                            .ToDictionary(output => output.Target.Id, output => output.Mapping!);
+                        IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
+                        _dispatchers.Add((unit.Channel, state));
+                        _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
+                    }
+                }
+            }
+
+            LogActivated(_logger, prepared.Revision, prepared.Units.Count - prepared.Failures.Count, prepared.Failures.Count);
+            prepared.CompleteActivation();
+        }
+        catch
+        {
+            prepared.CancelActivation();
+            throw;
+        }
     }
 
     /// <summary>
@@ -375,7 +406,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         }
     }
 
-    private PreparedUnit PrepareUnit(RuntimeUnitPlan unit)
+    private PreparedUnit PrepareUnit(RuntimeUnitPlan unit, Task activation, Dictionary<string, IInputUnitFactory> factories)
     {
         var id = unit.Id;
         if (!id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal))
@@ -383,7 +414,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             return Failed(id, $"本版本不支持单元种类 {id.Kind}：只支持已注册的输入和输出模块。");
         }
 
-        if (!_inputFactories.TryGetValue(id.Kind, out var factory))
+        if (!factories.TryGetValue(id.Kind, out var factory))
         {
             return Failed(id, $"没有注册单元种类 {id.Kind}（缺少模块）。");
         }
@@ -396,7 +427,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
         var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight) { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
-        var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer);
+        var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation);
         IRuntimeUnit Build()
         {
             var instance = factory.Build(unit, context);

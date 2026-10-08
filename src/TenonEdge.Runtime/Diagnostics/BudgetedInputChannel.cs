@@ -15,6 +15,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 {
     private readonly Channel<EdgeMessage> _inner;
     private readonly InFlightBudget _budget;
+    private readonly int _capacity;
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Exception? _completionError;
     private readonly ConcurrentDictionary<EdgeMessage, TaskCompletionSource<InputHandoffStatus>> _handoffs = new(ReferenceEqualityComparer.Instance);
@@ -27,6 +28,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     public BudgetedInputChannel(int capacity, InFlightBudget budget)
     {
         _budget = budget;
+        _capacity = capacity;
         _inner = Channel.CreateBounded<EdgeMessage>(new BoundedChannelOptions(capacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -62,6 +64,49 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
         public override ValueTask ProduceAsync(long maximumWorkingBytes, long maximumMessageBytes,
             Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default) =>
             ProduceCoreAsync(maximumWorkingBytes, maximumMessageBytes, produce, true, null, cancellationToken);
+
+        public override bool TryProduce(long maximumWorkingBytes, long maximumMessageBytes,
+            Func<EdgeMessage?> produce, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(produce);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumMessageBytes);
+            ArgumentOutOfRangeException.ThrowIfLessThan(maximumWorkingBytes, maximumMessageBytes);
+            if (maximumWorkingBytes > owner._budget.Capacity)
+            { throw new InputMessageSizeException("输入解析工作超过全局在途预算。"); }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (owner._closed.Task.IsCompleted)
+            { throw new ChannelClosedException(owner._completionError); }
+            // 单写者：检查后只有读取者能减少数量，不在满通道时先分配正文或解析树。
+            if (owner._inner.Reader.Count >= owner._capacity)
+            { return false; }
+            var reserved = Math.Max(maximumWorkingBytes, Math.Min(owner.Charge(maximumMessageBytes), owner._budget.Capacity));
+            if (!owner._budget.TryReserve(reserved))
+            { return false; }
+            try
+            {
+                var message = produce();
+                if (message is null)
+                { return true; }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (message.BudgetBytes > maximumMessageBytes)
+                { throw new InputMessageSizeException("输入消息超过结果大小上限。"); }
+                var charge = owner.Charge(message);
+                if (charge > reserved)
+                { throw new InputMessageSizeException("实际输入消息超过预先声明的字节预算。"); }
+                if (reserved > charge)
+                { owner._budget.Release(reserved - charge); }
+                reserved = charge;
+                if (!owner._inner.Writer.TryWrite(message))
+                { return false; }
+                reserved = 0;
+                return true;
+            }
+            finally
+            {
+                if (reserved > 0)
+                { owner._budget.Release(reserved); }
+            }
+        }
 
         public override async ValueTask<InputHandoffStatus> ProduceConfirmedAsync(long maximumWorkingBytes, long maximumMessageBytes,
             Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default)

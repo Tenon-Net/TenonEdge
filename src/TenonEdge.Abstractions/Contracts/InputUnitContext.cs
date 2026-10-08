@@ -10,6 +10,7 @@ namespace TenonEdge.Abstractions.Contracts;
 public sealed class InputUnitContext
 {
     private readonly IClockSyncStatus _clock;
+    private readonly Task _activation;
 
     public InputUnitContext(
         string deviceKey,
@@ -17,7 +18,8 @@ public sealed class InputUnitContext
         TimeProvider time,
         IClockSyncStatus clock,
         IInputReadReporter reads,
-        InputMessageWriter messages)
+        InputMessageWriter messages,
+        Task? activation = null)
     {
         BusinessKeys.Validate(deviceKey, nameof(deviceKey));
         BusinessKeys.Validate(inputKey, nameof(inputKey));
@@ -31,7 +33,13 @@ public sealed class InputUnitContext
         _clock = clock;
         Reads = reads;
         Messages = messages;
+        _activation = activation ?? Task.CompletedTask;
     }
+
+    /// <summary>共享连接类输入在联网前等待本计划完成启动安排。准备阶段不放行；
+    /// 草稿被放弃或激活失败时取消。单元自身停止也应结束等待，不能取消其他单元的屏障。
+    /// 独立装配未指定 activation 时直接放行。</summary>
+    public Task WaitForActivationAsync(CancellationToken cancellationToken) => _activation.WaitAsync(cancellationToken);
 
     /// <summary>逻辑设备标识，取自单元业务标识的第一段。</summary>
     public string DeviceKey { get; }

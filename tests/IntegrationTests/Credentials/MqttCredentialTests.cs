@@ -181,20 +181,26 @@ public sealed class MqttCredentialTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SeedCommitInvalidatesChangedRecipientsAtomicallyWithItsAudit(bool failAudit)
+    [InlineData(false, "output")]
+    [InlineData(true, "output")]
+    [InlineData(false, "input")]
+    [InlineData(true, "input")]
+    [InlineData(false, "shared")]
+    [InlineData(true, "shared")]
+    public async Task SeedCommitInvalidatesChangedRecipientsAtomicallyWithItsAudit(bool failAudit, string usage)
     {
         await using var factory = new TenonEdgeApplicationFactory();
         using var client = await AdminAsync(factory);
         await WriteAsync(client, new { recipient = Recipient, username = "user", password = Secret });
         var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
-        var document = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes("""
-            {"schemaVersion":1,"units":[
-                {"kind":"input.simulator","key":"meter/sim","configuration":{"periodMs":1000}},
-                {"kind":"output.mqtt","key":"out","configuration":{"connectionId":1,"host":"localhost","port":1884,"topic":"test","inputs":["meter/sim"]}}
-            ]}
-            """));
+        const string mqttInput = """{"kind":"input.mqtt","key":"meter/mqtt","configuration":{"connectionId":1,"host":"localhost","port":1884,"topicFilter":"input/value","fields":[{"key":"v","path":"/v","type":"integer"}]}}""";
+        var units = usage switch
+        {
+            "input" => mqttInput,
+            "shared" => mqttInput + "," + """{"kind":"output.mqtt","key":"out","configuration":{"connectionId":1,"host":"localhost","port":1884,"topic":"output/value","inputs":["meter/mqtt"]}}""",
+            _ => """{"kind":"input.simulator","key":"meter/sim","configuration":{"periodMs":1000}},{"kind":"output.mqtt","key":"out","configuration":{"connectionId":1,"host":"localhost","port":1884,"topic":"test","inputs":["meter/sim"]}}""",
+        };
+        var document = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes($$"""{"schemaVersion":1,"units":[{{units}}]}"""));
         var revision = versions.Freeze(document, RuntimeSnapshotOrigins.Seed, null, "test");
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
         if (failAudit)

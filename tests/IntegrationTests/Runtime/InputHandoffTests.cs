@@ -1,16 +1,22 @@
+using System.Net;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using MQTTnet;
+using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
+using TenonEdge.Adapters.Mqtt;
 using TenonEdge.IntegrationTests.Infrastructure;
+using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Deliveries;
+using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
-public sealed class InputHandoffTests
+public sealed class InputHandoffTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static readonly string[] Inputs = ["meter/sim"];
@@ -120,6 +126,99 @@ public sealed class InputHandoffTests
         Assert.False(runtime.Deliveries.GetPersistentCounters().ContainsKey("storageLostSourceMessages"));
         Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["input/meter/sim/handoffFailed"]);
         Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
+    [Fact]
+    [Trait("Category", "RealBroker")]
+    public async Task BrokerRedeliveryIsAcknowledgedOnlyAfterActualSqliteCommit()
+    {
+        var broker = fixture.Require();
+        using var data = TemporaryDirectory.Create();
+        var input = new BridgedInput();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, outputs: [OutputFactory()]);
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(), Output()));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        var context = await input.Ready.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+        using var connection = Open(data.Path);
+        using var command = connection.CreateCommand();
+        command.CommandText = "CREATE TRIGGER fail_broker_handoff BEFORE INSERT ON delivery BEGIN SELECT abs(-9223372036854775808); END";
+        command.ExecuteNonQuery();
+        var topic = MqttProbe.NewTopic("sqlite-handoff");
+        var acknowledged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = 0;
+        var replayed = false;
+        var committedBeforeAck = false;
+        var handoff = new MqttInputHandoff(context, new JsonInputDecoderFactory().Build(
+            JsonSerializer.Deserialize<JsonElement>("""[{"key":"value","path":"/value","type":"integer"}]""")));
+        var receiver = new MqttInputReceiver([new(topic, 1, async (message, cancellationToken) =>
+        {
+            Interlocked.Increment(ref attempts);
+            replayed = message.Dup;
+            return await handoff.ReceiveAsync(message, cancellationToken);
+        })], TimeProvider.System, reason =>
+        {
+            if (reason == "acknowledged")
+            {
+                committedBeforeAck = runtime.Deliveries.ReadPending(1, 0, 10).Count == 1;
+                acknowledged.TrySetResult();
+            }
+        });
+        await using var session = new MqttSession(new MqttConnectionSettings
+        { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true },
+            "sqlite-handoff-" + Guid.NewGuid().ToString("N"), new BrokerCredentials(), TimeProvider.System,
+            new OutboundConnector(new Loopback()), receiver);
+        using var deadline = MqttProbe.Timeout(Token);
+        Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, "publisher-" + Guid.NewGuid().ToString("N")), Token);
+        using (publisher)
+        {
+            await MqttProbe.PublishAsync(publisher, topic, "{\"value\":42}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+        }
+        await OutputPipelineTests.UntilAsync(() => !session.IsConnected);
+        Assert.Equal(1, attempts);
+        Assert.False(acknowledged.Task.IsCompleted);
+        Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+        command.CommandText = "DROP TRIGGER fail_broker_handoff";
+        command.ExecuteNonQuery();
+        Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+        await acknowledged.Task.WaitAsync(deadline.Token);
+        Assert.True(receiver.LastSessionPresent);
+        Assert.True(replayed);
+        Assert.True(committedBeforeAck);
+        Assert.Equal(2, attempts);
+        Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
+        await runtime.StopAsync(Token);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["input/meter/sim/handoffFailed"]);
+    }
+
+    private sealed class BridgedInput : IInputUnitFactory
+    {
+        public string Kind => "input.test";
+        public bool UsesDurableHandoff => true;
+        public TaskCompletionSource<InputUnitContext> Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context) => new Unit(this, unit.Id, context);
+        private sealed class Unit(BridgedInput owner, RuntimeUnitId id, InputUnitContext context) : IRuntimeUnit
+        {
+            public RuntimeUnitId Id => id;
+            public async Task RunAsync(CancellationToken stoppingToken)
+            {
+                owner.Ready.TrySetResult(context);
+                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+    private sealed class BrokerCredentials : ICredentialResolver
+    {
+        public MqttCredentialIdentity? DescribeMqtt(long connectionId) => new(MosquittoBroker.UserName, "account", "v1");
+        public MqttCredential? ResolveMqtt(long connectionId, string recipient) => new(MosquittoBroker.UserName, MosquittoBroker.Password, "account", "v1");
+    }
+    private sealed class Loopback : IOutboundAddressPolicy
+    {
+        public bool IsAllowed(IPAddress address, int port) => IPAddress.IsLoopback(address);
     }
 
     private static SqliteConnection Open(string directory)

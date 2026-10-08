@@ -13,6 +13,31 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class RuntimeCounterTests
 {
     [Fact]
+    public async Task MqttProtocolCountersAreBoundedAndPersistThroughTheExistingWriter()
+    {
+        using var data = TemporaryDirectory.Create();
+        await using (var runtime = RuntimeTesting.CreateRuntime([], data.Path))
+        {
+            runtime.StartCore();
+            for (var i = 0; i < 100; i++)
+            { runtime.Deliveries.RecordMqttInputDiagnostic(1, "acknowledged"); }
+            runtime.Deliveries.RecordMqttInputDiagnostic(1, "retainedIgnored");
+            Assert.Throws<ArgumentException>(() => runtime.Deliveries.RecordMqttInputDiagnostic(1, "unbounded-secret-value"));
+            Assert.Throws<ArgumentOutOfRangeException>(() => runtime.Deliveries.RecordMqttInputDiagnostic(0, "acknowledged"));
+            await runtime.StopAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(100, runtime.Deliveries.GetPersistentCounters()["connection/1/mqtt/acknowledged"]);
+            Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["connection/1/mqtt/retainedIgnored"]);
+            Assert.Empty(runtime.Deliveries.GetUnpersistedCounters());
+        }
+        await using var restarted = RuntimeTesting.CreateRuntime([], data.Path);
+        restarted.StartCore();
+        await OutputPipelineTests.UntilAsync(() => restarted.Deliveries.GetStatus().Store is not null);
+        Assert.Equal(100, restarted.Deliveries.GetPersistentCounters()["connection/1/mqtt/acknowledged"]);
+        Assert.DoesNotContain(restarted.Deliveries.GetPersistentCounters().Keys, key => key.Contains("secret", StringComparison.Ordinal));
+        await restarted.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task NeverStartedWriterFinalizesAlreadyAccumulatedCounters()
     {
         using var data = TemporaryDirectory.Create();

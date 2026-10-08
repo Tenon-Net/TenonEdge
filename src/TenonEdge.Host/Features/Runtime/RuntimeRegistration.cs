@@ -55,12 +55,25 @@ internal static class RuntimeRegistration
         services.AddSingleton<IOutboundConnector, OutboundConnector>();
         services.AddSingleton<ISharedConnections, SharedConnections>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
-        services.AddSingleton<IOutputAdapterFactory>(provider => new MqttOutputFactory(
-            provider.GetRequiredService<ICredentialResolver>(),
-            provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<IOutboundConnector>(),
-            provider.GetRequiredService<ISharedConnections>(),
-            provider.GetRequiredService<GatewayIdentity>().NodeId));
+        services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>
+        {
+            var deliveries = provider.GetRequiredService<DeliveryCache>();
+            var events = provider.GetRequiredService<IRuntimeEventSink>();
+            return new MqttPlanAdapterProvider(
+                provider.GetRequiredService<ICredentialResolver>(), provider.GetRequiredService<IJsonInputDecoderFactory>(),
+                provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<IOutboundConnector>(),
+                provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<GatewayIdentity>().NodeId,
+                (connectionId, reason) =>
+                {
+                    deliveries.RecordMqttInputDiagnostic(connectionId, reason);
+                    if (reason == "sessionLost")
+                    {
+                        events.Record(RuntimeEventSeverity.Warning, "mqtt.sessionLost",
+                            connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            "MQTT 会话丢失，断线期间的消息可能已丢失；需要重新订阅。");
+                    }
+                });
+        });
         services.AddSingleton<IOutputAdapterFactory>(provider => new HttpOutputFactory(
             provider.GetRequiredService<IHttpCredentialResolver>(),
             provider.GetRequiredService<TimeProvider>(),

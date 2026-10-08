@@ -6,7 +6,7 @@ using TenonEdge.Abstractions.Plans;
 namespace TenonEdge.Adapters.Mqtt;
 
 internal sealed class MqttOutputTarget(
-    RuntimeUnitId id, MqttOutputSettings settings, ICredentialResolver credentials, TimeProvider time, string defaultClientPrefix, IOutboundConnector connector, ISharedConnections connections) : IOutputTarget
+    RuntimeUnitId id, MqttOutputSettings settings, ICredentialResolver credentials, TimeProvider time, string defaultClientPrefix, IOutboundConnector connector, ISharedConnections connections, MqttConnectionGroup? inputGroup = null) : IOutputTarget
 {
     private readonly OutputPayloadFormat _payload = OutputPayloadFormat.Parse(settings.Payload);
     public long MinimumSerializationReservationBytes => _payload.MinimumSerializationReservationBytes;
@@ -37,8 +37,10 @@ internal sealed class MqttOutputTarget(
     private string ConnectionSettings => settings.ConnectionIdentity(ClientId);
 
     public bool CanShareSenderWith(IOutputTarget other) => other is MqttOutputTarget mqtt &&
-        ConnectionId == mqtt.ConnectionId && ConnectionSettings == mqtt.ConnectionSettings;
+        ConnectionId == mqtt.ConnectionId && ConnectionSettings == mqtt.ConnectionSettings && ReferenceEquals(inputGroup, mqtt.InputGroup);
 
-    public IOutputAdapter CreateAdapter() => new MqttOutputAdapter(
+    private MqttConnectionGroup? InputGroup => inputGroup;
+
+    public IOutputAdapter CreateAdapter() => inputGroup?.CreateOutputAdapter(settings, ClientId) ?? new MqttOutputAdapter(
         connections.Acquire(ConnectionId, "mqtt", ConnectionSettings, () => new MqttSession(settings, ClientId, credentials, time, connector)), time, settings.TimeoutMs);
 }
