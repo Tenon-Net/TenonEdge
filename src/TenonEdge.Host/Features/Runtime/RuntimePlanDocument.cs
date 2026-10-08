@@ -62,7 +62,7 @@ internal sealed class RuntimePlanDocument
         }
         catch (JsonException exception)
         {
-            throw new RuntimePlanDocumentException($"不是有效的 JSON：{exception.Message}", exception);
+            throw new RuntimePlanDocumentException($"不是有效的 JSON（行 {exception.LineNumber}，字节位置 {exception.BytePositionInLine}）。");
         }
     }
 
@@ -102,9 +102,9 @@ internal sealed class RuntimePlanDocument
             // 借用运行计划的构造检查重复标识，并得到按标识排序的单元。
             plan = new RuntimePlan(1, units);
         }
-        catch (ArgumentException exception)
+        catch (ArgumentException)
         {
-            throw new RuntimePlanDocumentException(exception.Message, exception);
+            throw new RuntimePlanDocumentException("运行单元标识重复或计划结构无效。");
         }
 
         var httpConnections = new Dictionary<long, (string Base, int Timeout)>();
@@ -137,8 +137,8 @@ internal sealed class RuntimePlanDocument
         }
         try
         { MqttFeedbackGuard.Validate(plan.Units); }
-        catch (ArgumentException exception)
-        { throw new RuntimePlanDocumentException(exception.Message, exception); }
+        catch (ArgumentException)
+        { throw new RuntimePlanDocumentException("MQTT 输入与输出存在已知反馈闭环，请调整发布主题或订阅过滤器。"); }
         return new RuntimePlanDocument(plan.Units, Serialize(plan.Units));
     }
 
@@ -190,7 +190,8 @@ internal sealed class RuntimePlanDocument
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)
         {
-            throw new RuntimePlanDocumentException($"units[{index}]：{exception.Message}", exception);
+            // 配置解析器的消息、JSON Path 和异常链可能含被拒绝的秘密，不能作为诊断透传。
+            throw new RuntimePlanDocumentException($"units[{index}] 的标识或配置无效，请检查该单元的字段、类型和取值。");
         }
     }
 
@@ -200,7 +201,7 @@ internal sealed class RuntimePlanDocument
         {
             if (!known.Contains(property.Name))
             {
-                throw new RuntimePlanDocumentException($"{where} 有未知的属性 {property.Name}。");
+                throw new RuntimePlanDocumentException($"{where} 有未知的属性，请检查字段名称。");
             }
         }
     }

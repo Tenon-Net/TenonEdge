@@ -53,10 +53,10 @@ public sealed class RuntimePlanDocumentTests
     [InlineData("""{"units":[]}""", "schemaVersion")]
     [InlineData("""{"schemaVersion":2,"units":[]}""", "schemaVersion")]
     [InlineData("""{"schemaVersion":1}""", "units")]
-    [InlineData("""{"schemaVersion":1,"units":[],"paths":[]}""", "paths")]
+    [InlineData("""{"schemaVersion":1,"units":[],"paths":[]}""", "未知的属性")]
     [InlineData("""{"schemaVersion":1,"units":[1]}""", "units[0]")]
     [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"a/b"}]}""", "configuration")]
-    [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"a/b","configuration":{},"enabled":true}]}""", "enabled")]
+    [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"a/b","configuration":{},"enabled":true}]}""", "未知的属性")]
     [InlineData("""{"schemaVersion":1,"units":[{"kind":"Input","key":"a/b","configuration":{}}]}""", "units[0]")]
     [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"a/b","configuration":[]}]}""", "units[0]")]
     [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"a/b","configuration":{}},{"kind":"input.simulator","key":"a/b","configuration":{"x":1}}]}""", "重复")]
@@ -65,6 +65,22 @@ public sealed class RuntimePlanDocumentTests
         var exception = Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(json)));
 
         Assert.Contains(expected, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{"schemaVersion":1,"units":[],"MARKER":[}""")]
+    [InlineData("""{"schemaVersion":1,"units":[],"MARKER":0}""")]
+    [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"a/b","configuration":{},"MARKER":0}]}""")]
+    [InlineData("""{"schemaVersion":1,"units":[{"kind":"output.mqtt","key":"out","configuration":{"MARKER":0}}]}""")]
+    [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.http","key":"a/b","configuration":{"MARKER":0}}]}""")]
+    [InlineData("""{"schemaVersion":1,"units":[{"kind":"input.simulator","key":"MARKER/b","configuration":{}},{"kind":"input.simulator","key":"MARKER/b","configuration":{}}]}""")]
+    public void RejectionExceptionDoesNotRetainUntrustedContent(string template)
+    {
+        const string secret = "artificial-sensitive-seed-marker";
+        var json = template.Replace("MARKER", secret, StringComparison.Ordinal);
+        var exception = Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(json)));
+        Assert.DoesNotContain(secret, exception.ToString());
+        Assert.Null(exception.InnerException);
     }
 
     [Fact]

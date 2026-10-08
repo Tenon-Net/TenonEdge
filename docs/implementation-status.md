@@ -1866,6 +1866,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 对首轮 MQTT 偶发失败另行单独复跑：`dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter FullyQualifiedName~RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison`，1 项通过（内部 8 路 × 10 轮），日志 `/tmp/tenonedge-build-safe-outage-repeat.log`；仍不据此判定偶发失败已修复。
 - 边界：只处理单元首次构建的捕获路径，不声称计划提供者 Create、激活/停止、协调者和所有应用日志均已脱敏；§7 待处理 22 尚未整体关闭。无真实秘密、无协议策略调整。
 
+### 2.84 T2 种子快照拒绝路径的安全诊断（2026-10-09）
+
+- RuntimePlanDocument 原先把未知属性名、配置解析器 Message 和原异常链暴露给调用者；RuntimeCoordinator 会将其中的 Message 写入运行日志及 config.db 的 SeedRejected 事件。冻结前拒绝配置并不能防止这些诊断落盘泄露。
+- 改为固定结构说明，保留可信的 units 索引、JSON 行号/字节位置，不回显未知属性名、非法配置值或解析器 JSON Path，不附带原异常链。重复标识、MQTT 反馈闭环仍拒绝并保留固定原因；未知属性与配置验证没有放宽。
+- 红灯：5 项解析器单元测试 + 4 项真实进程内宿主测试均复现人工标记泄露，日志 `/tmp/tenonedge-seed-safe-red.log`。宿主场景包含顶层/单元未知属性、MQTT 输出与 HTTP 输入配置的未知属性；确认没有快照或有效版本，然后检查 SQLite 中实际持久化的拒绝事件及日志消息/异常链。
+- 修复后聚焦命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~SeedDiagnosticsTests|FullyQualifiedName~RuntimePlanDocumentTests|FullyQualifiedName~RuntimeCoordinatorTests'`，20 单元 + 23 集成通过，零失败/跳过（`/tmp/tenonedge-seed-safe-green.log`）。随后增加一项非法 JSON 异常不保留原链的测试，随全量验证。
+- 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=seed-safe' --results-directory /tmp/tenonedge-seed-safe --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 710 集成 = 1598 项测试断言通过，0 失败、0 跳过**；仍含 §2.77 已知订阅回滚缺口刻画，不代表该风险已修复。TRX Counters 已核对，日志 `/tmp/tenonedge-seed-safe-full.log`。三个修改 C# 文件限定格式校验与 `git diff --check` 通过；Linux x64、SDK 10.0.401，其他环境同 §2.76。
+- 边界：本节仅验证被拒绝种子内容的解析诊断；不声称种子路径、存储错误、计划提供者、停止与其他日志通道都已完成安全审查。没有改变导入、快照哈希、启动保护和协议行为，也不代表 T2 退出或网页验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
