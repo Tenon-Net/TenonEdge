@@ -5,6 +5,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Deliveries;
+using TenonEdge.Runtime.Diagnostics;
 using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.IntegrationTests.Runtime;
@@ -237,7 +238,8 @@ public sealed class OutputPipelineTests
         await using var plan = runtime.Prepare(Plan(Input(), Output("out-a", 1)));
         runtime.StartCore();
         await runtime.ActivateAsync(plan);
-        await UntilAsync(() => events.Events.Any(entry => entry.Description.Contains("删除未提交", StringComparison.Ordinal)));
+        await UntilAsync(() => events.OfType(RuntimeEventTypes.UnitFaulted).Any(entry =>
+            entry.Target == Output("out-a", 1).Id.ToString()) && runtime.Deliveries.GetStatus().StorageFault);
         await UntilAsync(() => output.Created >= 2);
         Assert.True(runtime.Deliveries.GetStatus().StorageFault);
         Assert.Equal(0, runtime.Deliveries.GetStatus().RejectedRecords);

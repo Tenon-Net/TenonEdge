@@ -18,6 +18,53 @@ public sealed class UnitSupervisorTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
     private static readonly RuntimeUnitId UnitId = RuntimeUnitId.Create("input.test", "meter-1/line");
 
+    [Theory]
+    [InlineData("run")]
+    [InlineData("rebuild")]
+    [InlineData("dispose")]
+    [InlineData("stop")]
+    public async Task UnexpectedExceptionsDoNotLeakToStatusEventsOrLoggerExceptionObjects(string phase)
+    {
+        const string Marker = "fixture-sensitive-runtime-detail";
+        var time = new FakeTimeProvider();
+        var events = new RecordingEventSink();
+        using var logs = new LogCapture();
+        var supervisor = new UnitSupervisor(new RuntimeOptions
+        { InitialRestartDelay = TimeSpan.FromMilliseconds(100), MaximumRestartDelay = TimeSpan.FromSeconds(10), RestartJitter = 0 },
+            time, events, logs.CreateLogger("supervisor"), random: () => 0);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var initial = phase == "stop"
+            ? new ScriptedUnit(UnitId, async token =>
+            {
+                await using var callback = token.Register(() => throw new IOException(Marker));
+                started.TrySetResult();
+                await Task.Delay(System.Threading.Timeout.Infinite, token);
+            })
+            : new ScriptedUnit(UnitId, _ => throw new InvalidOperationException(Marker, new IOException(Marker)),
+                phase == "dispose" ? () => throw new IOException(Marker) : null);
+        IRuntimeUnit Rebuild() => throw new ArgumentException(Marker);
+        supervisor.TryStart(initial, Rebuild, reads: null);
+        if (phase == "stop")
+        { await started.Task.WaitAsync(Timeout, TestContext.Current.CancellationToken); }
+        else
+        { await WaitForAsync(supervisor, status => status.RestartCount == 1); }
+        if (phase == "rebuild")
+        {
+            time.Advance(TimeSpan.FromMilliseconds(100));
+            await WaitForAsync(supervisor, status => status.RestartCount == 2);
+        }
+        await StopAllAsync(supervisor);
+        Assert.DoesNotContain(Marker, Status(supervisor).LastError!, StringComparison.Ordinal);
+        Assert.NotEmpty(events.Events);
+        Assert.All(events.Events, entry => Assert.DoesNotContain(Marker, entry.Description, StringComparison.Ordinal));
+        Assert.NotEmpty(logs.Entries);
+        Assert.All(logs.Entries, entry =>
+        {
+            Assert.DoesNotContain(Marker, entry.Message, StringComparison.Ordinal);
+            Assert.Null(entry.ExceptionText);
+        });
+    }
+
     [Fact]
     public async Task AFailingUnitIsRestartedAfterBackoffAndTheFailureIsRecorded()
     {
@@ -38,7 +85,7 @@ public sealed class UnitSupervisorTests
 
         Assert.True(supervisor.TryStart(Build(), Build, reads: null));
         var first = await WaitForAsync(supervisor, status => status.State == RuntimeUnitState.Backoff && status.RestartCount == 1);
-        Assert.Equal("模拟故障 1", first.LastError);
+        Assert.Equal("运行单元发生未预期错误。", first.LastError);
         Assert.Equal(time.GetUtcNow(), first.LastErrorAt);
         Assert.Equal(time.GetUtcNow() + TimeSpan.FromMilliseconds(100), first.NextRestartAt);
         var faulted = Assert.Single(events.OfType(RuntimeEventTypes.UnitFaulted));
@@ -96,7 +143,7 @@ public sealed class UnitSupervisorTests
         }
 
         var third = await WaitForAsync(supervisor, status => status.RestartCount == 3);
-        Assert.Equal("运行 11 秒后故障", third.LastError);
+        Assert.Equal("运行单元发生未预期错误。", third.LastError);
         Assert.Equal(TimeSpan.FromMilliseconds(100), third.NextRestartAt - third.LastErrorAt);
         Assert.Empty(await StopAllAsync(supervisor));
     }
@@ -145,7 +192,7 @@ public sealed class UnitSupervisorTests
 
         Assert.Empty(await StopAllAsync(supervisor));
         await WaitForAsync(supervisor, status => status.State == RuntimeUnitState.Stopped && status.LastError is not null);
-        Assert.Contains("释放连接失败", Status(supervisor).LastError, StringComparison.Ordinal);
+        Assert.Equal("停止时出错：运行单元输入输出失败，请检查连接与存储。", Status(supervisor).LastError);
         Assert.Equal(0, Status(supervisor).RestartCount);
         Assert.Single(events.OfType(RuntimeEventTypes.UnitStopFailed));
     }
@@ -311,7 +358,7 @@ public sealed class UnitSupervisorTests
         await WaitForAsync(supervisor, status => status.RestartCount == 1);
         time.Advance(TimeSpan.FromMinutes(1));
         var rebuildFailed = await WaitForAsync(supervisor, status => status.RestartCount == 2);
-        Assert.Contains("重新构建失败：凭证暂时无法解密", rebuildFailed.LastError, StringComparison.Ordinal);
+        Assert.Equal("运行单元重新构建失败，请检查配置和凭证。", rebuildFailed.LastError);
 
         time.Advance(TimeSpan.FromMinutes(1));
         await WaitForAsync(supervisor, _ => builds == 3);

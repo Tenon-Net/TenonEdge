@@ -1846,6 +1846,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-build' --results-directory /tmp/tenonedge-mqtt-build --blame-hang-timeout 5m --blame-hang-dump-type none`：**882 单元 + 698 集成 = 1580 项测试断言通过，0 失败、0 跳过**；含 §2.77 已知缺口刻画，不代表订阅回滚风险已修复。TRX Counters 已核对，日志 `/tmp/tenonedge-mqtt-build-full.log`。限定两个修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 与 `git diff --check` 通过。环境同 §2.76。
 - 边界：只修复此工厂已经捕获的两类构建错误，不声称所有适配器、监督者未知异常及停止/释放日志已脱敏；§7 待处理 22 中的运行时统一异常策略仍须继续落实。测试标记完全人工，不含真实凭证。
 
+### 2.82 T2 监督者故障、重建、停止与释放的安全诊断（2026-10-09）
+
+- SupervisedUnit 不再把任意 Exception.Message 截断后写进状态/运行事件，也不再把原 Exception 对象交给故障、取消回调或释放日志。截断长度不是脱敏：异常链可能含地址、响应正文或凭证。
+- 采用固定分类说明：重建失败、超时、输入输出失败、未知错误；保留单元 ID、时间、重启计数和退避期限。循环意外返回使用内部类型识别，保留可信的固定生命周期说明，不靠匹配异常文本判定安全性。没有增加正则秘密猜测或绕过异常监督。
+- LogCapture 测试基础设施增加 ExceptionText，避免原来只检查格式化消息却漏掉 ILogger 的异常参数。4 个场景检查运行故障、重建、释放和停止回调，状态/事件均无人工敏感标记，日志不附带原异常对象；嵌套异常也被覆盖。最初运行/重建/释放 3 场景确定性失败（`/tmp/tenonedge-supervisor-red.log`），修正后当时 14 项监督者用例通过（`/tmp/tenonedge-supervisor-green.log`），随后补入停止场景。
+- 既有测试中断言原始模拟异常文字的部分改为固定安全分类；重启次数、退避、停止期限、单实例及故障隔离断言不放宽。
+- 首轮全量：882 单元通过，701 集成通过、1 失败；失败是 AckedRecordIsNotRepublishedWhenDeletionFailsAndSenderIsRebuilt 等待被移除的原始“删除未提交”文字超时，记录于 `/tmp/tenonedge-supervisor-full.log`。改为等待准确发送单元的 UnitFaulted 事件与真实 StorageFault 状态，保留重建、不重发、只计一次已发送和故障恢复断言。期间补 using 前的编译失败也保留（`/tmp/tenonedge-supervisor-targeted.log`）；补齐后 16 项相关用例通过（`/tmp/tenonedge-supervisor-targeted2.log`）。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=supervisor-safe-repeat' --results-directory /tmp/tenonedge-supervisor-safe-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`：**882 单元 + 702 集成 = 1584 项测试断言通过，0 失败、0 跳过**；仍包含 §2.77 已知缺口刻画。日志 `/tmp/tenonedge-supervisor-full-repeat.log`，TRX Counters 已核对。四个改动 C# 文件限定 `--include` 的格式校验与 `git diff --check` 通过；环境同 §2.76。
+- 边界：本批处理监督者；RuntimeHost 首次构建的未知异常和其他调用层仍须单独核查，不能将本节当作所有日志脱敏验收完成。§7 待处理 22 尚未整体关闭。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

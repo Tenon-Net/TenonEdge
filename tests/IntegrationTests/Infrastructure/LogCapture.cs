@@ -5,7 +5,7 @@ namespace TenonEdge.IntegrationTests.Infrastructure;
 
 /// <summary>
 /// 收集日志的提供程序：直接构造被测服务时用 <see cref="CreateLogger{T}"/>，进程内宿主中用 AddProvider 加入。
-/// 只保存类别、级别与格式化后的消息，供断言使用。
+/// 保存类别、级别、格式化后的消息与异常文本，供断言使用。
 /// </summary>
 public sealed class LogCapture : ILoggerProvider
 {
@@ -33,7 +33,7 @@ public sealed class LogCapture : ILoggerProvider
         public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-            entries.Enqueue(new CapturedLogEntry(category, logLevel, formatter(state, exception)));
+            entries.Enqueue(new CapturedLogEntry(category, logLevel, formatter(state, exception), exception?.ToString()));
     }
 
     private sealed class SingleProviderFactory(LogCapture capture) : ILoggerFactory
@@ -48,4 +48,4 @@ public sealed class LogCapture : ILoggerProvider
     }
 }
 
-public sealed record CapturedLogEntry(string Category, LogLevel Level, string Message);
+public sealed record CapturedLogEntry(string Category, LogLevel Level, string Message, string? ExceptionText = null);

@@ -27,7 +27,6 @@ namespace TenonEdge.Runtime.Lifecycle;
     Justification = "停止用的取消源没有计时器、没有关联令牌，也不访问 WaitHandle，不持有需要释放的资源；单元停止之后状态查询仍会用到它。")]
 internal sealed partial class SupervisedUnit
 {
-    private const int MaximumErrorLength = 500;
 
     private readonly Func<IRuntimeUnit> _rebuild;
     private readonly RestartBackoff _backoff;
@@ -193,7 +192,7 @@ internal sealed partial class SupervisedUnit
                 }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
-                    failure = new RuntimeUnitBuildException(Id, $"重新构建失败：{exception.Message}", exception);
+                    failure = new RuntimeUnitBuildException(Id, "重新构建失败。", exception);
                 }
             }
 
@@ -262,7 +261,7 @@ internal sealed partial class SupervisedUnit
         try
         {
             await instance.RunAsync(stoppingToken);
-            return stoppingToken.IsCancellationRequested ? null : new InvalidOperationException("运行单元的循环在没有请求停止时结束。");
+            return stoppingToken.IsCancellationRequested ? null : new UnexpectedExitException();
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -290,7 +289,7 @@ internal sealed partial class SupervisedUnit
     private void RecordFailure(Exception failure, TimeSpan delay, int consecutiveFailures)
     {
         var now = _time.GetUtcNow();
-        var message = failure.Message.Length > MaximumErrorLength ? failure.Message[..MaximumErrorLength] : failure.Message;
+        var message = DescribeFailure(failure);
         lock (_lock)
         {
             _restartCount++;
@@ -303,7 +302,7 @@ internal sealed partial class SupervisedUnit
             }
         }
 
-        LogUnitFaulted(_logger, failure, Id.ToString(), consecutiveFailures, delay);
+        LogUnitFaulted(_logger, Id.ToString(), consecutiveFailures, delay);
         _events.Record(
             RuntimeEventSeverity.Warning,
             RuntimeEventTypes.UnitFaulted,
@@ -336,14 +335,14 @@ internal sealed partial class SupervisedUnit
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             var error = exception is AggregateException { InnerExceptions.Count: > 0 } aggregate ? aggregate.InnerExceptions[0] : exception;
-            var message = error.Message.Length > MaximumErrorLength ? error.Message[..MaximumErrorLength] : error.Message;
+            var message = DescribeFailure(error);
             lock (_lock)
             {
                 _lastError = $"停止时出错：{message}";
                 _lastErrorAt = _time.GetUtcNow();
             }
 
-            LogStopCallbackFailed(_logger, exception, Id.ToString());
+            LogStopCallbackFailed(_logger, Id.ToString());
             _events.Record(RuntimeEventSeverity.Warning, RuntimeEventTypes.UnitStopFailed, Id.ToString(), $"运行单元停止时出错：{message}");
         }
     }
@@ -356,19 +355,32 @@ internal sealed partial class SupervisedUnit
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            LogDisposeFailed(_logger, exception, Id.ToString());
+            LogDisposeFailed(_logger, Id.ToString());
         }
     }
 
+    // 第三方异常的 Message/ToString/InnerException 都可能包含 URI、响应正文或凭证。
+    // 只公布固定分类，不依赖正则猜测秘密；日志也不能附带原始 Exception 对象。
+    private static string DescribeFailure(Exception exception) => exception switch
+    {
+        UnexpectedExitException => "运行单元的循环在没有请求停止时结束。",
+        RuntimeUnitBuildException => "运行单元重新构建失败，请检查配置和凭证。",
+        TimeoutException => "运行单元操作超时。",
+        IOException => "运行单元输入输出失败，请检查连接与存储。",
+        _ => "运行单元发生未预期错误。",
+    };
+
+    private sealed class UnexpectedExitException : Exception;
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "运行单元 {UnitId} 故障（连续第 {ConsecutiveFailures} 次），{Delay} 后重启。")]
-    private static partial void LogUnitFaulted(ILogger logger, Exception exception, string unitId, int consecutiveFailures, TimeSpan delay);
+    private static partial void LogUnitFaulted(ILogger logger, string unitId, int consecutiveFailures, TimeSpan delay);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "运行单元 {UnitId} 在 {Timeout} 内没有停止，仍视为存活，需重启服务。")]
     private static partial void LogStopTimedOut(ILogger logger, string unitId, TimeSpan timeout);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "运行单元 {UnitId} 停止时，取消回调出错。")]
-    private static partial void LogStopCallbackFailed(ILogger logger, Exception exception, string unitId);
+    private static partial void LogStopCallbackFailed(ILogger logger, string unitId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "释放运行单元 {UnitId} 时出错。")]
-    private static partial void LogDisposeFailed(ILogger logger, Exception exception, string unitId);
+    private static partial void LogDisposeFailed(ILogger logger, string unitId);
 }
