@@ -1875,6 +1875,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=seed-safe' --results-directory /tmp/tenonedge-seed-safe --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 710 集成 = 1598 项测试断言通过，0 失败、0 跳过**；仍含 §2.77 已知订阅回滚缺口刻画，不代表该风险已修复。TRX Counters 已核对，日志 `/tmp/tenonedge-seed-safe-full.log`。三个修改 C# 文件限定格式校验与 `git diff --check` 通过；Linux x64、SDK 10.0.401，其他环境同 §2.76。
 - 边界：本节仅验证被拒绝种子内容的解析诊断；不声称种子路径、存储错误、计划提供者、停止与其他日志通道都已完成安全审查。没有改变导入、快照哈希、启动保护和协议行为，也不代表 T2 退出或网页验收。
 
+### 2.85 T2 协调者版本存储错误的安全诊断（2026-10-09）
+
+- RuntimeCoordinator 的启动版本存储错误原先把数据库异常 Message 放入运行状态与 RunFailed 事件，标记稳定/清除运行标记失败时也把完整 Exception 交给日志。现在使用固定安全说明，保留错误阶段和版本号，不附带数据库异常链。
+- 新增三项真实宿主 + SQLite 故障注入：先正常导入/停止空计划，再分别以触发器拒绝启动写入 running_revision、写入 is_stable、停止清除 running_revision。错误包含完全人工的敏感标记，不含真实凭证。三项先确定性失败（`/tmp/tenonedge-storage-safe-red.log`），修复后检查协调者日志不携带异常对象，启动失败的状态及持久化 RunFailed 事件也不回显标记。
+- 不修改事务、启动保护和失败语义：启动写标记失败仍为 RunFailed 且标记未写；稳定标记失败不伪报 IsStable；正常停机清标记失败仍保留 Running 指针供下次启动判定。
+- 聚焦：`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~RuntimeStorageDiagnosticsTests|FullyQualifiedName~RuntimeCoordinatorTests'`，22 项通过、零失败/跳过，日志 `/tmp/tenonedge-storage-safe-green.log`。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=storage-safe' --results-directory /tmp/tenonedge-storage-safe --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 713 集成 = 1601 项测试断言通过，0 失败、0 跳过**；仍包含 §2.77 已知订阅回滚缺口刻画。TRX Counters 已核对，日志 `/tmp/tenonedge-storage-safe-full.log`；两项 C# 文件的限定格式校验与 `git diff --check` 通过。环境同 §2.84。
+- 边界：只处理协调者已捕获的三个版本存储错误通道，不声称停止兜底、发送缓存错误、种子文件 I/O 或整个系统日志均已脱敏。T2 协议完整验收与 T3 可视化目标仍未完成；Modbus 定稿及 MQTT 重订策略的确认未到达，未据此修改既有协议规则。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

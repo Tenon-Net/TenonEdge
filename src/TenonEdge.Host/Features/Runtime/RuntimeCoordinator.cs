@@ -137,7 +137,7 @@ internal sealed partial class RuntimeCoordinator(
             }
             catch (Exception exception) when (IsStorageError(exception))
             {
-                LogMarkerNotCleared(logger, exception, active);
+                LogMarkerNotCleared(logger, active);
             }
         }
 
@@ -187,7 +187,7 @@ internal sealed partial class RuntimeCoordinator(
         catch (Exception exception) when (IsStorageError(exception))
         {
             // 没记下“已稳定”只会让之后的非正常退出被计数，偏于保守。
-            LogStableNotRecorded(logger, exception, revision);
+            LogStableNotRecorded(logger, revision);
         }
     }
 
@@ -206,8 +206,8 @@ internal sealed partial class RuntimeCoordinator(
         }
         catch (Exception exception) when (IsStorageError(exception))
         {
-            decision = StartupDecision.Fail($"读写配置库中的版本信息失败：{exception.Message}");
-            LogStorageFailure(logger, exception);
+            decision = StartupDecision.Fail("读写配置库中的版本信息失败，请检查存储状态。");
+            LogStorageFailure(logger);
         }
 
         try
@@ -529,16 +529,16 @@ internal sealed partial class RuntimeCoordinator(
     private static partial void LogStable(ILogger logger, long revision, TimeSpan stableAfter);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "未能把版本 r{Revision} 记为已稳定。")]
-    private static partial void LogStableNotRecorded(ILogger logger, Exception exception, long revision);
+    private static partial void LogStableNotRecorded(ILogger logger, long revision);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "未能清除版本 r{Revision} 的“运行中”标记；下次启动会把这次停止计为非正常退出。")]
-    private static partial void LogMarkerNotCleared(ILogger logger, Exception exception, long revision);
+    private static partial void LogMarkerNotCleared(ILogger logger, long revision);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "停止运行时出错；仍按正常停止清除“运行中”标记。")]
     private static partial void LogRuntimeStopFailed(ILogger logger, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "读写配置库中的版本信息失败。")]
-    private static partial void LogStorageFailure(ILogger logger, Exception exception);
+    private static partial void LogStorageFailure(ILogger logger);
 }
 
 /// <summary>协调者的状态，供就绪检查与状态查询使用。</summary>
