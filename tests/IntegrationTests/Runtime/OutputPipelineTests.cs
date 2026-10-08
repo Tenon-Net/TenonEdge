@@ -12,6 +12,153 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class OutputPipelineTests
 {
     [Fact]
+    public async Task TimedOutFormatterKeepsItsBudgetUntilTheProcessIsRestarted()
+    {
+        using var data = TemporaryDirectory.Create();
+        using var release = new ManualResetEventSlim();
+        var formatting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var output = new FakeOutputFactory
+        {
+            BeforeFormat = () =>
+            {
+                formatting.TrySetResult();
+                Assert.True(release.Wait(TimeSpan.FromSeconds(30)), "测试没有释放超时格式化器。");
+            },
+        };
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], data.Path, outputs: [output],
+            options: new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(100) });
+        await using var plan = runtime.Prepare(Plan(Input(), Output("out-a", 1)));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        try
+        {
+            await formatting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            var reserved = runtime.InFlight.Status.ReservedBytes;
+            Assert.True(reserved > 0);
+            await runtime.StopAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(reserved, runtime.InFlight.Status.ReservedBytes);
+            Assert.Equal(RuntimeUnitState.StopTimedOut,
+                Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "delivery.dispatcher").State);
+            Assert.Equal(0, runtime.Deliveries.GetStatus().CommittedRecords);
+            Assert.Equal(0, output.Sent);
+        }
+        finally { release.Set(); }
+
+        await UntilAsync(() => runtime.GetStatus().Units.All(unit => unit.State == RuntimeUnitState.Stopped));
+        // 停止超时的旧运行时不再激活；保守保留旧状态和预约，不能把它伪报成已安全回收。
+        Assert.True(runtime.InFlight.Status.ReservedBytes > 0);
+        Assert.Equal(0, runtime.Deliveries.GetStatus().CommittedRecords);
+    }
+
+    [Fact]
+    public async Task ThirtyTwoWayFanoutBackpressuresInputAtSharedBudgetAndDrainsAllAcceptedRecords()
+    {
+        const int sources = 250;
+        const int paths = 32;
+        using var data = TemporaryDirectory.Create();
+        using var release = new ManualResetEventSlim();
+        var input = new OneShotInputFactory(sources);
+        var output = new FakeOutputFactory
+        {
+            BeforeFormat = () => Assert.True(release.Wait(TimeSpan.FromSeconds(30)), "测试没有释放格式化闸门。"),
+            OnSend = _ => new(OutputSendStatus.SuspendTarget, "test-paused"),
+        };
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, outputs: [output]);
+        await using var plan = runtime.Prepare(Plan([Input(), .. Enumerable.Range(1, paths).Select(i => Output($"out-{i}", i))]));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        try
+        {
+            // 分发器卡在本地格式化，输入最多预约三条 32 路消息，第四条等待而不是继续分配。
+            await UntilAsync(() => runtime.InFlight.Status.ReservedBytes >= 3L * paths * 2 * DeliveryDraft.MaximumPayloadBytes);
+            Assert.False(input.Written.Task.IsCompleted);
+            Assert.InRange(runtime.InFlight.Status.PeakReservedBytes, 1, runtime.InFlight.Status.CapacityBytes);
+        }
+        finally { release.Set(); }
+
+        await input.Written.Task.WaitAsync(TimeSpan.FromSeconds(90), TestContext.Current.CancellationToken);
+        await runtime.StopAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(sources * paths, runtime.Deliveries.GetStatus().CommittedRecords);
+        for (var connection = 1; connection <= paths; connection++)
+        {
+            Assert.Equal(sources, runtime.Deliveries.ReadPending(connection, 0, sources + 1).Count);
+        }
+
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        Assert.InRange(runtime.InFlight.Status.PeakReservedBytes, 1, runtime.InFlight.Status.CapacityBytes);
+        Assert.All(runtime.GetStatus().Units, unit => Assert.Equal(RuntimeUnitState.Stopped, unit.State));
+    }
+
+    [Fact]
+    public async Task FormatRejectionIsCountedByInputAndTargetAndDoesNotHoldBudget()
+    {
+        using var data = TemporaryDirectory.Create();
+        var output = new FakeOutputFactory { RejectFormatting = true };
+        var events = new RecordingEventSink();
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], data.Path, events, outputs: [output]);
+        await using var plan = runtime.Prepare(Plan(Input(), Output("out-a", 1)));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await UntilAsync(() => events.OfType("output.rejected").Count == 1 && runtime.InFlight.Status.ReservedBytes == 0);
+        await runtime.StopAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["path/meter/sim/1/dataRejected"]);
+        Assert.Equal(0, output.Sent);
+        Assert.Equal(1, runtime.Deliveries.GetActivityTotals().RejectedPaths);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SamplingStorageFailureDropsTheMessageAndReleasesBudget(bool recover)
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        var output = new FakeOutputFactory { OnSend = _ => new(OutputSendStatus.SuspendTarget, "test") };
+        var events = new RecordingEventSink();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, events, outputs: [output],
+            options: new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(200),
+                InitialRestartDelay = TimeSpan.FromMilliseconds(10), RestartJitter = 0 });
+        _ = runtime.Deliveries.GetPersistentCounters();
+        using (var connection = Open(data.Path))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "CREATE TRIGGER fail_budget_insert BEFORE INSERT ON delivery BEGIN SELECT * FROM test_budget_missing_table; END";
+            command.ExecuteNonQuery();
+        }
+
+        await using var plan = runtime.Prepare(Plan(Input(), Output("out-a", 1)));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await input.Written.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await UntilAsync(() => events.OfType("input.storageLoss").Count == 1 && runtime.InFlight.Status.ReservedBytes == 0);
+        Assert.True(runtime.Deliveries.GetStatus().StorageFault);
+        Assert.Equal(1, runtime.Deliveries.GetUnpersistedCounters()["storageLostSourceMessages"]);
+        Assert.Equal(1, runtime.Deliveries.GetUnpersistedCounters()["storageLostDeliveryRecords"]);
+        Assert.Equal(0, runtime.Deliveries.GetStatus().CommittedRecords);
+        Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+
+        if (recover)
+        {
+            using var connection = Open(data.Path);
+            using var command = connection.CreateCommand();
+            command.CommandText = "DROP TRIGGER fail_budget_insert";
+            command.ExecuteNonQuery();
+            var laterSource = Guid.NewGuid();
+            var later = new DeliveryDraft(Guid.NewGuid(), 1, laterSource, "meter", 1, "{}"u8.ToArray(), "fingerprint", "test", "test", 1);
+            Assert.True((await runtime.Deliveries.EnqueueAsync([later], TestContext.Current.CancellationToken)).Committed);
+            Assert.Equal(laterSource, Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10)).SourceMessageId);
+        }
+
+        await runtime.StopAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        Assert.Equal(recover ? 1 : 0, runtime.Deliveries.GetStatus().CommittedRecords);
+        Assert.Empty(events.OfType("dispatcher.drainTimedOut"));
+        Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["storageLostSourceMessages"]);
+        Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["storageLostDeliveryRecords"]);
+    }
+
+    [Fact]
     public async Task FanoutIsCommittedTogetherBeforeSendAndAckDeletesTheFrozenRecords()
     {
         using var data = TemporaryDirectory.Create();
@@ -32,6 +179,7 @@ public sealed class OutputPipelineTests
         await runtime.ActivateAsync(plan);
         await UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords == 2);
         Assert.Equal(2, output.Sent);
+        Assert.Equal(2, runtime.Deliveries.GetActivityTotals().Sent);
         Assert.Equal(2, runtime.Deliveries.GetStatus().CommittedRecords);
         await runtime.StopAsync(TestContext.Current.CancellationToken);
         Assert.Equal(output.Created, output.Disposed);
@@ -90,6 +238,7 @@ public sealed class OutputPipelineTests
         Assert.True(runtime.Deliveries.GetStatus().StorageFault);
         Assert.Equal(0, runtime.Deliveries.GetStatus().RejectedRecords);
         Assert.Equal(1, output.Sent);
+        Assert.Equal(1, runtime.Deliveries.GetActivityTotals().Sent);
         using (var connection = Open(data.Path))
         using (var command = connection.CreateCommand())
         {
@@ -132,6 +281,7 @@ public sealed class OutputPipelineTests
         await runtime.StopAsync(TestContext.Current.CancellationToken);
         Assert.Equal(10, runtime.Deliveries.GetStatus().CommittedRecords);
         Assert.Equal(10, runtime.Deliveries.ReadPending(1, 0, 20).Count);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
     }
 
     internal static RuntimePlan Plan(params RuntimeUnitPlan[] units) => new(1, units);
@@ -163,6 +313,8 @@ public sealed class OutputPipelineTests
         public int Created => Volatile.Read(ref _created);
         public int Disposed => Volatile.Read(ref _disposed);
         public string Kind => "output.test";
+        public bool RejectFormatting { get; init; }
+        public Action? BeforeFormat { get; init; }
         public Func<SentRecord, OutputSendResult> OnSend { get; set; } = _ => new(OutputSendStatus.Ack);
         public IOutputTarget Build(RuntimeUnitPlan plan) => new Target(this, plan);
         private sealed class Target(FakeOutputFactory factory, RuntimeUnitPlan plan) : IOutputTarget
@@ -172,8 +324,15 @@ public sealed class OutputPipelineTests
             public string ClientId => plan.Configuration.GetProperty("clientId").GetString() ?? "client-" + ConnectionId;
             public IReadOnlyList<string> Inputs => ["meter/sim"];
             public string Recipient => "mqtt://127.0.0.1:1883";
+            public string CurrentFingerprint => "fingerprint";
             public string CredentialVersion => "test-version";
-            public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId) => new(StandardEnvelope.Serialize(message, deliveryId), "test", 1, "fingerprint", "test");
+            public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
+            {
+                factory.BeforeFormat?.Invoke();
+                return factory.RejectFormatting
+                    ? throw new ArgumentException("test formatting rejection")
+                    : new(StandardEnvelope.Serialize(message, deliveryId), "test", 1, "fingerprint", "test");
+            }
             public IOutputAdapter CreateAdapter()
             {
                 Interlocked.Increment(ref factory._created);
@@ -216,9 +375,12 @@ internal sealed class OneShotInputFactory(int count = 1) : IInputUnitFactory
             Interlocked.Increment(ref owner._started);
             for (var i = 0; i < count; i++)
             {
-                var at = context.Time.GetUtcNow();
-                await context.Messages.WriteAsync(new EdgeMessage(Guid.NewGuid(), context.InputKey, context.DeviceKey, at, TimeSource.GatewayUnsynced, at,
-                    new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(42 + i) }), stoppingToken);
+                await context.Messages.ProduceAsync(1024, _ =>
+                {
+                    var at = context.Time.GetUtcNow();
+                    return ValueTask.FromResult<EdgeMessage?>(new EdgeMessage(Guid.NewGuid(), context.InputKey, context.DeviceKey,
+                        at, TimeSource.GatewayUnsynced, at, new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(42 + i) }));
+                }, stoppingToken);
             }
 
             owner.Written.TrySetResult();

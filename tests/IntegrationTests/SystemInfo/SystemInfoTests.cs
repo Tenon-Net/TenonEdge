@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using TenonEdge.Host.Bootstrap;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Migrations;
@@ -20,6 +21,29 @@ namespace TenonEdge.IntegrationTests.SystemInfo;
 public sealed class SystemInfoTests
 {
     private const string InfoPath = "/api/edge-admin/v1/system/info";
+
+    [Theory]
+    [InlineData(ClockSyncState.Unknown, "unknown")]
+    [InlineData(ClockSyncState.Synchronized, "synchronized")]
+    [InlineData(ClockSyncState.NotSynchronized, "notSynchronized")]
+    public async Task SystemInfoExposesClockState(ClockSyncState state, string expected)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var factory = new TenonEdgeApplicationFactory();
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddSingleton<IClockSyncStatus>(new FixedClock(state))));
+        TestAccounts.Create(configured.Services, "viewer", ApiRequests.StrongPassword, UserRole.Viewer);
+        using var client = configured.CreateClient();
+        using var login = await client.LoginAsync("viewer", ApiRequests.StrongPassword, cancellationToken);
+        await client.UseSessionAsync(login, cancellationToken);
+        var info = await client.GetJsonAsync(InfoPath, cancellationToken);
+        Assert.Equal(expected, info.GetProperty("clockSyncState").GetString());
+    }
+
+    private sealed class FixedClock(ClockSyncState state) : IClockSyncStatus
+    {
+        public ClockSyncState State => state;
+    }
 
     [Fact]
     public async Task EveryRoleCanReadSystemInfoAndAnonymousCannot()
@@ -41,6 +65,12 @@ public sealed class SystemInfoTests
             using var client = await factory.CreateLoggedInClientAsync(accountName, cancellationToken);
             var info = await client.GetJsonAsync(InfoPath, cancellationToken);
             Assert.Equal(ProductVersion.Current, info.GetProperty("version").GetString());
+            var runtime = await client.GetJsonAsync("/api/edge-admin/v1/runtime/status", cancellationToken);
+            Assert.True(runtime.TryGetProperty("storageProtection", out _));
+            Assert.True(runtime.TryGetProperty("persistentCounters", out _));
+            Assert.True(runtime.TryGetProperty("unpersistedCounters", out _));
+            var trends = await client.GetJsonAsync("/api/edge-admin/v1/runtime/trends", cancellationToken);
+            Assert.Equal(JsonValueKind.Array, trends.ValueKind);
         }
     }
 

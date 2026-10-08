@@ -18,6 +18,9 @@ public sealed class RuntimeOptions
     /// <summary>重启等待的随机缩短比例（0—1），使同时故障的单元错开重启；测试中可设为 0 以得到确定的时间。</summary>
     public double RestartJitter { get; init; } = 0.1;
 
+    /// <summary>进程共享的输入/分发在途字节预算（总设计 §8.7）。</summary>
+    public long InFlightBytes { get; init; } = 64L * 1024 * 1024;
+
     /// <summary>每个输入通道的容量（总设计 §8.4：每个输入 100 条）。</summary>
     public int InputChannelCapacity { get; init; } = 100;
 
@@ -33,6 +36,7 @@ public sealed class RuntimeOptions
         }
 
         ArgumentOutOfRangeException.ThrowIfLessThan(InputChannelCapacity, 1, nameof(InputChannelCapacity));
+        ArgumentOutOfRangeException.ThrowIfLessThan(InFlightBytes, 1);
         return this;
     }
 }

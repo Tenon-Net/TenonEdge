@@ -12,8 +12,18 @@ public interface IInputReadReporter
     void ReadCompleted(DateTimeOffset completedAt, int failedFieldCount);
 
     /// <summary>整组读取失败（例如连接中断）：不生成消息，不伪造正常数据（总设计 §6.1）。</summary>
-    void ReadFailed(DateTimeOffset completedAt, string reason);
+    void ReadFailed(DateTimeOffset completedAt, string reason, InputReadFailureKind kind = InputReadFailureKind.ReadError);
 
     /// <summary>本周期因通道满到截止仍无空位而跳过，计一次 overrun（总设计 §8.1、§8.5）。</summary>
     void CycleSkipped(DateTimeOffset skippedAt);
+}
+
+/// <summary>读取失败原因分类；数据/配置错误与传输、设备读取错误分开计数。</summary>
+public enum InputReadFailureKind
+{
+    /// <summary>连接、超时或设备读取失败。</summary>
+    ReadError,
+
+    /// <summary>非法或超限输入，不能生成有效消息。</summary>
+    DataError,
 }

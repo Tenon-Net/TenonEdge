@@ -115,8 +115,10 @@ public sealed class MqttCredentialTests
         Assert.Equal("new-password", Store(factory).ResolveMqtt(1, Recipient)!.Password);
     }
 
-    [Fact]
-    public async Task PendingRecordsRequireAnAccountDeclarationAndChangedAccountGetsANewMarker()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingOrFailedRecordsRequireAnAccountDeclarationAndChangedAccountGetsANewMarker(bool failed)
     {
         await using var factory = new TenonEdgeApplicationFactory();
         using var client = await AdminAsync(factory);
@@ -125,6 +127,12 @@ public sealed class MqttCredentialTests
         var cache = factory.Services.GetRequiredService<DeliveryCache>();
         Assert.True((await cache.EnqueueAsync([new DeliveryDraft(Guid.NewGuid(), 1, Guid.NewGuid(), "meter", 1,
             Encoding.UTF8.GetBytes("{}"), "test-fingerprint", "test", "test", 1)], Token)).Committed);
+        if (failed)
+        {
+            var seq = Assert.Single(cache.ReadPending(1, 0, 10)).Seq;
+            Assert.True((await cache.RecordFailureAsync(new(seq, 0, "rejected", true, false), Token)).Committed);
+        }
+
         var version = first.GetProperty("version").GetString();
         using var missing = await PutAsync(client, new { recipient = Recipient, username = "user", password = "new-password", expectedVersion = version });
         Assert.Equal(HttpStatusCode.Conflict, missing.StatusCode);
@@ -133,7 +141,7 @@ public sealed class MqttCredentialTests
         Assert.Equal(marker, Store(factory).ResolveMqtt(1, Recipient)!.AccountMarker);
         await WriteAsync(client, new { recipient = Recipient, username = "user", password = "other-account", expectedVersion = same.GetProperty("version").GetString(), accountChanged = true });
         Assert.NotEqual(marker, Store(factory).ResolveMqtt(1, Recipient)!.AccountMarker);
-        Assert.Single(cache.ReadPending(1, 0, 10));
+        Assert.Single(failed ? cache.ReadFailed(1, 0, 10) : cache.ReadPending(1, 0, 10));
     }
 
     [Theory]

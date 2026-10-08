@@ -29,7 +29,7 @@ public sealed class DeliveryCacheTests
         Assert.True(Version.Parse(info.SqliteVersion) >= new Version(3, 51, 3), info.SqliteVersion);
         Assert.Equal("wal", info.JournalMode);
         Assert.Equal(2, info.Synchronous);
-        Assert.Equal(1, info.SchemaVersion);
+        Assert.Equal(4, info.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, info.ConfigStoreId);
         if (!OperatingSystem.IsWindows())
         {
@@ -37,7 +37,7 @@ public sealed class DeliveryCacheTests
         }
 
         using var connection = Open(info.FilePath);
-        Assert.Equal(1L, Scalar(connection, "PRAGMA user_version;"));
+        Assert.Equal(4L, Scalar(connection, "PRAGMA user_version;"));
         Assert.Equal(RuntimeTesting.ConfigStoreId, Scalar(connection, "SELECT config_store_id FROM queue_meta;"));
     }
 

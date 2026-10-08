@@ -57,6 +57,9 @@ public sealed class FieldValue : IEquatable<FieldValue>
         _ => FieldType.String,
     };
 
+    /// <summary>在途预算的保守逻辑大小，包含值对象及其 UTF-16 文本；不是 CLR 堆测量。</summary>
+    public long BudgetBytes => 64L + (_text is null ? 0 : 24L + 2L * _text.Length);
+
     public static FieldValue FromBoolean(bool value) => value ? True : False;
 
     /// <summary>integer：有符号 64 位整数。</summary>
@@ -129,7 +132,16 @@ public sealed class FieldValue : IEquatable<FieldValue>
                 writer.WriteNumberValue(BitConverter.Int32BitsToSingle(unchecked((int)_bits)));
                 break;
             default:
-                writer.WriteStringValue(_text);
+                // .NET 10 分段字符串 API 保留跨段代理对，避免按整个长字符串申请转义暂存。
+                var remaining = _text.AsSpan();
+                const int segmentLength = 512;
+                while (remaining.Length > segmentLength)
+                {
+                    writer.WriteStringValueSegment(remaining[..segmentLength], isFinalSegment: false);
+                    remaining = remaining[segmentLength..];
+                }
+
+                writer.WriteStringValueSegment(remaining, isFinalSegment: true);
                 break;
         }
     }

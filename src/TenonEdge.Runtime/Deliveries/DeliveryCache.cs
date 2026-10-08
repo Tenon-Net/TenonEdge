@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using TenonEdge.Abstractions.Plans;
+using TenonEdge.Runtime.Diagnostics;
 
 namespace TenonEdge.Runtime.Deliveries;
 
@@ -8,11 +9,11 @@ namespace TenonEdge.Runtime.Deliveries;
 /// 读取直接查询已提交的记录。
 /// <list type="bullet">
 /// <item><see cref="EnqueueAsync"/> 在包含这批记录的分组提交返回后才报告成功（“接管”，总设计 §8.5）；提交失败时整批回滚，
-/// 报告失败，调用方不得当作已接管。一次请求中的记录（例如一条源消息发往多个目标的记录）在同一事务中插入。</item>
+/// 报告失败，调用方不得当作已接管。一次请求中符合配额的记录与超额目标的拒绝计数在同一事务中提交。</item>
 /// <item>请求队列满时提交请求的一方等待，不在内存中无限堆积（总设计 §8.7）。</item>
 /// <item>取消等待只结束调用方的等待，不撤回已经交给写者的请求。</item>
 /// </list>
-/// 配额、存储保护、失败区与隔离随 T1-05—T1-07 补充；计数的持久化在 T1-07。
+/// 失败区、配额、隔离和保留期均经此入口；磁盘存储保护在 T1-07。
 /// </summary>
 public sealed class DeliveryCache
 {
@@ -33,17 +34,26 @@ public sealed class DeliveryCache
     private long _failedRecords;
     private long _rejectedRecords;
 
-    public DeliveryCache(DeliveryCacheOptions options, TimeProvider time)
+    public DeliveryCache(DeliveryCacheOptions options, TimeProvider time, Func<StorageSpace?>? readSpace = null, TenonEdge.Abstractions.Contracts.IRuntimeEventSink? events = null)
     {
         Options = options.Validate();
         _time = time;
-        Store = new DeliveryStore(options, time);
+        Store = new DeliveryStore(options, time, events);
+        StorageProtection = new StorageProtection(Path.GetDirectoryName(options.DatabasePath)!,
+            options.MinimumDiskFreeBytes, options.MinimumDiskFreeFraction, readSpace);
         _requests = Channel.CreateBounded<WriteRequest>(new BoundedChannelOptions(options.RequestQueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
         });
     }
+
+    public StorageProtection StorageProtection { get; }
+
+    public IReadOnlyDictionary<string, long> GetPersistentCounters() => Store.ReadCounters();
+    public IReadOnlyDictionary<string, long> GetUnpersistedCounters() => PendingCounters.Snapshot();
+    public RuntimeActivityTotals GetActivityTotals() => PendingCounters.ActivitySnapshot();
+    internal PendingCounters PendingCounters { get; } = new();
 
     public DeliveryCacheOptions Options { get; }
 
@@ -52,7 +62,7 @@ public sealed class DeliveryCache
     internal ChannelReader<WriteRequest> Requests => _requests.Reader;
 
     /// <summary>
-    /// 把一组记录交给写者，等待它们所在的分组提交返回。全部记录在同一事务中插入：要么都已接管，要么都没有写入。
+    /// 把一组记录交给写者，等待它们所在的分组提交返回。符合配额的记录在同一事务中接管；超额记录只计拒绝，结果通过 QuotaRejectedRecords 明示。
     /// </summary>
     public async Task<DeliveryWriteResult> EnqueueAsync(IReadOnlyList<DeliveryDraft> drafts, CancellationToken cancellationToken)
     {
@@ -90,6 +100,32 @@ public sealed class DeliveryCache
     /// <summary>按 seq 顺序读取某个目标已提交的待发记录；未提交或已回滚的记录读不到。</summary>
     public IReadOnlyList<StoredDelivery> ReadPending(long connectionId, long afterSeq, int limit) =>
         Store.ReadPending(connectionId, afterSeq, limit);
+
+    /// <summary>失败区分页读取；管理端授权及导出入口在 T3。</summary>
+    public IReadOnlyList<StoredDelivery> ReadFailed(long connectionId, long afterSeq, int limit) =>
+        Store.Read(connectionId, afterSeq, limit, DeliveryState.Failed);
+
+    public IReadOnlyList<StoredDelivery> ReadQuarantined(long connectionId, long afterSeq, int limit) =>
+        Store.Read(connectionId, afterSeq, limit, DeliveryState.Quarantined);
+
+    public DeliveryQueueTotals GetQueueTotals(long connectionId) => Store.ReadQueueTotals(connectionId);
+
+    internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>
+        SubmitAsync(new QuarantineRequest(seq, reason), token);
+
+    internal Task<DeliveryWriteResult> ReconcileAsync(IReadOnlyDictionary<long, string> targets, bool quarantineMissing, CancellationToken token) =>
+        SubmitAsync(new ReconcileRequest(targets, quarantineMissing), token);
+
+    public DeliveryFailureTotals GetFailureTotals(long connectionId) => Store.ReadFailureTotals(connectionId);
+
+    internal StoredDelivery? ReadPoisonProbe(long connectionId, long afterSeq, int threshold)
+    {
+        var records = Store.Read(connectionId, afterSeq, 1, DeliveryState.Pending, threshold);
+        return records.Count == 0 ? null : records[0];
+    }
+
+    // 使用绝对次数与 pending 条件，使同一结果的提交重试幂等；不重复发送已获得的结果。
+    internal Task<DeliveryWriteResult> RecordFailureAsync(FailureRequest request, CancellationToken token) => SubmitAsync(request, token);
 
     public DeliveryCacheStatus GetStatus()
     {
@@ -139,6 +175,9 @@ public sealed class DeliveryCache
     /// <summary>写者打不开发送缓存（文件损坏、权限、SQLite 版本等）；返回此前是否正常（用于记“存储异常”事件）。</summary>
     internal bool RecordUnavailable(string error, int failedRecords)
     {
+        PendingCounters.RecordActivity(RuntimeActivity.StorageFailedRecordAttempt, failedRecords);
+        PendingCounters.Add("storageUnavailableAttempts");
+        PendingCounters.Add("storageFailedRecordAttempts", failedRecords);
         lock (_lock)
         {
             var wasHealthy = !_storageFault;
@@ -168,6 +207,9 @@ public sealed class DeliveryCache
     /// <summary>写者报告一次失败的提交（已回滚）；返回此前是否正常（用于记“存储异常”事件）。</summary>
     internal bool RecordFailed(int records, string error)
     {
+        PendingCounters.RecordActivity(RuntimeActivity.StorageFailedRecordAttempt, records);
+        PendingCounters.Add("storageFailedBatches");
+        PendingCounters.Add("storageFailedRecordAttempts", records);
         lock (_lock)
         {
             var wasHealthy = !_storageFault;
@@ -220,4 +262,28 @@ internal sealed class DeleteRequest(IReadOnlyList<long> seqs) : WriteRequest
     public IReadOnlyList<long> Seqs { get; } = seqs;
 
     public override int RecordCount => Seqs.Count;
+}
+
+internal sealed class FailureRequest(long seq, int failureCount, string error, bool terminal, bool poison) : WriteRequest
+{
+    public long Seq { get; } = seq;
+    public int FailureCount { get; } = failureCount;
+    public string Error { get; } = error.Length <= 1024 ? error : error[..1024];
+    public bool Terminal { get; } = terminal;
+    public bool Poison { get; } = poison;
+    public override int RecordCount => 1;
+}
+
+internal sealed class QuarantineRequest(long seq, string reason) : WriteRequest
+{
+    public long Seq { get; } = seq;
+    public string Reason { get; } = reason;
+    public override int RecordCount => 1;
+}
+
+internal sealed class ReconcileRequest(IReadOnlyDictionary<long, string> targets, bool quarantineMissing) : WriteRequest
+{
+    public IReadOnlyDictionary<long, string> Targets { get; } = new Dictionary<long, string>(targets);
+    public bool QuarantineMissing { get; } = quarantineMissing;
+    public override int RecordCount => 1;
 }

@@ -39,3 +39,6 @@ Thumbs.db
 
 # Local agent tooling
 .omc/
+
+.omx/
+.omx-state-locks.identity.json

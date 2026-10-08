@@ -131,5 +131,26 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(8, "output_control", [
+            """
+            CREATE TABLE output_control (
+                connection_id INTEGER NOT NULL PRIMARY KEY,
+                manually_paused INTEGER NOT NULL,
+                version TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
+        new(9, "outbound_policy", [
+            """
+            CREATE TABLE outbound_policy (
+                id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+                version TEXT NOT NULL,
+                networks TEXT NOT NULL,
+                local_ports TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

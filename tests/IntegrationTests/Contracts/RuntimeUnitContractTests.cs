@@ -7,6 +7,7 @@ using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.IntegrationTests.Infrastructure;
+using TenonEdge.Runtime.Diagnostics;
 using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.IntegrationTests.Contracts;
@@ -148,8 +149,8 @@ public sealed class RuntimeUnitContractTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         using var device = StartDevice(out var port);
-        var channel = Channel.CreateBounded<EdgeMessage>(10);
-        var context = new InputUnitContext("meter-1", "line", TimeProvider.System, new FixedClockSyncStatus(ClockSyncState.Unknown), new RecordingReads(), channel.Writer);
+        var channel = new BudgetedInputChannel(10, new InFlightBudget(64 * 1024 * 1024));
+        var context = new InputUnitContext("meter-1", "line", TimeProvider.System, new FixedClockSyncStatus(ClockSyncState.Unknown), new RecordingReads(), (InputMessageWriter)channel.Writer);
         await using var unit = new TcpLineInputFactory().Build(Unit("meter-1/line", port), context);
 
         await unit.RunAsync(new CancellationToken(canceled: true)).WaitAsync(Timeout, cancellationToken);
@@ -203,7 +204,7 @@ public sealed class RuntimeUnitContractTests
         {
         }
 
-        public void ReadFailed(DateTimeOffset completedAt, string reason)
+        public void ReadFailed(DateTimeOffset completedAt, string reason, InputReadFailureKind kind = InputReadFailureKind.ReadError)
         {
         }
 

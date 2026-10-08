@@ -26,28 +26,78 @@ internal sealed partial class DeliveryWriterUnit(
     IRuntimeEventSink events,
     ILogger logger) : IRuntimeUnit
 {
+    private (bool Reject, bool Unknown)? _lastProtection;
+    private bool _runStarted;
+    private bool _disposed;
+
+    private void RefreshProtection()
+    {
+        var status = queue.StorageProtection.Refresh();
+        var current = (status.RejectNewRecords, status.SpaceUnknown);
+        if (_lastProtection != current)
+        {
+            if (status.RejectNewRecords || _lastProtection is not null)
+            {
+                events.Record(status.RejectNewRecords ? RuntimeEventSeverity.Warning : RuntimeEventSeverity.Info,
+                    "storage.protection", DeliveryCacheOptions.FileName,
+                    status.SpaceUnknown ? "无法读取磁盘空间，暂时拒绝新增入队。"
+                        : status.RejectNewRecords ? "磁盘可用空间低于保护阈值，拒绝新增入队。" : "磁盘空间恢复，解除存储保护。");
+            }
+
+            _lastProtection = current;
+        }
+    }
+
     public RuntimeUnitId Id => DeliveryCache.WriterId;
 
     public async Task RunAsync(CancellationToken stoppingToken)
     {
+        _runStarted = true;
         var info = Open(() => queue.Store.EnsureInitialized(), inFlight: null);
         LogOpened(logger, info.FilePath, info.SqliteVersion, info.JournalMode, info.Synchronous, info.SchemaVersion);
 
         var batch = new List<WriteRequest>();
         SqliteConnection? connection = null;
+        var lastMaintenance = time.GetTimestamp();
+        async Task FlushCountersAsync()
+        {
+            if (!queue.PendingCounters.HasValues) { return; }
+            connection ??= Open(queue.Store.OpenWriteConnection, batch);
+            if (!Commit(connection, []))
+            {
+                await connection.DisposeAsync();
+                connection = null;
+            }
+        }
+
         try
         {
             var stopping = stoppingToken.IsCancellationRequested;
             while (true)
             {
+                RefreshProtection();
                 if (!stopping)
                 {
+                    if (time.GetElapsedTime(lastMaintenance) >= TimeSpan.FromMinutes(1))
+                    {
+                        using var maintenance = Open(queue.Store.OpenWriteConnection, batch);
+                        Open(() => { queue.Store.ExpirePending(maintenance); queue.Store.ExpireFailures(maintenance); return true; }, batch);
+                        lastMaintenance = time.GetTimestamp();
+                    }
+
+                    using var idle = new CancellationTokenSource(TimeSpan.FromSeconds(10), time);
+                    using var wait = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, idle.Token);
                     try
                     {
-                        if (!await queue.Requests.WaitToReadAsync(stoppingToken))
+                        if (!await queue.Requests.WaitToReadAsync(wait.Token))
                         {
-                            return;
+                            stopping = true;
                         }
+                    }
+                    catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+                    {
+                        await FlushCountersAsync();
+                        continue;
                     }
                     catch (OperationCanceledException)
                     {
@@ -74,6 +124,7 @@ internal sealed partial class DeliveryWriterUnit(
                 {
                     if (stopping)
                     {
+                        await FlushCountersAsync();
                         return;
                     }
 
@@ -104,7 +155,17 @@ internal sealed partial class DeliveryWriterUnit(
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) { return; }
+        _disposed = true;
+        if (!_runStarted && queue.PendingCounters.HasValues)
+        {
+            // StartCore 后立即停止时，监督者可能尚未调用 RunAsync 就释放初始实例。
+            // 仍由这个独占写者执行“已停止”分支，提交已有增量；不启动第二个并行写者。
+            await RunAsync(new CancellationToken(canceled: true));
+        }
+    }
 
     /// <summary>
     /// 打开发送缓存；失败时记“存储异常”，让已取出的本批与请求队列中已有的请求失败（计入失败记录数），再重新抛出，由监督者退避重启。
@@ -155,8 +216,10 @@ internal sealed partial class DeliveryWriterUnit(
         var inserted = 0;
         var deleted = 0;
         var rejected = 0;
+        var counters = queue.PendingCounters.Snapshot();
         try
         {
+            RefreshProtection();
             using var transaction = connection.BeginTransaction();
             using var insert = DeliveryStore.CreateInsertCommand(connection, transaction);
             using var delete = DeliveryStore.CreateDeleteCommand(connection, transaction);
@@ -178,6 +241,14 @@ internal sealed partial class DeliveryWriterUnit(
                 }
             }
 
+            DeliveryStore.AddCounter(connection, transaction, "committedRecords", results.Sum(result => result.Seqs.Count));
+            DeliveryStore.AddCounter(connection, transaction, "acknowledgedRecords",
+                results.Where((result, index) => batch[index] is DeleteRequest).Sum(result => result.AffectedRecords));
+            DeliveryStore.AddCounter(connection, transaction, "dataRejectedRecords", rejected);
+            foreach (var (name, count) in counters)
+            {
+                DeliveryStore.AddCounter(connection, transaction, name, count);
+            }
             transaction.Commit();
             inserted = results.Where(result => result.Committed).Sum(result => result.Seqs.Count);
             deleted = results.Where((result, index) => result.Committed && batch[index] is DeleteRequest).Sum(result => result.AffectedRecords);
@@ -201,6 +272,7 @@ internal sealed partial class DeliveryWriterUnit(
             return false;
         }
 
+        queue.PendingCounters.Committed(counters);
         if (queue.RecordCommitted(inserted, deleted, rejected))
         {
             events.Record(RuntimeEventSeverity.Info, RuntimeEventTypes.StorageRecovered, DeliveryCacheOptions.FileName, "发送缓存写入已恢复。");
@@ -214,18 +286,33 @@ internal sealed partial class DeliveryWriterUnit(
         return true;
     }
 
-    private static DeliveryWriteResult Execute(WriteRequest request, SqliteCommand insert, SqliteCommand delete, long createdAt)
+    private DeliveryWriteResult Execute(WriteRequest request, SqliteCommand insert, SqliteCommand delete, long createdAt)
     {
         switch (request)
         {
             case InsertRequest inserting:
-                var seqs = new long[inserting.Drafts.Count];
-                for (var j = 0; j < seqs.Length; j++)
+                if (queue.StorageProtection.Status.RejectNewRecords)
                 {
-                    seqs[j] = DeliveryStore.Insert(insert, inserting.Drafts[j], createdAt);
+                    DeliveryStore.AddCounter(insert.Connection!, insert.Transaction!, "storageProtectionRejectedRecords", inserting.Drafts.Count);
+                    return new DeliveryWriteResult(DeliveryWriteStatus.Committed, [], 0, null,
+                        StorageProtectionRejectedRecords: inserting.Drafts.Count);
                 }
 
-                return DeliveryWriteResult.Inserted(seqs);
+                var seqs = new List<long>();
+                var quotaRejected = 0;
+                foreach (var draft in inserting.Drafts)
+                {
+                    if (queue.Store.Admit(insert.Connection!, insert.Transaction!, draft))
+                    {
+                        seqs.Add(DeliveryStore.Insert(insert, draft, createdAt));
+                    }
+                    else
+                    {
+                        quotaRejected++;
+                    }
+                }
+
+                return DeliveryWriteResult.Inserted(seqs, quotaRejected);
             case DeleteRequest deleting:
                 var count = 0;
                 foreach (var seq in deleting.Seqs)
@@ -235,6 +322,14 @@ internal sealed partial class DeliveryWriterUnit(
                 }
 
                 return DeliveryWriteResult.Deleted(count);
+            case QuarantineRequest quarantine:
+                DeliveryStore.QuarantineWhere(insert.Connection!, insert.Transaction!, "seq = $seq", quarantine.Reason, ("$seq", quarantine.Seq));
+                return DeliveryWriteResult.Deleted(0);
+            case ReconcileRequest reconcile:
+                DeliveryStore.Reconcile(insert.Connection!, insert.Transaction!, reconcile);
+                return DeliveryWriteResult.Deleted(0);
+            case FailureRequest failure:
+                return queue.Store.ApplyFailure(insert.Connection!, insert.Transaction!, failure, createdAt);
             default:
                 throw new InvalidOperationException($"未知的写入请求 {request.GetType().Name}。");
         }

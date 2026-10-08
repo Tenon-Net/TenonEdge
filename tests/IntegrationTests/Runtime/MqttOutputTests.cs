@@ -34,7 +34,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
             await MqttProbe.SubscribeAsync(subscriber, topic, Token);
             var credentials = new Credentials();
             await using var runtime = RuntimeTesting.CreateRuntime([new SimulatorInputFactory()], directory.Path,
-                outputs: [new MqttOutputFactory(credentials, TimeProvider.System)]);
+                outputs: [new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections())]);
             await using var plan = runtime.Prepare(OutputPipelineTests.Plan(Simulator(), Plan(broker.Port, topic, qos)));
             Assert.Empty(plan.Failures);
             runtime.StartCore();
@@ -54,6 +54,115 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
     }
 
     [Fact]
+    public async Task BrokerNetworkOutageBoundsTheQueueAndRecoveryDeliversFrozenBacklog()
+    {
+        var broker = fixture.Require();
+        await using var proxy = TcpFaultProxy.Start(broker.Port);
+        using var directory = TemporaryDirectory.Create();
+        var topic = MqttProbe.NewTopic("bounded-outage");
+        var (subscriber, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewClientId()), Token);
+        using (subscriber)
+        {
+            var received = ReceivedMessages.Attach(subscriber);
+            await MqttProbe.SubscribeAsync(subscriber, topic, Token);
+            await using var runtime = RuntimeTesting.CreateRuntime([new SimulatorInputFactory()], directory.Path,
+                configureCache: options => new DeliveryCacheOptions
+                {
+                    DatabasePath = options.DatabasePath,
+                    ConfigStoreId = options.ConfigStoreId,
+                    CommitInterval = options.CommitInterval,
+                    MaximumPendingPerTarget = 3,
+                }, outputs: [new MqttOutputFactory(new Credentials(), TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections())]);
+            await using var plan = runtime.Prepare(OutputPipelineTests.Plan(Simulator(), Plan(proxy.Port, topic)));
+            runtime.StartCore();
+            await runtime.ActivateAsync(plan);
+            await received.NextAsync(Token);
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords >= 1);
+            proxy.Freeze();
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetQueueTotals(1).QuotaRejected >= 2);
+            var backlog = runtime.Deliveries.ReadPending(1, 0, 10);
+            Assert.Equal(3, backlog.Count);
+            Assert.All(backlog, record => Assert.Equal(0, record.FailureCount));
+            Assert.Empty(runtime.Deliveries.ReadFailed(1, 0, 10));
+            Assert.InRange(runtime.InFlight.Status.ReservedBytes, 0, 64L * 1024 * 1024);
+            var remaining = backlog.ToDictionary(record => record.DeliveryId.ToString("D"), record => record.Payload.ToArray());
+            proxy.Thaw();
+            using var recovery = CancellationTokenSource.CreateLinkedTokenSource(Token);
+            recovery.CancelAfter(TimeSpan.FromSeconds(30));
+            while (remaining.Count > 0)
+            {
+                var message = await received.NextAsync(recovery.Token, TimeSpan.FromSeconds(30));
+                var bytes = message.ApplicationMessage.Payload.ToArray();
+                using var json = JsonDocument.Parse(bytes);
+                if (remaining.Remove(json.RootElement.GetProperty("messageId").GetString()!, out var frozen))
+                {
+                    Assert.Equal(frozen, bytes); // 同一 deliveryId、原采集时间与值，不重生成冻结报文。
+                }
+                Assert.InRange(runtime.Deliveries.GetQueueTotals(1).PendingCount, 0, 3);
+            }
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetQueueTotals(1).PendingCount == 0);
+            Assert.True(runtime.Deliveries.GetPersistentCounters()["target/1/quotaRejectedRecords"] >= 2);
+            await runtime.StopAsync(Token);
+            Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+        }
+    }
+
+    [Fact]
+    public async Task AccessDeniedByTheRealConnectorSuspendsWithoutOpeningATcpConnection()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var target = new MqttOutputFactory(new Credentials(), TimeProvider.System,
+            new TenonEdge.Runtime.Connections.OutboundConnector(new DenyPolicy()), new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(port, "denied"));
+        await using var adapter = target.CreateAdapter();
+        var result = await adapter.SendAsync(target.CreateMessage(Message(), Guid.NewGuid()), Token);
+        Assert.Equal(OutputSendStatus.SuspendTarget, result.Status);
+        Assert.False(result.CountsTowardPoison);
+        Assert.Contains("出站", result.Error, StringComparison.Ordinal);
+        Assert.False(listener.Pending());
+    }
+
+    private sealed class DenyPolicy : IOutboundAddressPolicy
+    {
+        public bool IsAllowed(IPAddress address, int port) => false;
+    }
+
+    [Fact]
+    public async Task TwoBorrowersShareOneRealMqttClientUntilTheLastRelease()
+    {
+        var broker = fixture.Require();
+        var connector = new CountingConnector();
+        var manager = new TenonEdge.Runtime.Connections.SharedConnections();
+        var target = new MqttOutputFactory(new Credentials(), TimeProvider.System, connector, manager)
+            .Build(Plan(broker.Port, MqttProbe.NewTopic("shared-session")));
+        await using var first = target.CreateAdapter();
+        await using var second = target.CreateAdapter();
+        var message = target.CreateMessage(Message(), Guid.NewGuid());
+        Assert.Equal(OutputSendStatus.Ack, (await first.SendAsync(message, Token)).Status);
+        Assert.Equal(OutputSendStatus.Ack, (await second.SendAsync(message, Token)).Status);
+        Assert.Equal(1, connector.Connections);
+        await first.DisposeAsync();
+        Assert.Equal(OutputSendStatus.Ack, (await second.SendAsync(message, Token)).Status);
+        Assert.Equal(1, connector.Connections);
+        await second.DisposeAsync();
+        await using var replacement = target.CreateAdapter();
+        Assert.Equal(OutputSendStatus.Ack, (await replacement.SendAsync(message, Token)).Status);
+        Assert.Equal(2, connector.Connections);
+    }
+
+    private sealed class CountingConnector : IOutboundConnector
+    {
+        public int Connections { get; private set; }
+        public async ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken)
+        {
+            var stream = await LoopbackConnector.ConnectAsync(host, port, cancellationToken);
+            Connections++;
+            return stream;
+        }
+    }
+
+    [Fact]
     public async Task BadAuthenticationSuspendsAndCredentialRotationResumesTheSamePendingRecord()
     {
         var broker = fixture.Require();
@@ -67,7 +176,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
             var credentials = new Credentials { Value = new(MosquittoBroker.UserName, "wrong-password", "same-account", "v1") };
             var events = new RecordingEventSink();
             await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], directory.Path, events,
-                outputs: [new MqttOutputFactory(credentials, TimeProvider.System)]);
+                outputs: [new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections())]);
             await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(), Plan(broker.Port, topic)));
             runtime.StartCore();
             await runtime.ActivateAsync(plan);
@@ -90,7 +199,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
         var broker = fixture.Require();
         var topic = MqttProbe.NewTopic("changed-account");
         var credentials = new Credentials();
-        var target = new MqttOutputFactory(credentials, TimeProvider.System).Build(Plan(broker.Port, topic));
+        var target = new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(broker.Port, topic));
         var message = target.CreateMessage(Message(), Guid.NewGuid());
         credentials.Value = credentials.Value with { AccountMarker = "changed-account", Version = "v2" };
         await using var adapter = target.CreateAdapter();
@@ -105,11 +214,11 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
         using var directory = TemporaryDirectory.Create();
         var topic = MqttProbe.NewTopic("missing-puback");
         var credentials = new Credentials();
-        var target = new MqttOutputFactory(credentials, TimeProvider.System).Build(Plan(proxy.Port, topic));
+        var target = new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(proxy.Port, topic));
         var events = new RecordingEventSink();
         StoredDelivery pending;
         await using (var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], directory.Path, events,
-            outputs: [new MqttOutputFactory(credentials, TimeProvider.System)]))
+            outputs: [new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections())]))
         {
             await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(), Plan(proxy.Port, topic)));
             runtime.StartCore();
@@ -124,6 +233,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
             await OutputPipelineTests.UntilAsync(() => events.Events.Any(entry => entry.Description.Contains("超时", StringComparison.Ordinal)));
             pending = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
             Assert.Equal(deliveryId, pending.DeliveryId);
+            Assert.Equal(0, pending.FailureCount);
             Assert.Equal(1, runtime.Deliveries.GetStatus().DeletedRecords);
             var stopped = Stopwatch.StartNew();
             await runtime.StopAsync(Token);
@@ -136,7 +246,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
         {
             var received = ReceivedMessages.Attach(subscriber);
             await MqttProbe.SubscribeAsync(subscriber, topic, Token);
-            await using var restarted = RuntimeTesting.CreateRuntime([], directory.Path, outputs: [new MqttOutputFactory(credentials, TimeProvider.System)]);
+            await using var restarted = RuntimeTesting.CreateRuntime([], directory.Path, outputs: [new MqttOutputFactory(credentials, TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections())]);
             // 有待发记录的输出仍引用种子输入；本次保留输入定义，测试工厂不产生新采样。
             await using var plan = restarted.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(), Plan(proxy.Port, topic)));
             // 无输入模块只使输入构建失败；已持久化的输出继续处理。
@@ -154,7 +264,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
     {
         var broker = fixture.Require();
         await using var proxy = TcpFaultProxy.Start(broker.Port);
-        var target = new MqttOutputFactory(new Credentials(), TimeProvider.System).Build(Plan(proxy.Port, MqttProbe.NewTopic("qos0-ping"), qos: 0));
+        var target = new MqttOutputFactory(new Credentials(), TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(proxy.Port, MqttProbe.NewTopic("qos0-ping"), qos: 0));
         await using var adapter = target.CreateAdapter();
         Assert.Equal(OutputSendStatus.Ack, (await adapter.SendAsync(target.CreateMessage(Message(), Guid.NewGuid()), Token)).Status);
         proxy.Freeze();
@@ -168,7 +278,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
     public async Task UntrustedTlsCertificatesSuspendInsteadOfDisablingValidation()
     {
         var broker = fixture.Require();
-        var target = new MqttOutputFactory(new Credentials(), TimeProvider.System).Build(Plan(broker.TlsPort, MqttProbe.NewTopic("tls-refusal"), tls: true));
+        var target = new MqttOutputFactory(new Credentials(), TimeProvider.System, LoopbackConnector, new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(broker.TlsPort, MqttProbe.NewTopic("tls-refusal"), tls: true));
         await using var adapter = target.CreateAdapter();
         var result = await adapter.SendAsync(target.CreateMessage(Message(), Guid.NewGuid()), Token);
         Assert.Equal(OutputSendStatus.SuspendTarget, result.Status);
@@ -205,7 +315,7 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
         {
             var received = ReceivedMessages.Attach(subscriber);
             await MqttProbe.SubscribeAsync(subscriber, topic, Token);
-            await using var host = new FixedDataDirectoryApplicationFactory(data.Path, new Dictionary<string, string> { [RuntimeSettings.SeedSnapshotKey] = seed });
+            await using var host = new FixedDataDirectoryApplicationFactory(data.Path, new Dictionary<string, string> { [RuntimeSettings.SeedSnapshotKey] = seed, ["TenonEdge:Outbound:LocalPorts:0"] = broker.Port.ToString(System.Globalization.CultureInfo.InvariantCulture) });
             using var client = host.CreateClient();
             var wire = await received.NextAsync(Token);
             using var json = JsonDocument.Parse(wire.ApplicationMessage.Payload.ToArray());
@@ -216,6 +326,12 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
             var runtime = host.Services.GetRequiredService<TenonEdge.Runtime.Lifecycle.RuntimeHost>();
             await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords >= 1);
         }
+    }
+
+    private static IOutboundConnector LoopbackConnector => new TenonEdge.Runtime.Connections.OutboundConnector(new LoopbackPolicy());
+    private sealed class LoopbackPolicy : IOutboundAddressPolicy
+    {
+        public bool IsAllowed(IPAddress address, int port) => IPAddress.IsLoopback(address);
     }
 
     private static RuntimeUnitPlan Simulator() => new(RuntimeUnitId.Create("input.simulator", "meter/sim"),

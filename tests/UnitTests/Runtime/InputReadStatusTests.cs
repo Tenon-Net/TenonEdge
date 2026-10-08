@@ -70,6 +70,23 @@ public sealed class InputReadStatusTests
         Assert.Equal(InputReadHealth.NotRead, status.Snapshot().Health);
     }
 
+    [Fact]
+    public void DataErrorsAreASubsetOfFailuresAndRecoveryPreservesCounts()
+    {
+        var status = new InputReadStatus("meter-001", "simulated", new Recorder());
+        status.ReadFailed(At, "超时");
+        Assert.Equal(0, status.Snapshot().DataRejected);
+        status.ReadFailed(At, "超限", InputReadFailureKind.DataError);
+        Assert.Equal(2, status.Snapshot().ReadsFailed);
+        Assert.Equal(1, status.Snapshot().DataRejected);
+        status.ReadCompleted(At, 0);
+        Assert.Equal(InputReadHealth.Normal, status.Snapshot().Health);
+        Assert.Equal(1, status.Snapshot().DataRejected);
+        var before = status.Snapshot();
+        Assert.Throws<ArgumentOutOfRangeException>(() => status.ReadFailed(At, "无效分类", (InputReadFailureKind)999));
+        Assert.Equal(before, status.Snapshot());
+    }
+
     private sealed class Recorder : IRuntimeEventSink
     {
         public List<(RuntimeEventSeverity Severity, string Type, string? Target, string Description)> Recorded { get; } = [];

@@ -77,13 +77,13 @@ internal sealed class MqttCredentialStore(
             throw new ArgumentException("账户变更声明须与新凭证一起提交。");
         }
 
-        // T1 当前只有待发记录；失败区及跨库管理协同随 T1-06/T3 补齐。没有在事务中等待网络。
+        // 待发和失败区记录都属于尚未交付的数据；跨库管理协同随 T3 补齐。没有在事务中等待网络。
         if (deliveries.GetStatus().Store is null)
         {
             throw new CredentialWriteException("credential.queueUnavailable");
         }
 
-        var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0;
+        var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0 || deliveries.ReadFailed(connectionId, 0, 1).Count > 0;
         return database.InTransaction(client =>
         {
             var record = client.Queryable<MqttCredentialRecord>().InSingle(connectionId);

@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Text;
+using System.Text.Json;
 using TenonEdge.Abstractions.Messages;
 
 namespace TenonEdge.Runtime.Deliveries;
@@ -14,7 +16,7 @@ namespace TenonEdge.Runtime.Deliveries;
 public sealed class DeliveryDraft
 {
     /// <summary>单条输出报文的上限（总设计 §8.4：256 KiB，超限明确失败）。</summary>
-    public const int MaximumPayloadBytes = 256 * 1024;
+    public const int MaximumPayloadBytes = StandardEnvelope.MaximumPayloadBytes;
 
     public DeliveryDraft(
         Guid deliveryId,
@@ -75,6 +77,12 @@ public sealed class DeliveryDraft
         RouteId = routeId;
         NodeLabel = nodeLabel;
     }
+
+    /// <summary>配额的逻辑字节：冻结正文及 UTF-8 文本，加 256 字节固定记录开销；不等于 SQLite/WAL 文件尺寸。</summary>
+    public long ByteSize => Payload.Length + 256L + Encoding.UTF8.GetByteCount(DeviceKey)
+        + Encoding.UTF8.GetByteCount(NodeLabel ?? string.Empty) + Encoding.UTF8.GetByteCount(TargetAddress ?? string.Empty)
+        + Encoding.UTF8.GetByteCount(Fingerprint) + Encoding.UTF8.GetByteCount(FingerprintSummary)
+        + (Headers is null ? 0 : Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(Headers)));
 
     public Guid DeliveryId { get; }
 

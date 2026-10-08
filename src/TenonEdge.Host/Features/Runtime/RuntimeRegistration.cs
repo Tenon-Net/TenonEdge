@@ -1,8 +1,12 @@
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Adapters.Simulator;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Credentials;
+using TenonEdge.Host.Features.Deliveries;
+using TenonEdge.Host.Features.SystemInfo;
 using TenonEdge.Host.Storage;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
 using TenonEdge.Runtime.Lifecycle;
@@ -21,8 +25,11 @@ internal static class RuntimeRegistration
         services.AddSingleton(provider => RuntimeSettings.Resolve(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<IRuntimeEventSink, RuntimeEventSink>();
 
-        // 校时检测在 T1-07 实现（V-14），此前时钟状态为“未知”。
-        services.AddSingleton<IClockSyncStatus, UnknownClockSyncStatus>();
+        services.AddSingleton<IClockSyncStatus>(provider => new ClockSyncStatus(
+            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IRuntimeEventSink>(), ClockSyncStatus.ReadKernel));
+        services.AddHostedService<ClockSyncMonitor>();
+        services.AddSingleton<RuntimeTrendHistory>();
+        services.AddHostedService<RuntimeTrendMonitor>();
         services.AddSingleton<IInputUnitFactory, SimulatorInputFactory>();
         services.AddSingleton(_ => new RuntimeOptions().Validate());
         services.AddSingleton(provider => new DeliveryCache(
@@ -31,12 +38,22 @@ internal static class RuntimeRegistration
                 DatabasePath = Path.Combine(provider.GetRequiredService<DataDirectoryLock>().Directory.Root, DeliveryCacheOptions.FileName),
                 ConfigStoreId = provider.GetRequiredService<GatewayIdentity>().ConfigStoreId,
             },
-            provider.GetRequiredService<TimeProvider>()));
+            provider.GetRequiredService<TimeProvider>(), events: provider.GetRequiredService<IRuntimeEventSink>()));
+        services.AddSingleton<OutputControlStore>();
+        services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());
         services.AddSingleton<MqttCredentialStore>();
+        services.AddSingleton<OutboundPolicyStore>();
+        services.AddSingleton<IOutboundAddressPolicy>(provider => new HostOutboundAddressPolicy(
+            provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<TenonEdge.Host.Bootstrap.ListenerSettings>(),
+            provider.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>(), provider.GetRequiredService<OutboundPolicyStore>().Read));
+        services.AddSingleton<IOutboundConnector, OutboundConnector>();
+        services.AddSingleton<ISharedConnections, SharedConnections>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
         services.AddSingleton<IOutputAdapterFactory>(provider => new MqttOutputFactory(
             provider.GetRequiredService<ICredentialResolver>(),
             provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IOutboundConnector>(),
+            provider.GetRequiredService<ISharedConnections>(),
             provider.GetRequiredService<GatewayIdentity>().NodeId));
         services.AddSingleton<RuntimeHost>();
         services.AddSingleton<RuntimeVersionStore>();

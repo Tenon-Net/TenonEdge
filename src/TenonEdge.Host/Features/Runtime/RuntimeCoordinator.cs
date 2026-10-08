@@ -3,6 +3,7 @@ using SqlSugar;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Storage;
+using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.Host.Features.Runtime;
@@ -192,7 +193,7 @@ internal sealed partial class RuntimeCoordinator(
 
     private static string Target(long revision) => $"r{revision}";
 
-    private static bool IsStorageError(Exception exception) => exception is SqliteException or SqlSugarException;
+    private static bool IsStorageError(Exception exception) => exception is SqliteException or SqlSugarException or DeliveryStoreException;
 
     private static string Truncate(string reason) => reason.Length > MaximumReasonLength ? reason[..MaximumReasonLength] : reason;
 
@@ -209,18 +210,31 @@ internal sealed partial class RuntimeCoordinator(
             LogStorageFailure(logger, exception);
         }
 
-        runtime.StartCore();
-        if (decision.Prepared is { } prepared)
+        try
         {
-            await runtime.ActivateAsync(prepared);
-            lock (_lock)
+            runtime.StartCore();
+            if (decision.Prepared is null && decision.FailureReason is null && versions.ReadPointers().EffectiveRevision is null)
             {
-                _state = RuntimeCoordinatorState.Active;
-                _reason = null;
-                _activeRevision = prepared.Revision;
-                _activeIsStable = decision.ActiveIsStable;
+                await runtime.QuarantineUnconfiguredTargetsAsync(CancellationToken.None);
             }
 
+            if (decision.Prepared is { } prepared)
+            {
+                await runtime.ActivateAsync(prepared);
+                lock (_lock)
+                {
+                    _state = RuntimeCoordinatorState.Active;
+                    _reason = null;
+                    _activeRevision = prepared.Revision;
+                    _activeIsStable = decision.ActiveIsStable;
+                }
+
+                return;
+            }
+        }
+        catch (DeliveryStoreException exception)
+        {
+            Fail(exception.Message);
             return;
         }
 
@@ -314,10 +328,11 @@ internal sealed partial class RuntimeCoordinator(
 
         var revision = versions.Freeze(document, RuntimeSnapshotOrigins.AutoRollback, Target(target.Revision), RuntimeVersionStore.SystemOperator);
         var prepared = runtime.Prepare(document.ToPlan(revision));
-        if (prepared.Failures.Count > 0)
+        var targetChangeProblem = prepared.Failures.Count == 0 ? versions.TargetChangeProblem(document) : null;
+        if (prepared.Failures.Count > 0 || targetChangeProblem is not null)
         {
             await prepared.DisposeAsync();
-            var failure = Truncate($"自动回滚生成的版本 r{revision} 准备失败：{Describe(prepared)}");
+            var failure = Truncate($"自动回滚生成的版本 r{revision} 准备失败：{targetChangeProblem ?? Describe(prepared)}");
             versions.Abandon(revision, failure);
             return StartupDecision.Fail($"{reason}{failure}");
         }
@@ -381,10 +396,11 @@ internal sealed partial class RuntimeCoordinator(
 
         var revision = versions.Freeze(document, RuntimeSnapshotOrigins.Seed, document.ContentHash, RuntimeVersionStore.SystemOperator);
         var prepared = runtime.Prepare(document.ToPlan(revision));
-        if (prepared.Failures.Count > 0)
+        var targetChangeProblem = prepared.Failures.Count == 0 ? versions.TargetChangeProblem(document) : null;
+        if (prepared.Failures.Count > 0 || targetChangeProblem is not null)
         {
             await prepared.DisposeAsync();
-            var reason = Truncate($"准备阶段失败：{Describe(prepared)}");
+            var reason = Truncate($"准备阶段失败：{targetChangeProblem ?? Describe(prepared)}");
             versions.Abandon(revision, reason, document.ContentHash);
             LogSeedNotEffective(logger, revision, reason);
             runtimeEvents.Record(RuntimeEventLevel.Error, RuntimeEventTypes.VersionNotEffective, Target(revision), $"种子快照生成的版本 r{revision} 未生效，原有效版本不变。{reason}");

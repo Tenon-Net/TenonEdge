@@ -21,7 +21,10 @@ public sealed record StoredDelivery(
     DeliveryState State,
     string? QuarantineReason,
     string? LastError,
-    long? MigrationId);
+    long? MigrationId,
+    DateTimeOffset? FailedAt = null,
+    long ByteSize = 0,
+    bool ClockAnomaly = false);
 
 /// <summary>投递记录的状态（总设计 §8.2）：待发、失败区、隔离。</summary>
 public enum DeliveryState
@@ -41,11 +44,11 @@ public enum DeliveryWriteStatus
 }
 
 /// <summary>只有包含本请求的分组提交返回之后，结果才为 Committed（总设计 §8.5）。</summary>
-public sealed record DeliveryWriteResult(DeliveryWriteStatus Status, IReadOnlyList<long> Seqs, int AffectedRecords, string? Error)
+public sealed record DeliveryWriteResult(DeliveryWriteStatus Status, IReadOnlyList<long> Seqs, int AffectedRecords, string? Error, int QuotaRejectedRecords = 0, int StorageProtectionRejectedRecords = 0)
 {
     public bool Committed => Status == DeliveryWriteStatus.Committed;
 
-    internal static DeliveryWriteResult Inserted(IReadOnlyList<long> seqs) => new(DeliveryWriteStatus.Committed, seqs, seqs.Count, null);
+    internal static DeliveryWriteResult Inserted(IReadOnlyList<long> seqs, int quotaRejected = 0) => new(DeliveryWriteStatus.Committed, seqs, seqs.Count, null, quotaRejected);
 
     internal static DeliveryWriteResult Deleted(int count) => new(DeliveryWriteStatus.Committed, [], count, null);
 
@@ -80,3 +83,17 @@ public sealed record DeliveryStoreInfo(
     long Synchronous,
     int SchemaVersion,
     string ConfigStoreId);
+
+/// <summary>失败区策略计数，与状态变更同事务落盘；按目标累计。</summary>
+public sealed record DeliveryFailureTotals(long Rejected, long Poisoned, long Overflowed, long Expired);
+
+/// <summary>发送缓存策略计数与当前逻辑占用，正文不通过此快照返回。</summary>
+public sealed record DeliveryQueueTotals(long QuotaRejected, long Expired, long Quarantined,
+    long PendingCount, long PendingBytes, long QuarantinedCount, long QuarantinedBytes, long ClockAnomalyCount);
+
+public static class DeliveryQuarantineReasons
+{
+    public const string TargetChanged = "targetChanged";
+    public const string TargetMissing = "targetMissing";
+    public const string ConfigStoreChanged = "configStoreChanged";
+}

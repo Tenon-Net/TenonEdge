@@ -23,6 +23,27 @@ public sealed class SimulatorInputTests
     private static readonly DateTimeOffset Start = new(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task OversizedInputReportsFailureEachCycleWithoutCrashingOrAllocatingMessage()
+    {
+        var budget = new InFlightBudget(1);
+        await using var harness = Harness.Start("{}", budget: budget);
+        for (var cycle = 1; cycle <= 3; cycle++)
+        {
+            await harness.WaitForReadsAsync(cycle);
+            var state = harness.Reads.Snapshot();
+            Assert.Equal(cycle, state.ReadsFailed);
+            Assert.Equal(cycle, state.DataRejected);
+            Assert.Equal(0, state.ReadsCompleted);
+            Assert.Contains("字节预算", state.LastError, StringComparison.Ordinal);
+            Assert.False(harness.Channel.Reader.TryRead(out _));
+            Assert.Equal(0, budget.Status.ReservedBytes);
+            Assert.Equal(0, budget.Status.PeakReservedBytes);
+            if (cycle < 3)
+            { harness.Time.Advance(Period); }
+        }
+    }
+
+    [Fact]
     public async Task EachPeriodProducesOneMessageThatFollowsTheContract()
     {
         await using var harness = Harness.Start("""{"seed":42}""");
@@ -93,8 +114,8 @@ public sealed class SimulatorInputTests
         var time = new FakeTimeProvider(Start);
         var reads = new InputReadStatus("meter-001", "simulated", new RecordingEventSink());
         using var gate = new HoldFirstRead(reads);
-        var channel = Channel.CreateBounded<EdgeMessage>(new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.Wait });
-        var context = new InputUnitContext("meter-001", "simulated", time, new FixedClockSyncStatus(ClockSyncState.Unknown), gate, channel.Writer);
+        var channel = new BudgetedInputChannel(100, new InFlightBudget(64 * 1024 * 1024));
+        var context = new InputUnitContext("meter-001", "simulated", time, new FixedClockSyncStatus(ClockSyncState.Unknown), gate, (InputMessageWriter)channel.Writer);
         var unit = new SimulatorInputFactory().Build(Unit("meter-001/simulated", "{}"), context);
         using var stopping = new CancellationTokenSource();
         var run = Task.Run(() => unit.RunAsync(stopping.Token), TestContext.Current.CancellationToken);
@@ -211,7 +232,7 @@ public sealed class SimulatorInputTests
             }
         }
 
-        public void ReadFailed(DateTimeOffset completedAt, string reason) => inner.ReadFailed(completedAt, reason);
+        public void ReadFailed(DateTimeOffset completedAt, string reason, InputReadFailureKind kind = InputReadFailureKind.ReadError) => inner.ReadFailed(completedAt, reason, kind);
 
         public void CycleSkipped(DateTimeOffset skippedAt) => inner.CycleSkipped(skippedAt);
 
@@ -224,11 +245,11 @@ public sealed class SimulatorInputTests
         private readonly CancellationTokenSource _stopping = new();
         private Task _run = Task.CompletedTask;
 
-        private Harness(int capacity, ClockSyncState clock)
+        private Harness(int capacity, ClockSyncState clock, InFlightBudget? budget)
         {
-            Channel = System.Threading.Channels.Channel.CreateBounded<EdgeMessage>(new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.Wait });
+            Channel = new BudgetedInputChannel(capacity, budget ?? new InFlightBudget(64 * 1024 * 1024));
             Reads = new InputReadStatus("meter-001", "simulated", Events);
-            Context = new InputUnitContext("meter-001", "simulated", Time, new FixedClockSyncStatus(clock), Reads, Channel.Writer);
+            Context = new InputUnitContext("meter-001", "simulated", Time, new FixedClockSyncStatus(clock), Reads, (InputMessageWriter)Channel.Writer);
         }
 
         public FakeTimeProvider Time { get; } = new(SimulatorInputTests.Start);
@@ -241,9 +262,9 @@ public sealed class SimulatorInputTests
 
         private InputUnitContext Context { get; }
 
-        public static Harness Start(string json, int capacity = 100, ClockSyncState clock = ClockSyncState.Unknown)
+        public static Harness Start(string json, int capacity = 100, ClockSyncState clock = ClockSyncState.Unknown, InFlightBudget? budget = null)
         {
-            var harness = new Harness(capacity, clock);
+            var harness = new Harness(capacity, clock, budget);
             var unit = new SimulatorInputFactory().Build(Unit("meter-001/simulated", json), harness.Context);
             harness._run = Task.Run(() => unit.RunAsync(harness._stopping.Token));
             return harness;

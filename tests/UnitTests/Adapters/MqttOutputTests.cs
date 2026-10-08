@@ -32,14 +32,14 @@ public sealed class MqttOutputTests
     public void InvalidAndSecretConfigurationIsAStructuralFailure(string patch)
     {
         var config = Configuration(patch);
-        var factory = new MqttOutputFactory(new Credentials(), TimeProvider.System);
+        var factory = new MqttOutputFactory(new Credentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections());
         Assert.Throws<RuntimeUnitBuildException>(() => factory.Build(Plan(config)));
     }
 
     [Fact]
     public void PasswordConfigurationRequiresResolvableRecipientBoundCredentials()
     {
-        var factory = new MqttOutputFactory(new Credentials(), TimeProvider.System);
+        var factory = new MqttOutputFactory(new Credentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections());
         Assert.Throws<RuntimeUnitBuildException>(() => factory.Build(Plan(Configuration("{\"usePassword\":true}"))));
     }
 
@@ -58,7 +58,7 @@ public sealed class MqttOutputTests
     public async Task FormattingFreezesEnvelopeTopicQosAndIdentityWithoutSecretOrNetwork()
     {
         var credentials = new Credentials { Value = new("user", "test-secret", "account", "v1") };
-        var factory = new MqttOutputFactory(credentials, TimeProvider.System);
+        var factory = new MqttOutputFactory(credentials, TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections());
         var target = factory.Build(Plan(Configuration("{\"usePassword\":true,\"host\":\"not-a-real-broker.invalid\"}")));
         var at = DateTimeOffset.UtcNow;
         var message = new EdgeMessage(Guid.NewGuid(), "sim", "meter", at, TimeSource.GatewayUnsynced, at,
@@ -83,7 +83,7 @@ public sealed class MqttOutputTests
     public async Task AnUnavailablePasswordDoesNotPreventFormattingPendingMessagesWithTheirKnownIdentity()
     {
         var credentials = new Credentials { Value = new("user", "secret", "account", "v1") };
-        var target = new MqttOutputFactory(credentials, TimeProvider.System).Build(Plan(Configuration("{\"usePassword\":true}")));
+        var target = new MqttOutputFactory(credentials, TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections()).Build(Plan(Configuration("{\"usePassword\":true}")));
         var at = DateTimeOffset.UtcNow;
         var message = new EdgeMessage(Guid.NewGuid(), "sim", "meter", at, TimeSource.GatewayUnsynced, at,
             new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(42) });
@@ -100,15 +100,57 @@ public sealed class MqttOutputTests
     {
         const string firstNode = "00000000-0000-4000-8000-000000000001";
         const string otherNode = "00000000-0000-4000-8000-000000000002";
-        var first = new MqttOutputFactory(new Credentials(), TimeProvider.System, firstNode);
-        var restarted = new MqttOutputFactory(new Credentials(), TimeProvider.System, firstNode);
-        var other = new MqttOutputFactory(new Credentials(), TimeProvider.System, otherNode);
+        var first = new MqttOutputFactory(new Credentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections(), firstNode);
+        var restarted = new MqttOutputFactory(new Credentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections(), firstNode);
+        var other = new MqttOutputFactory(new Credentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections(), otherNode);
         var plan = Plan(Configuration("{}"));
         var client = first.Build(plan).ClientId;
         Assert.Equal(client, restarted.Build(plan).ClientId);
         Assert.NotEqual(client, other.Build(plan).ClientId);
         Assert.NotEqual(client, first.Build(Plan(Configuration("{\"connectionId\":2}"))).ClientId);
         Assert.Equal("explicit", first.Build(Plan(Configuration("{\"clientId\":\"explicit\"}"))).ClientId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueueWaitUsesTotalDeadlineAndCallerCancellationRemainsCancellation(bool cancelCaller)
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var connections = new TenonEdge.Runtime.Connections.SharedConnections();
+        var target = new MqttOutputFactory(new Credentials(), time, new NoNetwork(), connections)
+            .Build(Plan(Configuration("{}")));
+        await using var owner = connections.Acquire(1, "mqtt", "test", () => new MqttSession(Assert.IsType<MqttOutputTarget>(target)));
+        var borrower = connections.Acquire<MqttSession>(1, "mqtt", "test", () => throw new InvalidOperationException("must share"));
+        await using var adapter = new MqttOutputAdapter(borrower, time, 1000);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var holding = owner.ExecuteAsync(async (_, _) => { await release.Task; return true; }, TestContext.Current.CancellationToken);
+        try
+        {
+            using var caller = new CancellationTokenSource();
+            var waiting = adapter.SendAsync(new OutputMessage(ReadOnlyMemory<byte>.Empty, "out", 1, "unused", "unused"), caller.Token);
+            Assert.False(waiting.IsCompleted);
+            if (cancelCaller)
+            {
+                await caller.CancelAsync();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+            }
+            else
+            {
+                time.Advance(TimeSpan.FromMilliseconds(999));
+                Assert.False(waiting.IsCompleted);
+                time.Advance(TimeSpan.FromMilliseconds(1));
+                var result = await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                Assert.Equal(OutputSendStatus.Retry, result.Status);
+                Assert.False(result.CountsTowardPoison);
+            }
+            Assert.False(holding.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await holding;
+        }
     }
 
     private static RuntimeUnitPlan Plan(JsonElement config) => new(RuntimeUnitId.Create("output.mqtt", "mqtt-out"), config);
@@ -122,6 +164,12 @@ public sealed class MqttOutputTests
         }
 
         return JsonSerializer.SerializeToElement(values);
+    }
+
+    private sealed class NoNetwork : IOutboundConnector
+    {
+        public ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("此单元测试不允许网络连接。");
     }
 
     private sealed class Credentials : ICredentialResolver

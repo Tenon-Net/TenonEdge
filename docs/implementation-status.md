@@ -3,7 +3,7 @@
 - 用途：任务状态与验证证据的统一入口（PLAN-01 §1、`AGENTS.md`）。任务清单和开发准备不另外维护动态完成表；以后建立 Issue 时沿用同一任务 ID，并链接本文。
 - 建立：T0-01，2026-09-29。
 - 状态用语：代码状态分为未开始、进行中、待验收、完成、阻塞；验证状态分为未执行、通过、失败、跳过、不适用，并注明是本地结果还是远端 CI 结果。跳过须写原因。Agent 自报不等于验收人认可，本批任务在验收前一律记为“待验收”。
-- 基线：分支 `main`，提交 `27db103`（任务拆分提交）。T0-A 经维护者 2026-09-30 授权，在本地分支 `t0-foundation` 上单独提交为 `0ff530a`，未推送。T0-B 经维护者 2026-09-30 验收，在同一分支上单独提交为 `b2dec2d`，未推送。T0-C 经维护者 2026-10-01 验收，在同一分支上单独提交为 `591a064`，未推送。T1 第一批（T1-01—T1-03）及 T1-04 经维护者 2026-10-08 授权在同一分支本地提交；随后按计划继续 T1-05。此前验证证据见 §4.11、§4.12，远端 CI 未执行。
+- 基线：分支 `main`，提交 `27db103`（任务拆分提交）。T0-A 经维护者 2026-09-30 授权，在本地分支 `t0-foundation` 上单独提交为 `0ff530a`，未推送。T0-B 经维护者 2026-09-30 验收，在同一分支上单独提交为 `b2dec2d`，未推送。T0-C 经维护者 2026-10-01 验收，在同一分支上单独提交为 `591a064`，未推送。T1 第一批（T1-01—T1-03）及 T1-04 经维护者 2026-10-08 授权在同一分支本地提交为 `c97521d`；随后按计划继续 T1-05。此前验证证据见 §4.11、§4.12，远端 CI 未执行。
 
 ## 1. 批次与任务状态
 
@@ -26,7 +26,12 @@
 | T1 第一批 | T1-02 统一消息与模拟输入 | 待验收 | 本地通过；远端 CI 未执行 | §2.15 |
 | T1 第一批 | T1-03 持久化发送缓存 | 待验收 | 本地通过；远端 CI 未执行 | §2.16 |
 | T1 继续 | T1-04 MQTT 输出与凭证解析 | 待验收 | 本地通过（含真实 Broker）；远端 CI 未执行 | §2.17、§4.12 |
-| T1 其余、T2—T5、G1 | T1-05—T1-08 及以后 | 未开始 | 未执行 | 本次停止在 T1-04，后续未分派 |
+| T1 继续 | T1-05 发送结果、退避与失败区 | 待验收 | 本地通过；远端 CI 未执行 | §2.18、§4.13 |
+| T1 继续 | T1-06 目标隔离与暂停基础 | 待验收 | 本地通过；远端 CI 未执行 | §2.19、§4.14 |
+| T1 继续 | T1-07 资源保护与运行诊断基础 | 后端软件交付完成，待维护者验收 | 预算、存储保护、校时、状态/趋势及计数子场景通过；跨阶段 AT 不标整体通过 | §2.20 |
+| T1 继续 | T1-08 停机恢复与链路验收 | 后端软件交付完成，待维护者验收 | 队列损坏、4 个强制退出边界、真实 Broker 断网恢复及全量回归通过 | §2.21 |
+| T2 | T2-01 统一连接管理与出站校验 | 进行中 | 实际 IP 规则/连接及 MQTT 共享会话已接入；其余子项待完成 | §2.22 |
+| 后续 | T1-08、T2、T3 可视化访问 | 未开始 | 未执行 | 维护者授权继续到可视化访问，依次满足阶段前置；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
 
@@ -729,6 +734,228 @@ T1 操作顺序（全量连接管理在 T3）：先以无种子宿主完成首�
 - 指纹变化的旧记录不发送，但尚未转入持久隔离区，也会阻塞本目标队头；隔离、持久手动暂停、迁移、配额/保留期在 T1-06/T3。失败区还未存在，凭证账户声明的查询本次只覆盖待发记录。
 - 在途字节预算、持久化计数、磁盘存储保护、状态 API、校时在 T1-07；强制终止进程、queue.db 损坏与完整退出/重复矩阵在 T1-08。真实 Broker 是 Docker Mosquitto，不是实物设备或完整生产部署验收。
 
+### 2.18 T1-05 发送结果、退避与失败区
+
+维护者 2026-10-08 指示“先本地提交然后继续开发”；先提交已有 T1-01—T1-04 为 `c97521d`，再按依赖推进 T1-05。本次涉及 Abstractions 结果契约、Runtime 发送与 queue.db、MQTT 异常分类、凭证轮换的失败区检查及相应测试。无新增依赖。已读参考项目总汇总和 app-functions-sdk-go 笔记，仅借鉴思路，没有移植源码。
+
+- 四类结果：Ack 继续确认后删除；Retry 按 connectionId 在原受监督循环中指数退避并抖动、成功后复位；SuspendTarget 保持待发且不加失败次数；RejectMessage 只将该条移到失败区。连续 20 条拒绝、期间无成功时暂停目标，凭证代次变化后重新探测。暂停/退避状态跨监督者重建保留，进程重启后先单条探测。
+- `OutputSendResult` 增加 `CountsTowardPoison` 和可选 `RetryAfter`，后者不缩短指数退避且最高 60 秒。网络、超时、主动取消不计入毒消息；MQTT 未识别的响应/本地未知异常才计入。适配器原异常文字不落盘或写入事件；结果说明须由适配器提供脱敏文本。重试仍产生运行事件。
+- 毒消息：失败次数达到 10 时只读后续首条未达阈值的记录探测；后续成功后立即重试队头，队头再次出现计入的失败才进入失败区。没有可探测记录时继续队头退避，不按次数丢弃。探测后网络失败撤销判定依据，须再次成功探测。
+- 结果存储：失败次数使用绝对值，状态更新只匹配 pending；跨发送者重建保留一个待提交结果，存储失败仅重试写入，不再次发送。失败区状态/满额删除和累计计数同事务；失败次数不会因写入重试累加。
+- queue.db 迁移至版本 2，增加 `failed_at` 与 `delivery_failure_totals`。旧库迁移保留编号、正文、配置归属及待发记录。失败区可按目标/seq 分页读取；拒绝、毒消息、满额不保留及过期数量按目标持久累计，不与存储失败计数混用。
+- 失败区初始参数为每目标 100 条、全局 1,000 条、单独保留 7 天，可在宿主装配时调整。这是保守初值，不是容量实测承诺；按当前单条 256 KiB 上限，正文最多约 250 MiB（不含 SQLite/WAL/索引开销）。满额只丢新失败记录并计数，不挤出已有失败记录。由唯一写者在循环中每隔约一分钟（闲置时最多两分钟）最多清理 100 条过期失败记录；运行期间墙钟相对单调时间跳变超过 1 小时则保守不清理，时间顺序异常也不清理。跨重启校时与完整存储保护仍属 T1-06/07。
+- 当前 MQTT 凭证轮换的账户声明检查同时覆盖待发和失败区数据，防止仅剩失败记录时绕过声明。
+
+边界：HTTP 状态及业务码在本批用确定性结果替身验证，真实 HTTP 分类在 T2-04。手动暂停、指纹隔离与待发配额为 T1-06；完整状态 API、在途预算、计数和磁盘保护为 T1-07；网页查看/人工重试/清理/导出为 T3-08。没有创建产品前端。平台设备级拒绝语义属于 T4。
+
+### 2.19 T1-06 目标隔离、持久手动暂停、配额与保留期
+
+维护者在 T1-05 交付后指示“继续”，本次沿 PLAN-01 推进 T1-06。保留 T1-05 未提交改动，不自动推进 T1-07。前置 T1-03/05 的队列与四类结果已通过本地验证；D-05/D-07 沿已确认决定。涉及 Abstractions、Runtime 发送/存储、Host 控制与启动、MQTT 身份核对及测试；无新增依赖或后台服务。
+
+- **隔离边界**：输出目标提供当前非秘密指纹。启动目标核对、每次身份变化及发送前核对待发与失败记录；适配器在取当前凭证时再次发现不匹配，则用四类结果中的 SuspendTarget 携带 `FingerprintMismatch`，发送者转为隔离，不暂停后续新身份记录。隔离只经唯一写者提交；写入失败时保持停止发送并重试，返回旧账户不会自动解除隔离。
+- **三种原因**：`targetChanged`、`targetMissing`、`configStoreChanged`。有效计划中的目标缺失才按“不存在”隔离；有输出单元构建失败时保守跳过缺失判定，不能把构建失败当成删除。宿主确认没有有效配置时核对空目标集；损坏或启动保护中的有效配置不作此处理。queue.db 所属配置库变化时，在初始化事务中隔离旧记录、更新归属，新记录正常接管；旧隔离记录也明确标为来源不同。
+- **冻结数据**：隔离保留 seq、deliveryId、sourceMessageId、报文、Topic/QoS/请求头、指纹、创建时间和原失败时间/次数。可按目标/seq 分页读取隔离记录；隔离累计数量随状态变更同事务持久化。隔离不占目标待发配额，仍计入全局待发/隔离字节配额。
+- **手动暂停**：config.db 迁移 8 新增 `output_control`，按连接逻辑 ID 保存暂停及恢复代次；状态与审计同事务，审计失败则回滚。`GET/PUT /api/edge-admin/v1/connections/{connectionId}/delivery-control` 使用现有认证、角色、CSRF 与密码必改过滤器；GET 所有已登录角色可读，PUT 仅管理员，必须 `confirmed=true`，并用 `expectedVersion` 防止覆盖别人更新。读回的 `resumeVersion` 用于下次写入的版本核对。
+- **发送语义**：手动暂停期间照常入队，重启保持，凭证变化不会解除；显式恢复也清除自动暂停，重新单条探测。发送前再检查暂停，退避期间每 250 毫秒观察控制变化。已经在途的一条发送允许在协议超时内结束，接口描述明确这一边界。停机仍沿输入→分发→最后提交→发送者的现有顺序。
+- **配额**：默认每目标最多 10,000 条或 64 MiB，全局待发与隔离合计 256 MiB。字节为正文及冻结 UTF-8 文本、加每条 256 字节固定开销的逻辑计费值，不是 SQLite/WAL 文件占用。入库时在写者事务中逐目标核对，符合配额的投递与超额拒绝计数一同提交；单目标超额不拒绝其他目标。`QuotaRejectedRecords` 明示本请求的超额拒绝数。失败区继续使用独立配额。
+- **保留期**：待发默认 24 小时，隔离沿用原创建时间；从失败区隔离的记录保留原失败时间及独立保留期。唯一写者现有维护循环分批清理，每轮最多 100 条待发/隔离记录和 100 条失败记录；过期与删除同事务计数。墙钟相对启动单调时间跳变超过 1 小时不清理；未来创建时间、未来失败时间或创建时间距启动超过一年时持久标记 `clock_anomaly`，保守保留供诊断。该一年阈值是当前保守实现值，非时钟同步检测或 SLA。
+- **配置保护**：种子导入及启动回滚在准备阶段检查积压，提交时复核；存在待发/失败区数据时，删除目标或改变主机、端口、TLS、Topic 被拒，原有效版本保留。超时变化允许，隔离数据不阻止修改接收方。T3 在线应用仍须完成停止输入后的复核与完整跨库协同。
+- **初始化失败**：隔离核对无法提交时不启动发送，运行时标为失败、readyz 为 503；管理 API 与 healthz 保持可用。修复存储后重启重新核对，不在失败状态下绕过隔离。
+- **迁移**：queue.db 版本 3 增加逻辑字节、时钟异常标记和策略计数表。版本 1/2 升级保留原记录、失败区元数据与计数，按同一 UTF-8 规则补算字节。config.db 版本 8；两种库都继续拒绝新于当前程序的 schema。
+
+验证边界：新增 27 个集成用例，含真实 SQLite、HTTP 管理 API、Host 重启与发送结果替身；原有真实 MQTT Broker 场景全量回归。不是网页、实物断电、生产容量或所有跨库故障矩阵验收。完整状态查询、在途预算、磁盘保护和校时仍在 T1-07；强制退出/损坏矩阵在 T1-08；网页清理、重试、导出及迁移在 T3-08。本次没有实现迁移记录到新接收方，也未创建 web/。
+
+### 2.20 T1-07 资源保护与运行诊断基础（后端软件交付完成，待验收）
+
+2026-10-08 维护者授权“开始 T1-07，直到可以可视化访问系统”。基线为 `c97521d` 加工作区已有 T1-05/06 改动，保留这些改动；不提交、推送或发版。按 T1-07 → T1-08 → T2 → T3 顺序推进，网页不提前加入 T1/T2。
+
+本轮实现校时子项：Host 的 `ClockSyncStatus` 以 Linux x64 libc `adjtimex` 的零 modes 只读查询内核状态，10 秒单调时钟缓存；不可用或未支持平台返回 unknown，不修改系统时钟，不依赖 systemd/D-Bus 或启动 Shell。状态变化写入既有运行事件；输入时间来源解析与 `GET /api/edge-admin/v1/system/info` 共用同一实例，API 返回 synchronized / notSynchronized / unknown。内核状态不等于实际时间准确性的保证。其他架构仍为 unknown，未声明 ARM64 支持。
+
+实际证据（Linux x64、SDK 10.0.401）：
+
+- `dotnet build TenonEdge.sln -c Release --no-restore`：修改前和校时实现后均通过，0 警告、0 错误；日志 `/tmp/tenonedge-t1-07-baseline-build.log`、`/tmp/tenonedge-t1-07-clock-build.log`。
+- `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~ClockSyncTests|FullyQualifiedName~SystemInfoTests' --logger 'trx;LogFilePrefix=t1-07-clock' --results-directory /tmp/tenonedge-t1-07-clock-tests`：单元 10、集成 7，通过 17、失败/跳过 0。覆盖内核返回值（含闰秒状态）、缓存/事件变化、本机原生调用和三状态 API 序列化及既有系统信息权限。TRX 与日志位于上述临时目录和 `/tmp/tenonedge-t1-07-clock-tests.log`。
+- ABI 辅助核查：读取本机 `/usr/include/x86_64-linux-gnu/bits/timex.h`；独立 C 查询 `/tmp/tenonedge-clock-abi.c` 编译后输出 `sizeof_timex=208 result=0`。这是 ABI 辅助证据，不替代项目/容器测试，不复制 glibc 源码。
+
+追加进展：实现文件系统空间保护（默认低于 500 MB 或 5% 即拒绝新增入队；空间不可读取时保守拒绝），保留确认删除和发送能力，恢复后自动解除。队列写者在每批提交前及空闲最长 10 秒检查，状态变化记事件。queue.db 增至 schema 4，新增固定用途的全局计数表，存储保护拒绝、接管和确认删除/数据拒绝计数与该批同事务持久化；不将存储保护拒绝混作目标配额拒绝。`GET /runtime/status` 为所有已认证角色提供协调者/运行单元/队列/空间保护/校时和持久计数；计数不可读取时返回 null 而不是伪造零。
+
+- 空间测试使用注入的空间读数及真实临时 SQLite，并非真实磁盘写满/断电。覆盖字节和比例阈值、不可读、恢复、保护下删除及重启计数。
+- 首轮定向测试：28 通过、1 失败；旧版本迁移夹具降到 v2 时遗留新增 v4 表，已修正夹具为真正旧结构，未修改迁移绕过问题。v1 夹具同样更新。
+- 修正后命令：`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-restore --filter 'FullyQualifiedName~StorageProtectionTests|FullyQualifiedName~DeliveryCacheTests|FullyQualifiedName~DeliveryPolicyTests|FullyQualifiedName~DeliveryFailureStoreTests|FullyQualifiedName~SystemInfoTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~OpenApiDocumentTests' --logger 'trx;LogFileName=storage-api.trx' --results-directory /tmp/tenonedge-t1-07-storage`：49 通过，0 失败/跳过；日志 `/tmp/tenonedge-t1-07-storage-api-test.log`。
+
+- 全量回归首轮发现真实进程测试仍断言 queue.db schema 3（单元 335 通过；集成 395 通过、1 失败），同步为 schema 4 后重跑：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-progress-r2' --results-directory /tmp/tenonedge-t1-07-regression`，单元 335、集成 396，合计 731 通过、0 失败/跳过。日志 `/tmp/tenonedge-t1-07-regression-r2.log`，TRX 同目录。此次为当前已有测试回归，不证明尚未实现的 T1-07 预算或 T2/T3 能力完成。
+
+在途预算追加进展（仍未完成 AT-29）：已加入进程共享额度、预算输入通道、分发提交前保留额度及输出最坏报文字节预留，运行状态 API 暴露当前/峰值预留量。通道关闭会唤醒等待共享预算的写者并返回 ChannelClosedException，保留关闭原因，不释放其他通道持有的额度；调用方取消和通道容量等待失败均归还本次已取得额度。
+
+- 定向验证：`dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~InFlightBudgetTests --logger 'trx;LogFileName=budget-close.trx' --results-directory /tmp/tenonedge-t1-07-budget-close`，5 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-budget-close.log`。覆盖跨通道共享额度、HoldingReader 持有到显式释放、取消、正常/异常关闭唤醒。首次构建因新增 CTS 字段未实现释放触发 CA1001，改为无须释放的完成信号与写操作局部 CTS 后通过。
+- 这些单元测试不证明实际 SQLite 提交边界或进程堆内存上界。生产者仍在预约前构造消息，超大消息的拒绝计数、WaitToWriteAsync 的预算背压、真实运行时停止/提交的额度测试仍待补齐；不得将当前预留量视为完整接收至提交的内存计量。
+- 当前代码全量回归：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-budget-close' --results-directory /tmp/tenonedge-t1-07-budget-regression`，单元 340、集成 396，合计 736 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-budget-regression.log`，TRX 位于上述目录。`git diff --check` 通过。这仍是已有用例回归，不能覆盖上述未实现边界。
+
+周期校时追加进展：新增宿主管理的 `ClockSyncMonitor`，启动后及每 10 秒访问共用 `IClockSyncStatus`，无采集或 HTTP 请求时也检测，停止时取消等待并释放定时器；不另建运行时实例。定向单元命令 `dotnet test tests/UnitTests -c Release --no-restore --filter 'FullyQualifiedName~ClockSync' --logger 'trx;LogFileName=clock-monitor.trx' --results-directory /tmp/tenonedge-t1-07-clock-monitor`：11 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-clock-monitor.log`，包含假时钟下周期与停止验证。加入宿主集成用例前的全量回归（同前述命令，前缀 `t1-07-monitor`、目录 `/tmp/tenonedge-t1-07-monitor-regression`）为单元 341、集成 396，共 737 通过，0 失败/跳过，日志 `/tmp/tenonedge-t1-07-monitor-regression.log`。
+
+- 宿主集成补证：`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~SystemInfo' --logger 'trx;LogFileName=monitor-host.trx' --results-directory /tmp/tenonedge-t1-07-clock-monitor`：8 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-monitor-host.log`。新用例不发 HTTP 请求，核对实际宿主只注册一个监测服务、使用同一校时状态对象、真实 10 秒周期读取以及宿主释放后后台任务正常完成。探针状态为测试替身，不宣称此测试完成 Docker 内核验证。首版夹具替换全宿主时间为假时钟时未完成，已主动中断且不计通过（日志 `/tmp/tenonedge-t1-07-monitor-host-interrupted.log`）；宿主用例改为真实时钟，确定性时间推进仅保留在独立监测器单元测试中。`git diff --check` 通过。
+
+审计时钟保护追加进展：`DataRetentionService` 按时间清理前要求校时状态为 synchronized，并核对当前墙上时间与服务构造时的时间加单调运行时长，偏差超过一小时则暂停。状态变化写日志。未同步、未知、前跳/回拨时保留审计和按时间过期的运行事件，但运行事件仍执行 1 万条上限；不引入审计条数截断。正常时间线恢复后自动恢复清理。测试显式注入校时状态，不依赖 CI 机器是否同步。
+
+- 保护边界：一小时沿用既有时间容差；这是运行期间的异常跳变保护，不证明内核所称“同步”就一定准确。启动时已错误且被报告为同步的时间仍无法单靠本机判断。若开机后从错误日期校正且与构造基准偏差超过容差，本次进程保守暂停按时间清理，下一次正常启动重新建立基准；不将错误时间重新采样成可信基准来解除保护。
+- 定向命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~DataRetentionTests|FullyQualifiedName~HostLifecycleTests' --logger 'trx;LogFileName=retention-clock.trx' --results-directory /tmp/tenonedge-t1-07-retention-clock`：18 通过、0 失败/跳过；真实临时 SQLite，覆盖未知/未同步、正负 400 天跳变、恢复、正常保留期及事件条数上限。日志 `/tmp/tenonedge-t1-07-retention-clock.log`。
+- 全量回归首轮单元 341 通过，集成 401 通过、1 失败：既有 `NModbusLeavesAFollowingTcpFrameForTheNextRequest` 首次读取超时，尚未证明根因，不改测试放宽断言。日志 `/tmp/tenonedge-t1-07-retention-regression.log`。按 `dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~NModbusLeavesAFollowingTcpFrameForTheNextRequest'` 单独重复 5 次均通过，日志/TRX 在 `/tmp/tenonedge-t1-07-modbus-repeat/`；不将重复通过写作根因已修复。
+- 当前全量重跑：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-retention-r2' --results-directory /tmp/tenonedge-t1-07-retention-regression-r2`：单元 341、集成 402，合计 743 通过、0 失败/跳过。日志 `/tmp/tenonedge-t1-07-retention-regression-r2.log`。保留上述偶发失败记录。
+
+V-14 原生/容器补证：同一项目 `ClockSyncTests` 输出 OS、架构、实际内核返回值与状态；本机 Ubuntu 26.04 x64 与 Docker Ubuntu 24.04.5 x64 均为 `adjtimex=0; State=Synchronized`。不修改系统时间来制造未同步；未同步/未知分支由内核返回值分类用例验证，不宣称真实改变过宿主同步状态。ARM64 未实测，当前返回 unknown。
+
+- 原生命令：`dotnet test tests/UnitTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~ClockSyncTests' --logger 'trx;LogFileName=clock-native.trx' --results-directory /tmp/tenonedge-t1-07-clock-native`：10 通过、0 失败/跳过，原生查询输出在 TRX 中。
+- 容器使用本机已有 SDK 镜像，未拉取/修改镜像，固定摘要 `mcr.microsoft.com/dotnet/sdk@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29`；.NET 10.0.12、镜像自带 VSTest 18.7.0（此项为跨部署检测补证，不替代项目固定 VSTest 的回归）。构建日志 `/tmp/tenonedge-t1-07-clock-docker-build.log`。容器网络关闭、全部 capabilities 移除、根文件系统与项目挂载只读，无 systemd/D-Bus 依赖，无 SYS_TIME 特权；执行后自动删除，仅操作专用测试容器。
+- 容器命令：`docker run --rm --name tenonedge-t1-07-clock-probe --network none --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,nosuid,nodev -e DOTNET_CLI_HOME=/tmp -e DOTNET_NOLOGO=1 -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -v "$PWD:/workspace:ro" -v /tmp/tenonedge-t1-07-clock-docker:/results mcr.microsoft.com/dotnet/sdk@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29 dotnet vstest /workspace/tests/UnitTests/bin/Release/net10.0/TenonEdge.UnitTests.dll '/TestCaseFilter:FullyQualifiedName~ClockSyncTests' /ResultsDirectory:/results '/Logger:trx;LogFileName=clock-docker.trx' '/Logger:console;verbosity=detailed'`：10 通过、0 失败/跳过。该镜像未产出请求的 TRX，实际证据为完整控制台日志 `/tmp/tenonedge-t1-07-clock-docker-r2.log`（含原生探针输出），不声称存在容器 TRX。镜像报告 workload 验证提示，未执行 workload 更新，测试正常完成。
+
+在途预算生产入口追加修正：新增 `InputMessageWriter.ProduceAsync`，运行时在调用读取/解析回调前预约源消息峰值估算和输出预留。模拟输入已改用此入口；额度不足时尚未创建读取结果，按周期截止取消并计 overrun。回调异常、无数据、超限和关闭均归还额度；成功构造后缩减到消息加输出的持有量，移交通道/分发器，直到提交或明确拒绝。超限作为输入错误记录，不重启模拟输入。普通直接通道写入仍只覆盖调用后的生命周期，不能作为生产适配器的预算前置入口；后续协议输入须使用 ProduceAsync 并提供自身真实峰值上界。
+
+- `WaitToWriteAsync` 现在等待共享预算；单写者的 TryWrite 失败后记住所需字节数，避免通道有空位但额度不足时忙循环，关闭会唤醒。原始 Reader 支持 Count 并释放额度，HoldingReader 仍保留额度直到分发处理结束。
+- 构建首次出现 CA2012（条件表达式内的 ValueTask 转换），改为各分支立即 AsTask，没有禁用分析器。
+- 首轮新增 SQLite 提交边界夹具用 RAISE(ABORT)，实际触发的是既有数据拒绝分支，两个用例等待存储故障超时；修正为触发器查询不存在表，确实触发 SQLITE_ERROR 和整批回滚，没有改写生产错误分类。失败证据 `/tmp/tenonedge-t1-07-production-budget-r2.log`。
+- 修正后定向命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~InFlightBudgetTests|FullyQualifiedName~SimulatorInputTests|FullyQualifiedName~RuntimeUnitContractTests|FullyQualifiedName~OutputPipelineTests' --logger 'trx;LogFilePrefix=production-budget-r3' --results-directory /tmp/tenonedge-t1-07-production-budget-r3`：单元 9、集成 29，共 38 通过、0 失败/跳过。验证先预约再调用、错误/空消息/超限释放、预算等待、模拟输入持续超限不崩溃，以及真实 SQLite 提交失败时保留额度、修复后提交释放、排空超时但写者/分发器已安全停止后释放；正常排空也断言额度归零。
+- 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-production-budget' --results-directory /tmp/tenonedge-t1-07-production-budget-regression`：单元 345、集成 405，共 750 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-production-budget-regression.log`。
+- 全量之后追加一个“不响应取消的读取仍持有额度，回调真正退出才释放”的单元用例；`dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~InFlightBudgetTests --logger 'trx;LogFileName=production-cancel.trx' --results-directory /tmp/tenonedge-t1-07-production-cancel`：10 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-production-cancel.log`。未将该单元用例冒充整个运行时的停止超时验证。`git diff --check` 通过。
+- 仍未证明完整堆内存上界：输出 JSON 序列化目前先扩容再检查 256 KiB 报文限制，临时编码缓冲可能超过原输出预留；须补有界序列化与压力/停止超时验证。当前已解决模拟输入的“构造后才预约”缺口，不将尚未实现的 T2 协议读取或第三方适配器视为已覆盖。
+
+输出序列化追加修正：标准信封 Serialize 使用有硬上限的 IBufferWriter，以实际 Advance 字节数执行 256 KiB 限制；额外暂存只用于 Utf8JsonWriter 的最坏情况 sizeHint，不把它误认为真实报文大小。原始单 token 长度已不可能装入报文时提前拒绝；字符串值按 512 个 UTF-16 单元分段写入。已核对本机 .NET 10.0.12 引用文档中的 WriteStringValueSegment API。报文大小常量与 DeliveryDraft 共用；输入预约/持有额度时另计按源大小估算的编码工作区（目标逐个格式化，不为每条路径重复预约工作区）。估算偏保守，仍需压力/容量实测，不将逻辑预约称为 CLR 总堆上限。
+
+- 首轮构建 CA1512 要求使用 ThrowIfGreaterThan，已修正而未抑制规则。
+- 定向命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~StandardEnvelopeTests|FullyQualifiedName~FieldValueTests|FullyQualifiedName~InFlightBudgetTests|FullyQualifiedName~OutputPipelineTests|FullyQualifiedName~MqttOutputTests' --logger 'trx;LogFilePrefix=bounded-json' --results-directory /tmp/tenonedge-t1-07-bounded-json`：单元 87、集成 16，共 103 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-bounded-json.log`。覆盖 ASCII/转义文本恰好 256 KiB、再多 1 字节、长字段名、跨段代理对/孤立代理字符、超大 token 提前拒绝。之后补 7 个组合，以 GC.GetAllocatedBytesForCurrentThread 核对接受/拒绝路径的本线程分配不超过工作区预约，进入后续全量。
+
+Modbus 探针调度修正（仅测试从站，不是提前实现 T2）：全量首轮单元 360 通过、集成 404 通过/1 失败，同一个 NModbus 重复帧探针再次在首次读取超时；日志 `/tmp/tenonedge-t1-07-bounded-json-regression.log`。最小用例 PeerRespondsWhileSynchronousClientBlocksCallingContext 阻塞调用方同步上下文，未经修改的测试从站稳定产生相同超时。发现构造时直接调用 AcceptAsync 捕获了客户端测试上下文，同步 Read 占住该上下文时，对端无法接收。将从站 Accept 循环通过 Task.Run 放到独立任务，不修改超时、重试或协议断言。
+
+- 红灯命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusTestSlaveSchedulingTests --logger 'trx;LogFileName=modbus-scheduling-red.trx' --results-directory /tmp/tenonedge-t1-07-modbus-scheduling`：0 通过、1 失败，373 ms 读取超时，日志 `/tmp/tenonedge-t1-07-modbus-scheduling-red.log`。
+- 绿灯命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~Probes.Modbus' --logger 'trx;LogFileName=modbus-scheduling-green.trx' --results-directory /tmp/tenonedge-t1-07-modbus-scheduling`：43 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-modbus-scheduling-green.log`。
+- 连续两轮全量：对 i=2、3 分别执行 `dotnet test TenonEdge.sln -c Release --no-restore --logger "trx;LogFilePrefix=t1-07-bounded-json-r$i" --results-directory "/tmp/tenonedge-t1-07-bounded-json-regression-r$i"`，两轮均单元 360、集成 406，合计 766 通过、0 失败/跳过；日志分别为 `/tmp/tenonedge-t1-07-bounded-json-regression-r2.log`、`/tmp/tenonedge-t1-07-bounded-json-regression-r3.log`。`git diff --check` 通过。此证据修复已复现的测试上下文调度缺陷，不证明任何设备兼容性，也不替代完整资源压力验证。
+
+计数落盘追加进展：按输入累计 readsCompleted / failedFields / readsFailed / overruns，按输入与目标累计格式拒绝；存储不可用次数、失败批次和失败记录操作次数另记全局计数。增量由 DeliveryCache 持有，唯一写者取快照并与分组提交同事务写 queue_counters，仅在事务成功后扣除该快照；提交期间新到的增量保留，回滚后旧增量也保留。无投递请求时最长 10 秒尝试落盘，正常停止最终落盘；存储故障下无法承诺 10 秒成功落盘，诊断保留存储异常和未持久化增量。API 新增 unpersistedCounters，与 persistentCounters 分开返回，不能把不同读取时刻的两个快照相加当作强一致总数。
+
+- 范围/口径：瞬时设备健康仍在进程重启后重置，累计计数从 queue.db 恢复；重建 queue.db 会重置累计值。storageFailedRecordAttempts 是失败的记录操作次数（包括重试），不是已经丢失的数据条数。当前分发器仍会重试失败的存储接管；须在后续故障链路验收中核对总设计 §8.5 对非 MQTT QoS 1 输入的丢失语义，不能用此计数冒充丢失量。
+- 初始定向验证（同下方过滤条件，前缀 persistent-counters、目录 `/tmp/tenonedge-t1-07-persistent-counters`）：单元 2、集成 23，共 25 通过、0 失败/跳过。增加边界测试后的全量首轮单元 362 通过、集成 411 通过/1 失败，发现“启动写者后立即停止，尚未进入 RunAsync”的计数遗漏；日志 `/tmp/tenonedge-t1-07-counters-regression.log`。
+- 最小红灯：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~NeverStartedWriterFinalizes --logger 'trx;LogFileName=early-stop-red.trx' --results-directory /tmp/tenonedge-t1-07-counter-stop`，0 通过、1 失败，证据 `/tmp/tenonedge-t1-07-counter-stop-red.log`。修正为从未运行但已存在计数的写者在释放时执行自身的停止分支；不修改通用监督者的取消行为、不启动并行写者、不在请求作用域写库。已运行的写者仍只在原循环中做最终提交。
+- 修正后定向命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~PendingCounterTests|FullyQualifiedName~RuntimeCounterTests|FullyQualifiedName~StorageProtectionTests|FullyQualifiedName~SystemInfoTests|FullyQualifiedName~OutputPipelineTests' --logger 'trx;LogFilePrefix=persistent-counters-r2' --results-directory /tmp/tenonedge-t1-07-persistent-counters-r2`：单元 2、集成 27，共 29 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-persistent-counters-r2.log`。覆盖并发增量、快照确认、空闲落盘、重启、生产模拟输入的装配、计数写入失败时投递同事务回滚/恢复、路径拒绝归零预算、正常及不可写存储下的最终落盘、未运行便释放的写者。
+
+- 当前全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-counters-r2' --results-directory /tmp/tenonedge-t1-07-counters-regression-r2`：单元 362、集成 413，共 775 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-counters-regression-r2.log`，TRX 在上述目录。`git diff --check` 通过。
+
+趋势追加进展：新增固定六指标的进程活动计数及 RuntimeTrendHistory，独立宿主管理的 RuntimeTrendMonitor 每 10 秒采样，最多保留 360 点；不保存报文、字段值或逐输入标签字典，也不轮询 SQLite。GET /runtime/trends 使用既有管理组权限，所有已认证角色可读，匿名受保护，OpenAPI 和端点清单同步更新。启动时为空，重启不恢复历史；展示时间用 UTC，采样分桶、窗口清理和间隔均使用单调时间。每点包含实际 DurationSeconds，调度延迟不补造零值点；暂停超过整个一小时窗口则清空旧点并重新建基线，无法归属到窗口内的累计增量不伪装成最近一小时数据。加入“10.1 秒采样后，20 秒采样不能因间隔 9.9 秒被跳过”的调度抖动测试。
+
+- 口径：Received 是成功读取的源消息数；Sent 是适配器 Ack 次数（MQTT QoS 0 为本地发送、QoS 1 为 PUBACK），不是业务持久化确认，也不是删除队列记录数。读失败、发送失败尝试、路径拒绝和失败存储记录操作分别返回，不把它们混作已丢失数据条数。发送确认后删除失败不会重复增加 Sent。当前交付全局趋势；逐目标趋势与完整诊断页面仍随相应后续任务验证。
+- 基础全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-trends' --results-directory /tmp/tenonedge-t1-07-trends`，单元 364、集成 413，共 777 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-trends.log`。随后增加调度抖动、实际宿主无人访问采样/唯一监测实例/停止测试及发送/路径计数断言。
+- 单元覆盖 400 个采样周期、360 点上限、过期清理、跨窗口暂停、重建后为空、墙上时钟前跳/回拨；使用可控时间验证内存窗口，不将其冒充真实运行一小时的压力验证。宿主用例用测试活动计数驱动实际后台计时，无 HTTP 请求触发采样；生产链路用例另断言真实运行时的发送确认和格式拒绝活动数。
+- 追加用例后全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-trends-r2' --results-directory /tmp/tenonedge-t1-07-trends-r2`：单元 365、集成 414，共 779 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-trends-r2.log`。`git diff --check` 通过。
+
+采样丢失语义对齐：核对总设计 §8.5 后，移除当前模拟/轮询分发器在 SQLite 提交失败时重试旧采样的行为。真实提交回滚后释放该源消息及投递预算，记录 input.storageLoss 错误事件，并累计 storageLostSourceMessages 与 storageLostDeliveryRecords；它们与失败操作尝试次数分开。修复存储后接收新采样，不重放已丢失的旧采样。此处替代本节早期“提交失败保留并重试”实现及其测试口径，不改写设计；T2 MQTT QoS 1 必须另以确认契约断开并由 Broker 重投，不能套用当前分支假装确认。
+
+- 命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~OutputPipelineTests|FullyQualifiedName~RuntimeCounterTests' --logger 'trx;LogFileName=sampling-storage-loss.trx' --results-directory /tmp/tenonedge-t1-07-storage-loss`：15 通过、0 失败/跳过，日志 `/tmp/tenonedge-t1-07-storage-loss.log`。真实临时 SQLite 故障注入，断言旧消息不入库、预算归零、丢失源/投递计数落盘、恢复后仅新 sourceMessageId 入库；这不是实物磁盘故障测试。
+
+资源压力/超时补证：32 路输出、250 条源消息，共 8000 条真实 SQLite 投递；使用阻塞格式化闸门让默认 64 MiB 共享预约达到背压，第四条 32 路消息等待而不是继续构造。解除闸门后提交全部已接收消息，逐目标核对 250 条待发，正常停止后预约归零，所有运行单元停止。输出为测试暂停适配器，不将其称为 Broker 吞吐量或设备性能测试。
+
+- 定向命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ThirtyTwoWayFanout --logger 'trx;LogFileName=budget-pressure.trx' --results-directory /tmp/tenonedge-t1-07-pressure`：1 通过、0 失败/跳过，18 秒，日志 `/tmp/tenonedge-t1-07-pressure.log`。峰值逻辑预约不超过容量；不据此宣称整个进程 RSS/GC 堆的上限。
+- 停止超时用例另外阻塞格式化器并执行真实运行时停止，核对分发器 StopTimedOut 时预算仍保留、写者未提交、输出未发送。迟到退出后，已停止的旧运行时保守保留状态与预约，不冒充已回收或重新激活；需重启服务。正常结束的路径仍清空预约。
+- 当前全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-pressure-loss' --results-directory /tmp/tenonedge-t1-07-pressure-loss`：单元 365、集成 416，共 781 通过、0 失败/跳过；日志 `/tmp/tenonedge-t1-07-pressure-loss.log`。`git diff --check` 通过。
+
+配额拒绝分类补证：全局满时累计 `globalQuotaRejectedRecords`，仅目标配额满时累计 `target/{connectionId}/quotaRejectedRecords`；两者互斥，同时触发时归全局。既有按目标 `QuotaRejected` 汇总仍包含该目标的全部配额拒绝，不能与新增分类重复相加。计数与入队判断同事务提交，使用已有 queue_counters，不增加 schema 版本。
+
+- 定向命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~DeliveryPolicyTests --logger 'trx;LogFileName=quota-classification.trx' --results-directory /tmp/tenonedge-t1-07-quota-classification`：10 通过、0 失败/跳过。覆盖目标条数/字节配额、隔离占用全局容量、重开后计数保留、目标分类回滚；新增全局计数写入失败整批回滚以及两种配额同时满时只归全局的用例。
+- 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-quota' --results-directory /tmp/tenonedge-t1-07-quota`：单元 365、集成 417，共 782 通过、0 失败/跳过；已核对两个 TRX 的 executed/passed/failed/notExecuted，日志 `/tmp/tenonedge-t1-07-quota.log`。环境：Linux x86_64、SDK 10.0.401。
+- `git diff --check` 通过；`dotnet format TenonEdge.sln --verify-no-changes --no-restore --include src/TenonEdge.Runtime/Deliveries/DeliveryStore.Policy.cs tests/IntegrationTests/Runtime/DeliveryPolicyTests.cs` 退出码 0，日志 `/tmp/tenonedge-t1-07-quota-format.log`。此格式检查仅覆盖本次分类涉及的两个代码文件。
+
+输入错误分类补齐：`IInputReadReporter.ReadFailed` 增加明确的 ReadError / DataError 分类，默认仍为读取/连接错误。模拟输入超限传入 DataError；输入快照返回 DataRejected，持久计数分别保存 `input/{device}/{input}/dataRejected` 和 `readErrors`。既有 readsFailed 与读取失败趋势保留为总数，DataRejected 是其子集，不能相加；升级前没有分类的历史 readsFailed 不推测回填，因此历史总数不必等于新分类之和。三次整组读取失败的健康状态规则不变，恢复成功不清空累计分类。
+
+- 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-07-input-errors-r2' --results-directory /tmp/tenonedge-t1-07-input-errors-r2`：单元 366、集成 417，共 783 通过、0 失败/跳过；已核对 TRX，日志 `/tmp/tenonedge-t1-07-input-errors-r2.log`。环境沿用 Linux x86_64、SDK 10.0.401。
+- 扩展 SimulatorInputTests，连续三个超限周期逐次断言数据错误数且不构造消息；RuntimeCounterTests 通过真实 SQLite 空闲落盘与重开验证两类失败分开保留；新增 InputReadStatusTests 验证分类是总失败子集、恢复后保留及非法枚举不改变状态。
+- 本次七个代码/测试文件的格式检查首轮发现换行和 imports 顺序问题（含这些文件此前已有的格式），已限定文件运行 dotnet format 修正；不扩大到其他工作区文件。再次以相同 --include 文件列表执行 `dotnet format TenonEdge.sln --verify-no-changes --no-restore` 退出码 0，日志 `/tmp/tenonedge-t1-07-input-errors-format-r2.log`；`git diff --check` 通过。
+
+退出核对：下表确认本任务的后端软件交付，不扩大为完整跨阶段验收。上述压力是有限软件场景，不代替 T1-08 故障矩阵、实际设备或整机容量验收。V-14 完成 Linux x64 原生/容器后端检测子场景，诊断网页仍待 T3；AT-12/29 和 T1-07 整体不标通过。后续须完成 T1-08 和 T2 后才进入前端。
+
+已发现需维护者确认的既有冲突：总设计 Modbus UnitId 为 1–247，功能需求 TCP 为 0–255、RTU over TCP 为 1–247。已建议采用后者；维护者尚未明确批准统一文档，暂不改写规则，不阻塞 T1-07。
+
+
+T1-07 退出核对（2026-10-08；详细命令及历次失败/修正见本节）：
+
+| 交付物 | 当前代码与验证证据 | 结论/边界 |
+|---|---|---|
+| 在途预算 | BudgetedInputChannel / InFlightBudget / 有界 StandardEnvelope；InFlightBudgetTests、32 路 8000 投递压力与 StopTimedOut 用例 | 软件场景通过；仅逻辑预约，不称为进程 RSS/实物容量保证 |
+| 存储保护 | StorageProtection / 唯一写者；StorageProtectionTests 字节/比例/未知/恢复/保护下删除 | 软件故障注入通过；真实磁盘填满及管理网页仍不声称通过 |
+| 运行事件 | 共用 IRuntimeEventSink；空间/校时/读取健康转换及存储丢失事件 | 本地回归通过；不将所有 T3 诊断功能提前标完成 |
+| 计数持久化 | queue_counters、PendingCounters；RuntimeCounterTests、DeliveryPolicyTests、OutputPipelineTests | 回滚、空闲/停止落盘、重开、分类测试通过；故障无法落盘时保留未持久化增量 |
+| 状态查询 | RuntimeStatusEndpoints、RuntimeTrendMonitor；SystemInfoTests 各角色、OpenAPI 清单及宿主监测测试 | API 和有限趋势窗口通过；不是网页验收 |
+| 校时检测 | ClockSyncStatus / ClockSyncMonitor；本机及受限容器原生探针和三状态 API | Linux x64 后端子场景通过；ARM64 未验证 |
+
+据 PLAN-01 T1-07 范围可继续 T1-08；这不代表 T1 整阶段、AT-12/29 全场景或用户的可视化目标完成。T2 协议入口仍须遵守先预约再读取契约；调试/预览、逐目标页面与完整总览在 T3。没有提交或推送。
+
+### 2.21 T1-08 停机恢复与链路验收（后端软件交付完成，待验收）
+
+前置：T1-01—07 的后端软件交付已具备，沿维护者“直到可以可视化访问系统”和继续指令推进。当前先处理 queue.db 损坏恢复，涉及 Runtime 初始化、Host 共用事件接线及软件/进程测试；不改变配置库损坏时拒绝启动的规则，不提前创建前端或协议适配器。
+
+- 初始化增加 quick_check(1)，只对 SQLITE_CORRUPT / SQLITE_NOTADB 或完整性检查明确失败启动恢复。权限、忙锁、磁盘写满、迁移错误和更高 schema 不当作损坏静默清空。
+- 旧主库与 -wal/-shm 收入属主专用暂存目录，再改名为唯一 queue.db.corrupt-* 目录；保留证据，不删除旧库。固定 .recovering 标记使移动中断后先收齐旧侧文件再建新库，移动失败则停止初始化。活跃库运行中发生损坏时仍报告存储失败，需停止/重启后恢复，不能在活跃读写连接旁替换文件。
+- 可读时尝试 COUNT delivery（不使用索引），否则明确数量未知；记录 error 级 storage.queueRebuilt 事件，说明隔离旧库并将尝试重建。新库计数从零开始。事件写入失败沿既有配置库事件组件回退日志，不假装一定持久化成功。
+- 定向验证：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~DeliveryRecoveryTests --logger 'trx;LogFileName=recovery-r2.trx' --results-directory /tmp/tenonedge-t1-08-recovery`：5 通过、0 失败/跳过。覆盖随机损坏头、真实 b-tree 页破坏且旧投递条数可读、半完成移动的侧文件收齐、移动冲突不覆盖、较新 schema 不恢复；日志 `/tmp/tenonedge-t1-08-recovery-r2.log`。
+- 真实进程验证：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~QueueRecoveryProcessTests --logger 'trx;LogFileName=process.trx' --results-directory /tmp/tenonedge-t1-08-recovery`：1 通过、0 失败/跳过，约 4 秒。先启动产品并首次设置，再正常退出、损坏 queue.db、启动产品；原账号可登录、NodeId 不变、readyz 就绪、新库无存储故障，旧库原文保留，config.db 中存在错误事件；日志 `/tmp/tenonedge-t1-08-process.log`。不是断电或磁盘硬件损坏验证。
+- 首次构建因 partial 声明可见性不一致失败，改为既有 internal 后通过，未修改公共类型可见性；证据 `/tmp/tenonedge-t1-08-build.log`。限定本次文件执行格式修正，未扩大到其他工作区文件。
+
+退出边界补证：DeliveryExitProcessTests 启动真实产品子进程并 SIGKILL，使用可控 MQTT 3.1.1 TCP 对端只用于确定确认时刻，不冒充真实 Broker。
+
+- 四个位置：下一条已经读取、持有在途预算但 SQLite 写锁阻止提交；已提交/尚无 PUBACK；已返回 Ack 但删除被 SQLite 触发器回滚；删除已提交。退出后直接检查 queue.db，再启动产品验证 FIFO 补发。未删除记录重发的 payload 逐字节相同，含相同 messageId/采集时间；已删除记录不重现；未提交样本未入库也未发送。
+- 命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~DeliveryExitProcessTests --logger 'trx;LogFileName=exit-r3.trx' --results-directory /tmp/tenonedge-t1-08-exit`：4 通过、0 失败/跳过，约 21 秒；日志 `/tmp/tenonedge-t1-08-exit-r3.log`。首轮构建 raw string 插值括号冲突（`/tmp/tenonedge-t1-08-exit.log`），修正后前三场景通过，再追加提交前场景。
+- 真实 Broker 断网：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~BrokerNetworkOutageBoundsTheQueue --logger 'trx;LogFileName=outage.trx' --results-directory /tmp/tenonedge-t1-08-outage`：1 通过、0 失败/跳过，约 6 秒。实际模拟采集→生产 MQTT 输出→TCP 故障代理→Mosquitto→独立订阅者；冻结网络后目标最多 3 条待发，至少 2 条配额拒绝被持久计数，网络故障未计毒消息；恢复后核对积压逐条冻结正文，队列排空、正常停止预算归零。该 3 条配额是测试配置，不替代默认容量实测；日志 `/tmp/tenonedge-t1-08-outage.log`。
+- 恢复实现后第一轮全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-08-recovery' --results-directory /tmp/tenonedge-t1-08-regression`：366 单元 + 423 集成 = 789 通过。追加退出/断网用例后全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t1-08-boundaries' --results-directory /tmp/tenonedge-t1-08-boundaries`：366 单元 + 428 集成 = 794 通过，均 0 失败/跳过。日志 `/tmp/tenonedge-t1-08-regression.log`、`/tmp/tenonedge-t1-08-boundaries.log`；Linux x86_64、SDK 10.0.401。
+
+本阶段软件链路验收已覆盖：正常停输入/排空/最终提交/停发送（既有 OutputPipelineTests、RuntimeCounterTests）、四个进程退出边界、网络断开积压与恢复、队列损坏不影响配置。连同 T1-01 的实例唯一/启动保护及 T1-07 资源场景，可以继续 T2；维护者复核与提交推送仍未代行。整机断电/fsync 硬件保证、MQTT 输入未确认会话恢复（T2-03）以及完整管理网页（T3）不标通过。
+
+
+### 2.22 T2-01 统一连接管理与出站校验（进行中）
+
+前置：T1 软件退出证据见 §2.20/2.21，沿“直到可以可视化访问系统”授权继续。已复核总设计 §6/8.1/10.3、功能 §2.5，阅读本机参考 SUMMARY、ThingsBoard 与 MQTTnet 相关笔记；只借模式，未复制源码。当前先实现实际 IP 出站检查并接入既有 MQTT 输出，不将此子项称为统一连接管理已完成。
+
+- Abstractions 新增 IOutboundAddressPolicy / IOutboundConnector；Runtime 的 OutboundConnector 每次重连重新解析，检查实际 IP 后直接连接该 IP，不再把域名交给 Socket 二次解析。取消/连接失败释放 Socket，返回的 NetworkStream 拥有 Socket。纯 IP 不走 DNS，IPv4 映射 IPv6 先归一化；空 DNS 结果是解析失败，不混作规则拒绝。
+- OutboundAddressRules 默认仅允许非本机 RFC1918 与 IPv6 ULA，其他公网须 CIDR+端口。危险地址不能被宽泛公网规则放行；本机端口例外独立，管理端口始终拒绝，覆盖回环、网卡地址和 IPv4 映射 IPv6。
+- Host 从当前部署配置读取 TenonEdge:Outbound:Networks（Cidr/Port）及 LocalPorts，连接时枚举本机地址并核对管理监听端口。动态端口尚未绑定或本机地址枚举失败时拒绝建立连接并作为可重试异常；无效规则保守拦截，不能计入毒消息次数。初轮仅部署参数；本节后续补充已接入持久白名单与审计 API，README 说明实际参数与边界。
+- MQTTnet 5.2.0.1603 的已安装 net10.0 XML 确认 WithStreamProvider / IMqttClientStreamProvider 支持，实际构建核对签名。MQTT 输出必须注入 connector，无默认绕过路径；由库在受检查的原始 TCP 流上执行 TLS/SNI，保留证书校验。出站拒绝经库包装异常仍识别为 SuspendTarget，不计毒消息。测试使用明确的回环策略或部署端口例外，不改变产品默认安全策略。
+- 定向规则命令：`dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~OutboundAddressRulesTests --logger 'trx;LogFileName=rules.trx' --results-directory /tmp/tenonedge-t2-01`：22 通过；连接命令同样使用 tests/IntegrationTests、过滤 OutboundConnectorTests、日志 connector.trx：4 通过。实际回环 Socket 验证已检查 IP 就是被连接 IP、再次解析变为元数据地址时无连接、映射地址、取消、空解析分类。不是外部 DNS 服务实测。
+- 接入回归：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~MqttOutputTests|FullyQualifiedName~DeliveryExitProcessTests|FullyQualifiedName~Outbound' --logger 'trx;LogFilePrefix=outbound-wiring' --results-directory /tmp/tenonedge-t2-01-wiring`：单元 50、集成 18，共 68 通过、0 失败/跳过，含真实 Mosquitto、TLS 拒绝、强制退出和拒绝时监听器无连接。日志 `/tmp/tenonedge-t2-01-wiring.log`。
+- Host 策略初轮：过滤 HostOutboundPolicyTests，报告 `/tmp/tenonedge-t2-01/host-policy.trx`：3 通过（配置变化、实际动态管理端口、宽白名单不能放行元数据）。之后追加非法部署规则保守拒绝用例，纳入后续全量。构建日志 `/tmp/tenonedge-t2-01-wiring-build.log`：0 警告/错误。
+
+- 当前全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t2-01-outbound' --results-directory /tmp/tenonedge-t2-01-regression`：单元 392、集成 433，共 825 通过、0 失败/跳过；已核对两个 TRX 的实际执行计数。日志 `/tmp/tenonedge-t2-01-regression.log`；Linux x86_64、SDK 10.0.401。`git diff --check` 通过。
+
+共享生命周期追加进展：Abstractions 的 ISharedConnections / IConnectionLease 与 Runtime 的 SharedConnections 按逻辑 connectionId 唯一持有会话，协议或非秘密配置身份不一致则拒绝，不允许同编号换协议产生第二会话。借用者共用串行执行器，等待可取消，最后一次释放等待实际操作退出再 Dispose；释放失败或不合作操作保留标识，不能建第二实例。重复释放等待同一个任务；已释放借用的排队操作不再执行。会话总数上限 500。
+
+- 生产 MQTT 由原适配器内独占客户端改为 MqttSession，由运行时共享管理拥有；MqttOutputAdapter 仅持有借用，输出总超时包含串行排队。Host 登记唯一共享管理单例，没有第二套运行时。TLS、凭证代次、重连、指纹与确认行为仍由同一 MQTT 会话实现，未引入后台回调重连。
+- 首轮定向：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~MqttOutputTests|FullyQualifiedName~SharedConnectionsTests|FullyQualifiedName~DeliveryExitProcessTests' --logger 'trx;LogFilePrefix=shared-mqtt' --results-directory /tmp/tenonedge-t2-01-shared-mqtt`：32 单元、14 集成通过；日志 `/tmp/tenonedge-t2-01-shared-mqtt.log`。
+- 追加用例验证两个真实 Broker 借用者仅建立一个 TCP/MQTT 客户端，释放一个仍可发送，最后释放后再借用才建立第二连接；单元覆盖共享/串行/取消排队/释放等待/配置冲突/释放失败保留标识。之后改为 connectionId 跨协议唯一，过滤 SharedConnectionsTests 的 `shared-identity.trx`：5 通过。
+- 首轮全量（跨协议身份收紧前）：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t2-01-shared' --results-directory /tmp/tenonedge-t2-01-shared-regression`：397 单元 + 434 集成 = 831 通过、0 失败/跳过，日志 `/tmp/tenonedge-t2-01-shared-regression.log`。身份收紧后的全量：相同命令将前缀与目录改为 `t2-01-shared-r2`、`/tmp/tenonedge-t2-01-shared-regression-r2`，仍为 397 单元 + 434 集成 = 831 通过、0 失败/跳过，已核对两个 TRX；日志 `/tmp/tenonedge-t2-01-shared-regression-r2.log`。对 SharedConnections.cs / SharedConnectionsTests.cs 的 `dotnet format --verify-no-changes --no-restore` 检查退出码 0，日志 `/tmp/tenonedge-t2-01-shared-format-check.log`；`git diff --check` 通过。
+
+#### HTTP 传输、持久规则及异常防护补充
+
+- HTTP 共用 OutboundHttpTransport：SocketsHttpHandler.ConnectCallback 复用实际 IP connector，保留 Host/SNI；关闭环境代理、自动重定向与 Cookie。显式有限超时；这里只是传输基础，不是 T2-04 业务适配器。真实回环 HTTP 验证 Host、302 不访问跳转目标、拒绝不建连接、慢响应超时；共享管理另补 500/501 容量、满容量借用和释放后复用。
+- 定向命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~OutboundHttpTransportTests|FullyQualifiedName~SharedConnectionsTests' --logger 'trx;LogFilePrefix=http-transport' --results-directory /tmp/tenonedge-t2-01-http`：6 单元 + 4 集成通过。日志 `/tmp/tenonedge-t2-01-http.log`。
+- config.db migration 9 增加 outbound_policy。`GET/PUT /api/edge-admin/v1/system/outbound-policy`：所有登录角色可读、仅管理员带 CSRF 可写；expectedVersion 乐观并发，配置与 system.outboundPolicyChanged 审计同事务，记录非秘密规则和版本。部署规则与持久规则取并集，接口不能撤销部署授权；下一次连接检查生效，不强断现有连接。两类规则各 1000 条是本次防止无界匹配的实现防护上限，不称为已批准的产品规格。
+- API 初轮 23 用例中 2 个端点清单检查失败：空子路径产生尾斜杠；改为 /system 分组加显式 /outbound-policy，未放宽断言。复测过滤 `OutboundPolicyTests|ManagementApiAccessTests|OpenApiDocumentTests|GatewayIdentityTests`：23 通过，日志 `/tmp/tenonedge-t2-01-policy-api-r2.log`，TRX `/tmp/tenonedge-t2-01-policy/policy-api-r2.trx`。
+- 持久 JSON 读取也执行同一规范化与限额校验；空数组对象、null 元素、非法 CIDR/端口及损坏 JSON 转为可重试 IOException，绝不放行或误计毒消息。过滤 OutboundPolicyTests：15 通过、0 失败/跳过，命令 `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~OutboundPolicyTests --logger 'trx;LogFileName=policy-hardening.trx' --results-directory /tmp/tenonedge-t2-01-policy`；日志 `/tmp/tenonedge-t2-01-policy-hardening.log`。
+- MQTT 总期限补证：真实 SharedConnections 串行门保持占用，以 FakeTimeProvider 推进 999/1000ms，排队发送在总期限结束时 Retry 且不计毒消息；调用方取消仍抛取消，不改写成超时。
+- 首轮全量新增测试编译时发现 IOutputTarget 到内部 MqttOutputTarget 类型不匹配；用显式 Assert.IsType 修正测试，集成部分独立完成 453 通过。修正后的单元独立回归 400 通过；不能把有编译错误的首轮命令写成全量通过。
+
+- 修正后全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=policy-regression-r2' --results-directory /tmp/tenonedge-t2-01-policy-regression-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：400 单元 + 453 集成 = **853 通过、0 失败/跳过**。Linux x64、SDK 10.0.401；日志 `/tmp/tenonedge-t2-01-policy-regression-r2.log`，两个 TRX 位于同名结果目录。HTTP 与管理 API 是软件验证，不是网页或现场设备验收。
+
+待完成：显式代理支持/校验评估及协议调用方的跨协议共享验证。当前明确禁用环境代理，未实现显式代理支持。T2-01、AT-06/18 整体未通过。Modbus 选型与 UnitId 文档统一仍等待维护者明确确认，不阻塞其他子项。
+
+
+### 2.23 T2-05 字段映射：固定 JSON 定位子项（进行中）
+
+前置 T1-02/T0-10 已有证据；按授权并行推进不依赖 Modbus 选型的纯函数，不绕过 T2-06/08 或提前创建前端。复核总设计 §6.4、功能 §3.4 和本机参考 SUMMARY / thingsboard-gateway 笔记；不采用参考库 JSONPath、表达式或脚本，无源码移植。
+
+- Runtime/Mapping/JsonFieldPointer 构建时验证 RFC 6901 字符串形式，支持空路径、空成员、~0/~1 与固定数组下标；不做 URI 解码，不接受查询或片段语法。不通过 double 解释报文数值；返回 JsonElement 借用原文档，不持有上次值或克隆原始报文。
+- 路径执行对不存在成员、非法数组下标、标量继续遍历返回未定位；null 字段区别于不存在；选中的重复同名成员不任取一项。不同调用相互独立。
+- 首轮构建触发 CA1720（公开参数名 pointer 包含类型名），改为 path，未禁用分析器。命令 `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~JsonFieldPointerTests --logger 'trx;LogFileName=json-pointer-r2.trx' --results-directory /tmp/tenonedge-t2-05`：**35 通过、0 失败/跳过**；日志 `/tmp/tenonedge-t2-05-pointer-r2.log`。含 RFC 示例、转义次序、整数原文、数组越界/前导零、重复成员与不复用旧值。
+- 补充严格 ASCII 数组下标校验，拒绝尾随 NUL 与非 ASCII 数字，不依赖运行库数字解析的宽松细节；同一定向命令改用 `json-pointer-r3.trx`：37 通过，日志 `/tmp/tenonedge-t2-05-pointer-r3.log`。
+- T2-01/本子项涉及文件的 `dotnet format TenonEdge.sln --verify-no-changes --no-restore --include ...` 检查退出 0，日志 `/tmp/tenonedge-t2-format-r2.log`；此前 SharedConnectionsTests 的导入顺序与一处空白已按格式器修复。`git diff --check` 通过。
+
+- 当前全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mapping-start-r2' --results-directory /tmp/tenonedge-t2-mapping-start-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：**437 单元 + 453 集成 = 890 通过，0 失败/跳过**；两个 TRX 已核对，日志 `/tmp/tenonedge-t2-mapping-start-r2.log`。最终 Mapping 目录格式检查退出 0，日志 `/tmp/tenonedge-t2-05-format.log`。
+
+尚未实现：类型换算、质量传播、时间映射、完整消息分支转换以及协议/路线调用；上述定向用例只是字段定位单元测试，**不表示 T2-05 或 AT-07/30 整体通过**。无 Web 界面、无可验证可视化地址。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -775,7 +1002,10 @@ T1 操作顺序（全量连接管理在 T3）：先以无种子宿主完成首�
 | AT-09 / GW-14 发送子集 | 提交—发送—确认—删除与正常停机恢复 | 部分通过（本地）：确认后删除失败不重发；缺失 PUBACK 保留；重启发送同一冻结报文；停止先排空通道 | §2.17、§4.12 | 完整故障/强制终止矩阵、容量与存储保护为 T1-05—T1-08 |
 | D-05 / FS §2.3 | MQTT 当前凭证与接收方变化 | 通过（本地，本次 API 范围）：默认作废、管理员显式保留、事务审计、失败回滚、角色/CSRF、秘密不返回、重启解密 | §2.17、§4.12 | HTTP 基础路径、其他凭证类型、完整连接管理与网页在后续对应任务 |
 | AT-14 子集 | 当前目标指纹校验 | 部分通过（本地）：不匹配的记录不发送、账户标记变化有审计 | §2.17 | 持久隔离与移出队头为 T1-06；完整迁移为 T3 |
-| V-14 | 系统时钟同步检测 | 未执行：本批只定义了时钟同步状态的接口与时间来源规则，产品中状态总是“未知” | §2.15 | T1-07 |
+| AT-26 / GW-14 | T1-05 发送策略与失败区 | 通过（本地，发送核心子集）：四类结果、连续拒绝阈值、毒消息探测、满额计数、重启与存储失败 | §2.18、§4.13 | 真实 HTTP：T2；完整手动恢复/网页：T3；平台设备分类：T4 |
+| AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
+| AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
+| V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录
@@ -1188,6 +1418,71 @@ T1-04 代码与当前范围验证已完成，状态为待验收。没有阻塞�
 
 证据：TRX 在 `artifacts/test-results/t1-04-final-r5`；命令输出在 `artifacts/environment/t1-04`；自包含发布物在 `artifacts/publish/t1-04-final-r5-linux-x64`，本机验证用，不发布；容器输出、发布物 SHA-256 清单及实际日志在 `artifacts/publish-check/t1-04-final-r5`。这些目录按工程约定被 Git 忽略，本次不提交生成物。GitHub Actions 未执行，CI 配置更新不算实际远端通过。
 
+### 4.13 T1-05 本地执行记录（2026-10-08）
+
+环境沿用 §4.12：Ubuntu 26.04 / Linux x64、SDK 10.0.401、Runtime 10.0.12、SQLite 3.53.3、Docker Mosquitto 2.1.2-alpine；所有故障注入在测试临时目录和测试 Broker 中进行。无实物设备验证。
+
+过程记录（保留失败报告）：
+
+- 专项 r1：43/44；失败为旧用例在初始化后替换 queue.db 路径时，新增清理过早打开并保留了写连接。改为每分钟清理时短暂打开连接，业务写连接仍由首次写入请求打开；保留原故障用例。
+- 专项 r2：62/62，零失败、零跳过，含凭证失败区声明。之后补充探测后网络失败和 Retry-After 的实际等待用例。
+- 全量 r1：单元 325/325、集成 359/361；失败为进程用例仍预期 schema 1，以及发送循环内部退避漏记超时运行事件。更新 schema 精确预期为 2，恢复 `output.retry` 事件，保留原 MQTT 超时事件断言并增加失败次数为 0 的断言。
+- 全量 r2：单元 325/325、集成 361/361，共 686，零失败、零跳过；包含真实 Broker 场景。报告核查脚本通过，以本轮为最终代码回归证据。
+
+命令：
+
+```bash
+dotnet format TenonEdge.sln --no-restore --verbosity quiet
+dotnet build TenonEdge.sln --no-restore -c Release --verbosity quiet
+dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~OutputFailureTests|FullyQualifiedName~DeliveryFailureStoreTests|FullyQualifiedName~OutputPipelineTests|FullyQualifiedName~DeliveryCacheTests|FullyQualifiedName~MqttCredentialTests' --results-directory artifacts/test-results/t1-05-targeted-r2 --logger 'trx;LogFilePrefix=t1-05' --verbosity quiet
+dotnet test TenonEdge.sln -c Release --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --results-directory artifacts/test-results/t1-05-full-r2 --logger 'trx;LogFilePrefix=t1-05' --logger 'console;verbosity=minimal'
+python3 .github/scripts/verify-test-results.py artifacts/test-results/t1-05-full-r2 --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
+dotnet restore TenonEdge.sln --locked-mode --verbosity quiet
+dotnet format TenonEdge.sln --verify-no-changes --no-restore --verbosity quiet
+dotnet publish src/TenonEdge.Host/TenonEdge.Host.csproj -c Release -r linux-x64 --self-contained --no-restore --output artifacts/publish/t1-05-linux-x64 --verbosity quiet
+bash .github/scripts/verify-published-host.sh artifacts/publish/t1-05-linux-x64 artifacts/publish-check/t1-05
+git diff --check
+```
+
+| 检查 | 结果 | 证据 |
+|---|---|---|
+| Release 构建 | 通过，0 警告/错误 | 本节命令及全量测试构建输出 |
+| 单元/集成全量 | 686/686，零失败、零跳过；报告核查通过 | `artifacts/test-results/t1-05-full-r2` |
+| locked restore / format verify / diff check | 通过 | 本节命令 |
+| linux-x64 自包含发布 | 通过 | `artifacts/publish/t1-05-linux-x64` |
+| 干净容器验证 | 全部通过：无预装 .NET、健康/就绪、首次设置、正常退出、换路径重启、单实例、无持久卷与低 SQLite 拒绝运行 | `artifacts/publish-check/t1-05/summary.txt` |
+
+本次新增 31 个用例：退避单元测试 5 个，发送结果/失败区集成测试 25 个，失败区凭证声明场景 1 个。失败区上限用缩小参数做边界验证，不声明生产容量实测。GitHub Actions 未执行；测试报告及本地发布物由 Git 忽略，没有分发。
+
+
+### 4.14 T1-06 本地执行记录（2026-10-08）
+
+环境沿用 §4.13：Ubuntu 26.04 / Linux x64、SDK 10.0.401、Runtime 10.0.12、SQLite 3.53.3、Docker Mosquitto 2.1.2-alpine。故障注入仅在测试临时数据库与测试容器中进行，无真实客户配置或设备。
+
+过程：专项 r1 54/54、r2 52/52（筛选范围不同），均零失败/跳过；专项 r3 在编译阶段发现新测试缺少命名空间导入和静态数组约定，未执行用例，不计通过。修正后全量 r1 单元 325/325、集成 387/387，总计 712，零失败、零跳过，报告核查通过。原有 MQTT 真实 Broker 场景未过滤。随后收尾复核补充“隔离初始化失败不退出宿主”的处理和回归用例，最终全量 r2 单元 325/325、集成 388/388，共 713，零失败/跳过，报告核查通过，以该轮为准。
+
+```bash
+dotnet build TenonEdge.sln --no-restore -c Release --verbosity quiet
+dotnet format TenonEdge.sln --no-restore --verbosity quiet
+dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~OutputControlTests|FullyQualifiedName~OutputFailureTests|FullyQualifiedName~DeliveryPolicyTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~GatewayIdentityTests' --results-directory artifacts/test-results/t1-06-targeted-r2 --logger 'trx;LogFilePrefix=t1-06' --verbosity quiet
+dotnet test TenonEdge.sln -c Release --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --results-directory artifacts/test-results/t1-06-full-r2 --logger 'trx;LogFilePrefix=t1-06' --logger 'console;verbosity=minimal'
+python3 .github/scripts/verify-test-results.py artifacts/test-results/t1-06-full-r2 --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
+dotnet restore TenonEdge.sln --locked-mode --verbosity quiet
+dotnet format TenonEdge.sln --verify-no-changes --no-restore --verbosity quiet
+dotnet publish src/TenonEdge.Host/TenonEdge.Host.csproj -c Release -r linux-x64 --self-contained --no-restore --output artifacts/publish/t1-06-final-r2-linux-x64 --verbosity quiet
+bash .github/scripts/verify-published-host.sh artifacts/publish/t1-06-final-r2-linux-x64 artifacts/publish-check/t1-06-final-r2
+git diff --check
+```
+
+| 检查 | 结果 | 证据 |
+|---|---|---|
+| Release 构建 | 通过，0 警告/错误 | 本节命令及全量构建输出 |
+| 单元/集成全量与报告检查 | 最终 r2 713/713，零失败/跳过；报告核查通过 | `artifacts/test-results/t1-06-full-r2` |
+| locked restore | 通过 | 本节命令 |
+| format verify / 自包含发布 / 干净容器 / diff check | 全部通过；容器验证含首次设置、换路径重启、单实例与拒绝不支持环境 | `artifacts/publish/t1-06-final-r2-linux-x64`、`artifacts/publish-check/t1-06-final-r2` |
+
+T1-05、T1-06 均留在工作区待验收；当前 HEAD 仍为 `c97521d`。未执行 GitHub Actions；本地测试与发布产物被 Git 忽略，没有发布或推送。
+
 ## 5. SDK 与依赖清单
 
 | 组件 | 版本 | 用途 | 许可 | 来源 |
@@ -1447,7 +1742,7 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 15. T5-04、T5-07：产品镜像去掉 `ASPNETCORE_HTTP_PORTS`；选定并登记基础镜像的许可；发行包附带 .NET 运行时与 ASP.NET Core 运行时的第三方声明（`docs/reference-notes.md` §1.3）；在产品镜像中确认 V-07。
 16. 环境：本批拉取的镜像 `eclipse-mosquitto:2.1.2-alpine` 与 `mcr.microsoft.com/dotnet/runtime-deps:10.0` 保留在本机；测试与验证创建的容器和数据卷均已删除。审查者为抓取线程栈安装的 dotnet-stack 已随其临时目录删除，它的 NuGet 包仍在 `~/.nuget/packages` 中。
 17. T0 验收之后，按开发准备的维护规则（“每个阶段结束时更新第 1、4、5、6 节”）更新 `docs/development-readiness.md`：第 5 节各验证项改为指向本文的结论，第 1 节写明进入 T1 的条件现状。本批不在验收之前改写该文件。进展：T0 于 2026-10-01 验收完毕，已随 T1 第一批更新开发准备第 1、4、5、6 节的状态（只改状态与指向，不改规则）。
-18. T1 第一批验收：T1-01—T1-03 的改动在工作区中，未提交、未推送；提交与推送须另行授权。GitHub Actions 仍未运行过。
+18. T1 本地提交：维护者 2026-10-08 授权本地提交后继续，T1-01—T1-04 已提交为 `c97521d`。GitHub Actions 仍未运行过。
 19. T1-04：D-05 已确认，分发器、正式 MQTT 输出与 QoS 0 显式 PING 已实现，证据见 §2.17、§4.12；等待本批验收。
 20. 运行时留给后续任务的部分（§2.14—§2.16 的“未覆盖”）：
     - 应用的静默与切换、界面上的重试与回滚、版本历史与保留：T3-06；
@@ -1458,4 +1753,8 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 22. T2 之前：约定运行单元异常信息的脱敏方式。监督者把单元异常的说明（截断到 500 字）原样写入日志与运行事件；T1 的单元不含秘密，协议适配器的异常可能带地址、账户等信息（审查低-6）。
 23. T1-04 前置复核已处理：`DeliveryWriteResult.Status` 区分提交、入库数据拒绝、存储失败与停止。插入约束错误只拒绝该请求，删除失败按存储故障回滚；分发器保留一组稳定编号只重试明确回滚的入库请求，见 §2.17。
 
-24. 本次停止点为 T1-04，T1-05—T1-08 未分派。T1-01—T1-03 和 T1-04 均未提交或推送；实际 GitHub Actions 报告仍缺失。
+24. 上次停止点为 T1-06，实现与验证见 §2.19、§4.14。此后维护者授权从 T1-07 继续至可视化访问，本轮证据见 §2.20—§2.23；尚未达到可视化访问目标。T1-01—T1-04 本地提交为 `c97521d`，后续改动留在工作区，未提交/推送；实际 GitHub Actions 报告仍缺失。
+
+### 本地提交整理（2026-10-08）
+
+维护者授权“整理提交一下未提交的，然后继续”。将截至 §2.23 的 T1-05—T1-08、T2-01 子项及 T2-05 固定字段定位整理为本地检查点；因共享存储、注册和测试改动交织，保留为一个已整体回归的提交，不人为拆出不可构建的中间态。验证基线为 890 项通过；本地 Agent 会话文件不入库，未获推送授权，不推送。后续继续实现不等于本检查点宣称 T2 或网页验收完成。

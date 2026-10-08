@@ -63,48 +63,58 @@ internal sealed class SimulatorInputUnit(RuntimeUnitId id, SimulatorSettings set
     /// <summary>读取一次并写入通道。返回 true 表示等待空位时已经到了下一个周期（计时器的这一次已被消耗）。</summary>
     private async Task<bool> ReadOnceAsync(SimulatorSequence sequence, PeriodicTimer timer, CancellationToken stoppingToken)
     {
+        // 先预约，再构造读取结果/不可变消息。预算不足期间不会分配解析后的采样数据。
+        // 样本字符串来自不可变配置；仍保守计入 4 份值/树节点及故障注入临时集合。
+        var maximumBytes = 8192L + 8L * (context.InputKey.Length + context.DeviceKey.Length)
+            + (settings.Sample?.Sum(field => 512L + 8L * field.Key.Length + 4L * field.Value.BudgetBytes) ?? 8192L);
+        using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var consumedTick = false;
+        try
+        {
+            var write = context.Messages.ProduceAsync(maximumBytes,
+                _ => ValueTask.FromResult(CreateMessage(sequence)), giveUp.Token).AsTask();
+            if (write.IsCompleted)
+            {
+                await write;
+                return false;
+            }
+
+            // 额度或通道满：最多等待到下一个周期；取消后必须等回调/写入真正退出才释放额度。
+            var nextCycle = timer.WaitForNextTickAsync(stoppingToken).AsTask();
+            consumedTick = true;
+            await Task.WhenAny(write, nextCycle);
+            if (!write.IsCompletedSuccessfully)
+            { await giveUp.CancelAsync(); }
+            bool written;
+            try
+            { written = await CompletedAsync(write); }
+            finally { await nextCycle; }
+            if (!written)
+            { context.Reads.CycleSkipped(context.Time.GetUtcNow()); }
+            return true;
+        }
+        catch (InputMessageSizeException)
+        {
+            context.Reads.ReadFailed(context.Time.GetUtcNow(), "输入消息超过在途字节预算。", InputReadFailureKind.DataError);
+            return consumedTick;
+        }
+    }
+
+    private EdgeMessage? CreateMessage(SimulatorSequence sequence)
+    {
         var reading = sequence.Next();
         var completedAt = context.Time.GetUtcNow();
         if (reading.IsConnectionError)
         {
             context.Reads.ReadFailed(completedAt, ConnectionErrorReason);
-            return false;
+            return null;
         }
 
         var message = new EdgeMessage(
-            Guid.CreateVersion7(completedAt),
-            context.InputKey,
-            context.DeviceKey,
-            completedAt,
-            context.GatewayTimeSource,
-            completedAt,
-            reading.Values,
-            reading.Quality);
+            Guid.CreateVersion7(completedAt), context.InputKey, context.DeviceKey, completedAt,
+            context.GatewayTimeSource, completedAt, reading.Values, reading.Quality);
         context.Reads.ReadCompleted(completedAt, reading.Quality.Count);
-        if (context.Messages.TryWrite(message))
-        {
-            return false;
-        }
-
-        // 通道满：等空位，最多等到下一个周期开始。
-        using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        var write = context.Messages.WriteAsync(message, giveUp.Token).AsTask();
-        var nextCycle = timer.WaitForNextTickAsync(stoppingToken).AsTask();
-        if (await Task.WhenAny(write, nextCycle) == write && write.IsCompletedSuccessfully)
-        {
-            await nextCycle;
-            return true;
-        }
-
-        await giveUp.CancelAsync();
-        var written = await CompletedAsync(write);
-        await nextCycle;
-        if (!written)
-        {
-            context.Reads.CycleSkipped(context.Time.GetUtcNow());
-        }
-
-        return true;
+        return message;
     }
 
     private static async Task<bool> CompletedAsync(Task write)

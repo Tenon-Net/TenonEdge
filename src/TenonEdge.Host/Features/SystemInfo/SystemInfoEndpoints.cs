@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using TenonEdge.Abstractions.Contracts;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Security;
@@ -10,7 +11,7 @@ namespace TenonEdge.Host.Features.SystemInfo;
 /// 系统信息（system 分组，总设计 §10.1；功能需求 §10.1）：只读状态查询，所有角色可查看。
 /// 返回目前已有数据的项目：版本、NodeId、网关名称、数据目录及其所在文件系统的空间、HTTPS 证书指纹与到期时间、
 /// 实际加载的 SQLite 版本与编译选项（V-07）、首次设置的时间与来源 IP（总设计 §10.3）、阻止运行时启动的原因（总设计 §2.3）。
-/// 时钟同步状态随 T1-07 的校时检测提供。
+/// 时钟同步状态来自只读内核检测，无法判断时为 unknown。
 /// </summary>
 internal static class SystemInfoEndpoints
 {
@@ -32,7 +33,8 @@ internal static class SystemInfoEndpoints
         HttpsCertificateStore certificates,
         ConfigStoreInitializer configStore,
         ConfigDatabase database,
-        RuntimeStartConditions runtimeStartConditions)
+        RuntimeStartConditions runtimeStartConditions,
+        IClockSyncStatus clock)
     {
         var state = database.Client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
         var certificate = certificates.Certificate;
@@ -52,7 +54,8 @@ internal static class SystemInfoEndpoints
             state.SetupCompletedAt is { } completedAt
                 ? new FirstSetupInfo(DateTimeOffset.FromUnixTimeMilliseconds(completedAt), state.SetupSourceIp)
                 : null,
-            runtimeStartConditions.Blockers));
+            runtimeStartConditions.Blockers,
+            clock.State));
     }
 
     /// <summary>数据目录所在文件系统的空间；无法读取时为空，不让整个系统信息失败。</summary>
@@ -80,7 +83,8 @@ internal sealed record SystemInfoResponse(
     HttpsCertificateInfo HttpsCertificate,
     ConfigStoreInfo ConfigStore,
     FirstSetupInfo? FirstSetup,
-    IReadOnlyList<RuntimeStartBlocker> RuntimeStartBlockers);
+    IReadOnlyList<RuntimeStartBlocker> RuntimeStartBlockers,
+    ClockSyncState ClockSyncState);
 
 /// <summary>文件系统空间（字节）；可用空间为非特权进程可用的部分。</summary>
 internal sealed record DiskSpaceInfo(long TotalBytes, long AvailableBytes);

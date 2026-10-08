@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using TenonEdge.Abstractions.Messages;
 
 namespace TenonEdge.Abstractions.Contracts;
@@ -18,7 +17,7 @@ public sealed class InputUnitContext
         TimeProvider time,
         IClockSyncStatus clock,
         IInputReadReporter reads,
-        ChannelWriter<EdgeMessage> messages)
+        InputMessageWriter messages)
     {
         BusinessKeys.Validate(deviceKey, nameof(deviceKey));
         BusinessKeys.Validate(inputKey, nameof(inputKey));
@@ -57,5 +56,5 @@ public sealed class InputUnitContext
     /// 本输入的有界通道（总设计 §8.1、§8.7）。满时轮询类输入等待，到本周期截止仍无空位则跳过本周期并上报 overrun，
     /// 不在单元内另建缓冲。
     /// </summary>
-    public ChannelWriter<EdgeMessage> Messages { get; }
+    public InputMessageWriter Messages { get; }
 }

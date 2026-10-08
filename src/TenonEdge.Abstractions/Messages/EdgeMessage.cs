@@ -95,6 +95,11 @@ public sealed class EdgeMessage
     /// <summary>bad 的字段及原因码。</summary>
     public ImmutableSortedDictionary<string, QualityCode> Quality { get; }
 
+    /// <summary>解析后消息的预算大小，计入文本和值及字典节点的保守开销。</summary>
+    public long BudgetBytes => 256L + 2L * (InputId.Length + DeviceKey.Length)
+        + Values.Sum(entry => 128L + 2L * entry.Key.Length + entry.Value.BudgetBytes)
+        + Quality.Sum(entry => 128L + 2L * entry.Key.Length);
+
     private static void RequireUtc(DateTimeOffset value, string parameterName)
     {
         if (value.Offset != TimeSpan.Zero)

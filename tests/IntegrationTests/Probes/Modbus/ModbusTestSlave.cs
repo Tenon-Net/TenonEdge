@@ -73,7 +73,9 @@ internal sealed class ModbusTestSlave : IAsyncDisposable
         _behavior = behavior;
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
-        _acceptLoop = AcceptAsync(_stopping.Token);
+        // 模拟从站是独立对端，不能捕获客户端测试的同步上下文。
+        // 否则同步 Read 占住上下文时，从站的 Accept/Read continuation 无法运行，制造假超时。
+        _acceptLoop = Task.Run(() => AcceptAsync(_stopping.Token));
     }
 
     public IPEndPoint Endpoint => (IPEndPoint)_listener.LocalEndpoint;

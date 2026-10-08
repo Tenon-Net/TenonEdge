@@ -22,6 +22,19 @@ public sealed class DeliveryCacheOptions
     /// <summary>等待写者处理的请求数上限；满时提交请求的一方等待（背压），不在内存中无限堆积。</summary>
     public int RequestQueueCapacity { get; init; } = 1024;
 
+    /// <summary>失败区独立条数上限；初始值，非容量承诺。</summary>
+    public int MaximumFailedPerTarget { get; init; } = 100;
+    public int MaximumFailedGlobal { get; init; } = 1000;
+    public TimeSpan FailedRetention { get; init; } = TimeSpan.FromDays(7);
+
+    public long MinimumDiskFreeBytes { get; init; } = 500_000_000;
+    public double MinimumDiskFreeFraction { get; init; } = 0.05;
+
+    public int MaximumPendingPerTarget { get; init; } = 10000;
+    public long MaximumPendingBytesPerTarget { get; init; } = 64L * 1024 * 1024;
+    public long MaximumQueueBytes { get; init; } = 256L * 1024 * 1024;
+    public TimeSpan PendingRetention { get; init; } = TimeSpan.FromHours(24);
+
     /// <summary>检查参数，不合理时抛出异常。</summary>
     public DeliveryCacheOptions Validate()
     {
@@ -34,6 +47,21 @@ public sealed class DeliveryCacheOptions
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(CommitInterval, TimeSpan.Zero, nameof(CommitInterval));
         ArgumentOutOfRangeException.ThrowIfLessThan(MaximumRecordsPerCommit, 1, nameof(MaximumRecordsPerCommit));
         ArgumentOutOfRangeException.ThrowIfLessThan(RequestQueueCapacity, 1, nameof(RequestQueueCapacity));
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaximumFailedPerTarget, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaximumFailedGlobal, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(FailedRetention, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(FailedRetention, TimeSpan.FromDays(3650));
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaximumPendingPerTarget, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaximumPendingBytesPerTarget, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaximumQueueBytes, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(PendingRetention, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(PendingRetention, TimeSpan.FromDays(3650));
+        ArgumentOutOfRangeException.ThrowIfNegative(MinimumDiskFreeBytes);
+        if (!double.IsFinite(MinimumDiskFreeFraction) || MinimumDiskFreeFraction is < 0 or >= 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MinimumDiskFreeFraction));
+        }
+
         return this;
     }
 }

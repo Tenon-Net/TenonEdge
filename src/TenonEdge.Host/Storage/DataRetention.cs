@@ -1,4 +1,5 @@
 using System.Globalization;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Storage.Ids;
 
@@ -54,14 +55,19 @@ internal sealed record DataRetentionSettings(TimeSpan AuditRetention)
 /// <see cref="ClockBehindTolerance"/>。写入时时钟落后的记录，保存的时间过早，而逻辑时间戳只是真实时间的下限，
 /// 两者都无法说明记录有多旧，这类记录不按保留期删除；运行事件仍受 1 万条上限约束。</item>
 /// </list>
-/// 时钟被错误地调快时无法据此识别，见 docs/implementation-status.md §2.9。
+/// 清理时还要求内核报告同步，且墙上时间相对启动时的单调时间推算未跳变超过一小时。
+/// 不能证明时间可信时暂停按时间清理，但运行事件仍受条数上限约束。
 /// </summary>
 internal sealed partial class DataRetentionService(
     ConfigDatabase database,
     DataRetentionSettings settings,
     TimeProvider time,
+    IClockSyncStatus clock,
     ILogger<DataRetentionService> logger) : BackgroundService
 {
+    private readonly DateTimeOffset _startedAt = time.GetUtcNow();
+    private readonly long _startedTimestamp = time.GetTimestamp();
+    private bool _timePurgeSuspended;
     public static readonly TimeSpan Interval = TimeSpan.FromHours(1);
 
     /// <summary>
@@ -75,8 +81,18 @@ internal sealed partial class DataRetentionService(
     public (int AuditRecords, int RuntimeEvents) PurgeExpired()
     {
         var now = time.GetUtcNow();
-        var auditBefore = Cutoff(now, settings.AuditRetention);
-        var eventsBefore = Cutoff(now, DataRetentionSettings.RuntimeEventRetention);
+        // 用时差相减而非 DateTimeOffset 加法，避免极端日期附近加上运行时长溢出。
+        var divergence = (now - _startedAt) - time.GetElapsedTime(_startedTimestamp);
+        var trustworthy = clock.State == ClockSyncState.Synchronized
+            && divergence.Duration() <= ClockBehindTolerance;
+        if (_timePurgeSuspended == trustworthy)
+        {
+            _timePurgeSuspended = !trustworthy;
+            LogTimeProtection(logger, _timePurgeSuspended);
+        }
+
+        var auditBefore = trustworthy ? Cutoff(now, settings.AuditRetention) : DateTimeOffset.MinValue;
+        var eventsBefore = trustworthy ? Cutoff(now, DataRetentionSettings.RuntimeEventRetention) : DateTimeOffset.MinValue;
 
         var audit = DeleteInBatches(
             $"""
@@ -160,4 +176,7 @@ internal sealed partial class DataRetentionService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "按保留期清理审计记录与运行事件失败，下次定时清理时重试：{Reason}")]
     private static partial void LogPurgeFailed(ILogger logger, string reason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "日志保留期时钟保护状态变化：暂停按时间清理 {Suspended}；运行事件条数上限仍生效。")]
+    private static partial void LogTimeProtection(ILogger logger, bool suspended);
 }

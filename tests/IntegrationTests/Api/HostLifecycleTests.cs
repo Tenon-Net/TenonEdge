@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
@@ -97,7 +98,8 @@ public sealed class HostLifecycleTests(ITestOutputHelper output)
         }
 
         var capture = new LogCapture();
-        await using var baseFactory = new FixedDataDirectoryApplicationFactory(dataDirectory.Path);
+        await using var baseFactory = new FixedDataDirectoryApplicationFactory(dataDirectory.Path,
+            configureServices: services => services.AddSingleton<IClockSyncStatus>(new TestClockSyncStatus()));
         await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureLogging(logging => logging.AddProvider(capture)));
         using var client = factory.CreateClient();
 

@@ -12,6 +12,7 @@ public interface IOutputTarget
     string ClientId { get; }
     string Recipient { get; }
     string CredentialVersion { get; }
+    string CurrentFingerprint { get; }
     OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId);
     IOutputAdapter CreateAdapter();
 }
@@ -26,7 +27,13 @@ public sealed record OutputMessage(ReadOnlyMemory<byte> Payload, string Address,
 
 public enum OutputSendStatus { Ack, Retry, RejectMessage, SuspendTarget }
 
-public sealed record OutputSendResult(OutputSendStatus Status, string? Error = null);
+/// <summary>错误说明必须为不含凭证/原始响应正文的安全文本。只有明确的非临时失败才计入毒消息次数。</summary>
+public sealed record OutputSendResult(
+    OutputSendStatus Status,
+    string? Error = null,
+    bool CountsTowardPoison = false,
+    TimeSpan? RetryAfter = null,
+    bool FingerprintMismatch = false);
 
 public interface IOutputAdapterFactory
 {

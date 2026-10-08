@@ -14,6 +14,81 @@ public sealed class StandardEnvelopeTests
     private static readonly Guid DeliveryId = Guid.Parse("a4b5e193-090d-4a88-8d19-5b6b7d21f053");
     private static readonly DateTimeOffset At = new(2026, 9, 28, 8, 30, 0, 123, TimeSpan.Zero);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExactPayloadLimitIsAcceptedAndOneMoreByteIsRejected(bool escaped)
+    {
+        var overhead = StandardEnvelope.Serialize(TextMessage("value", ""), DeliveryId).Length;
+        var available = StandardEnvelope.MaximumPayloadBytes - overhead;
+        var text = escaped ? new string('\u0001', available / 6) + new string('a', available % 6)
+            : new string('a', available);
+        var payload = StandardEnvelope.Serialize(TextMessage("value", text), DeliveryId);
+        Assert.Equal(StandardEnvelope.MaximumPayloadBytes, payload.Length);
+        using var document = JsonDocument.Parse(payload);
+        Assert.Equal(text, document.RootElement.GetProperty("values").GetProperty("value").GetString());
+        Assert.Throws<ArgumentException>(() => StandardEnvelope.Serialize(TextMessage("value", text + "a"), DeliveryId));
+    }
+
+    [Fact]
+    public void LongLegalPropertyNameIsNotRejectedByWorstCaseSizeHint()
+    {
+        var overhead = StandardEnvelope.Serialize(TextMessage("k", ""), DeliveryId).Length - 1;
+        var name = new string('k', StandardEnvelope.MaximumPayloadBytes - overhead);
+        var payload = StandardEnvelope.Serialize(TextMessage(name, ""), DeliveryId);
+        Assert.Equal(StandardEnvelope.MaximumPayloadBytes, payload.Length);
+        using var document = JsonDocument.Parse(payload);
+        Assert.Equal("", document.RootElement.GetProperty("values").GetProperty(name).GetString());
+        Assert.Throws<ArgumentException>(() => StandardEnvelope.Serialize(TextMessage(name + "k", ""), DeliveryId));
+    }
+
+    [Theory]
+    [InlineData("😀")]
+    [InlineData("\ud800")]
+    [InlineData("\udc00")]
+    [InlineData("中文\\\"\n")]
+    public void SegmentEdgesPreserveDefaultJsonEscaping(string middle)
+    {
+        var text = new string('x', 511) + middle + new string('y', 1030);
+        using var document = JsonDocument.Parse(StandardEnvelope.Serialize(TextMessage("value", text), DeliveryId));
+        Assert.Equal(JsonSerializer.Serialize(text), document.RootElement.GetProperty("values").GetProperty("value").GetRawText());
+    }
+
+    [Fact]
+    public void HugeTokensAreRejectedBeforeAllocatingEncodingBuffers()
+    {
+        var huge = new string('x', 4 * 1024 * 1024);
+        foreach (var message in new[] { TextMessage("value", huge), TextMessage(huge, "") })
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            Assert.Throws<ArgumentException>(() => StandardEnvelope.Serialize(message, DeliveryId));
+            Assert.InRange(GC.GetAllocatedBytesForCurrentThread() - before, 0, 64 * 1024);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 'a', 32)]
+    [InlineData(false, 'a', 262000)]
+    [InlineData(false, '<', 262000)]
+    [InlineData(false, '\ud800', 262000)]
+    [InlineData(true, 'a', 262000)]
+    [InlineData(true, '<', 262000)]
+    [InlineData(true, '\ud800', 262000)]
+    public void AcceptedAndRejectedEncodingAllocationsStayWithinReservation(bool propertyName, char character, int length)
+    {
+        var text = new string(character, length);
+        var message = propertyName ? TextMessage(text, "") : TextMessage("value", text);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        try { _ = StandardEnvelope.Serialize(message, DeliveryId); }
+        catch (ArgumentException) { /* 包含实际转义后超限的拒绝路径。 */ }
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.InRange(allocated, 1, StandardEnvelope.SerializationReservationBytes(message.BudgetBytes));
+    }
+
+    private static EdgeMessage TextMessage(string name, string value) =>
+        new(SourceMessageId, "simulated", "meter-001", At, TimeSource.Gateway, At,
+            new Dictionary<string, FieldValue> { [name] = FieldValue.FromString(value) });
+
     [Fact]
     public void EnvelopeMatchesThePlatformMessageStructure()
     {

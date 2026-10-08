@@ -16,9 +16,9 @@ namespace TenonEdge.Runtime.Deliveries;
 /// <item>表结构版本保存在 <c>PRAGMA user_version</c> 中，按版本顺序迁移；由更新版本的程序迁移过的库拒绝打开（不支持降级）。</item>
 /// </list>
 /// </summary>
-internal sealed class DeliveryStore
+internal sealed partial class DeliveryStore
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 4;
 
     public const string ExpectedJournalMode = "wal";
 
@@ -32,7 +32,7 @@ internal sealed class DeliveryStore
     private const string SelectColumns = """
         seq, delivery_id, connection_id, source_message_id, device_key, route_id, node_label, revision, payload,
         target_address, qos, headers, fingerprint, fingerprint_summary, created_at, failure_count, state,
-        quarantine_reason, last_error, migration_id
+        quarantine_reason, last_error, migration_id, failed_at, byte_size, clock_anomaly
         """;
 
     /// <summary>各版本的迁移语句；只追加，不修改已发布的版本。</summary>
@@ -70,6 +70,38 @@ internal sealed class DeliveryStore
         );
         CREATE INDEX ix_delivery_connection_state_seq ON delivery (connection_id, state, seq);
         """,
+        // 版本 2（T1-05）：失败区时间与按目标策略计数，全部由队列写者维护。
+        """
+        ALTER TABLE delivery ADD COLUMN failed_at INTEGER;
+        CREATE INDEX ix_delivery_failed_at ON delivery (failed_at) WHERE state = 'failed';
+        CREATE TABLE delivery_failure_totals (
+            connection_id INTEGER PRIMARY KEY,
+            rejected INTEGER NOT NULL DEFAULT 0,
+            poisoned INTEGER NOT NULL DEFAULT 0,
+            overflowed INTEGER NOT NULL DEFAULT 0,
+            expired INTEGER NOT NULL DEFAULT 0
+        );
+        """,
+        // 版本 3（T1-06）：隔离、配额与保留期核心。逻辑字节与 DeliveryDraft.ByteSize 一致。
+        """
+        ALTER TABLE delivery ADD COLUMN byte_size INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE delivery ADD COLUMN clock_anomaly INTEGER NOT NULL DEFAULT 0;
+        UPDATE delivery SET byte_size = length(payload) + 256 + length(CAST(device_key AS BLOB))
+            + length(CAST(COALESCE(node_label, '') AS BLOB)) + length(CAST(COALESCE(target_address, '') AS BLOB))
+            + length(CAST(fingerprint AS BLOB)) + length(CAST(fingerprint_summary AS BLOB))
+            + length(CAST(COALESCE(headers, '') AS BLOB));
+        CREATE TABLE delivery_queue_totals (
+            connection_id INTEGER PRIMARY KEY,
+            quota_rejected INTEGER NOT NULL DEFAULT 0,
+            expired INTEGER NOT NULL DEFAULT 0,
+            quarantined INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX ix_delivery_state_created ON delivery (state, created_at);
+        """,
+        // 版本 4（T1-07）：全局策略/运行计数，由唯一写者维护。
+        """
+        CREATE TABLE queue_counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL DEFAULT 0);
+        """,
     ];
 
     private readonly DeliveryCacheOptions _options;
@@ -79,10 +111,13 @@ internal sealed class DeliveryStore
     private readonly Lock _initializeLock = new();
     private DeliveryStoreInfo? _info;
 
-    public DeliveryStore(DeliveryCacheOptions options, TimeProvider time)
+    public DeliveryStore(DeliveryCacheOptions options, TimeProvider time, TenonEdge.Abstractions.Contracts.IRuntimeEventSink? events = null)
     {
         _options = options.Validate();
+        _events = events;
         _time = time;
+        _maintenanceStart = time.GetUtcNow();
+        _maintenanceTimestamp = time.GetTimestamp();
         _writeConnectionString = new SqliteConnectionStringBuilder
         {
             DataSource = options.DatabasePath,
@@ -122,26 +157,48 @@ internal sealed class DeliveryStore
                 return _info;
             }
 
-            CreateFileForOwnerOnly(_options.DatabasePath);
-            using var connection = Open(_writeConnectionString);
-            var version = Convert.ToString(Scalar(connection, "SELECT sqlite_version();"), CultureInfo.InvariantCulture) ?? string.Empty;
-            if (!Version.TryParse(version, out var parsed) || parsed < new Version(3, 51, 3))
+            FinishInterruptedRecovery();
+            try
             {
-                throw new DeliveryStoreException($"实际加载的 SQLite 原生库版本为 {version}，低于要求的 3.51.3，不打开发送缓存。");
+                return Initialize();
             }
-
-            var journalMode = Convert.ToString(Scalar(connection, "PRAGMA journal_mode = WAL;"), CultureInfo.InvariantCulture);
-            if (!string.Equals(journalMode, ExpectedJournalMode, StringComparison.OrdinalIgnoreCase))
+            catch (SqliteException exception) when (exception.SqliteErrorCode is 11 or 26)
             {
-                throw new DeliveryStoreException($"发送缓存无法启用 WAL 日志模式，当前为 {journalMode}。");
+                // 仅初始化时恢复确定的损坏；运行中的读写故障不能在活跃连接旁替换数据库。
+                BeginRecovery();
+                FinishInterruptedRecovery();
+                return Initialize();
             }
-
-            var settings = ApplySettings(connection);
-            var schemaVersion = Migrate(connection);
-            var configStoreId = EnsureMeta(connection);
-            _info = new DeliveryStoreInfo(_options.DatabasePath, version, settings.JournalMode, settings.Synchronous, schemaVersion, configStoreId);
-            return _info;
         }
+    }
+
+    private DeliveryStoreInfo Initialize()
+    {
+        CreateFileForOwnerOnly(_options.DatabasePath);
+        using var connection = Open(_writeConnectionString);
+        var version = Convert.ToString(Scalar(connection, "SELECT sqlite_version();"), CultureInfo.InvariantCulture) ?? string.Empty;
+        if (!Version.TryParse(version, out var parsed) || parsed < new Version(3, 51, 3))
+        {
+            throw new DeliveryStoreException($"实际加载的 SQLite 原生库版本为 {version}，低于要求的 3.51.3，不打开发送缓存。");
+        }
+
+        var journalMode = Convert.ToString(Scalar(connection, "PRAGMA journal_mode = WAL;"), CultureInfo.InvariantCulture);
+        if (!string.Equals(journalMode, ExpectedJournalMode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DeliveryStoreException($"发送缓存无法启用 WAL 日志模式，当前为 {journalMode}。");
+        }
+
+        var check = Convert.ToString(Scalar(connection, "PRAGMA quick_check(1);"), CultureInfo.InvariantCulture);
+        if (!string.Equals(check, "ok", StringComparison.Ordinal))
+        {
+            throw new SqliteException("发送缓存完整性检查失败。", 11);
+        }
+
+        var settings = ApplySettings(connection);
+        var schemaVersion = Migrate(connection);
+        var configStoreId = EnsureMeta(connection);
+        _info = new DeliveryStoreInfo(_options.DatabasePath, version, settings.JournalMode, settings.Synchronous, schemaVersion, configStoreId);
+        return _info;
     }
 
     /// <summary>打开写者使用的连接：显式设置并回读持久化参数，不符时抛出 <see cref="DeliveryStoreException"/>。</summary>
@@ -165,6 +222,9 @@ internal sealed class DeliveryStore
     /// 按 seq 顺序读取某个目标已提交的待发记录（短连接、短事务）。<paramref name="afterSeq"/> 是调用方已经读到的最大 seq，第一次读取传 0。
     /// </summary>
     public IReadOnlyList<StoredDelivery> ReadPending(long connectionId, long afterSeq, int limit)
+        => Read(connectionId, afterSeq, limit, DeliveryState.Pending);
+
+    internal IReadOnlyList<StoredDelivery> Read(long connectionId, long afterSeq, int limit, DeliveryState state, int? belowFailureCount = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
@@ -176,13 +236,16 @@ internal sealed class DeliveryStore
         command.CommandText = $"""
             SELECT {SelectColumns}
             FROM delivery
-            WHERE connection_id = $connectionId AND state = 'pending' AND seq > $afterSeq
+            WHERE connection_id = $connectionId AND state = $state AND seq > $afterSeq
+                AND ($below IS NULL OR failure_count < $below)
             ORDER BY seq
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$connectionId", connectionId);
         command.Parameters.AddWithValue("$afterSeq", afterSeq);
         command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$state", state == DeliveryState.Failed ? "failed" : state == DeliveryState.Quarantined ? "quarantined" : "pending");
+        command.Parameters.AddWithValue("$below", (object?)belowFailureCount ?? DBNull.Value);
         var records = new List<StoredDelivery>();
         using (var reader = command.ExecuteReader())
         {
@@ -220,6 +283,7 @@ internal sealed class DeliveryStore
         command.Parameters["$fingerprint"].Value = draft.Fingerprint;
         command.Parameters["$fingerprintSummary"].Value = draft.FingerprintSummary;
         command.Parameters["$createdAt"].Value = createdAt;
+        command.Parameters["$bytes"].Value = draft.ByteSize;
         return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
     }
 
@@ -230,15 +294,15 @@ internal sealed class DeliveryStore
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO delivery (delivery_id, connection_id, source_message_id, device_key, route_id, node_label, revision, payload,
-                target_address, qos, headers, fingerprint, fingerprint_summary, created_at)
+                target_address, qos, headers, fingerprint, fingerprint_summary, created_at, byte_size)
             VALUES ($deliveryId, $connectionId, $sourceMessageId, $deviceKey, $routeId, $nodeLabel, $revision, $payload,
-                $targetAddress, $qos, $headers, $fingerprint, $fingerprintSummary, $createdAt)
+                $targetAddress, $qos, $headers, $fingerprint, $fingerprintSummary, $createdAt, $bytes)
             RETURNING seq;
             """;
         foreach (var name in new[]
         {
             "$deliveryId", "$connectionId", "$sourceMessageId", "$deviceKey", "$routeId", "$nodeLabel", "$revision", "$payload",
-            "$targetAddress", "$qos", "$headers", "$fingerprint", "$fingerprintSummary", "$createdAt",
+            "$targetAddress", "$qos", "$headers", "$fingerprint", "$fingerprintSummary", "$createdAt", "$bytes",
         })
         {
             command.Parameters.Add(new SqliteParameter { ParameterName = name });
@@ -285,7 +349,10 @@ internal sealed class DeliveryStore
         },
         QuarantineReason: reader.IsDBNull(17) ? null : reader.GetString(17),
         LastError: reader.IsDBNull(18) ? null : reader.GetString(18),
-        MigrationId: reader.IsDBNull(19) ? null : reader.GetInt64(19));
+        MigrationId: reader.IsDBNull(19) ? null : reader.GetInt64(19),
+        FailedAt: reader.IsDBNull(20) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(20)),
+        ByteSize: reader.GetInt64(21),
+        ClockAnomaly: reader.GetInt64(22) != 0);
 
     private static SqliteConnection Open(string connectionString)
     {
@@ -358,6 +425,17 @@ internal sealed class DeliveryStore
         command.Parameters.Clear();
         command.CommandText = "SELECT config_store_id FROM queue_meta WHERE id = 1;";
         var stored = Convert.ToString(command.ExecuteScalar(), CultureInfo.InvariantCulture) ?? string.Empty;
+        if (stored != _options.ConfigStoreId)
+        {
+            QuarantineWhere(connection, transaction, "state IN ('pending', 'failed')", DeliveryQuarantineReasons.ConfigStoreChanged);
+            command.CommandText = "UPDATE delivery SET quarantine_reason = 'configStoreChanged' WHERE state = 'quarantined'";
+            command.ExecuteNonQuery();
+            command.Parameters.AddWithValue("$configStoreId", _options.ConfigStoreId);
+            command.CommandText = "UPDATE queue_meta SET config_store_id = $configStoreId WHERE id = 1";
+            command.ExecuteNonQuery();
+            stored = _options.ConfigStoreId;
+        }
+
         transaction.Commit();
         return stored;
     }
