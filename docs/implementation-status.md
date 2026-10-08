@@ -1754,6 +1754,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-executor' --results-directory /tmp/tenonedge-modbus-executor --blame-hang-timeout 5m --blame-hang-dump-type none`：**867 单元 + 681 集成 = 1548 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-executor-full.log`。本次文件经限定 `--include` 的 `dotnet format` 格式化，`git diff --check` 通过。
 - 本项不包含 UnitId 范围、NModbus 正式依赖、帧匹配/静默排空、从站快速失败/退避与公平调度；这些仍须继续实现。环境沿用 §2.68。
 
+### 2.72 T2-02 RTU 超时静默窗口子项（2026-10-09）
+
+- 新增独立的 RTU 接收排空函数，固定 256 字节缓冲，使用注入 TimeProvider 的单次静默窗口；丢弃窗口内全部收到的字节，不因持续输入无限续期，不启动第二个并发读取。
+- 为同时满足 §6.1 的静默要求及其他从站额外等待上界，采用保守复用规则：完整窗口未见字节才允许继续使用该连接；窗口中见到字节则返回“需立即更换连接”，不额外延长一个窗口。EOF 同样不得复用。实际重连由会话执行，本函数不设置连接退避、不改变其他从站状态；当前尚未接入正式会话。
+- 等待底层 ReadAsync 实际结束，不能用 WhenAny 超时返回后留下一个会偷走下一应答的旧读取。外部取消必须向上传播，不能作为“已静默”吞掉；不合作 Stream 会使函数保持未完成，不能谎报满足停止期限。
+- AT-02 / V-05 子场景：4 项单元覆盖连续输入的 500ms 固定窗口/缓冲、EOF/非法参数/取消、取消不合作读取的所有权、进行中的外部取消；2 项真实回环 TCP 测试覆盖完整旧 RTU 帧丢弃、静默后的连接复用及下一响应不被旧读取窃取。仍不是 NModbus 正式会话、全迟到帧矩阵或实物验证。
+- 首轮聚焦测试 1 单元失败：误把 FakeTimeProvider 时间戳 0 当起点；改为读取测试开始时的时间戳，不改产品计时。日志 `/tmp/tenonedge-modbus-drain-focused.log` 保留。新增取消所有权测试后，`dotnet test TenonEdge.sln -c Release --no-restore --filter FullyQualifiedName~ModbusRtuDrainTests`：4 单元 + 2 集成通过（`/tmp/tenonedge-modbus-drain-focused2.log`）。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-drain' --results-directory /tmp/tenonedge-modbus-drain --blame-hang-timeout 5m --blame-hang-dump-type none`：**871 单元 + 683 集成 = 1554 通过，0 失败、0 跳过**；日志 `/tmp/tenonedge-modbus-drain-full.log`，TRX Counters 已核对。限定这三个 C# 文件的 `dotnet format --no-restore --include …` 完成，`git diff --check` 通过。
+- 环境同 §2.68。UnitId 和协议库采用仍待维护者确认，不擅自定稿；后续继续会话接入与 UnitId 调度。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
