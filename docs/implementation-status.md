@@ -1829,6 +1829,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-acl' --results-directory /tmp/tenonedge-broker-acl --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 696 集成 = 1576 项测试断言通过，0 失败、0 跳过**，仍包含 §2.77 的已知缺口刻画，不代表该风险已解决。TRX Counters 已核对，日志 `/tmp/tenonedge-broker-acl-full.log`。限定修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 与 `git diff --check` 通过。
 - 适用范围为附带接入 Broker 的只读网关账号；外部 Broker 上需要输入/输出共用连接时，账号权限须与实际用途对应，不把此测试配置机械套到所有连接。环境同 §2.76。
 
+### 2.80 T2-03 / T2-08 真实 Broker 载荷边界与原始缓冲释放（2026-10-09）
+
+- QoS 0/1 各自经真实 Mosquitto → 正式 MqttSession → MqttReceiveBuffer → MqttInputReceiver，发送恰好 1 MiB、1 MiB + 1 字节和 1 字节屏障。绑定只接到第一条及屏障，超限条恰好计 oversized 一次；QoS 1 三条按处理策略均确认，QoS 0 无确认。
+- 采用产品相同的 64 MiB 总额度 / 8 MiB 原始缓冲分区，验证峰值包含大载荷预约、从未超过原始分区、处理后全部释放；没有 bufferDropped/bufferFull、没有 wireOversized 或接管故障，连接仍可用且未重建。
+- 这是 MQTT 载荷大小/确认/预约释放子场景，不是 JSON 解码、SQLite 接管或 RSS 验收：测试绑定返回 Rejected，使用任意二进制载荷验证 MQTT 层，不把它当成有效 JSON 入库证据。
+- 聚焦命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~BrokerPayloadBoundaryIsCountedWithoutPoisoningBufferedConnection`：2 项通过，日志 `/tmp/tenonedge-mqtt-payload-boundary.log`。
+- 会话类回归：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MqttInputSessionTests --logger 'trx;LogFilePrefix=mqtt-payload' --results-directory /tmp/tenonedge-mqtt-payload --blame-hang-timeout 5m --blame-hang-dump-type none`：**36 项断言通过，0 失败、0 跳过**，含 §2.77 已知缺口刻画；日志 `/tmp/tenonedge-mqtt-payload-session.log`，TRX Counters 已核对。只改测试，本轮未重跑整套解决方案，最近全量基线见 §2.79。限定修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 和 `git diff --check` 通过。
+- 环境同 §2.76；本批只新增测试，不改变 1 MiB 输入上限或原始缓冲算法。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

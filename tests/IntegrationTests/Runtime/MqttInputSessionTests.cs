@@ -984,6 +984,49 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal($"{A}:a,{B}:b,{A}:barrier", string.Join(',', values));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task BrokerPayloadBoundaryIsCountedWithoutPoisoningBufferedConnection(int qos)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("payload-boundary");
+        var sizes = new ConcurrentQueue<long>();
+        var reports = new ConcurrentQueue<string>();
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var budget = new TenonEdge.Runtime.Diagnostics.InFlightBudget(64L * 1024 * 1024, 8L * 1024 * 1024);
+        var receiver = new MqttInputReceiver([new(topic, qos, (message, _) =>
+        {
+            sizes.Enqueue(message.Payload.Length);
+            if (message.Payload.Length == 1) { barrier.TrySetResult(); }
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        })], TimeProvider.System, reports.Enqueue, bufferBudget: budget);
+        var connector = new CountingConnector();
+        await using var session = new MqttSession(Settings(broker), NewId(), new Credentials(), TimeProvider.System, connector, receiver);
+        using var deadline = MqttProbe.Timeout(Token);
+        Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (publisher)
+        {
+            await MqttProbe.PublishAsync(publisher, topic, new byte[MqttInputReceiver.MaximumPayloadBytes], (MqttQualityOfServiceLevel)qos, deadline.Token);
+            await MqttProbe.PublishAsync(publisher, topic, new byte[MqttInputReceiver.MaximumPayloadBytes + 1], (MqttQualityOfServiceLevel)qos, deadline.Token);
+            await MqttProbe.PublishAsync(publisher, topic, [1], (MqttQualityOfServiceLevel)qos, deadline.Token);
+        }
+        await barrier.Task.WaitAsync(deadline.Token);
+        await OutputPipelineTests.UntilAsync(() => budget.Status.ReservedBytes == 0 &&
+            (qos == 0 || reports.Count(reason => reason == "acknowledged") == 3));
+        Assert.Equal($"{MqttInputReceiver.MaximumPayloadBytes},1", string.Join(',', sizes));
+        Assert.Single(reports, reason => reason == "oversized");
+        Assert.Equal(qos == 1 ? 3 : 0, reports.Count(reason => reason == "acknowledged"));
+        Assert.DoesNotContain("wireOversized", reports);
+        Assert.DoesNotContain("handoffFailed", reports);
+        Assert.DoesNotContain("bufferDropped", reports);
+        Assert.DoesNotContain("bufferFull", reports);
+        Assert.True(session.IsConnected);
+        Assert.Equal(1, connector.Connections);
+        Assert.InRange(budget.Status.PeakReservedBytes, 3L * MqttInputReceiver.MaximumPayloadBytes, budget.BufferCapacity);
+    }
+
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
     { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
     private static string NewId() => "input-session-" + Guid.NewGuid().ToString("N");
