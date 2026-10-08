@@ -16,6 +16,9 @@ public interface IInputReadReporter
 
     /// <summary>本周期因通道满到截止仍无空位而跳过，计一次 overrun（总设计 §8.1、§8.5）。</summary>
     void CycleSkipped(DateTimeOffset skippedAt);
+
+    /// <summary>显式映射的时间无效，本条回退到 receivedAt；不改变字段质量或整组读取健康，不记录外部值。</summary>
+    void UpstreamTimeInvalid();
 }
 
 /// <summary>读取失败原因分类；数据/配置错误与传输、设备读取错误分开计数。</summary>

@@ -152,5 +152,20 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(10, "http_credentials", [
+            """
+            CREATE TABLE http_credential (
+                connection_id INTEGER NOT NULL PRIMARY KEY,
+                recipient TEXT NOT NULL,
+                kind INTEGER NOT NULL CHECK (kind BETWEEN 0 AND 3),
+                username TEXT,
+                name TEXT,
+                protected_secret TEXT,
+                account_marker TEXT NOT NULL,
+                version TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

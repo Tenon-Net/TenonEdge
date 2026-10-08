@@ -58,6 +58,8 @@ public sealed class RuntimeCounterTests
             reads.ReadFailed(DateTimeOffset.UtcNow, "oversize", InputReadFailureKind.DataError);
             Assert.Equal(1, reads.Snapshot().DataRejected);
             reads.CycleSkipped(DateTimeOffset.UtcNow);
+            reads.UpstreamTimeInvalid();
+            reads.UpstreamTimeInvalid();
             // 无投递请求；应由空闲写者最长 10 秒的周期落盘，而非查询触发写入。
             await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetPersistentCounters()
                 .GetValueOrDefault("input/meter/sim/overruns") == 1);
@@ -75,6 +77,7 @@ public sealed class RuntimeCounterTests
             Assert.Equal(1, stored["input/meter/sim/readErrors"]);
             Assert.Equal(1, stored["input/meter/sim/dataRejected"]);
             Assert.Equal(1, stored["input/meter/sim/overruns"]);
+            Assert.Equal(2, stored["input/meter/sim/invalidUpstreamTimes"]);
         }
         finally { reopened.Store.ClearReadPool(); }
     }

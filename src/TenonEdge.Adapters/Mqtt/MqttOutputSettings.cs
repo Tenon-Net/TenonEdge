@@ -25,6 +25,8 @@ public sealed record MqttOutputSettings
     public int Qos { get; init; } = 1;
     public int TimeoutMs { get; init; } = 5000;
     public int PingIntervalMs { get; init; } = 15000;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement Mapping { get; init; }
     public string? ClientId { get; init; }
     public string[] Inputs { get; init; } = [];
 

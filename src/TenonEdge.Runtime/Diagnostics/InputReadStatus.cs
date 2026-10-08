@@ -35,6 +35,7 @@ public sealed class InputReadStatus : IInputReadReporter
     private long _readsFailed;
     private long _dataRejected;
     private long _cyclesSkipped;
+    private long _invalidUpstreamTimes;
 
     public InputReadStatus(string deviceKey, string inputKey, IRuntimeEventSink events)
         : this(deviceKey, inputKey, events, null) { }
@@ -128,6 +129,15 @@ public sealed class InputReadStatus : IInputReadReporter
         }
     }
 
+    public void UpstreamTimeInvalid()
+    {
+        lock (_lock)
+        {
+            _invalidUpstreamTimes++;
+            _counters?.Add(_counterPrefix + "invalidUpstreamTimes");
+        }
+    }
+
     public InputReadSnapshot Snapshot()
     {
         lock (_lock)
@@ -149,7 +159,8 @@ public sealed class InputReadStatus : IInputReadReporter
                 _readsFailed,
                 _cyclesSkipped,
                 _lastSkippedAt,
-                _dataRejected);
+                _dataRejected,
+                _invalidUpstreamTimes);
         }
     }
 }
@@ -167,7 +178,8 @@ public sealed record InputReadSnapshot(
     long ReadsFailed,
     long CyclesSkipped,
     DateTimeOffset? LastSkippedAt,
-    long DataRejected);
+    long DataRejected,
+    long InvalidUpstreamTimes);
 
 /// <summary>数据来源的读取健康状况（功能需求 §7.2）。</summary>
 public enum InputReadHealth

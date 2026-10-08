@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text;
+using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 
@@ -63,11 +64,25 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         }
     }
 
+    public async Task<JsonDocument> ReadInputAsync(HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken)
+    {
+        var identity = credentials.DescribeHttp(settings.ConnectionId);
+        var credential = identity is null ? null : credentials.ResolveHttp(settings.ConnectionId, settings.BaseAddress);
+        if (identity is not null && (credential is null || credential.Identity != identity))
+        { throw new InvalidOperationException("HTTP 凭证不可用或正在变化。"); }
+        using var request = new HttpRequestMessage(HttpMethod.Get, settings.Endpoint);
+        foreach (var pair in settings.Headers)
+        { request.Headers.Add(pair.Key, pair.Value); }
+        if (credential is not null)
+        { ApplyCredential(request, credential); }
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        return await HttpInputResponse.ReadAsync(response, cancellationToken);
+    }
+
     private static void ApplyCredential(HttpRequestMessage request, HttpCredential credential)
     {
         var identity = credential.Identity;
-        if (credential.Secret.Length > 4096 || credential.Secret.IndexOfAny(['\r', '\n', '\0']) >= 0)
-        { throw new ArgumentException("HTTP 凭证无效。"); }
+        HttpCredentialValidation.Validate(identity.Kind, identity.Username, identity.Name, credential.Secret);
         switch (identity.Kind)
         {
             case HttpCredentialKind.Basic:

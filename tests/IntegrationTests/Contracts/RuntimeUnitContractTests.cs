@@ -200,6 +200,7 @@ public sealed class RuntimeUnitContractTests
 
     private sealed class RecordingReads : IInputReadReporter
     {
+        public void UpstreamTimeInvalid() { }
         public void ReadCompleted(DateTimeOffset completedAt, int failedFieldCount)
         {
         }

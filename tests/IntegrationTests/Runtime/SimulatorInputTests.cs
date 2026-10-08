@@ -235,6 +235,7 @@ public sealed class SimulatorInputTests
         public void ReadFailed(DateTimeOffset completedAt, string reason, InputReadFailureKind kind = InputReadFailureKind.ReadError) => inner.ReadFailed(completedAt, reason, kind);
 
         public void CycleSkipped(DateTimeOffset skippedAt) => inner.CycleSkipped(skippedAt);
+        public void UpstreamTimeInvalid() => inner.UpstreamTimeInvalid();
 
         public void Dispose() => _release.Dispose();
     }

@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.Runtime.Diagnostics;
 
@@ -17,6 +18,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     private Exception? _completionError;
     internal long OutputReservationBytes { get; set; }
     internal bool ReserveSerializationWorkspace { get; set; }
+    internal bool HasFieldMapping { get; set; }
 
     public BudgetedInputChannel(int capacity, InFlightBudget budget)
     {
@@ -33,7 +35,8 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
     internal ChannelReader<EdgeMessage> HoldingReader => _inner.Reader;
     private long Charge(long sourceBytes) => checked(sourceBytes + OutputReservationBytes
-        + (ReserveSerializationWorkspace ? StandardEnvelope.SerializationReservationBytes(sourceBytes) : 0));
+        + (HasFieldMapping ? FieldMapping.WorkingReservationBytes : 0)
+        + (ReserveSerializationWorkspace ? StandardEnvelope.SerializationReservationBytes(HasFieldMapping ? FieldMapping.MaximumResultBytes : sourceBytes) : 0));
     internal long Charge(EdgeMessage message) => Charge(message.BudgetBytes);
     internal void Release(EdgeMessage message) => _budget.Release(Charge(message));
 
@@ -41,21 +44,39 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     {
         // 通道声明 SingleWriter；失败的 TryWrite 记住所需大小，随后等待不会因“仅有通道空位”而忙转。
         private long _requiredBytes = 1;
-        public override async ValueTask ProduceAsync(long maximumBytes,
-            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default)
+        public override ValueTask ProduceAsync(long maximumBytes,
+            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default) =>
+            ProduceCoreAsync(maximumBytes, maximumBytes, produce, false, cancellationToken);
+
+        public override ValueTask ProduceAsync(long maximumWorkingBytes, long maximumMessageBytes,
+            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default) =>
+            ProduceCoreAsync(maximumWorkingBytes, maximumMessageBytes, produce, true, cancellationToken);
+
+        private async ValueTask ProduceCoreAsync(long maximumWorkingBytes, long maximumMessageBytes,
+            Func<CancellationToken, ValueTask<EdgeMessage?>> produce, bool capOutputPhase, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(produce);
-            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
-            var reserved = owner.Charge(maximumBytes);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumMessageBytes);
+            ArgumentOutOfRangeException.ThrowIfLessThan(maximumWorkingBytes, maximumMessageBytes);
+            if (maximumWorkingBytes > owner._budget.Capacity)
+            { throw new InputMessageSizeException("输入解析工作超过全局在途预算。"); }
+            var outputPhase = owner.Charge(maximumMessageBytes);
+            // 双上限允许保守结果上界超过总额度；预约总额度后按实际消息复核，而非拒绝所有小报文。
+            var reserved = Math.Max(maximumWorkingBytes, capOutputPhase ? Math.Min(outputPhase, owner._budget.Capacity) : outputPhase);
             await ReserveAsync(reserved, cancellationToken);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (owner._closed.Task.IsCompleted) { throw new ChannelClosedException(owner._completionError); }
+                if (owner._closed.Task.IsCompleted)
+                { throw new ChannelClosedException(owner._completionError); }
                 var message = await produce(cancellationToken);
-                if (message is null) { return; }
+                if (message is null)
+                { return; }
+                if (message.BudgetBytes > maximumMessageBytes)
+                { throw new InputMessageSizeException("输入消息超过结果大小上限。"); }
                 var charge = owner.Charge(message);
-                if (charge > reserved) { throw new InputMessageSizeException("实际输入消息超过预先声明的字节预算。"); }
+                if (charge > reserved)
+                { throw new InputMessageSizeException("实际输入消息超过预先声明的字节预算。"); }
                 if (charge < reserved)
                 {
                     owner._budget.Release(reserved - charge);
@@ -67,13 +88,15 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             }
             finally
             {
-                if (reserved > 0) { owner._budget.Release(reserved); }
+                if (reserved > 0)
+                { owner._budget.Release(reserved); }
             }
         }
 
         public override bool TryComplete(Exception? error = null)
         {
-            if (!owner._inner.Writer.TryComplete(error)) { return false; }
+            if (!owner._inner.Writer.TryComplete(error))
+            { return false; }
             owner._completionError = error;
             owner._closed.TrySetResult();
             return true;
@@ -84,8 +107,10 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             var bytes = owner.Charge(item);
             ValidateSize(bytes);
             _requiredBytes = bytes;
-            if (!owner._budget.TryReserve(bytes)) { return false; }
-            if (owner._inner.Writer.TryWrite(item)) { return true; }
+            if (!owner._budget.TryReserve(bytes))
+            { return false; }
+            if (owner._inner.Writer.TryWrite(item))
+            { return true; }
             owner._budget.Release(bytes);
             return false;
         }
@@ -94,13 +119,15 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
         {
             var bytes = owner.Charge(item);
             await ReserveAsync(bytes, cancellationToken);
-            try { await owner._inner.Writer.WriteAsync(item, cancellationToken); }
+            try
+            { await owner._inner.Writer.WriteAsync(item, cancellationToken); }
             catch { owner._budget.Release(bytes); throw; }
         }
 
         private void ValidateSize(long bytes)
         {
-            if (bytes > owner._budget.Capacity) { throw new InputMessageSizeException("输入消息及输出预留超过全局在途预算。"); }
+            if (bytes > owner._budget.Capacity)
+            { throw new InputMessageSizeException("输入消息及输出预留超过全局在途预算。"); }
         }
 
         private ValueTask ReserveAsync(long bytes, CancellationToken cancellationToken) =>
@@ -117,7 +144,8 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
                 await stop.CancelAsync();
             }
 
-            try { await reservation; }
+            try
+            { await reservation; }
             catch (OperationCanceledException) when (owner._closed.Task.IsCompleted && !cancellationToken.IsCancellationRequested)
             {
                 throw new ChannelClosedException(owner._completionError);
@@ -126,8 +154,10 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
         public override async ValueTask<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
         {
-            if (!await owner._inner.Writer.WaitToWriteAsync(cancellationToken)) { return false; }
-            try { await WaitForBudgetAsync(_requiredBytes, reserve: false, cancellationToken); }
+            if (!await owner._inner.Writer.WaitToWriteAsync(cancellationToken))
+            { return false; }
+            try
+            { await WaitForBudgetAsync(_requiredBytes, reserve: false, cancellationToken); }
             catch (ChannelClosedException) when (owner._closed.Task.IsCompleted)
             {
                 // 保持 ChannelWriter 的完成语义：正常关闭为 false，异常关闭传播原因。
@@ -144,7 +174,8 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
         public override Task Completion => owner._inner.Reader.Completion;
         public override bool TryRead([MaybeNullWhen(false)] out EdgeMessage item)
         {
-            if (!owner._inner.Reader.TryRead(out item)) { return false; }
+            if (!owner._inner.Reader.TryRead(out item))
+            { return false; }
             owner.Release(item);
             return true;
         }

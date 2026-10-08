@@ -1,4 +1,5 @@
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Adapters.Simulator;
 using TenonEdge.Host.Features.Connections;
@@ -10,6 +11,7 @@ using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
 using TenonEdge.Runtime.Lifecycle;
+using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.Host.Features.Runtime;
 
@@ -31,6 +33,8 @@ internal static class RuntimeRegistration
         services.AddSingleton<RuntimeTrendHistory>();
         services.AddHostedService<RuntimeTrendMonitor>();
         services.AddSingleton<IInputUnitFactory, SimulatorInputFactory>();
+        services.AddSingleton<IJsonInputDecoderFactory, JsonInputDecoderFactory>();
+        services.AddSingleton<IInputUnitFactory, HttpInputFactory>();
         services.AddSingleton(_ => new RuntimeOptions().Validate());
         services.AddSingleton(provider => new DeliveryCache(
             new DeliveryCacheOptions
@@ -42,6 +46,8 @@ internal static class RuntimeRegistration
         services.AddSingleton<OutputControlStore>();
         services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());
         services.AddSingleton<MqttCredentialStore>();
+        services.AddSingleton<HttpCredentialStore>();
+        services.AddSingleton<IHttpCredentialResolver>(provider => provider.GetRequiredService<HttpCredentialStore>());
         services.AddSingleton<OutboundPolicyStore>();
         services.AddSingleton<IOutboundAddressPolicy>(provider => new HostOutboundAddressPolicy(
             provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<TenonEdge.Host.Bootstrap.ListenerSettings>(),
@@ -55,6 +61,11 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<IOutboundConnector>(),
             provider.GetRequiredService<ISharedConnections>(),
             provider.GetRequiredService<GatewayIdentity>().NodeId));
+        services.AddSingleton<IOutputAdapterFactory>(provider => new HttpOutputFactory(
+            provider.GetRequiredService<IHttpCredentialResolver>(),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IOutboundConnector>(),
+            provider.GetRequiredService<ISharedConnections>()));
         services.AddSingleton<RuntimeHost>();
         services.AddSingleton<RuntimeVersionStore>();
         services.AddSingleton<RuntimeCoordinator>();

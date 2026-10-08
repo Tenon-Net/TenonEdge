@@ -1,8 +1,8 @@
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Auth;
-using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Health;
 using TenonEdge.Host.Features.Runtime;
@@ -38,6 +38,7 @@ app.MapManagementApi()
     .MapRuntimeStatusEndpoints()
     .MapSystemInfoEndpoints()
     .MapMqttCredentialEndpoints()
+    .MapHttpCredentialEndpoints()
     .MapOutputControlEndpoints()
     .MapOutboundPolicyEndpoints();
 

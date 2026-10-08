@@ -10,6 +10,10 @@ namespace TenonEdge.Abstractions.Contracts;
 /// </summary>
 public abstract class InputMessageWriter : ChannelWriter<EdgeMessage>
 {
+    /// <summary>读取/解析暂存与结果消息不同上限；两阶段不同时存活，预算取解析峰值与输出阶段预约的较大者。保守结果上界可令输出阶段预约总额度，实际结果仍须通过总额度校验。</summary>
+    public abstract ValueTask ProduceAsync(long maximumWorkingBytes, long maximumMessageBytes,
+        Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default);
+
     public abstract ValueTask ProduceAsync(long maximumBytes,
         Func<CancellationToken, ValueTask<EdgeMessage?>> produce, CancellationToken cancellationToken = default);
 }

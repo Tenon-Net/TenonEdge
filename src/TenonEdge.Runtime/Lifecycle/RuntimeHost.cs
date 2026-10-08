@@ -5,6 +5,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
+using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.Runtime.Lifecycle;
@@ -153,6 +154,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new ArgumentException("未注册输出模块。");
                 }
 
+                var mapping = unit.Configuration.TryGetProperty("mapping", out var rules) ? FieldMappingConfiguration.Parse(rules) : null;
                 var target = factory.Build(unit);
                 if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
                 { throw new ArgumentException("输出格式化预算无效或超过全局在途预算。"); }
@@ -187,7 +189,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var state = new OutputSenderState();
                 IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
                     new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
-                outputs.Add(new PreparedOutput(target));
+                outputs.Add(new PreparedOutput(target, mapping));
                 units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null));
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -266,6 +268,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
                 .Sum(output => output.Target.FormattingReservationBytes);
             channel.ReserveSerializationWorkspace = paths > 0;
+            channel.HasFieldMapping = prepared.Outputs.Any(output => output.Mapping is not null && output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
         }
 
         foreach (var unit in prepared.Units)
@@ -298,7 +301,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 if (targets.Length > 0)
                 {
                     var state = new InputDispatcherState();
-                    IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel);
+                    var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
+                        .ToDictionary(output => output.Target.ConnectionId, output => output.Mapping!);
+                    IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
                     _dispatchers.Add((unit.Channel, state));
                     _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
                 }

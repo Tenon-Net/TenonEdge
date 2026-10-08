@@ -3,7 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using TenonEdge.Abstractions.Plans;
+using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.Host.Features.Runtime;
 
@@ -105,6 +107,15 @@ internal sealed class RuntimePlanDocument
             throw new RuntimePlanDocumentException(exception.Message, exception);
         }
 
+        var httpConnections = new Dictionary<long, (string Base, int Timeout)>();
+        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind is "input.http" or "output.http"))
+        {
+            HttpRequestSettings settings = unit.Id.Kind == "input.http" ? HttpInputSettings.Parse(unit.Configuration) : HttpOutputSettings.Parse(unit.Configuration);
+            var identity = (settings.BaseAddress, settings.TimeoutMs);
+            if (httpConnections.TryGetValue(settings.ConnectionId, out var previous) && previous != identity)
+            { throw new RuntimePlanDocumentException("同一 HTTP 连接的基础地址与超时必须一致。"); }
+            httpConnections[settings.ConnectionId] = identity;
+        }
         return new RuntimePlanDocument(plan.Units, Serialize(plan.Units));
     }
 
@@ -135,6 +146,18 @@ internal sealed class RuntimePlanDocument
                 MqttOutputSettings.Parse(configuration);
             }
 
+            if (kind.GetString() == "output.http")
+            {
+                HttpOutputSettings.Parse(configuration);
+            }
+
+            if (kind.GetString() is "output.http" or "output.mqtt" && configuration.TryGetProperty("mapping", out var mapping))
+            { FieldMappingConfiguration.Parse(mapping); }
+            if (kind.GetString() == "input.http")
+            {
+                var settings = HttpInputSettings.Parse(configuration);
+                new JsonInputDecoderFactory().Build(settings.Fields, settings.UpstreamTime);
+            }
             return new RuntimeUnitPlan(RuntimeUnitId.Create(kind.GetString()!, key.GetString()!), configuration);
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)

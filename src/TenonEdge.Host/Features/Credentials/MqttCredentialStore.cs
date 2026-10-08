@@ -86,6 +86,8 @@ internal sealed class MqttCredentialStore(
         var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0 || deliveries.ReadFailed(connectionId, 0, 1).Count > 0;
         return database.InTransaction(client =>
         {
+            if (client.Queryable<HttpCredentialRecord>().InSingle(connectionId) is not null)
+            { throw new CredentialWriteException("credential.protocolConflict"); }
             var record = client.Queryable<MqttCredentialRecord>().InSingle(connectionId);
             if (record?.Version != request.ExpectedVersion)
             {

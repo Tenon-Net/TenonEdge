@@ -7,6 +7,39 @@ namespace TenonEdge.UnitTests.Mapping;
 public sealed class FieldMappingTests
 {
     [Fact]
+    public void MappingExpansionHasABoundedResultBeforeOutputSerialization()
+    {
+        var at = DateTimeOffset.UnixEpoch;
+        var source = new EdgeMessage(Guid.NewGuid(), "input", "device", at, TimeSource.Gateway, at,
+            new Dictionary<string, FieldValue> { ["large"] = FieldValue.FromString(new string('x', 600000)) });
+        var mapping = new FieldMapping(Enumerable.Range(0, 10).Select(index =>
+            new FieldMappingRule($"copy{index}", FieldType.String, SourceField: "large")));
+        Assert.Throws<TenonEdge.Abstractions.Contracts.InputMessageSizeException>(() => mapping.Apply(source));
+        Assert.Single(source.Values);
+    }
+
+    [Fact]
+    public void RawJsonCanBeMappedAfterReaderDisposalAndAcrossIndependentBranches()
+    {
+        var at = DateTimeOffset.UnixEpoch;
+        RawJsonPayload raw;
+        using (var document = JsonDocument.Parse("""{"nested":{"value":9223372036854775807}}"""))
+        { raw = RawJsonPayload.CopyFrom(document.RootElement); }
+        var source = new EdgeMessage(Guid.NewGuid(), "http", "device", at, TimeSource.Gateway, at,
+            new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(1) }, rawJson: raw);
+        var fromRaw = new FieldMapping([new("exact", FieldType.Integer, SourcePath: "/nested/value")]);
+        var fromField = new FieldMapping([new("selected", FieldType.Integer, SourceField: "value")]);
+        var a = fromRaw.Apply(source).Message!;
+        var b = fromField.Apply(source).Message!;
+        Assert.Equal(long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture), a.Values["exact"].ToString());
+        Assert.Equal("1", b.Values["selected"].ToString());
+        Assert.Same(raw, a.RawJson);
+        Assert.Same(raw, b.RawJson);
+        Assert.Equal(a.Values["exact"], fromRaw.Apply(b).Message!.Values["exact"]);
+        Assert.Equal("1", source.Values["value"].ToString());
+    }
+
+    [Fact]
     public void RenameScaleSchemaAndIdentityAreIndependentAcrossBranches()
     {
         var source = Message();

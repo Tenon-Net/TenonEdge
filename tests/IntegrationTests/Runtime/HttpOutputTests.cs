@@ -1,14 +1,18 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Connections;
+using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
@@ -25,7 +29,7 @@ public sealed class HttpOutputTests
     public async Task FrozenPostAndIdempotencyUseCurrentCredentialsOnEachRetry(HttpCredentialKind kind)
     {
         using var server = Listen();
-        var credentials = new Credentials { Value = new(new(kind, "user", "X-Key", "account", "v1"), "old-secret") };
+        var credentials = new Credentials { Value = new(new(kind, kind == HttpCredentialKind.Basic ? "user" : null, kind is HttpCredentialKind.ApiKeyHeader or HttpCredentialKind.ApiKeyQuery ? "X-Key" : null, "account", "v1"), "old-secret") };
         var connections = new SharedConnections();
         var factory = new HttpOutputFactory(credentials, TimeProvider.System, new OutboundConnector(new LoopbackPolicy()), connections);
         var target = factory.Build(Plan(server, "events"));
@@ -172,6 +176,48 @@ public sealed class HttpOutputTests
 
     private static RuntimeUnitPlan Plan(TcpListener server, string path) => new(RuntimeUnitId.Create("output.http", path),
         JsonSerializer.SerializeToElement(new { connectionId = 1, baseAddress = Base(server), path, inputs = Inputs, headers = new Dictionary<string, string> { ["X-Static"] = "frozen" } }));
+    [Fact]
+    public async Task HostUsesProtectedApiCredentialAndEffectiveSeedForRealHttpPost()
+    {
+        using var server = Listen();
+        using var data = TemporaryDirectory.Create();
+        using var seeds = TemporaryDirectory.Create();
+        await using (var bootstrap = new FixedDataDirectoryApplicationFactory(data.Path))
+        {
+            using var client = bootstrap.CreateClient();
+            using var setup = await client.CompleteSetupAsync(Token);
+            Assert.Equal(HttpStatusCode.OK, setup.StatusCode);
+            await client.UseSessionAsync(setup, Token);
+            await OutputPipelineTests.UntilAsync(() => bootstrap.Services.GetRequiredService<DeliveryCache>().GetStatus().Store is not null);
+            using var credential = await client.PutAsJsonAsync(new Uri("/api/edge-admin/v1/connections/1/http-credential", UriKind.Relative),
+                new { recipient = Base(server), kind = "bearer", secret = "fixture-http-token" }, Token);
+            Assert.Equal(HttpStatusCode.OK, credential.StatusCode);
+        }
+        var seed = Path.Combine(seeds.Path, "http-output.json");
+        var simulator = new RuntimeUnitPlan(RuntimeUnitId.Create("input.simulator", "device/input"),
+            JsonSerializer.SerializeToElement(new { periodMs = 1000, sample = new { value = 42 } }));
+        await File.WriteAllTextAsync(seed, JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            units = new[] { simulator, Plan(server, "events") }.Select(unit => new { kind = unit.Id.Kind, key = unit.Id.Key, configuration = unit.Configuration }),
+        }), Token);
+        var received = ServeOnceAsync(server, 204);
+        await using var host = new FixedDataDirectoryApplicationFactory(data.Path, new Dictionary<string, string>
+        {
+            [RuntimeSettings.SeedSnapshotKey] = seed,
+            ["TenonEdge:Outbound:LocalPorts:0"] = ((IPEndPoint)server.LocalEndpoint).Port.ToString(CultureInfo.InvariantCulture),
+        });
+        using var started = host.CreateClient();
+        var wire = await received.WaitAsync(TimeSpan.FromSeconds(20), Token);
+        Assert.Contains("Authorization: Bearer fixture-http-token", wire.Header, StringComparison.Ordinal);
+        Assert.Contains("POST /api/events", wire.Header, StringComparison.Ordinal);
+        using var json = JsonDocument.Parse(wire.Body);
+        Assert.Equal(42, json.RootElement.GetProperty("values").GetProperty("value").GetInt64());
+        var versions = host.Services.GetRequiredService<RuntimeVersionStore>();
+        Assert.DoesNotContain("fixture-http-token", versions.Load(versions.ReadPointers().EffectiveRevision!.Value)!.Content, StringComparison.Ordinal);
+        await OutputPipelineTests.UntilAsync(() => host.Services.GetRequiredService<DeliveryCache>().GetStatus().DeletedRecords >= 1);
+    }
+
     private static string Base(TcpListener server) => $"http://127.0.0.1:{((IPEndPoint)server.LocalEndpoint).Port}/api/";
     private static EdgeMessage Message()
     {

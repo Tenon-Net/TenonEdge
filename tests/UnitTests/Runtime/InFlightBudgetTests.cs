@@ -8,6 +8,64 @@ namespace TenonEdge.UnitTests.Runtime;
 public sealed class InFlightBudgetTests
 {
     [Fact]
+    public async Task CappedTwoPhaseReservationStillRejectsAnActualOutputPhaseThatCannotFit()
+    {
+        var budget = new InFlightBudget(2000);
+        var channel = new BudgetedInputChannel(1, budget) { OutputReservationBytes = 1800 };
+        await Assert.ThrowsAsync<InputMessageSizeException>(async () =>
+            await ((InputMessageWriter)channel.Writer).ProduceAsync(2000, 2000,
+                _ => ValueTask.FromResult<EdgeMessage?>(Message()), TestContext.Current.CancellationToken));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+        Assert.False(channel.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task ConservativeTwoPhaseUpperBoundReservesCapacityAndChecksActualResult()
+    {
+        var message = Message();
+        var budget = new InFlightBudget(64L * 1024 * 1024);
+        var channel = new BudgetedInputChannel(1, budget)
+        { ReserveSerializationWorkspace = true, HasFieldMapping = true, OutputReservationBytes = 16L * 1024 * 1024 };
+        await ((InputMessageWriter)channel.Writer).ProduceAsync(48L * 1024 * 1024, 20L * 1024 * 1024, _ =>
+        {
+            Assert.Equal(budget.Capacity, budget.Status.ReservedBytes);
+            return ValueTask.FromResult<EdgeMessage?>(message);
+        }, TestContext.Current.CancellationToken);
+        Assert.True(budget.Status.ReservedBytes < budget.Capacity);
+        Assert.True(channel.Reader.TryRead(out _));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
+    public async Task DistinctWorkAndMessageLimitsReserveTheMaximumOfSequentialPhases()
+    {
+        var message = Message();
+        var budget = new InFlightBudget(48L * 1024 * 1024);
+        var channel = new BudgetedInputChannel(1, budget) { ReserveSerializationWorkspace = true, OutputReservationBytes = 1024 };
+        await ((InputMessageWriter)channel.Writer).ProduceAsync(budget.Capacity, message.BudgetBytes, _ =>
+        {
+            Assert.Equal(budget.Capacity, budget.Status.ReservedBytes);
+            return ValueTask.FromResult<EdgeMessage?>(message);
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(channel.Charge(message), budget.Status.ReservedBytes);
+        Assert.True(channel.Reader.TryRead(out _));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
+    public async Task LargerWorkReservationDoesNotPermitOversizedResultMessages()
+    {
+        var message = Message();
+        var budget = new InFlightBudget(10000);
+        var channel = new BudgetedInputChannel(1, budget);
+        await Assert.ThrowsAsync<InputMessageSizeException>(async () =>
+            await ((InputMessageWriter)channel.Writer).ProduceAsync(10000, 1,
+                _ => ValueTask.FromResult<EdgeMessage?>(message), TestContext.Current.CancellationToken));
+        Assert.False(channel.Reader.TryRead(out _));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Fact]
     public async Task WaitToWriteHonorsFailedMessagesBudgetAndWakesOnCompletion()
     {
         var message = Message();

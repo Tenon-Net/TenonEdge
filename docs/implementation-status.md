@@ -1045,6 +1045,128 @@ T2-05 仍在进行中，没有运行路线/页面完成证据。
 
 剩余：config.db 受保护 HTTP 凭证及审计 API、接收方变更/目标迁移协同、Host 注册与配置契约、HTTP GET 输入、客户端证书/连接信任、输出其他报文形式及完整协议回归。当前不能通过产品管理接口启用 HTTP 输出；不把测试注入的凭证解析器当成凭证管理已实现。T2-04 与可视化目标均未完成，未新增提交/推送。
 
+### 2.29 T2-04：受保护 HTTP 凭证、审计 API 与实际宿主接线（2026-10-08）
+
+授权延续至 T2/T3 可视化目标；本子项关联 T2-04、D-05、GW-10/12、FS §2.3、AT-26 与 BE-AT-02/03。开始前已把截至 §2.28 的映射与 HTTP POST 核心整理为本地提交 `1d9cd4e`，基线 1086 项通过，未推送；本节为该提交之后的继续实现，不表示 T2 整体完成。
+
+交付：
+- config.db 显式迁移 10 增加 http_credential，HTTP 专用 Data Protection purpose 再按 connectionId 隔离；秘密不进入快照、队列、API 响应或审计详情。Basic、Bearer、API Key 请求头/查询参数共用管理写入与发送格式检查；绑定基础地址按适配器规则规范化（保留基础路径、尾部 /）。
+- GET/PUT `/api/edge-admin/v1/connections/{connectionId}/http-credential`：登录角色可读状态；配置人员/管理员可写，受现有 CSRF 和乐观版本约束。改变基础接收方默认作废，保留旧凭证仅管理员可显式选择；作废后仍保留身份元数据，不能退化成匿名发送。待发/失败记录下相同非秘密身份更换秘密须声明账户是否变化，真正变更账户时换 marker。暂不提供凭证删除，完整连接管理仍在 T3。
+- 凭证写入/失效与审计在同一配置事务内；审计失败回滚秘密、版本及运行版本指针。HTTP/MQTT 不允许同一个逻辑连接 ID 同时保存两套协议凭证。数据库读取使用短生命周期客户端，单例没有保留请求上下文或数据库事务。
+- 正式 Host 显式登记 HttpOutputFactory，复用既有单例共享连接与出站保护；种子解析冻结前拒绝 HTTP 秘密/未知属性。运行版本提交同时校验 HTTP 基础地址和完整输出路径（含查询），待发/失败区未清空时阻止删除/改变接收方；超时变化不误阻止，隔离记录不阻止新目标。基础地址变更在提交事务内默认作废凭证。
+- 真实宿主用管理 API 保存 Bearer 秘密，停止后从同一数据目录重启，加载 HTTP 种子，经正式模拟输入→SQLite 队列→HTTP POST，在真实 TCP 服务上核对认证头、路径和正文；204 后队列确认删除。该用例未替换产品凭证解析器、连接器或输出工厂，只通过部署出站例外允许测试端口。
+
+验证（Linux x64、SDK 10.0.401）：
+- 第一轮定向失败 4 项：原 HTTP 测试解析器给所有认证类型同时填了 Basic 用户名和 API Key 名称，新共同校验正确拒绝这类互斥字段；测试输入改成各类型合法字段，保留原重试/换密/正文/幂等断言。日志 `/tmp/tenonedge-http-credentials-test.log`，不计为通过。
+- 第二轮定向命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~Credentials|FullyQualifiedName~ManagementApiAccess|FullyQualifiedName~GatewayIdentity|FullyQualifiedName~ConfigMigrator|FullyQualifiedName~TargetChangeTests|FullyQualifiedName~HttpOutputTests' --logger 'trx;LogFileName=http-credentials-r2.trx' --results-directory /tmp/tenonedge-http-credentials-r2`：100 项通过，0 失败/跳过。覆盖权限/匿名/CSRF、加密/绑定/重启/用途隔离、乐观冲突、四种凭证格式、账户声明、两种事务审计失败、HTTP 目标改变及真实 Host 链路。
+- 第一轮全量：613 单元通过，集成 518 通过、1 失败；遗漏更新 OpenAPI operationId 固定清单，新增 getHttpCredentialStatus/writeHttpCredential 后修正。日志 `/tmp/tenonedge-http-credentials-full.log`，不计为全量通过。
+
+- 最终全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=http-credentials-full-r2' --results-directory /tmp/tenonedge-http-credentials-full-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：**613 单元 + 519 集成 = 1132 通过，0 失败/跳过**，两个 TRX 计数已核对；日志 `/tmp/tenonedge-http-credentials-full-r2.log`。限定本批 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...` 无差异，日志 `/tmp/tenonedge-http-credential-format-check.log`；`git diff --check` 通过。
+
+剩余：HTTP GET 输入、客户端证书/自定义信任、其他输出报文形式、映射与运行路径整合、完整 T2 协议验收及 T3 网页均未完成。种子与凭证 API 已能在产品宿主启用 HTTP POST，但不等于完整连接 CRUD 或网页已交付；未验证现场 HTTP 平台、设备兼容性或吞吐。
+
+### 2.30 T2-04：HTTP GET 有界响应读取核心（2026-10-08）
+
+继续 T2-04，关联 GW-06、AT-04/18 与总设计 §6.3、§8.7；上一轮为有实际代码和测试证据的进展。本节只实现输入响应读取边界，不宣称轮询输入已交付。
+
+- HttpInputResponse 只接受 HTTP 2xx 后的单个 JSON 文档，最大 1 MiB、最大深度 64。已知 Content-Length 超限及非 2xx 时不读正文；未知长度最多读上限加 1 字节判定超限。拒绝多文档、非法 JSON、尾部非空内容和超深嵌套。显式校验 UTF-8 字节合法性，避免 JsonDocument 延迟解码漏检。不自动解压、不自动分页或展开数组。
+- 返回的 JsonDocument 独立拥有内存；池缓冲归还前清零，文档不能借用已归还池数组。调用者须释放文档。大整数保留原始 JSON 表示，不在读取层经过 double。
+- 可分类的状态/超限/编码/JSON 错误不含正文或解析器原始异常；网络失败和主动取消保持原异常类型，留给输入循环分别上报。总期限、周期不重叠、字段提取和全局在途预算预约由后续正式 input.http 单元整合，本读取器不创建旁路缓冲队列。
+- 单元边界：5 种合法文档、4 种非成功状态不读正文、6 种非法文档无秘密回显、64/65 层、恰好 1 MiB、池复用后原文档不变、已知/未知超限、编码、网络与取消，以及非法 UTF-8，共 22 项。
+- 真实 TCP GET：Content-Length 与 chunked 的精确大整数、仅发送超限响应头后观察客户端 EOF（不排空正文）、正文中断保持网络错误、收到头后取消能打断阻塞正文并关闭连接，共 5 项。使用实际 OutboundHttpTransport 与实际 IP 连接器，只为测试端口允许 loopback；没有用静态页面或 fake handler 冒充接入。
+- 定向命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter FullyQualifiedName~HttpInputResponseTests --logger 'trx;LogFilePrefix=http-input-response' --results-directory /tmp/tenonedge-http-input-response-all`：21 单元 + 5 集成通过，0 失败/跳过；日志 `/tmp/tenonedge-http-input-response-all.log`。Linux x64 / SDK 10.0.401。
+
+- 第一轮全量 634 单元 + 524 集成通过（`/tmp/tenonedge-http-input-core-full.log`），但之后追加非法 UTF-8 用例发现 JsonDocument.ParseValue 会延迟到取字符串时才校验；原实现该用例失败，日志 `/tmp/tenonedge-http-input-utf8.log`。核对 SDK 的 Utf8.IsValid API 后，在 ParseValue 前显式校验字节，不把有缺陷的首轮当最终结果。
+
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=http-input-core-full-r2' --results-directory /tmp/tenonedge-http-input-core-full-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：**635 单元 + 524 集成 = 1159 项通过，0 失败/跳过**，已核对 TRX 计数；日志 `/tmp/tenonedge-http-input-core-full-r2.log`。新增三份 C# 文件已执行限定范围的 dotnet format；`git diff --check` 通过。
+
+未完成：正式 GET 轮询单元（共享会话、凭证、周期/截止、不重叠、在途预算）、字段提取/上游时间与诊断计数、Host input.http 注册和完整端到端输入验收。下一步整合这些使用者，不能仅因本核心通过便将 T2-04 或可视化目标标为完成。无新增提交/推送。
+
+### 2.31 T2-04：正式 HTTP 轮询输入与共享 GET→队列→POST 链路（2026-10-08）
+
+继续既有授权，关联 T2-01/04/05、GW-06/12、AT-04/18/26 和 BE-AT-03。上一轮完成响应读取核心，本轮把它接入正式 Host 运行链路；未扩展 Webhook、分页、OAuth 或前端。
+
+交付：
+- `input.http` 工厂、配置和运行单元正式注册。输入字段采用显式 key/path/type；1 秒—1 天固定周期、固定相对路径/查询、非秘密头和连接超时；与 POST 共用 HttpRequestSettings 的地址与头校验。构建只做本地验证，运行循环才借用会话并访问网络。
+- GET 与 POST 共用同一 connectionId 的 HttpConnectionSession、当前凭证与出站保护；基础地址和超时组成相同连接配置标识，路径和头逐次提供。种子在冻结前检查同一 HTTP 连接的地址/超时一致，并校验输入字段，不把秘密旁路冻结入快照。版本提交覆盖输入接收方的默认凭证失效及事务审计。
+- Runtime 的 JsonInputDecoderFactory 经 Abstractions 小接口供协议输入调用，不增加 Adapters→Runtime 引用；复用既有固定 JSON Pointer 与精确数值转换。缺字段为未携带，非法字段只带 bad 原因，不发旧值为新值；解码每字段检查取消。当前输入描述最多 1000 字段、解码结果 4 MiB，是实现防护上限，不视为另行批准的产品规模承诺。
+- 当前消息使用读取完成的网关 receivedAt/collectedAt，生成 UUIDv7，并按校时状态标注 gateway/gateway-unsynced。整文档错误计数据拒绝，状态码/网络/TLS/凭证错误计整组读取失败，错误说明不回显外部正文。连续读取失败沿用运行时离线规则。
+- 一个循环串行执行，不叠加上一请求；请求期限含共享执行器排队/网络/解码，并受本周期截止限制。网络阶段超时为读取失败；等待全局额度或通道到周期截止为 overrun。停机取消等待请求退出再释放借用，不计人为停机为读取失败。
+- 扩充 ProduceAsync 的两阶段预约：解析工作峰值与结果消息上限分别声明，实际预约为“解析峰值”和“结果+输出序列化预约”两者较大值。回调返回前须释放解析暂存，结果超过声明仍拒绝；旧单上限调用保持原行为。HTTP 当前预约 48 MiB 工作峰值（覆盖 1 MiB 正文、JSON 元数据扩容和字段临时值），结果上限 4 MiB+8 KiB；用例确认真实链路可在全局 64 MiB 内运行。这是保守逻辑预算，不是 CLR 全堆测量或并发性能承诺。
+
+验证：
+- 定向第一轮 37 单元+15 集成通过；第二轮 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~HttpInput|FullyQualifiedName~JsonInputDecoder|FullyQualifiedName~InFlightBudget' --logger 'trx;LogFilePrefix=http-input-pipeline-r2' --results-directory /tmp/tenonedge-http-input-pipeline-r2`：48 单元+12 集成通过，日志 `/tmp/tenonedge-http-input-pipeline-r2.log`。
+- 真实 Host 用管理 API 写入 Bearer 凭证后从同一配置目录重启；正式 HTTP GET 取得 signed64 最大值，经解码与 SQLite 缓存，在**同一个 keep-alive TCP 会话**上收到带认证的 POST，正文整数逐位一致，204 后队列确认删除。没有替换正式输入工厂、输出工厂、字段解码器或凭证存储。
+- 可控时钟配合真实 TCP：999ms 未出现第二请求；1s 截止关闭旧请求，记读取失败，下一请求正常读取；停机关闭阻塞请求且不计失败。全局预算被占满时无 TCP 连接，周期到期计 overrun；正常读取预约峰值与释放归零有断言。两阶段预算另有单元用例防止用较大工作额度绕过结果大小上限。
+- 全量首轮集成构建因新增测试常量数组 CA1861 未过；第二轮补充解码取消参数后单元测试调用遗漏 token，xUnit1051 拦截。均已改正，没有把未执行的用例当通过。
+- 第二轮集成实际执行 534 通过、1 失败：既有 NModbus 剩余 TCP 帧探针在首次正常读取（尚未检查残留帧前）发生 300ms 读超时，日志 `/tmp/tenonedge-http-poller-full-r2.log`。未修改其超时或断言；原样独立连续重跑 3 次通过，TRX 在 `/tmp/tenonedge-http-poller-probe-recheck/`。这只证明未再次复现，不证明偶发原因已消除；保留后续观察事项。
+
+- 最终全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=http-poller-full-r3' --results-directory /tmp/tenonedge-http-poller-full-r3 --blame-hang-timeout 5m --blame-hang-dump-type none`：**651 单元 + 535 集成 = 1186 项通过，0 失败/跳过**，已核对两份 TRX，日志 `/tmp/tenonedge-http-poller-full-r3.log`。环境 Linux x64 / SDK 10.0.401。限定改动 C# 文件格式复检日志 `/tmp/tenonedge-http-poller-format-check.log`；`git diff --check` 通过。
+
+未完成：HTTP 上游时间映射及无效时间计数、保留原始消息供路线 JSON 映射、完整路线处理/扇出、客户端证书与自定义信任、其他报文形式及完整 T2 协议验收。正式 GET 输入与 POST 种子链路已经运行，不等于连接 CRUD、采集预览或 T3 网页已交付。无新增提交/推送。
+
+### 2.32 T2-04/05：HTTP 上游时间与独立持久计数接线（2026-10-08）
+
+本轮延续开发授权，关联 T2-04/05、GW-06/08、AT-30 与总设计 §6.4。上一轮已有正式 GET→队列→POST，当前把已验证的纯时间映射接入该链路；不把本子项当完整 T2 或网页完成。
+
+- input.http 可配置 `upstreamTime: { "path": "/sampleAt", "format": "rfc3339", "source": "device" }`；format 也可为 `unixSeconds` / `unixMilliseconds`，须显式提供，不猜测单位。source 可选 device/upstream，省略为 upstream；未配置或显式 null 表示使用网关接收时间。未知属性、数字枚举、不支持格式、缺少格式或 gateway 来源在冻结/构建时拒绝。
+- JsonInputDecoderFactory 经既有 Abstractions 解码接口返回字段和时间，复用 UpstreamTimeMapping，不在 HTTP adapter 中重写解析规则。InputUnitContext 暴露三态 ClockState，一次解码使用一次状态取值；仅 Synchronized 启用未来 5 分钟校验，Unknown/NotSynchronized 不被误认为已同步。
+- 有效上游时间连同 device/upstream 来源进入 EdgeMessage 和标准输出信封；早于网关的时间照常保留。映射字段缺失、无效或已同步时超过未来阈值，改用 receivedAt 与 gateway/gateway-unsynced，不改变字段质量、不丢弃本条、不把回退当作整组读取失败。未映射时间的输入不会因为报文没时间而计“无效”。
+- IInputReadReporter.UpstreamTimeInvalid 对接运行时 InputReadSnapshot.InvalidUpstreamTimes 和 `input/<device>/<input>/invalidUpstreamTimes` 累计键；队列唯一写者沿用已有事务批量落盘、失败不清零及停机刷新，不加新表或每条外部正文日志。当前单元读数与持久累计仍按原有 API 约定分别展示。
+- 解码在时间处理前及每个字段前检查取消；工作/结果预算及错误信息脱敏沿用 §2.31，不另建缓冲。
+
+验证（Linux x64 / SDK 10.0.401）：
+- 定向：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~HttpInputTests|FullyQualifiedName~JsonInputDecoderTests|FullyQualifiedName~InputReadStatusTests|FullyQualifiedName~RuntimeCounterTests' --logger 'trx;LogFilePrefix=http-time' --results-directory /tmp/tenonedge-http-time`：13 单元+23 集成通过，0 失败/跳过；日志 `/tmp/tenonedge-http-time.log`。此后增加显式配置负例和 API 断言，见最终全量。
+- 真实 TCP + 可控时钟：三种格式、null/坏时间、恰好未来 5 分钟/多 1 秒、Unknown 不拒绝未来时间；每项核对字段值仍存在、无 bad 字段、无整组读取失败及独立计数。纯解码追加“未映射/已映射但缺时间”的区别、固定格式/source/未知属性拒绝。
+- 真实正式 Host、受保护 API 凭证、同一共享 TCP 上 GET→POST：device 时间逐字写入标准信封；无效时间同样发送 values，来源回退为 gateway 系列。登录读取 `/api/edge-admin/v1/runtime/status` 核对 invalidUpstreamTimes，诊断 JSON 不出现非法时间原文。
+- 实际运行时唯一写者在无投递情况下刷新含 invalidUpstreamTimes 的增量；重开 queue.db 后值仍为 2（扩充 RuntimeCounterTests）。单元用例确认回退计数不造成健康失败或原文事件。
+- API 追加断言之前的全量为 662 单元+543 集成通过，日志 `/tmp/tenonedge-http-time-full.log`；不是最后一版验证。
+
+- 最终全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=http-time-full-r2' --results-directory /tmp/tenonedge-http-time-full-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：**662 单元 + 544 集成 = 1206 项通过，0 失败/跳过**；两份 TRX 已核对，日志 `/tmp/tenonedge-http-time-full-r2.log`。限定改动 C# 文件格式复检日志 `/tmp/tenonedge-upstream-format-check.log`；`git diff --check` 通过。
+
+剩余：原始 JSON 的消息所有权/预算及路线 JSON 映射、完整路径处理/多分支集成、HTTP 自定义信任/客户端证书及其他输出格式、其余 T2 协议与 T3 页面。无新增提交/推送。
+
+### 2.33 T2-04/05：原始 JSON 不可变所有权与预算（2026-10-08）
+
+继续原有授权，关联 T2-04/05、GW-06/08、AT-07/30 和总设计 §6.4、§8.7。上一轮完成上游时间接线，本轮补齐后续路线 JSON Pointer 读取所需的数据寿命；路线配置到分发器的编译/执行仍未完成。
+
+- RawJsonPayload 持有独立的只读 JSON 根副本，不借用已释放的协议响应文档或池数组；多分支共享同一不可变所有者，而不是每条路线再次复制。CopyFrom 的使用前提是已完成输入大小/深度校验，再核对根值 UTF-8 大小不超过 1 MiB 才复制树。它保留 JSON 值内容，不承诺保留 HTTP 头或根值外部空白的逐字节线缆记录。
+- EdgeMessage 的 RawJson 可选；普通 JsonSerializer 序列化显式忽略，标准信封仍只写规定字段，RawJsonPayload.ToString 也不回显正文。HTTP 完成字段/时间解码后，在原文档释放前取得该只读所有者。队列只保存已生成的输出报文，不因此保存所有未选原始字段。
+- RawJsonPayload 按 `16 × UTF-8 根值字节数 + 1024` 保守计入原始字节与 DOM 节点元数据；其值加入 EdgeMessage.BudgetBytes，HTTP 的结果大小声明同步增加原始 JSON 上限。解析工作峰值仍为 48 MiB；实际预约沿用两阶段较大值，包含输出时仍受全局 64 MiB 检查。这不是 ArrayPool 保留量或全 CLR 堆的实测保证。
+- FieldMapping.Apply 没有显式临时 payload 时从 source.RawJson 定位；映射结果沿用原始所有者，因此后续映射与其他分支仍能读取原始固定位置。显式 payload 参数的现有行为不改，输入 values、时间和 sourceMessageId 不因读取原文被修改。
+
+验证：
+- 定向命令 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~RawJsonPayloadTests|FullyQualifiedName~FieldMappingTests|FullyQualifiedName~HttpInputTests' --logger 'trx;LogFilePrefix=raw-json' --results-directory /tmp/tenonedge-raw-json`：17 单元+18 集成通过，0 失败/跳过；日志 `/tmp/tenonedge-raw-json.log`。
+- 单元：源文档释放后精确 signed64 仍可读取；ASCII 与汉字按 UTF-8 字节上限判断；预算增加量准确；普通 JSON 序列化和标准信封不输出未选秘密；两个字段映射分支及串联映射共用原文且结果互不污染。
+- 正式 Host 的真实 GET→队列→POST 用例在 GET 正文加入未选择的 private 字段，最终 POST 正文不包含它；原有认证、共享 TCP、时间与计数断言保留。另加真实 GET 大未选字段用例：通道尚未消费时预算占用超过 4 MiB，取走后归零，原文仍在其合法消息所有者上可读，values 仍只有选中字段。
+
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=raw-json-full' --results-directory /tmp/tenonedge-raw-json-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**669 单元 + 545 集成 = 1214 项通过，0 失败/跳过**，两份 TRX 已核对；日志 `/tmp/tenonedge-raw-json-full.log`。Linux x64 / SDK 10.0.401。限定改动文件格式复检日志 `/tmp/tenonedge-raw-json-format-check.log`；`git diff --check` 通过。
+
+剩余：路线映射配置/编译/分发器接线、分支限额与投递上限、其他输出报文形式、自定义 TLS 信任及其余 T2 协议、T3 页面。不能把“消息持有原文、纯映射可访问”写成整条路线处理已交付。无新增提交/推送。
+
+### 2.34 T2-05/06：输出路径映射接线与分支隔离（2026-10-08）
+
+继续既有授权，关联 T2-05/06、GW-08/13、AT-06/07/29/30。本轮把纯映射从测试调用接到实际分发器，不加入图编辑器或脚本；T3 仍未开始。
+
+- HTTP/MQTT 输出配置可选 `mapping` 规则数组；未提供/null 为透传。规则包括 target/type、sourceField/sourcePath/constant 三选一，以及 unit、required、scale、offset、decimalPlaces。格式采用固定类型/JSON Pointer；未知属性、表达式、缺类型、不合法固定值、来源冲突在冻结前拒绝。固定值按精确目标类型读取，比例偏移只执行一次。
+- RuntimeHost 准备阶段编译规则，PreparedOutput 保留不可变 FieldMapping；分发器对每个输入→目标路径独立应用，然后调用原输出适配器冻结正文。必填缺失/转换失败只拒绝该路径，不把半成品入队；可选缺失不伪造值，可选错误保留 bad 原因；其他目标不受影响。沿用同一个 sourceMessageId、时间与原始只读 JSON，投递 ID 仍每路径独立。
+- 增加路径计数 mappingInvalidFields、mappingMissingFields、requiredFieldFailures；被拒路径仍计 dataRejected/RejectedPath，原因事件区分必填失败与格式/大小失败，不回显字段值或原文。统计随现有唯一写者落盘，不加迁移。
+- 映射最多 1000 规则、目标名称最多 64 字符、结果工作集合上限 4 MiB，避免先无限展开再遇到输出 256 KiB 上限。当前防护限额不是性能承诺。每个输入只预约一份 8 MiB 映射暂存和一次最坏序列化暂存，各路径顺序复用；冻结输出的空间仍按路径累加。
+- 双上限 ProduceAsync 在保守结果上界导致输出阶段大于总额度时，先预约总额度、再按实际消息复核；真实输出阶段仍超额则拒绝并释放，不能突破 64 MiB。解析工作本身超额仍在回调前拒绝。原单上限入口保持旧行为。这使小报文多路径可执行，而不是因其理论最大原文而全部被拒。
+- 映射只在入队前执行；已有队列记录不因映射变化重新处理。实际 Host 的受保护 HTTP GET→共享 TCP POST 用例改为从原始 `/v` 映射到新字段 mapped，验证确实经过正式映射，同时保留精确大整数、时间、凭证、秘密隔离与 API 计数断言。
+
+验证：
+- 定向命令：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~MappedOutputTests|FullyQualifiedName~FieldMapping|FullyQualifiedName~HttpInputTests|FullyQualifiedName~InFlightBudgetTests' --logger 'trx;LogFilePrefix=mapping-path' --results-directory /tmp/tenonedge-mapping-path`：31 单元+23 集成通过，0 失败/跳过，日志 `/tmp/tenonedge-mapping-path.log`。
+- 真实 RuntimeHost/SQLite（发送端用拒绝连接器保持待发，不冒充外部 HTTP 确认）：一条必填失败路径没有记录，其他路径的比例偏移、bad 质量和可选缺失正确；sourceMessageId 相同、输入只启动一次，拒绝计数落盘。重启换 mapping 后旧冻结正文逐字不变。
+- 32 个不同 connectionId 的映射输出路径各入队一次，峰值在 60—64 MiB，结束归零；未为每分支各占一份 8 MiB。两个输入汇入一个目标各生成独立记录，不做 join。实际 HTTP 网络路径由上一条正式 Host 用例覆盖，MQTT 有冻结前配置校验，但本轮没有新增 Broker 上的映射报文专项验收。
+- 第一轮全量 678 单元+550 集成通过，日志 `/tmp/tenonedge-mapping-full.log`；后续追加预算封顶后的实际超限回滚及双输入用例，见最终全量。
+
+剩余：当前仍是一 connectionId 一份输出定义，每份定义上的 mapping 用于其所有输入；同一连接的多条不同输出路径、完整图到 RuntimePlan 的编译与上限、其他格式、其余 T2 协议与 T3 页面仍待实现。不把以上 32 个不同连接的路径用例写成所有路线拓扑均通过。无新增提交/推送。
+
+最终检查点：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mapping-full-r2' --results-directory /tmp/tenonedge-mapping-full-r2 --blame-hang-timeout 5m --blame-hang-dump-type none`：679 单元 + 551 集成 = **1230 项通过**，0 失败/跳过；已独立读取两份 TRX 的 Counters 确认 executed=passed=total。环境 Linux x64 / SDK 10.0.401，日志 `/tmp/tenonedge-mapping-full-r2.log`。变更 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include $(cat /tmp/tenonedge-mapping-files)` 退出 0，`git diff --check` 通过。
+
+本地提交整理：按维护者“整理提交一下未提交的，然后继续”的授权，将 §2.29—§2.34 交织的 HTTP 凭证、GET 输入、时间映射、原文所有权与输出映射作为整体回归检查点提交，不推送。不代表 T2 全部完成或已达到网页访问目标。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

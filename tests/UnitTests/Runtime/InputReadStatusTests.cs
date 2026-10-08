@@ -87,6 +87,22 @@ public sealed class InputReadStatusTests
         Assert.Equal(before, status.Snapshot());
     }
 
+    [Fact]
+    public void InvalidUpstreamTimeIsIndependentFromReadFailuresAndDoesNotEmitRawEvents()
+    {
+        var events = new Recorder();
+        var pending = new PendingCounters();
+        var status = new InputReadStatus("meter", "http", events, pending);
+        status.UpstreamTimeInvalid();
+        status.ReadCompleted(At, 0);
+        Assert.Equal(InputReadHealth.Normal, status.Snapshot().Health);
+        Assert.Equal(1, status.Snapshot().InvalidUpstreamTimes);
+        Assert.Equal(0, status.Snapshot().ReadsFailed);
+        Assert.Equal(0, status.Snapshot().DataRejected);
+        Assert.Equal(1, pending.Snapshot()["input/meter/http/invalidUpstreamTimes"]);
+        Assert.Empty(events.Recorded);
+    }
+
     private sealed class Recorder : IRuntimeEventSink
     {
         public List<(RuntimeEventSeverity Severity, string Type, string? Target, string Description)> Recorded { get; } = [];

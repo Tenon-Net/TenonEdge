@@ -1,10 +1,11 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace TenonEdge.Abstractions.Messages;
 
 /// <summary>
 /// 统一内部消息（总设计 §6.4）：一次输入采样或接收的结果，发往多个目标时共用同一条。
-/// 只含已有使用者的字段；来源元数据（source）、原始报文与字段级时间（fieldTimes）随 T2 的协议输入补充。
+/// 原始 JSON 由不可变所有者承载并计入预算；来源元数据（source）及字段级时间（fieldTimes）随对应使用者补充。
 /// <list type="bullet">
 /// <item>输入标识（inputKey）与设备标识（deviceKey）符合 <see cref="BusinessKeys"/> 的规则；inputKey 只在设备内唯一，两者一起确定数据来源。</item>
 /// <item>值与质量都是不可变的有序字典，键按序号比较：多条路径共用一条消息时不会互相影响，写出的顺序也确定。</item>
@@ -26,7 +27,8 @@ public sealed class EdgeMessage
         TimeSource timeSource,
         DateTimeOffset receivedAt,
         IEnumerable<KeyValuePair<string, FieldValue>> values,
-        IEnumerable<KeyValuePair<string, QualityCode>>? quality = null)
+        IEnumerable<KeyValuePair<string, QualityCode>>? quality = null,
+        RawJsonPayload? rawJson = null)
     {
         if (sourceMessageId == Guid.Empty)
         {
@@ -70,6 +72,7 @@ public sealed class EdgeMessage
         ReceivedAt = receivedAt;
         Values = valueMap;
         Quality = qualityMap;
+        RawJson = rawJson;
     }
 
     /// <summary>本次采样或接收的本地稳定编号（建议 UUIDv7），发往多个目标时不变。</summary>
@@ -95,10 +98,15 @@ public sealed class EdgeMessage
     /// <summary>bad 的字段及原因码。</summary>
     public ImmutableSortedDictionary<string, QualityCode> Quality { get; }
 
-    /// <summary>解析后消息的预算大小，计入文本和值及字典节点的保守开销。</summary>
+    /// <summary>协议原始 JSON，仅供显式字段定位；默认输出与普通 JSON 序列化均不包含它。</summary>
+    [JsonIgnore]
+    public RawJsonPayload? RawJson { get; }
+
+    /// <summary>解析后消息的预算大小，含原始 JSON、文本、值与字典节点的保守开销。</summary>
     public long BudgetBytes => 256L + 2L * (InputId.Length + DeviceKey.Length)
         + Values.Sum(entry => 128L + 2L * entry.Key.Length + entry.Value.BudgetBytes)
-        + Quality.Sum(entry => 128L + 2L * entry.Key.Length);
+        + Quality.Sum(entry => 128L + 2L * entry.Key.Length)
+        + (RawJson?.BudgetBytes ?? 0);
 
     private static void RequireUtc(DateTimeOffset value, string parameterName)
     {

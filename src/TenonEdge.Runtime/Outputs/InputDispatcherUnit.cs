@@ -4,6 +4,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
+using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.Runtime.Outputs;
 
@@ -18,7 +19,7 @@ internal sealed class InputDispatcherState
 internal sealed class InputDispatcherUnit(
     RuntimeUnitId inputId, ChannelReader<EdgeMessage> input, IReadOnlyList<IOutputTarget> targets,
     InputDispatcherState state, long revision, DeliveryCache deliveries,
-    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null) : IRuntimeUnit
+    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<long, FieldMapping>? mappings = null) : IRuntimeUnit
 {
     public RuntimeUnitId Id { get; } = RuntimeUnitId.Create("delivery.dispatcher", inputId.Key);
 
@@ -51,16 +52,29 @@ internal sealed class InputDispatcherUnit(
                     var id = Guid.CreateVersion7(time.GetUtcNow());
                     try
                     {
-                        var output = target.CreateMessage(state.Message, id);
+                        var source = state.Message;
+                        if (mappings?.TryGetValue(target.ConnectionId, out var mapping) == true)
+                        {
+                            var mapped = mapping.Apply(source);
+                            var prefix = $"path/{inputId.Key}/{target.ConnectionId}/";
+                            deliveries.PendingCounters.Add(prefix + "mappingInvalidFields", mapped.Issues.Count(issue => issue.Reason is not null));
+                            deliveries.PendingCounters.Add(prefix + "mappingMissingFields", mapped.Issues.Count(issue => issue.Reason is null));
+                            if (mapped.Message is null)
+                            {
+                                deliveries.PendingCounters.Add(prefix + "requiredFieldFailures");
+                                RejectPath(target, "必填映射字段缺失或转换失败，本路径未入队。");
+                                continue;
+                            }
+                            source = mapped.Message;
+                        }
+                        var output = target.CreateMessage(source, id);
                         drafts.Add(new DeliveryDraft(id, target.ConnectionId, state.Message.SourceMessageId, state.Message.DeviceKey,
                             revision, output.Payload, output.Fingerprint, output.FingerprintSummary,
                             output.Address, output.QualityOfService, output.Headers));
                     }
                     catch (ArgumentException)
                     {
-                        deliveries.PendingCounters.RecordActivity(RuntimeActivity.RejectedPath);
-                        deliveries.PendingCounters.Add($"path/{inputId.Key}/{target.ConnectionId}/dataRejected");
-                        events.Record(RuntimeEventSeverity.Warning, "output.rejected", target.Id.ToString(), "报文格式或大小不满足输出约束，本目标未入队。");
+                        RejectPath(target, "映射结果、报文格式或大小不满足输出约束，本目标未入队。");
                     }
                 }
 
@@ -95,6 +109,13 @@ internal sealed class InputDispatcherUnit(
             state.Message = null;
             state.Drafts = null;
         }
+    }
+
+    private void RejectPath(IOutputTarget target, string reason)
+    {
+        deliveries.PendingCounters.RecordActivity(RuntimeActivity.RejectedPath);
+        deliveries.PendingCounters.Add($"path/{inputId.Key}/{target.ConnectionId}/dataRejected");
+        events.Record(RuntimeEventSeverity.Warning, "output.rejected", target.Id.ToString(), reason);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

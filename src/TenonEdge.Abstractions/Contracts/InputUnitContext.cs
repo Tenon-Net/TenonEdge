@@ -46,6 +46,9 @@ public sealed class InputUnitContext
     /// 采集时间取网关时钟时的时间来源（总设计 §6.4、§8.1）：系统时钟未同步时为 gateway-unsynced，否则为 gateway。
     /// 每次读取时按当时的时钟状态取值。
     /// </summary>
+    /// <summary>上游未来时间校验只在明确已同步时启用；未知与未同步不能合并成已同步。</summary>
+    public ClockSyncState ClockState => _clock.State;
+
     public TimeSource GatewayTimeSource =>
         _clock.State == ClockSyncState.NotSynchronized ? TimeSource.GatewayUnsynced : TimeSource.Gateway;
 

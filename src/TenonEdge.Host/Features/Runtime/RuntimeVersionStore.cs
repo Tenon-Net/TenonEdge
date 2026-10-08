@@ -1,5 +1,6 @@
 using System.Text;
 using SqlSugar;
+using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Credentials;
@@ -12,7 +13,7 @@ namespace TenonEdge.Host.Features.Runtime;
 /// 配置库中的运行版本元数据（总设计 §7.4、§10.2）：快照、三个指针（effective、previous、pending）、“运行中”标记与稳定、非正常退出计数。
 /// 每个方法是一个单独的事务；不在事务中等待网络或做耗时计算（后端实施规范 §4）。
 /// </summary>
-internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail audit, TimeProvider time, MqttCredentialStore credentials, DeliveryCache deliveries)
+internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail audit, TimeProvider time, MqttCredentialStore credentials, DeliveryCache deliveries, HttpCredentialStore httpCredentials)
 {
     /// <summary>自动操作的操作人（总设计 §7.4：自动回滚的操作人记为“系统”）。</summary>
     public const string SystemOperator = "系统";
@@ -130,23 +131,38 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         }
 
         var previous = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
-        var current = next.Units.Where(unit => unit.Id.Kind == "output.mqtt")
-            .Select(unit => MqttOutputSettings.Parse(unit.Configuration)).ToDictionary(settings => settings.ConnectionId);
-        foreach (var unit in previous.Units.Where(unit => unit.Id.Kind == "output.mqtt"))
+        var current = OutputRecipients(next).ToDictionary(target => target.ConnectionId);
+        foreach (var old in OutputRecipients(previous))
         {
-            var old = MqttOutputSettings.Parse(unit.Configuration);
-            if (current.TryGetValue(old.ConnectionId, out var replacement) && replacement.Recipient == old.Recipient && replacement.Topic == old.Topic)
+            if (current.TryGetValue(old.ConnectionId, out var replacement) && replacement == old)
             {
                 continue;
             }
 
             if (deliveries.ReadPending(old.ConnectionId, 0, 1).Count > 0 || deliveries.ReadFailed(old.ConnectionId, 0, 1).Count > 0)
             {
-                return "存在待发或失败区记录，不能删除目标或修改接收方/Topic；须先发送完、显式清理或迁移。";
+                return "存在待发或失败区记录，不能删除目标或修改接收方/Topic/路径；须先发送完、显式清理或迁移。";
             }
         }
 
         return null;
+    }
+
+    private static IEnumerable<(long ConnectionId, string Kind, string Recipient, string Address)> OutputRecipients(RuntimePlanDocument document)
+    {
+        foreach (var unit in document.Units)
+        {
+            if (unit.Id.Kind == "output.mqtt")
+            {
+                var settings = MqttOutputSettings.Parse(unit.Configuration);
+                yield return (settings.ConnectionId, unit.Id.Kind, settings.Recipient, settings.Topic);
+            }
+            else if (unit.Id.Kind == "output.http")
+            {
+                var settings = HttpOutputSettings.Parse(unit.Configuration);
+                yield return (settings.ConnectionId, unit.Id.Kind, settings.BaseAddress, settings.Endpoint.AbsoluteUri);
+            }
+        }
     }
 
     /// <summary>
@@ -179,6 +195,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         }
 
         credentials.InvalidateChangedRecipients(client, document);
+        httpCredentials.InvalidateChangedRecipients(client, document);
 
         snapshot.State = RuntimeSnapshotStates.Effective;
         snapshot.ActivatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
