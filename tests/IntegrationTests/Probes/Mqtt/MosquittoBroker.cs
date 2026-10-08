@@ -118,6 +118,23 @@ internal sealed class MosquittoBroker : IAsyncDisposable
 
     public Task UnpauseAsync(CancellationToken cancellationToken) => RunDockerAsync(["unpause", _containerName], cancellationToken);
 
+    /// <summary>只允许首次快照；最终 mosquitto.db 的出现是完成临时文件写入并替换的屏障，不以信号发送成功冒充保存完成。</summary>
+    internal async Task SaveFirstCheckpointAsync(CancellationToken cancellationToken)
+    {
+        await RunDockerAsync(["exec", _containerName, "sh", "-c", "test ! -e /mosquitto/data/mosquitto.db"], cancellationToken);
+        await RunDockerAsync(["kill", "--signal", "USR1", _containerName], cancellationToken);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            var state = await RunDockerAsync(["exec", _containerName, "sh", "-c",
+                "if [ -s /mosquitto/data/mosquitto.db ]; then echo saved; else echo pending; fi"], deadline.Token);
+            if (state.Trim() == "saved")
+            { return; }
+            await Task.Delay(TimeSpan.FromMilliseconds(25), deadline.Token);
+        }
+    }
+
     /// <summary>仅用于独占测试 Broker：保留容器文件系统，停止/强杀真实进程后重新启动。</summary>
     internal async Task RestartAsync(bool forceKill, CancellationToken cancellationToken)
     {

@@ -1801,6 +1801,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-restart' --results-directory /tmp/tenonedge-broker-restart --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 688 集成 = 1568 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-broker-restart-full.log`。全量前后 `docker volume ls -q | sort` 的名单 diff 为空（`/tmp/tenonedge-broker-volumes-before.txt`、`-after.txt`），本轮无新增遗留卷。修改文件限定 `--include` 的 `dotnet format --verify-no-changes --no-restore` 及 `git diff --check` 通过。
 - 环境：Linux x64、SDK 10.0.401、Mosquitto 2.1.2-alpine；本批不改产品会话策略与首版部署要求。
 
+### 2.77 T2-07 / T2-08 已保存检查点及订阅回滚风险（2026-10-09）
+
+- 独占 Broker 夹具增加首次检查点：先确认不存在 mosquitto.db，发 SIGUSR1，等待非空最终文件出现，不把发信号成功当作写入完成。参考 mosquitto 笔记及 persist_write.c 的 mosquitto_write_file 路径，只借验证思路，不复制源码。
+- §2.76 矩阵增加两格：保存包含离线消息的检查点后，再发布一条获 PUBACK 的新消息；正常停止保存两条，SIGKILL 仅恢复检查点内旧消息。6 格聚焦全部通过，日志 `/tmp/tenonedge-broker-checkpoint-focused.log`。仍仅是进程强杀，不是整机断电承诺。
+- **已证实的可靠性缺口，不能记为验收通过**：新增 `KnownBrokerLimitation` 风险刻画用例，先订阅 A 并保存 Broker 检查点，再增加 B，取得 SUBACK、持久化本地确认日志，并实际验证 B 可以收消息；SIGKILL 后 Broker 回到只含 A 的检查点，重连仍返回 SessionPresent=true。正式接收器按现设计跳过本地已确认的 A/B，B 因此持续漏收，且没有 sessionLost 事件。以 B 消息后紧随 A 的 barrier 证明，不靠等待后“没收到”作结论。本地日志仍有两个 Confirmed 项，不能证明远端检查点也有两个订阅。
+- 风险用例 `BrokerCanRestoreSessionPresentWithoutALaterLocallyConfirmedSubscription` 已真实运行并确认上述现象（`/tmp/tenonedge-broker-subscription-gap.log`）；测试通过仅意味着缺口被稳定复现，不意味着 AT-25 / V-04 / V-09 已通过。
+- 待维护者决策：要消除该类订阅回滚漏收，须考虑每次建立新连接都重新协调订阅，与设计 §6.2“会话存在时不重复订阅未变更 Filter”冲突；MQTT 3.1.1 不提供查询订阅清单的接口。重新订阅可能重复投递 retained，特别影响已开启 ProcessRetained 的输入。仅异常断线重连补订无法覆盖网关离线期间 Broker 回滚，不能把它当完整修复。本批已向维护者说明，未擅自修改产品策略。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-checkpoint' --results-directory /tmp/tenonedge-broker-checkpoint --blame-hang-timeout 5m --blame-hang-dump-type none`：880 单元 + 691 集成 = **1571 项测试断言通过，0 失败、0 跳过**。其中 1 项是上述已知缺口刻画，不能用这个总数宣称 MQTT 可靠性验收完成。TRX Counters 已核对，日志 `/tmp/tenonedge-broker-checkpoint-full.log`。初次格式检查发现两个换行问题、阻止全量执行；限定文件格式化修正后才执行上述全量，`git diff --check` 通过。
+- 环境同 §2.76；本批未安装其他 Broker/插件，未把快照周期 0 当成生产推荐值。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

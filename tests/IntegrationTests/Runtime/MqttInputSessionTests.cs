@@ -759,11 +759,13 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task BrokerRestartRestoresOnlySessionsAndBacklogThatWereCheckpointed(bool persistence, bool forceKill)
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task BrokerRestartRestoresOnlySessionsAndBacklogThatWereCheckpointed(bool persistence, bool forceKill, bool checkpoint)
     {
         Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
         await using var broker = await MosquittoBroker.StartAsync(Token, persistence, stablePorts: true);
@@ -784,6 +786,17 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             await MqttProbe.PublishAsync(publisher, topic, "offline"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
             await MqttProbe.DisconnectAsync(publisher, deadline.Token);
         }
+        if (checkpoint)
+        {
+            await broker.SaveFirstCheckpointAsync(deadline.Token);
+            // 该消息已获 PUBACK，但不属于前一个快照；正常停止会保存它，SIGKILL 不会。
+            var (later, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+            using (later)
+            {
+                await MqttProbe.PublishAsync(later, topic, "after-checkpoint"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+                await MqttProbe.DisconnectAsync(later, deadline.Token);
+            }
+        }
         await broker.RestartAsync(forceKill, deadline.Token);
         var reports = new ConcurrentQueue<string>();
         var messages = new ConcurrentQueue<string>();
@@ -797,7 +810,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         })], TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
         await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
         Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
-        var persisted = persistence && !forceKill;
+        var persisted = persistence && (!forceKill || checkpoint);
         Assert.Equal(persisted, restored.LastSessionPresent);
         Assert.Equal(persisted ? 0 : 1, reports.Count(reason => reason == "sessionLost"));
         Assert.Equal(persisted ? 0 : 1, reports.Count(reason => reason == "subscribed"));
@@ -805,8 +818,74 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         using (after)
         { await MqttProbe.PublishAsync(after, topic, "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
         await barrier.Task.WaitAsync(deadline.Token);
-        Assert.Equal(persisted ? "offline,barrier" : "barrier", string.Join(',', messages));
+        var expected = !persisted ? "barrier" : checkpoint && !forceKill ? "offline,after-checkpoint,barrier" : "offline,barrier";
+        Assert.Equal(expected, string.Join(',', messages));
         Assert.Equal(new(topic, 1, true), Assert.Single(journal.Read(identity)));
+    }
+
+    [Fact]
+    [Trait("Category", "KnownBrokerLimitation")]
+    public async Task BrokerCanRestoreSessionPresentWithoutALaterLocallyConfirmedSubscription()
+    {
+        // V-09 风险刻画，不是输入可靠性验收通过：MQTT 3.1.1 没有查询 Broker 订阅清单的接口。
+        Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
+        await using var broker = await MosquittoBroker.StartAsync(Token, persistence: true, stablePorts: true);
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("subscription-checkpoint-gap");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        using var deadline = MqttProbe.Timeout(Token, TimeSpan.FromSeconds(60));
+        var original = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var first = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await first.MaintainAsync(deadline.Token)).Status); }
+        await broker.SaveFirstCheckpointAsync(deadline.Token);
+        var positive = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var changed = new MqttInputReceiver([
+            new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected)),
+            new(topic + "/later", 1, (_, _) => { positive.TrySetResult(); return Task.FromResult(InputHandoffStatus.Rejected); })],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var second = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), changed))
+        {
+            Assert.Equal(OutputSendStatus.Ack, (await second.MaintainAsync(deadline.Token)).Status);
+            Assert.True(changed.LastSessionPresent);
+            var (before, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+            using (before)
+            { await MqttProbe.PublishAsync(before, topic + "/later", "positive"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
+            await positive.Task.WaitAsync(deadline.Token);
+        }
+        Assert.Equal(2, journal.Read(identity).Count);
+        Assert.All(journal.Read(identity), subscription => Assert.True(subscription.Confirmed));
+        await broker.RestartAsync(forceKill: true, deadline.Token);
+        var values = new ConcurrentQueue<string>();
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reports = new ConcurrentQueue<string>();
+        Task<InputHandoffStatus> Receive(MqttApplicationMessage message, CancellationToken _)
+        {
+            var value = message.ConvertPayloadToString();
+            values.Enqueue(value);
+            if (value == "barrier")
+            { barrier.TrySetResult(); }
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        }
+        var restored = new MqttInputReceiver([new(topic, 1, Receive), new(topic + "/later", 1, Receive)],
+            TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+        await using var current = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
+        Assert.Equal(OutputSendStatus.Ack, (await current.MaintainAsync(deadline.Token)).Status);
+        Assert.True(restored.LastSessionPresent);
+        Assert.DoesNotContain("subscribed", reports);
+        Assert.DoesNotContain("sessionLost", reports);
+        var (after, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (after)
+        {
+            await MqttProbe.PublishAsync(after, topic + "/later", "lost"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            await MqttProbe.PublishAsync(after, topic, "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+        }
+        await barrier.Task.WaitAsync(deadline.Token);
+        Assert.Equal("barrier", Assert.Single(values));
+        Assert.Equal(2, journal.Read(identity).Count); // 本地的确认日志不能证明 Broker 检查点包含同样的订阅。
     }
 
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
