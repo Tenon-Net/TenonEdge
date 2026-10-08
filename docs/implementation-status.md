@@ -1772,6 +1772,14 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-context' --results-directory /tmp/tenonedge-modbus-context --blame-hang-timeout 5m --blame-hang-dump-type none`：**872 单元 + 683 集成 = 1555 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-context-full.log`。两个改动 C# 文件限定 `--include` 的 `dotnet format --verify-no-changes --no-restore`、`git diff --check` 通过。
 - 此为连接专用线程的工程约束验证，尚不代表 Host 已接入 Modbus 或完整 BE-AT-03 通过。环境同 §2.68。
 
+### 2.74 T2-02 连接级超时事实与重连判定（2026-10-09）
+
+- 新增连接私有的启用从站最近请求记录：只有所有启用从站的最近请求均为 timeout，或本次为连接级错误，才满足退避重连条件。未知/尚未请求的从站不视为超时；设备异常应答和其他读取错误不等同于超时。
+- 同 UnitId 的多个采集组只占一个设备记录；不同物理连接互不共享。换连接清除旧连接的请求事实，重新收集；周期跳过和超时后未执行的块不允许调用 Record，避免伪造超时。
+- 8 项单元测试覆盖单从站连续超时、尚未请求设备、成功/异常应答/读取错误清除本设备超时、连接错误不污染其他设备、重连后未知状态、重复组、跨连接隔离、非法输入。聚焦命令 `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~ModbusConnectionHealthTests`：8 通过，日志 `/tmp/tenonedge-modbus-health-focused.log`。
+- 全部单元：`dotnet test tests/UnitTests -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-health' --results-directory /tmp/tenonedge-modbus-health`：**880 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-health-unit.log`。本次不重跑集成，最近 683 项集成通过的基线见 §2.73。限定两个新增文件的 `dotnet format --verify-no-changes --no-restore --include …` 及 `git diff --check` 通过。
+- 当前只实现内部调度判定，未接入网络会话，不宣称 AT-02 同连接多从站实测已通过；UnitId 产品范围及依赖采用仍待确认。环境同 §2.68。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
