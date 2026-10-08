@@ -22,6 +22,7 @@ public sealed class ManagementApiAccessTests(
             [
                 "GET /api/edge-admin/v1/audit (protected: role:administrator)",
                 "GET /api/edge-admin/v1/auth/session (protected)",
+                "GET /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected)",
                 "GET /api/edge-admin/v1/openapi/{documentName}.json (protected)",
                 "GET /api/edge-admin/v1/runtime/events (protected)",
                 "GET /api/edge-admin/v1/setup (anonymous)",
@@ -32,6 +33,7 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/auth/logout (protected)",
                 "POST /api/edge-admin/v1/auth/password (protected)",
                 "POST /api/edge-admin/v1/setup (anonymous)",
+                "PUT /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected: role:configurator)",
             ],
             EndpointInventory.Describe(production.Services));
     }
@@ -43,6 +45,7 @@ public sealed class ManagementApiAccessTests(
             [
                 "GET /api/edge-admin/v1/audit (protected: role:administrator)",
                 "GET /api/edge-admin/v1/auth/session (protected)",
+                "GET /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected)",
                 "GET /api/edge-admin/v1/openapi/{documentName}.json (anonymous)",
                 "GET /api/edge-admin/v1/runtime/events (protected)",
                 "GET /api/edge-admin/v1/setup (anonymous)",
@@ -53,6 +56,7 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/auth/logout (protected)",
                 "POST /api/edge-admin/v1/auth/password (protected)",
                 "POST /api/edge-admin/v1/setup (anonymous)",
+                "PUT /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected: role:configurator)",
             ],
             EndpointInventory.Describe(development.Services));
     }

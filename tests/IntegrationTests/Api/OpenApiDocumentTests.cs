@@ -23,6 +23,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "changePassword",
         "completeSetup",
         "getLiveness",
+        "getMqttCredentialStatus",
         "getReadiness",
         "getSession",
         "getSetupStatus",
@@ -31,6 +32,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "listRuntimeEvents",
         "login",
         "logout",
+        "writeMqttCredential",
     ];
 
     [Fact]

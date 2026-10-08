@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    运行时（总设计 §3.2、§8，后端实施规范 §2）：运行单元的监督与启停、输入通道与发送缓存 queue.db。
+    只引用 Abstractions、Microsoft.Data.Sqlite（发送缓存）与日志抽象；不引用 Host、ASP.NET Core、ORM 或协议库（工程规则测试持续检查）。
+  -->
+
+  <PropertyGroup>
+    <!--
+      Host 按 linux-x64 自包含发布时（T0-13），被引用的工程同样按该平台还原；在此声明，使平台相关的还原结果进入本工程的锁文件，
+      CI 以 locked mode 还原后发布不会因锁文件缺少该平台而失败（§6 决定 48）。不影响普通构建。
+    -->
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TenonEdge.Abstractions\TenonEdge.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TenonEdge.UnitTests" />
+    <InternalsVisibleTo Include="TenonEdge.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

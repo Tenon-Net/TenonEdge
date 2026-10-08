@@ -101,6 +101,12 @@ internal static class AuditActions
     public const string PasswordChanged = "auth.changePassword";
 
     public const string AdministratorReset = "host.resetAdministrator";
+
+    /// <summary>启动时导入种子快照，生成新的有效版本（T1-01）；操作人为“系统”。</summary>
+    public const string SeedSnapshotApplied = "runtime.applySeedSnapshot";
+
+    /// <summary>启动保护自动回滚到上一生效版本的内容（总设计 §7.4）；操作人为“系统”。</summary>
+    public const string AutoRollback = "runtime.autoRollback";
 }
 
 internal static class AuditResults

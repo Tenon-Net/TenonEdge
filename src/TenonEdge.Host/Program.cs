@@ -1,6 +1,7 @@
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Auth;
+using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Health;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Features.SystemInfo;
@@ -32,7 +33,12 @@ app.MapManagementApi()
     .MapAuthEndpoints()
     .MapAuditEndpoints()
     .MapRuntimeEventEndpoints()
-    .MapSystemInfoEndpoints();
+    .MapSystemInfoEndpoints()
+    .MapMqttCredentialEndpoints();
 
+// 后台服务因未处理的异常结束时宿主随之停止，这里改用非零退出码，使服务管理器把它当作失败并重启（启动保护据此计数）。
+// 在宿主停止之后、服务容器释放之前取得各后台服务的结果。
+var exitCode = HostExitCodes.Success;
+app.Lifetime.ApplicationStopped.Register(() => exitCode = HostExitCodes.AfterShutdown(app.Services.GetServices<IHostedService>()));
 await app.RunAsync();
-return HostExitCodes.Success;
+return exitCode;

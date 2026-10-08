@@ -47,6 +47,12 @@
         "resolved": "5.2.0",
         "contentHash": "po1jhvFd+8pbfvJR/puh+fkHi0GRanAdvayh/0e47yaM6CXWZ6opUjCMFuYlAnD2LcbyvQE7fPJKvogmaUcN+w=="
       },
+      "Microsoft.Extensions.TimeProvider.Testing": {
+        "type": "Direct",
+        "requested": "[10.10.0, )",
+        "resolved": "10.10.0",
+        "contentHash": "8duZdxuO3Oo8tlyQXVq1drXee6GJC9DjUU97Pq3YaIqf92jrAHsWxbbRKwvjQI48Mer3IANwUKF0elqvHeY4Rw=="
+      },
       "Microsoft.Identity.Client": {
         "type": "Direct",
         "requested": "[4.61.3, )",
@@ -225,6 +231,11 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "9/qymSh7hVDMGTGwrLz8MRp5zRyXy9adGDOs4HwRdnLil3oZGYuWeZjbmHgCQ9BL1qBroVfgUK3U/nb61617Cw=="
+      },
       "Microsoft.OpenApi": {
         "type": "Transitive",
         "resolved": "2.12.0",
@@ -347,6 +358,13 @@
       "tenonedge.abstractions": {
         "type": "Project"
       },
+      "tenonedge.adapters": {
+        "type": "Project",
+        "dependencies": {
+          "MQTTnet": "[5.2.0.1603, )",
+          "TenonEdge.Abstractions": "[1.0.0, )"
+        }
+      },
       "tenonedge.host": {
         "type": "Project",
         "dependencies": {
@@ -372,7 +390,18 @@
           "System.Memory.Data": "[1.0.2, )",
           "System.Runtime.Caching": "[8.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[8.0.0, )",
-          "SystemCommon": "[8.5.0, )"
+          "SystemCommon": "[8.5.0, )",
+          "TenonEdge.Abstractions": "[1.0.0, )",
+          "TenonEdge.Adapters": "[1.0.0, )",
+          "TenonEdge.Runtime": "[1.0.0, )"
+        }
+      },
+      "tenonedge.runtime": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
+          "TenonEdge.Abstractions": "[1.0.0, )"
         }
       },
       "Microsoft.AspNetCore.OpenApi": {
@@ -400,6 +429,21 @@
           "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12",
           "SQLitePCLRaw.core": "2.1.12"
         }
+      },
+      "Microsoft.Extensions.Logging.Abstractions": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "+24lC4plfbEDNfLAdTV/SWKS7dW+16X4HdydO3R++134kSNTzcbYA4KpR1Hdh6uWisB8Za3AzwyOn+K+NxWIug==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12"
+        }
+      },
+      "MQTTnet": {
+        "type": "CentralTransitive",
+        "requested": "[5.2.0.1603, )",
+        "resolved": "5.2.0.1603",
+        "contentHash": "iNuWVo/568aRo2ExEN2qkC4J5b07ckKqt+9Uok2kIbbK7PMBsXvYiKVENPHmOBWFB5ExhlNQb/qQ8M9/IYRTdQ=="
       },
       "SqlSugarCoreNoDrive": {
         "type": "CentralTransitive",

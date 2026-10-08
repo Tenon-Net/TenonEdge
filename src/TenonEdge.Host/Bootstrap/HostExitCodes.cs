@@ -19,4 +19,16 @@ internal static class HostExitCodes
 
     /// <summary>主机侧维护命令因业务条件未能执行，例如要重置的账号不存在；原因写在标准错误中。</summary>
     public const int MaintenanceCommandFailed = 5;
+
+    /// <summary>
+    /// 后台服务因未处理的异常结束，宿主随之停止（.NET 默认的 StopHost 行为）。等待停机的调用此时正常返回，
+    /// 不改退出码时进程会以 0 结束，服务管理器按“失败时重启”配置时不会重启（docs/implementation-status.md §6 决定 45）。
+    /// </summary>
+    public const int BackgroundServiceFailed = 6;
+
+    /// <summary>宿主停止之后进程应使用的退出码：任一后台服务的执行任务以故障结束时为 <see cref="BackgroundServiceFailed"/>，否则为 0。</summary>
+    public static int AfterShutdown(IEnumerable<IHostedService> hostedServices) =>
+        hostedServices.OfType<BackgroundService>().Any(service => service.ExecuteTask is { IsFaulted: true })
+            ? BackgroundServiceFailed
+            : Success;
 }

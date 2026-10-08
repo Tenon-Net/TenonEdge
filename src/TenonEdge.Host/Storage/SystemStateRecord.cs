@@ -53,6 +53,26 @@ internal sealed class SystemStateRecord
     /// <summary>会话代次：开启“只允许 HTTPS”或恢复备份时加一，此前签发的全部会话失效（总设计 §3.3）。</summary>
     [SugarColumn(ColumnName = "session_generation")]
     public long SessionGeneration { get; set; } = 1;
+
+    /// <summary>当前生效的配置版本（总设计 §7.4 的 effectiveRevision）；尚无有效配置时为空。</summary>
+    [SugarColumn(ColumnName = "effective_revision", IsNullable = true)]
+    public long? EffectiveRevision { get; set; }
+
+    /// <summary>上一个生效的版本（previousRevision），启动保护的自动回滚以它为目标。</summary>
+    [SugarColumn(ColumnName = "previous_revision", IsNullable = true)]
+    public long? PreviousRevision { get; set; }
+
+    /// <summary>已冻结、尚未提交的版本（pendingRevision）；启动时仍不为空，说明上次在提交前中断。</summary>
+    [SugarColumn(ColumnName = "pending_revision", IsNullable = true)]
+    public long? PendingRevision { get; set; }
+
+    /// <summary>“运行中”标记：已激活、尚未按停机顺序正常退出的版本（启动保护，总设计 §7.4）。</summary>
+    [SugarColumn(ColumnName = "running_revision", IsNullable = true)]
+    public long? RunningRevision { get; set; }
+
+    /// <summary>最近一次导入的种子快照的内容哈希（T1 的种子快照）。</summary>
+    [SugarColumn(ColumnName = "seed_hash", IsNullable = true)]
+    public string? SeedHash { get; set; }
 }
 
 /// <summary>首次设置状态的取值（总设计 §10.3）。</summary>

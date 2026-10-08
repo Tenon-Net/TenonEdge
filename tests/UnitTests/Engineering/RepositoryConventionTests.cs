@@ -34,7 +34,12 @@ public sealed partial class RepositoryConventionTests
 
         var unitTests = ProjectFileReader.Read(Path.Combine(RepositoryPaths.TestsDirectory, "UnitTests", "TenonEdge.UnitTests.csproj"));
         Assert.Equal(
-            ["src/TenonEdge.Abstractions/TenonEdge.Abstractions.csproj", "src/TenonEdge.Host/TenonEdge.Host.csproj"],
+            [
+                "src/TenonEdge.Abstractions/TenonEdge.Abstractions.csproj",
+                "src/TenonEdge.Adapters/TenonEdge.Adapters.csproj",
+                "src/TenonEdge.Host/TenonEdge.Host.csproj",
+                "src/TenonEdge.Runtime/TenonEdge.Runtime.csproj",
+            ],
             unitTests.ProjectReferences);
     }
 

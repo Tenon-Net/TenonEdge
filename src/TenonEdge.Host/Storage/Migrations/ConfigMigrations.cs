@@ -89,5 +89,47 @@ internal static class ConfigMigrations
             "CREATE INDEX ix_runtime_event_last_occurred_at ON runtime_event (last_occurred_at)",
             "CREATE INDEX ix_runtime_event_type_target ON runtime_event (type, target, first_occurred_at)",
         ]),
+
+        // T1-01：运行快照与有效版本的最小元数据（总设计 §7.4、§10.2 RuntimeSnapshot）。版本号单调递增、不复用：
+        // 每次分配都把 revision_floor 推进到新版本号。running_revision 是“运行中”标记：激活前写入，按停机顺序正常退出时清除；
+        // 启动时仍在，说明上次非正常退出（启动保护）。seed_hash 是最近一次导入的种子快照的内容哈希，种子不变时不重复导入。
+        new(6, "runtime_snapshots", [
+            """
+            CREATE TABLE runtime_snapshot (
+                revision INTEGER NOT NULL PRIMARY KEY,
+                schema_version INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                origin_detail TEXT,
+                state TEXT NOT NULL CHECK (state IN ('pending', 'effective', 'history', 'notEffective')),
+                not_effective_reason TEXT,
+                is_stable INTEGER NOT NULL DEFAULT 0,
+                stable_at INTEGER,
+                abnormal_exit_count INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                created_by TEXT NOT NULL,
+                activated_at INTEGER
+            )
+            """,
+            "ALTER TABLE system_state ADD COLUMN effective_revision INTEGER",
+            "ALTER TABLE system_state ADD COLUMN previous_revision INTEGER",
+            "ALTER TABLE system_state ADD COLUMN pending_revision INTEGER",
+            "ALTER TABLE system_state ADD COLUMN running_revision INTEGER",
+            "ALTER TABLE system_state ADD COLUMN seed_hash TEXT",
+        ]),
+        new(7, "mqtt_credentials", [
+            """
+            CREATE TABLE mqtt_credential (
+                connection_id INTEGER NOT NULL PRIMARY KEY,
+                recipient TEXT NOT NULL,
+                username TEXT NOT NULL,
+                protected_password TEXT,
+                account_marker TEXT NOT NULL,
+                version TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

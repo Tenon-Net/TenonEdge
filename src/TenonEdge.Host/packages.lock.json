@@ -264,6 +264,29 @@
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.12"
         }
+      },
+      "tenonedge.abstractions": {
+        "type": "Project"
+      },
+      "tenonedge.adapters": {
+        "type": "Project",
+        "dependencies": {
+          "MQTTnet": "[5.2.0.1603, )",
+          "TenonEdge.Abstractions": "[1.0.0, )"
+        }
+      },
+      "tenonedge.runtime": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.12, )",
+          "TenonEdge.Abstractions": "[1.0.0, )"
+        }
+      },
+      "MQTTnet": {
+        "type": "CentralTransitive",
+        "requested": "[5.2.0.1603, )",
+        "resolved": "5.2.0.1603",
+        "contentHash": "iNuWVo/568aRo2ExEN2qkC4J5b07ckKqt+9Uok2kIbbK7PMBsXvYiKVENPHmOBWFB5ExhlNQb/qQ8M9/IYRTdQ=="
       }
     },
     "net10.0/linux-x64": {

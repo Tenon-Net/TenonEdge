@@ -137,7 +137,7 @@ internal sealed class MosquittoBroker : IAsyncDisposable
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or OperationCanceledException)
         {
-            return $"需要本机 Docker 与镜像 {Image}（T0-11 真实 Broker 验证；CI 不运行 RealBroker 类别）：{exception.Message}";
+            return $"需要本机 Docker 与镜像 {Image}（T0-11/T1-04 真实 Broker 验证）：{exception.Message}";
         }
     }
 

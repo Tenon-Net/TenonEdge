@@ -9,7 +9,10 @@
 
 - 依据：`src/TenonEdge.Host/packages.lock.json` 列出的全部直接与传递依赖（31 个）；许可取自本机 NuGet 缓存中各包 nuspec 的 license 元素，核查日期 2026-09-30。
 - 分发范围按 Host 的实际构建输出判定：`src/TenonEdge.Host/bin/Release/net10.0` 只含下表“随发布”的程序集（9 个 DLL）与 `runtimes/*/native` 下的 e_sqlite3 原生库。
+- T1 第一批（2026-10-01）：Host 引用本仓库的 Runtime、Adapters、Abstractions 三个工程。Runtime 直接依赖 Microsoft.Data.Sqlite（与 N-03 同一版本）与 Microsoft.Extensions.Logging.Abstractions 10.0.12（传递依赖 Microsoft.Extensions.DependencyInjection.Abstractions 10.0.12，均为 MIT，见 Runtime 的锁文件）；后两者属于 ASP.NET Core 共享框架，Host 的还原把它们剪除，Release 构建输出没有新增第三方程序集，下表不变。Adapters 不依赖任何包。
 - 测试框架（xUnit.net、VSTest、Mvc.Testing 等）不随产品分发，见两个测试工程的锁文件，不在此逐项登记；只为验证候选依赖而引用的包、测试用的镜像与夹具列在第 4 节。
+
+- T1-04（2026-10-08）：Adapters 正式引用 MQTTnet 5.2.0.1603；通过 NuGet 使用未修改的程序集，没有移植参考仓库源码。Host 锁文件与自包含发布物包含 MQTTnet.dll；生产依赖登记为 N-08。
 
 ### 1.1 随发布物分发
 
@@ -22,6 +25,8 @@
 | N-05 | SQLitePCLRaw.bundle_e_sqlite3、core、provider.e_sqlite3、lib.e_sqlite3 | 2.1.12 | nuget.org，N-04 的传递依赖 | 依赖 | Apache-2.0（nuspec）；所带原生库为 SQLite 3.53.3（SQLite 本身为公有领域） | 否 | 是（lib.e_sqlite3 为各平台原生库） | Apache-2.0 许可文本；是否带 NOTICE 待核查 | 已记录；NOTICE 待核查 |
 | N-06 | SqlSugarCoreNoDrive（程序集 SqlSugar 5.1.4.221） | 5.1.4.221 | nuget.org，直接依赖（配置库访问层） | 依赖 | 待核查：nuspec 只有指向 Apache-2.0 的 licenseUrl，没有许可表达式；GitHub 仓库 LICENSE 为 MIT（S-19） | 否 | 是 | 按 D-09 推荐：MIT 与 Apache-2.0 两份文本一并附带，并向上游确认 | 待核查（D-09 未确认） |
 | N-07 | Newtonsoft.Json | 13.0.2 | nuget.org，N-06 的传递依赖 | 依赖 | MIT | 否 | 是 | 版权与 MIT 许可文本 | 已记录 |
+
+| N-08 | MQTTnet | 5.2.0.1603 | nuget.org，Adapters 直接依赖 | MQTT 输出依赖 | MIT（包内 LICENSE；版权 .NET Foundation and Contributors） | 否 | 是 | 版权与 MIT 许可文本 | 已记录，2026-10-08；原验证登记 T-01 |
 
 ### 1.2 在还原图中、但资产已排除（不分发）
 
@@ -84,16 +89,19 @@ S-01 的修改说明（按总设计 §10.1，边缘设备开机时时钟可能�
 - 公开 `TimestampShift`：按保留期清理审计记录与运行事件时，在 SQL 中由 ID 换算逻辑时间，判断保存的时间是否可信（T0-09）。
 - 测试：原实现的并发不重复测试改写后保留（`ParallelBurstIdsAreUnique`），其余测试按上述规则重写，见 `tests/UnitTests/Storage/SnowflakeIdGeneratorTests.cs`。
 
+S-01 之外，T1-02 的模拟输入使用 SplitMix64 伪随机数算法（Steele、Lea、Flood，2014 年公布；`src/TenonEdge.Adapters/Simulator/SplitMix64.cs`）：按公开的算法描述自行实现，常数是算法定义的一部分，没有复制任何源码文件，不属于上表的移植。
+
 ## 4. 只用于测试的依赖、镜像与测试夹具（不分发）
 
 核查日期 2026-09-30。许可取自本机 NuGet 缓存中各包的 nuspec 与包内许可文件；镜像按标签与 digest 记录。
 
 | 编号 | 组件/项目 | 版本或摘要 | 来源 | 用途 | 许可证/授权依据 | 是否随包分发 | 状态 |
 |---|---|---|---|---|---|---|---|
-| T-01 | MQTTnet | 5.2.0.1603（源码标签 v5.2.0，提交 `14463d1`） | nuget.org | T0-11 验证代码（集成测试） | MIT（包内 LICENSE，版权 .NET Foundation and Contributors） | 否 | 已记录；正式 MQTT 适配器（T1-04）引用后移入第 1.1 节 |
+| T-01 | MQTTnet | 5.2.0.1603（源码标签 v5.2.0，提交 `14463d1`） | nuget.org | T0-11 验证代码（集成测试） | MIT（包内 LICENSE，版权 .NET Foundation and Contributors） | 否 | 已记录；2026-10-08 正式 MQTT 输出采用，生产分发见 N-08，本行保留原型来源记录 |
 | T-02 | NModbus | 3.0.83（源码标签 v3.0.83，提交 `d96e770`） | nuget.org | T0-12 比较 | MIT（包内 LICENSE.txt，版权 2006 Scott Alexander、2015 Dmitry Turin） | 否 | 已记录；若选定（T2-02）移入第 1.1 节 |
 | T-03 | FluentModbus | 5.3.2（源码标签 v5.3.2，提交 `5e44710`） | nuget.org | T0-12 比较 | MIT（nuspec 许可表达式） | 否 | 已记录 |
 | T-04 | System.IO.Ports、runtime.native.System.IO.Ports 及各平台原生包、Microsoft.Extensions.Logging.Abstractions | 5.0.0 等 | nuget.org，T-03 的传递依赖 | 同上 | MIT | 否 | 已记录 |
 | T-05 | 镜像 eclipse-mosquitto | 2.1.2-alpine，digest `sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408` | Docker Hub | T0-11 测试 Broker | EPL-2.0 或 EDL-1.0（开发准备 S-03） | 否 | 已记录；附带 Broker 的分发与声明在 T5-04、T5-07 处理 |
 | T-06 | 镜像 mcr.microsoft.com/dotnet/runtime-deps | 10.0，digest `sha256:099f6f87ed745377dd27bd722f0d1a352bca71b4fddaabfd75e7c064bcaa82da`（Ubuntu 24.04.5） | mcr.microsoft.com | T0-13 未预装 .NET 的干净环境 | 镜像内各组件按其许可 | 否 | 只用于验证；产品基础镜像在 T5-04 另行选定并登记 |
+| T-08 | Microsoft.Extensions.TimeProvider.Testing | 10.10.0（dotnet/extensions，提交 `02107c65bab30aad9e35b5133ed643eaa77bccd8`） | nuget.org | T1 的单元与集成测试：可控时钟 FakeTimeProvider | MIT（nuspec 许可表达式） | 否 | 已记录（2026-10-01）；net10.0 下没有传递依赖 |
 | T-07 | SQLitePCLRaw.lib.e_sqlite3 中的 linux-x64 原生库（SQLite 3.49.1） | 2.1.11 | nuget.org，验证时下载，包的 SHA-512 与 nuget.org 登记核对一致 | T0-13 验证“实际加载低版本 SQLite 时运行时不启动” | Apache-2.0（SQLite 本身为公有领域） | 否 | 只在验证的临时目录中使用，不进入仓库或发布物 |

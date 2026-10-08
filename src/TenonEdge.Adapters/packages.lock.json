@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "MQTTnet": {
+        "type": "Direct",
+        "requested": "[5.2.0.1603, )",
+        "resolved": "5.2.0.1603",
+        "contentHash": "iNuWVo/568aRo2ExEN2qkC4J5b07ckKqt+9Uok2kIbbK7PMBsXvYiKVENPHmOBWFB5ExhlNQb/qQ8M9/IYRTdQ=="
+      },
+      "tenonedge.abstractions": {
+        "type": "Project"
+      }
+    },
+    "net10.0/linux-x64": {}
+  }
+}

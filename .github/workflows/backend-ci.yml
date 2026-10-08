@@ -56,14 +56,18 @@ jobs:
       - name: Build (Release)
         run: dotnet build TenonEdge.sln --configuration Release --no-restore
 
-      # RealBroker 类别是 T0-11 的真实 Broker 验证，需要本机 Docker 与固定的 Mosquitto 镜像，本批只在本机执行并记录；
-      # 正式 MQTT 适配器落地后再把真实 Broker 场景接入 CI（后端实施规范 §6.2 第 4 步）。其余类别全部执行。
+      # T1-04 正式输出：CI 同时执行真实 Broker 场景。镜像或 Docker 不可用时前置步骤失败；报告核查拒绝跳过。
+      - name: Prepare MQTT test broker image
+        run: docker pull eclipse-mosquitto:2.1.2-alpine
+
+      # 单个用例挂起超过 5 分钟即终止测试进程并报告是哪个用例（不生成内存转储），不必等作业超时。
       - name: Test
         run: >-
           dotnet test TenonEdge.sln
           --configuration Release
           --no-build
-          --filter "Category!=RealBroker"
+          --blame-hang-timeout 5m
+          --blame-hang-dump-type none
           --results-directory artifacts/test-results
           --logger "trx;LogFilePrefix=tenonedge"
           --logger "console;verbosity=normal"

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    适配器（总设计 §3.2、§11，后端实施规范 §2）：输入与输出适配器的工厂和实例，只通过 Abstractions 的契约接入运行时。
+    模拟输入（T1-02）及正式 MQTT 输出（T1-04）；MQTTnet 仅在本工程引用。不引用 Host、Runtime、ASP.NET Core、ORM 或 SQLite。
+  -->
+
+  <PropertyGroup>
+    <!--
+      Host 按 linux-x64 自包含发布时（T0-13），被引用的工程同样按该平台还原；在此声明，使平台相关的还原结果进入本工程的锁文件，
+      CI 以 locked mode 还原后发布不会因锁文件缺少该平台而失败（§6 决定 48）。不影响普通构建。
+    -->
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MQTTnet" />
+    <ProjectReference Include="..\TenonEdge.Abstractions\TenonEdge.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TenonEdge.UnitTests" />
+    <InternalsVisibleTo Include="TenonEdge.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

@@ -11,7 +11,7 @@ namespace TenonEdge.Host.Bootstrap;
 /// <summary>
 /// 开始接收请求之前的启动检查与初始化，按顺序执行：
 /// <list type="number">
-/// <item>校验监听端口与地址（T0-06）、审计保留期（T0-09）等部署参数。</item>
+/// <item>校验监听端口与地址（T0-06）、审计保留期（T0-09）、运行时的种子快照与稳定时间（T1-01）等部署参数。</item>
 /// <item>取得数据目录与单实例锁；之后的步骤才可以打开数据目录中的运行数据（任务 T0-04）。</item>
 /// <item>在容器中运行时检查数据目录是否位于持久卷上，不满足时登记运行时启动条件（T0-06）。</item>
 /// <item>初始化配置库：记录 SQLite 版本、启用 WAL、执行版本化迁移（T0-05）。</item>
@@ -38,6 +38,7 @@ internal static partial class HostStartup
         {
             _ = app.Services.GetRequiredService<ListenerSettings>();
             _ = app.Services.GetRequiredService<DataRetentionSettings>();
+            _ = app.Services.GetRequiredService<RuntimeSettings>();
             var dataDirectory = app.Services.GetRequiredService<DataDirectoryLock>().Directory;
             LogDataDirectoryOpened(logger, dataDirectory.Root);
             var runtimeStartConditions = app.Services.GetRequiredService<RuntimeStartConditions>();

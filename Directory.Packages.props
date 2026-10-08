@@ -10,8 +10,17 @@
   <ItemGroup Label="Host">
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <!-- 配置库：SqlSugarCoreNoDrive 不带 SQLite 驱动，由 Host 显式引用 Microsoft.Data.Sqlite（总设计 §2.3）。 -->
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageVersion Include="SqlSugarCoreNoDrive" Version="5.1.4.221" />
+  </ItemGroup>
+
+  <!-- Host（config.db）与 Runtime（queue.db）使用同一版本的 Microsoft.Data.Sqlite，加载同一个原生库（V-07）。 -->
+  <ItemGroup Label="Sqlite">
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+
+  <!-- Runtime 的日志抽象，版本与宿主使用的 ASP.NET Core 共享框架 10.0.12 一致。 -->
+  <ItemGroup Label="Runtime">
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
   </ItemGroup>
 
   <!--
@@ -44,7 +53,7 @@
   </ItemGroup>
 
   <!--
-    协议候选库（T0-11 MQTT 最小原型、T0-12 Modbus 候选库比较）：目前只由集成测试中的验证代码引用；
+    协议候选库（T0-11 MQTT 最小原型、T0-12 Modbus 候选库比较）：MQTTnet 已用于 T1-04 正式 MQTT 输出，其他候选库仅由验证代码引用；
     正式适配器在 T1、T2 按验证结论选定后由 Adapters 引用（依赖规则禁止 Runtime 与 Abstractions 引用协议库）。
     版本不低于总设计 §2.3 的要求，来源与许可见 docs/reference-notes.md §4。
   -->
@@ -56,6 +65,8 @@
 
   <ItemGroup Label="Tests">
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+    <!-- 可控时钟（FakeTimeProvider）：周期、退避与截止时间的测试不依赖真实等待（后端实施规范 §6.1）。 -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <!-- 只走 VSTest：使用关闭 Microsoft Testing Platform 的 xUnit.net v3 包，避免混入第二套运行器。 -->
     <PackageVersion Include="xunit.v3.mtp-off" Version="4.0.1" />

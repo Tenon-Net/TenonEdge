@@ -6,8 +6,10 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
+using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.IntegrationTests.Api;
 
@@ -121,13 +123,21 @@ public sealed class HostLifecycleTests(ITestOutputHelper output)
 
         Assert.Contains(hosted, service => service is DataRetentionService);
         Assert.Empty(FindDuplicateHostedServiceInstances(services));
+
+        // 运行时（T1-01，BE-AT-03）：协调者是唯一的运行时后台服务，与按具体类型登记的单例是同一个实例；
+        // 它驱动的运行时宿主也只有一个。
+        var coordinator = Assert.Single(hosted.OfType<RuntimeCoordinator>());
+        Assert.Same(services.GetRequiredService<RuntimeCoordinator>(), coordinator);
+        Assert.Same(services.GetRequiredService<RuntimeHost>(), coordinator.Runtime);
+        using var scope = services.CreateScope();
+        Assert.Same(coordinator.Runtime, scope.ServiceProvider.GetRequiredService<RuntimeHost>());
     }
 
     [Fact]
     public void TheHostedServiceCheckCatchesASecondInstanceRegisteredByConcreteType()
     {
-        // 目前宿主中没有既按具体类型登记、又作为后台服务运行的服务，上一个用例的这一分支是防回归检查；
-        // 这里用构造的登记证明检查本身有效。错误写法：AddSingleton 与 AddHostedService 各自创建一个实例，会有两套循环。
+        // 运行时协调者既按具体类型登记、又作为后台服务运行（T1-01），上一个用例由此覆盖了这一分支；
+        // 这里再用构造的登记证明检查本身有效。错误写法：AddSingleton 与 AddHostedService 各自创建一个实例，会有两套循环。
         var wrong = new ServiceCollection();
         wrong.AddSingleton<ProbeService>();
         wrong.AddHostedService<ProbeService>();
@@ -135,7 +145,7 @@ public sealed class HostLifecycleTests(ITestOutputHelper output)
 
         Assert.Contains(FindDuplicateHostedServiceInstances(wrongProvider), violation => violation.Contains(nameof(ProbeService), StringComparison.Ordinal));
 
-        // 正确写法（T1 的运行时宿主按此登记）：后台服务取自同一个单例。
+        // 正确写法（运行时协调者按此登记）：后台服务取自同一个单例。
         var right = new ServiceCollection();
         right.AddSingleton<ProbeService>();
         right.AddHostedService(provider => provider.GetRequiredService<ProbeService>());

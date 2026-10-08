@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using TenonEdge.Host.Features.Auth;
 using TenonEdge.Host.Features.Health;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 
@@ -32,6 +33,9 @@ internal static class HostServiceRegistration
         builder.Services.AddHostedService<DataRetentionService>();
 
         builder.Services.AddAuthFeature();
+
+        // 运行时（T1-01—T1-03）：协调者、运行时宿主、发送缓存与输入适配器。
+        builder.Services.AddRuntimeFeature();
 
         // 枚举按字符串序列化（总设计 §10.1），OpenAPI 文档同样按字符串描述。
         builder.Services.ConfigureHttpJsonOptions(options =>

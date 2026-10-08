@@ -35,6 +35,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\TenonEdge.Abstractions\TenonEdge.Abstractions.csproj" />
+    <ProjectReference Include="..\TenonEdge.Runtime\TenonEdge.Runtime.csproj" />
+    <ProjectReference Include="..\TenonEdge.Adapters\TenonEdge.Adapters.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="TenonEdge.UnitTests" />
     <InternalsVisibleTo Include="TenonEdge.IntegrationTests" />
   </ItemGroup>

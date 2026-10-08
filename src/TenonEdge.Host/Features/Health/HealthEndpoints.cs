@@ -5,7 +5,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace TenonEdge.Host.Features.Health;
 
 /// <summary>
-/// 匿名健康检查端点（总设计 §10.1）：<c>/healthz</c> 表示进程存活，<c>/readyz</c> 表示宿主已就绪。
+/// 匿名健康检查端点（总设计 §10.1）：<c>/healthz</c> 表示进程存活，<c>/readyz</c> 表示宿主与运行时已就绪（处于“运行失败”时为 503）。
 /// 两者只返回状态文本，不返回配置、版本或错误细节。
 /// </summary>
 internal static class HealthEndpoints
@@ -21,7 +21,8 @@ internal static class HealthEndpoints
     {
         services.AddHealthChecks()
             .AddCheck<HostLifecycleReadinessCheck>("host-lifecycle", tags: [ReadinessTag])
-            .AddCheck<RuntimeStartConditionsReadinessCheck>("runtime-start-conditions", tags: [ReadinessTag]);
+            .AddCheck<RuntimeStartConditionsReadinessCheck>("runtime-start-conditions", tags: [ReadinessTag])
+            .AddCheck<RuntimeReadinessCheck>("runtime", tags: [ReadinessTag]);
 
         return services;
     }

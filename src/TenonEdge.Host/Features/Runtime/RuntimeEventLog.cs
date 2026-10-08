@@ -130,4 +130,27 @@ internal static class RuntimeEventTypes
     public const string SetupWindowOpen = "setup.windowOpen";
 
     public const string RuntimeBlocked = "runtime.blocked";
+
+    // T1-01：运行版本与启动保护（总设计 §7.4）。运行单元、设备与发送缓存的事件类型见 TenonEdge.Runtime.Diagnostics.RuntimeEventTypes。
+
+    /// <summary>种子快照已导入并成为有效版本。</summary>
+    public const string SeedApplied = "runtime.seedApplied";
+
+    /// <summary>种子快照无法读取或内容无效，没有生成版本。</summary>
+    public const string SeedRejected = "runtime.seedRejected";
+
+    /// <summary>版本在提交前被放弃，标为“未生效”（准备阶段失败或进程中断）。</summary>
+    public const string VersionNotEffective = "runtime.versionNotEffective";
+
+    /// <summary>上次运行有效版本时进程非正常退出（计入或不计入启动保护）。</summary>
+    public const string AbnormalExit = "runtime.abnormalExit";
+
+    /// <summary>有效版本连续运行满稳定时间，记为“已稳定”。</summary>
+    public const string VersionStable = "runtime.versionStable";
+
+    /// <summary>启动保护已自动回滚到上一生效版本的内容。</summary>
+    public const string AutoRollback = "runtime.autoRollback";
+
+    /// <summary>进入“运行失败”：输入不启动，发送缓存照常运行。</summary>
+    public const string RunFailed = "runtime.runFailed";
 }
