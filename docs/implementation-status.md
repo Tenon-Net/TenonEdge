@@ -1780,6 +1780,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全部单元：`dotnet test tests/UnitTests -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-health' --results-directory /tmp/tenonedge-modbus-health`：**880 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-health-unit.log`。本次不重跑集成，最近 683 项集成通过的基线见 §2.73。限定两个新增文件的 `dotnet format --verify-no-changes --no-restore --include …` 及 `git diff --check` 通过。
 - 当前只实现内部调度判定，未接入网络会话，不宣称 AT-02 同连接多从站实测已通过；UnitId 产品范围及依赖采用仍待确认。环境同 §2.68。
 
+### 2.75 T2-03 仅输出重连后恢复输入的持久会话验证（2026-10-09）
+
+- 增加真实 Mosquitto + SQLite 订阅日志场景：原输入订阅并断开，上游 QoS 1 发布旧消息；独立观察客户端以同 ClientId/CleanSession=false 连回，实际收到旧积压但不确认，再断开。此正对照排除“旧积压本来不存在”的假通过。
+- 随后由产品 MqttSession 以仅输出方式重新连接并真实发送至独立订阅端；再恢复输入，确认 SessionPresent=false、sessionLost/subscribed 各一次，旧本地订阅日志被重建；发布 fresh 作为有序屏障，只收到 fresh，未用固定 sleep 推断旧消息消失。
+- 此为“仅输出会话确实重连”的会话层子场景；不等于删除最后一个输入后无需发送也会主动联网清理，不等于删除整个连接、修改 ClientId 或 Host 配置应用的旧会话清理已完成。那些仍需生命周期实现。
+- 聚焦命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~OutputOnlyReconnectClearsFormerInputBacklogAndLaterInputRebuildsJournal`，1 项通过，日志 `/tmp/tenonedge-mqtt-last-input2.log`。初次构建被 CA1861 拒绝，改用 Assert.Single 后通过，没有关闭分析器。
+- 变异检查：临时把产品输出连接的 `WithCleanSession(input is null)` 改为 `WithCleanSession(false)`，同一用例确定性失败（预期 Ack，实际 Retry），日志 `/tmp/tenonedge-mqtt-last-input-mutation.log`；finally 恢复产品文件，并用 git diff 确認该文件无变更。测试确实能发现关键会话策略退化，不只是成功连接检查。
+- 恢复源码后全量重建：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-last-input' --results-directory /tmp/tenonedge-mqtt-last-input --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 684 集成 = 1564 通过，0 失败、0 跳过**；日志 `/tmp/tenonedge-mqtt-last-input-full.log`，TRX Counters 已核对。限定修改测试文件的 `dotnet format --verify-no-changes --no-restore --include …` 及 `git diff --check` 通过。
+- 环境沿用 §2.68；本批不修改产品认证、订阅或会话策略，不宣称完整 AT-25 / T2-03 验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

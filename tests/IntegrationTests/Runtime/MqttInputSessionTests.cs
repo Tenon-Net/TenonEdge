@@ -694,6 +694,70 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         }
     }
 
+    [Fact]
+    public async Task OutputOnlyReconnectClearsFormerInputBacklogAndLaterInputRebuildsJournal()
+    {
+        var broker = fixture.Require();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("last-input-output-only");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        using var deadline = MqttProbe.Timeout(Token);
+        var original = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var input = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await input.MaintainAsync(deadline.Token)).Status); }
+        Assert.Equal(new(topic, 1, true), Assert.Single(journal.Read(identity)));
+
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (publisher)
+        {
+            var sink = ReceivedMessages.Attach(publisher);
+            await MqttProbe.SubscribeAsync(publisher, topic + "/output", deadline.Token);
+            // 旧输入已经断开；QoS 1 应积存在 Broker 的旧持久会话中。
+            await MqttProbe.PublishAsync(publisher, topic, "stale"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            using (var observer = new MqttClientFactory().CreateMqttClient())
+            {
+                var backlog = ReceivedMessages.Attach(observer, autoAcknowledge: false);
+                var connected = await observer.ConnectAsync(MqttProbe.Options(broker, identity.ClientId, cleanSession: false), deadline.Token);
+                Assert.True(connected.IsSessionPresent);
+                Assert.Equal("stale", (await backlog.NextAsync(deadline.Token)).ApplicationMessage.ConvertPayloadToString());
+                // 不确认，让积压保持在 Broker；排除“根本没有旧消息”的假阳性。
+                await MqttProbe.DisconnectAsync(observer, deadline.Token);
+            }
+            await using (var output = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector()))
+            {
+                Assert.Equal(OutputSendStatus.Ack, (await output.MaintainAsync(deadline.Token)).Status);
+                Assert.Equal(OutputSendStatus.Ack, (await output.SendAsync(new("output"u8.ToArray(), topic + "/output", 1,
+                    settings.Fingerprint(MosquittoBroker.UserName, "account"), "test"), deadline.Token)).Status);
+                Assert.Equal("output", (await sink.NextAsync(deadline.Token)).ApplicationMessage.ConvertPayloadToString());
+            }
+            // 产品输出会话的 CleanSession 清理 Broker，但当前不会主动删本地订阅日志；后续输入须按 SessionPresent 重建。
+            Assert.Equal(new(topic, 1, true), Assert.Single(journal.Read(identity)));
+            var values = new ConcurrentQueue<string>();
+            var fresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reports = new ConcurrentQueue<string>();
+            var restored = new MqttInputReceiver([new(topic, 1, (message, _) =>
+            {
+                var value = message.ConvertPayloadToString();
+                values.Enqueue(value);
+                if (value == "fresh") { fresh.TrySetResult(); }
+                return Task.FromResult(InputHandoffStatus.Rejected);
+            })], TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+            await using var current = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
+            Assert.Equal(OutputSendStatus.Ack, (await current.MaintainAsync(deadline.Token)).Status);
+            Assert.False(restored.LastSessionPresent);
+            Assert.Single(reports, reason => reason == "sessionLost");
+            Assert.Single(reports, reason => reason == "subscribed");
+            await MqttProbe.PublishAsync(publisher, topic, "fresh"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            await fresh.Task.WaitAsync(deadline.Token);
+            Assert.Equal("fresh", Assert.Single(values));
+            Assert.Equal(new(topic, 1, true), Assert.Single(journal.Read(identity)));
+        }
+    }
+
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
     { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
     private static string NewId() => "input-session-" + Guid.NewGuid().ToString("N");
