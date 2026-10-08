@@ -1764,6 +1764,14 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-drain' --results-directory /tmp/tenonedge-modbus-drain --blame-hang-timeout 5m --blame-hang-dump-type none`：**871 单元 + 683 集成 = 1554 通过，0 失败、0 跳过**；日志 `/tmp/tenonedge-modbus-drain-full.log`，TRX Counters 已核对。限定这三个 C# 文件的 `dotnet format --no-restore --include …` 完成，`git diff --check` 通过。
 - 环境同 §2.68。UnitId 和协议库采用仍待维护者确认，不擅自定稿；后续继续会话接入与 UnitId 调度。
 
+### 2.73 T2-02 专用线程的请求上下文隔离（2026-10-09）
+
+- 复核 §2.71 时发现 `Thread.Start()` 会继承创建者 ExecutionContext；如果未来在配置应用或预览请求中创建会话，专用线程可能长期保留请求 AsyncLocal 等上下文，违反后端生命周期约束。
+- 先增加测试：创建者设置 AsyncLocal 对象，专用线程读取必须为 null，创建者仍须保有原值。旧实现确定性失败（`Assert.Null` 得到 Object），日志 `/tmp/tenonedge-modbus-context-red.log`。然后改用当前 net10.0 引用程序集确实提供的 `Thread.UnsafeStart()`，不影响调用者上下文，不自行模拟线程池。
+- `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~ModbusRequestExecutorTests`：7 项通过（`/tmp/tenonedge-modbus-context-green.log`）。测试中的 TestContext 取消令牌改为启动专用线程前显式捕获，不依赖被隔离掉的测试 AsyncLocal。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-context' --results-directory /tmp/tenonedge-modbus-context --blame-hang-timeout 5m --blame-hang-dump-type none`：**872 单元 + 683 集成 = 1555 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-context-full.log`。两个改动 C# 文件限定 `--include` 的 `dotnet format --verify-no-changes --no-restore`、`git diff --check` 通过。
+- 此为连接专用线程的工程约束验证，尚不代表 Host 已接入 Modbus 或完整 BE-AT-03 通过。环境同 §2.68。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -18,7 +18,8 @@ internal sealed class ModbusRequestExecutor : IAsyncDisposable
     internal ModbusRequestExecutor()
     {
         var worker = new Thread(Run) { IsBackground = true, Name = "TenonEdge.Modbus" };
-        worker.Start();
+        // 应用/预览可能在请求中构造会话；长期线程不得继承 AsyncLocal/HttpContext 等请求上下文。
+        worker.UnsafeStart();
     }
 
     internal async Task<T> ExecuteAsync<T>(Func<T> read, Action abort, CancellationToken cancellationToken)
