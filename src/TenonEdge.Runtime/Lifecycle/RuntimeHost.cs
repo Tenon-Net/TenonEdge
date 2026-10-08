@@ -99,7 +99,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         _events = events;
         _time = time;
         _options = options.Validate();
-        InFlight = new InFlightBudget(options.InFlightBytes);
+        InFlight = new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
         _logger = logger;
         _supervisor = new UnitSupervisor(_options, time, events, logger, random);
     }
@@ -427,7 +427,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
         var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight) { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
-        var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation);
+        var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation, _options.InputBufferBytes > 0 ? InFlight : null);
         IRuntimeUnit Build()
         {
             var instance = factory.Build(unit, context);

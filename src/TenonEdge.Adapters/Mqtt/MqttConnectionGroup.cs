@@ -21,7 +21,7 @@ internal sealed class MqttConnectionGroup
 
     public MqttConnectionGroup(MqttConnectionSettings settings, string clientId, IEnumerable<MqttInputBinding> bindings,
         ISharedConnections connections, ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector,
-        Func<CancellationToken, Task> waitForActivation, Action<string> report, IMqttSubscriptionStore? subscriptions = null)
+        Func<CancellationToken, Task> waitForActivation, Action<string> report, IMqttSubscriptionStore? subscriptions = null, IInputBufferBudget? bufferBudget = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
         ArgumentNullException.ThrowIfNull(waitForActivation);
@@ -35,7 +35,7 @@ internal sealed class MqttConnectionGroup
         _connector = connector;
         _waitForActivation = waitForActivation;
         _report = report;
-        _receiver = new MqttInputReceiver(bindings, time, report, subscriptions, new(settings.Recipient, clientId));
+        _receiver = new MqttInputReceiver(bindings, time, report, subscriptions, new(settings.Recipient, clientId), bufferBudget);
         // 计划范围身份只用于本机借用，不改变 Broker ClientId 或持久投递的接收方指纹。
         _configurationIdentity = _settings.ConnectionIdentity(clientId) + ":input-plan:" + Guid.NewGuid().ToString("N");
     }

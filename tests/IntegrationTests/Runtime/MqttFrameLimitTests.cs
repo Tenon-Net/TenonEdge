@@ -95,6 +95,44 @@ public sealed class MqttFrameLimitTests
         Assert.Equal(0, Volatile.Read(ref callbacks));
     }
 
+    [Fact]
+    public async Task RejectedQosZeroDoesNotBlockFollowingPingResponse()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var dropped = 0;
+        var callbacks = 0;
+        using var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => Assert.Fail("未超限。"),
+            (header, _) =>
+            {
+                if (header != 0x30)
+                { return true; }
+                Interlocked.Increment(ref dropped);
+                return false;
+            }));
+        client.ApplicationMessageReceivedAsync += _ => { Interlocked.Increment(ref callbacks); return Task.CompletedTask; };
+        using var deadline = MqttProbe.Timeout(Token);
+        var connecting = client.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", port)
+            .WithProtocolVersion(MqttProtocolVersion.V311).WithClientId("frame-admission-test").Build(), deadline.Token);
+        using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
+        var stream = peer.GetStream();
+        Assert.Equal(0x10, (await ReadPacketAsync(stream, deadline.Token)).Header);
+        await stream.WriteAsync(new byte[] { 0x20, 2, 0, 0 }, deadline.Token);
+        Assert.Equal(MqttClientConnectResultCode.Success, (await connecting).ResultCode);
+        var ping = client.PingAsync(deadline.Token);
+        Assert.Equal(0xc0, (await ReadPacketAsync(stream, deadline.Token)).Header);
+        // 合法 QoS 0：单字节 Topic，正文总长 16384；紧接 PINGRESP，不能让丢弃留下半个包。
+        var wire = new byte[4 + 16384 + 2];
+        new byte[] { 0x30, 0x80, 0x80, 0x01, 0, 1, (byte)'a' }.CopyTo(wire, 0);
+        wire[^2] = 0xd0;
+        await stream.WriteAsync(wire, deadline.Token);
+        await ping;
+        Assert.True(client.IsConnected);
+        Assert.Equal(1, Volatile.Read(ref dropped));
+        Assert.Equal(0, Volatile.Read(ref callbacks));
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static byte[] OversizedHeader()
     {

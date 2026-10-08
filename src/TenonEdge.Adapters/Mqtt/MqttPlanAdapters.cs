@@ -75,7 +75,7 @@ internal sealed class MqttPlanAdapters
             connection.Group = new Lazy<MqttConnectionGroup>(() => new MqttConnectionGroup(settings, clientId,
                 captured.Inputs.Select(input => new MqttInputBinding(input.Settings.TopicFilter, input.Settings.Qos,
                     input.ReceiveAsync, input.Settings.ProcessRetained)), _shared, _credentials, _time, _connector,
-                captured.WaitForActivationAsync, reason => _report(settings.ConnectionId, reason), _subscriptions));
+                captured.WaitForActivationAsync, reason => _report(settings.ConnectionId, reason), _subscriptions, context.BufferBudget));
             _connections.Add(settings.ConnectionId, connection);
         }
         if (connection.Settings.ConnectionIdentity(connection.ClientId) != settings.ConnectionIdentity(clientId))

@@ -27,7 +27,7 @@ internal sealed class MqttInputReceiver
     public bool? LastSessionPresent { get; private set; }
 
     public MqttInputReceiver(IEnumerable<MqttInputBinding> bindings, TimeProvider time, Action<string> report,
-        IMqttSubscriptionStore? subscriptions = null, MqttSessionIdentity? session = null)
+        IMqttSubscriptionStore? subscriptions = null, MqttSessionIdentity? session = null, IInputBufferBudget? bufferBudget = null)
     {
         _bindings = bindings.ToArray();
         if (_bindings.Length is < 1 or > 2000)
@@ -42,6 +42,7 @@ internal sealed class MqttInputReceiver
         }
         if (subscriptions is not null)
         { ArgumentNullException.ThrowIfNull(session); }
+        BufferBudget = bufferBudget;
         _subscriptions = subscriptions;
         _session = session;
         _time = time;
@@ -107,6 +108,9 @@ internal sealed class MqttInputReceiver
         _installed[state.Filter] = state;
     }
 
+    internal IInputBufferBudget? BufferBudget { get; }
+    internal void ReportBuffer(string reason) => _report(reason);
+
     internal void RecordWireOversized() => _report("wireOversized");
 
     internal bool IsQuiescing { get { lock (_receiveLock) { return !_accepting; } } }
@@ -150,6 +154,7 @@ internal sealed class MqttInputReceiver
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5), _time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(generation, deadline.Token);
+        Task<InputHandoffStatus>? handoff = null;
         try
         {
             var message = args.ApplicationMessage;
@@ -167,7 +172,9 @@ internal sealed class MqttInputReceiver
                     matched = true;
                     if (message.Retain && !binding.ProcessRetained)
                     { _report("retainedIgnored"); continue; }
-                    var result = await binding.Receive(message, operation.Token).WaitAsync(operation.Token);
+                    handoff = binding.Receive(message, operation.Token);
+                    var result = await handoff.WaitAsync(operation.Token);
+                    handoff = null;
                     if (result is not (InputHandoffStatus.Committed or InputHandoffStatus.Rejected) &&
                         !(message.QualityOfServiceLevel == MqttQualityOfServiceLevel.AtMostOnce && result == InputHandoffStatus.Buffered))
                     { throw new InvalidOperationException("输入未被接管，不能确认。"); }
@@ -185,6 +192,16 @@ internal sealed class MqttInputReceiver
             try
             { if (!generation.IsCancellationRequested) { _report(deadline.IsCancellationRequested ? "handoffTimeout" : "handoffFailed"); } }
             finally { abort(); } // 仅终止本次连接代次；不从回调中重连。
+        }
+        finally
+        {
+            // 已中止连接仍不等于实际绑定停止使用原始报文；不确认迟到结果，但保留所有权。
+            if (handoff is not null)
+            {
+                try
+                { await handoff; }
+                catch (Exception exception) when (exception is not OutOfMemoryException) { }
+            }
         }
     }
 

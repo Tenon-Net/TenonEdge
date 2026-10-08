@@ -1605,6 +1605,79 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 结果：**752 单元 + 663 集成 = 1415 通过，0 失败/跳过**。退出码 0，两个 TRX 的 Counters 已独立核对；日志 `/tmp/tenonedge-mqtt-checkpoint.log`。`git diff --check` 通过。继续点仍是 T2-03 接收队列/总原始内存有界，不把单帧限长当成全局预算验收。
 
+### 2.63 T2-03 接收预算前置：固定头准入与 QoS 0 有界排空
+
+§2.62 只解决单帧限长，不能直接在其原先的逐段透传头上实现“预算不足时跳过 QoS 0”：库可能已经拿到半个头，跳过正文会破坏后续帧边界。本轮先补预算策略所需的传输机制，尚未接入全局额度或宣布 MQTTnet 内部队列有界。
+
+- `MqttFrameLimitChannel` 先用固定五字节缓冲读取完整固定头，限长与可选准入检查均在把任何头字节交给库之前完成；库仍负责 MQTT 正文解码，不复制第三方协议栈。
+- 准入返回拒绝时，只允许 QoS 0 PUBLISH（含 retained），用最多 4096 字节的复用缓冲排空正文，再继续下一帧。QoS 1、控制帧不能被静默丢弃；策略须选择接受或抛错断连。拒绝/异常之前没有正文分配，异常后锁定本连接代次，避免把残留字节重新当头。
+- 工厂支持传入准入策略，但产品会话目前仍不传预算策略，现有单帧限长保持生效。**不是产品 QoS 0 全局背压已完成**。下一步须把进程共享预算、入队至回调完成的所有权及断连清理接上；不能仅在解码之后计数，也不能在取消回调仍持有正文时提前释放额度。
+- 新增八个单元场景：逐字节/合并输入的丢弃与随后真实库 PINGRESP 解码、QoS 1/控制帧禁止静默丢弃、准入异常不暴露头且不读正文、头/丢弃正文截断、单字节消费者准确取得头且每帧只准入一次。
+- 新增脚本化 TCP 对端集成测试：真实 MQTTnet 客户端发 PINGREQ，对端先发一个被策略拒绝的 16 KiB QoS 0 PUBLISH 再发 PINGRESP；验证 Ping 完成、连接仍存活、无应用回调。它验证准入通道，不是 Broker/设备实测，也不是内存压力或全局预算验收。
+
+验证环境：Linux x64、SDK 10.0.401、锁定 MQTTnet 5.2.0.1603，无依赖变更。
+
+1. 首轮全量：760 单元通过；集成 662 通过、1 失败、0 跳过。失败为既有 `FluentModbusAcceptsATcpResponseFromAnotherUnit` 在同步网络读取时超时（约 403 ms），不是 MQTT 断言；保留 `/tmp/tenonedge-mqtt-admission-full.log` 及 `/tmp/tenonedge-mqtt-admission/*.trx`。没有据此宣称全量通过，也没有改 Modbus 用例、超时或断言。
+2. 补齐 TCP 用例后执行 `dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~MqttFrameLimitTests|FullyQualifiedName~FluentModbusAcceptsATcpResponseFromAnotherUnit'`：7 通过、0 失败/跳过；日志 `/tmp/tenonedge-mqtt-admission-focused.log`。单次重跑通过不证明此前超时的根因已定位或修复。
+
+3. 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-admission-final' --results-directory /tmp/tenonedge-mqtt-admission-final --blame-hang-timeout 5m --blame-hang-dump-type none`：**760 单元 + 664 集成 = 1424 通过，0 失败/跳过**，退出 0；日志 `/tmp/tenonedge-mqtt-admission-final.log`，两个 TRX 的 Counters 独立核对。此前 Modbus 超时仍保留为一次未定位的失败，不用本次通过抹去。
+4. 格式检查发现新增集成用例一处换行问题，已修正；`git diff --check` 通过。
+
+### 2.64 T2-03 接收预算基础：共享总额、独立分区与幂等租约
+
+接入原始帧预算前复核 `BudgetedInputChannel`：其两阶段保守结果上界可能预约整个可用池。原始报文已经占据同一池时，若仍请求原来的总容量，会形成“原始报文等待自己的解析额度”的停滞。因此本轮补预算层的分区能力，尚未启用产品 MQTT 的接收分区。
+
+- 新增 Abstractions 契约 `IInputBufferBudget`：非等待预约，额度不足返回 null；租约覆盖读取、排队、回调持有期间，取消或断连不能冒充所有权结束。接口不持有请求/数据库对象，不新增运行时实例。
+- `InFlightBudget` 可在同一总容量内划出 `bufferCapacity`，余下为 `WorkingCapacity`；两者不互借。接收租约与普通预约共用锁、总量状态和峰值，合计不超过配置总额。原始额度以线程安全、幂等的租约释放，不会因旧代次重复释放而误释放新代次的额度。
+- `BudgetedInputChannel` 的解析、输出上界截断、实际结果检查及直接写入均使用工作分区容量。超过工作容量的请求直接拒绝，不等待一个永远无法得到的容量；实际输出也不能借用原始分区。
+- **启用边界**：现有构造默认 `bufferCapacity=0`，Host 尚未分配该分区、MQTT 尚未调用接口。测试中的 64 MiB 总额/8 MiB 原始分区只是验证参数，不是已定稿的产品默认值；不能把本轮当作接收队列已经受全局预算约束。
+- 7 个新增测试覆盖：原始分区满时，真实输入 writer 仍能完成一次 48 MiB 解析预约（输出保守上界被截断到工作容量）；等待取消不释放原始额度；工作额度释放不能误释放原始额度；旧/新代次租约并存；并发重复释放；1000 次并发申请不超额；超限预约/实际结果及非法参数拒绝。保留既有预算测试。
+
+下一步的所有权风险（仅源码核查，不当作运行验证）：MQTTnet 的 `AsyncQueue<MqttPublishPacket>.Dispose()` 不会清空非 IDisposable 元素；`MqttClient.Dispose()` 同步 Cleanup 也不等于接收/回调任务已经完成。`DisconnectAsync` 在断开已开始时可直接返回。因此不能在调用 Dispose/DisconnectAsync 后立即归还全部队列额度；必须证明旧代次排队与正在执行回调的原始数据引用都已结束，或改用明确拥有这些引用的接收路径。不得仅凭 IsConnected=false 判断可释放。
+
+验证环境：Linux x64、SDK 10.0.401，无包版本变更。
+
+1. 初始聚焦 `dotnet test tests/UnitTests -c Release --no-restore --filter 'FullyQualifiedName~InputBufferBudgetTests|FullyQualifiedName~InFlightBudgetTests'`：26 通过、0 失败/跳过（随后补了实际输出不能借用原始分区的第 7 项）；日志 `/tmp/tenonedge-buffer-budget-unit.log`。
+2. 对本轮 C# 文件执行 `dotnet format TenonEdge.sln --no-restore --include ...`，退出 0；日志 `/tmp/tenonedge-buffer-budget-format.log`。
+
+3. `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=buffer-budget' --results-directory /tmp/tenonedge-buffer-budget --blame-hang-timeout 5m --blame-hang-dump-type none`：**767 单元 + 664 集成 = 1431 通过，0 失败/跳过**，退出 0；日志 `/tmp/tenonedge-buffer-budget-full.log`，两个 TRX Counters 独立核对。`git diff --check` 通过。
+
+后续接入候选：已核实公开 `IMqttChannelAdapter.ReceivePacketAsync` 可装饰，`MqttApplicationMessageReceivedEventArgs` 构造器及库的应用消息/PUBACK 工厂公开。可以在库解码后、其内部无界队列之前接管 PUBLISH，使用产品自己拥有的有界回调队列，其他控制帧继续交给原客户端；固定头准入仍在解码分配之前。这样有机会明确拥有解码中、排队、回调中的引用，避免依赖库 Dispose 的推测。**尚未实现/运行验证**，下一轮先验证这一接收路径及原有确认、保活与生命周期语义，不宣称已选定完成方案。
+
+### 2.65 T2-03：产品 MQTT 有界接收队列与分配前共享预算
+
+上一轮为分区和准入机制，本轮将它们接入产品路径，替代 **MQTT 输入连接**中库的无界 PUBLISH 排队路径；没有改包版本、复制第三方协议栈或创建第二套 Runtime。
+
+- 新增 `MqttReceiveBuffer`：通过公开 `IMqttChannelAdapter` 装饰器在库解码后接管 PUBLISH，不把它交给高层客户端的内部队列。TCP/TLS、固定头/正文编解码、其他控制包和发送串行锁仍由 MQTTnet 提供；应用消息及 PUBACK 仍使用库的公开工厂。单连接代次只有一个自有消费者，按接收顺序手动 ACK。
+- 固定头读全后、任何正文分配之前预约 `3 × Remaining Length + 4096` 字节，覆盖正文数组、最坏 Topic UTF-16 表示以及队列/包/回调的保守固定开销；每个输入连接最多 100 项，**含解码中、排队和正在处理的项**，不是只计 Channel.Count。
+- Host 在既有 64 MiB 在途总额内给原始 PUBLISH 分配 8 MiB，解析/分发使用余下 56 MiB。全部产品输入上下文传递同一个 RuntimeHost.InFlight，不按连接另建额度。8 MiB 是当前内部实现的待调优参数，不是设备容量或 RSS 承诺。独立装配的 RuntimeOptions 默认原始分区为 0，便于既有无 MQTT 的测试/使用者；没有提供预算的独立 MqttSession 仍走原路径，不能据此宣称第三方独立装配也已受保护。
+- QoS 0 满时不等待，用 §2.63 的小缓冲排空该帧，报告持久化 `bufferDropped`；紧随的 PINGRESP 可继续处理。QoS 1 使用最多 5 秒的可取消等待（共享额度由释放信号唤醒，不轮询），超时报告 `bufferFull`、不 ACK 并断连。最初实现直接断连，经复核发现积压突发可能反复在第一条提交前中止，故改为限时等待，并补大于窗口的突发顺序接管用例。
+- QoS 1 等待发生在 TCP 头部，位于它后面的控制帧也会等待，最多到该期限或已有操作的更短取消期限；不声称压力下控制帧完全没有队头阻塞。排空 QoS 0 不阻塞后续控制帧的证据不能外推为 QoS 1 同样无阻塞。
+- 每项租约从读取前一直保留到实际回调结束。断连时停止新预约/入队、关闭通道，解码中的预约由接收 finally 释放，队列由自有消费者清理；正在使用的原始数据不会因 Dispose/IsConnected=false 被提前归还。旧代次的租约继续占共享额度直到结束，不会误释放新代次额度。
+- `MqttInputReceiver` 原先用 WaitAsync 实现截止时间，绑定忽略取消时会留下仍持有报文的任务。现在仍在截止时立即中止连接、不确认，但回调最终完成要等实际绑定结束，才能释放原始额度；迟到成功不发送 ACK。静默等待仍受调用方独立停止期限限制，不把无限等待移到宿主停止线程。
+- 新增有限诊断 `bufferDropped`、`bufferFull`、`bufferFailed`，通过既有计数写者持久化，含重建后的读取断言。
+
+验证：
+
+- 7 个脚本化真实 TCP / MQTTnet 集成场景：条数/字节压力分别覆盖 QoS 0 与 QoS 1；慢回调期间 QoS 0 丢弃后 Ping 成功；QoS 1 仅发第二帧头、不发正文，超时断连；断连后仍执行的回调保留额度且没有进入库应用回调；手动确认延后且 PacketId 正确；20 条 QoS 1 大于单项窗口仍依次确认、无重连、峰值不超字节分区；正文读取中断后归还解码预约。
+- 真实 Mosquitto 的既有产品 Host 接收/转发、持久订阅重启测试通过，增加 Host 原始分区 8 MiB / 总额 64 MiB 的装配断言；既有独立进程强杀恢复测试继续纳入全量回归。
+- 原来的 5 秒接管超时/迟到完成测试增加启用真实预算的分支，检查断连后额度仍保留，实际绑定结束后额度为零且无迟到 ACK。
+- 预算单元新增共享分区等待取消与另一连接释放后唤醒测试；取消不盗取既有租约。
+
+实际命令与环境：Linux x64、SDK 10.0.401、MQTTnet 5.2.0.1603。
+
+1. 初次构建因 CA1001 指出接收所有者未实现 IDisposable 而失败（未执行测试），已补生命周期。添加异步预算接口时一次修改未匹配已有格式，构建报告 CS0535，已补实现；未把这两次失败记为验证通过。
+2. 初始自有队列聚焦 3 项通过（`/tmp/tenonedge-receive-buffer-tests.log`）；接入产品及限时等待后 `dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~MqttReceiveBufferTests|FullyQualifiedName~MqttHostInputTests|FullyQualifiedName~MqttInputSessionTests'`：26 通过、0 失败/跳过（当时尚未补最后两个队列场景和预算化迟到分支）；日志 `/tmp/tenonedge-buffer-product-wait2.log`。
+3. 补突发与半帧断连后的全量：768 单元 + 671 集成 = 1439 通过，0 失败/跳过；`/tmp/tenonedge-buffer-product-full.log`，TRX `/tmp/tenonedge-buffer-product/`。
+
+4. 补预算化迟到分支后，最终 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=buffer-product-final' --results-directory /tmp/tenonedge-buffer-product-final --blame-hang-timeout 5m --blame-hang-dump-type none`：**768 单元 + 672 集成 = 1440 通过，0 失败/跳过**，退出 0；日志 `/tmp/tenonedge-buffer-product-final.log`，两个 TRX Counters 已独立核对。
+
+5. 对全部改动及新增 C# 文件执行 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`，退出 0；日志 `/tmp/tenonedge-buffer-product-format-final.log`。`git diff --check` 通过。
+
+边界：这些是字节预约/队列所有权及软件协议测试，不是全机 RSS 上限或长期压力验收。固定连接对象、TLS/Socket 缓冲、控制帧及排空用的小缓冲还需与运行计划规模一起做资源实测；输出专用连接收到非预期 PUBLISH 的保护、共享预算下大量连接公平性、TLS 压力、旧代次长时间不响应取消等仍需补场景。没有将 T2-08、V-04 完整范围或 T3 网页标为完成。
+
+本地检查点：沿用维护者“整理提交后继续”的本地提交授权，将 §2.63—§2.65 的准入、预算分区、自有队列、产品装配和测试作为同一已回归状态提交；不推送，不将本检查点当作 T2 或可视化访问完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

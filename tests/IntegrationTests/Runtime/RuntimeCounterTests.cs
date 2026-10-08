@@ -23,6 +23,9 @@ public sealed class RuntimeCounterTests
             { runtime.Deliveries.RecordMqttInputDiagnostic(1, "acknowledged"); }
             runtime.Deliveries.RecordMqttInputDiagnostic(1, "retainedIgnored");
             runtime.Deliveries.RecordMqttInputDiagnostic(1, "wireOversized");
+            runtime.Deliveries.RecordMqttInputDiagnostic(1, "bufferDropped");
+            runtime.Deliveries.RecordMqttInputDiagnostic(1, "bufferFull");
+            runtime.Deliveries.RecordMqttInputDiagnostic(1, "bufferFailed");
             Assert.Throws<ArgumentException>(() => runtime.Deliveries.RecordMqttInputDiagnostic(1, "unbounded-secret-value"));
             Assert.Throws<ArgumentOutOfRangeException>(() => runtime.Deliveries.RecordMqttInputDiagnostic(0, "acknowledged"));
             await runtime.StopAsync(TestContext.Current.CancellationToken);
@@ -35,6 +38,9 @@ public sealed class RuntimeCounterTests
         await OutputPipelineTests.UntilAsync(() => restarted.Deliveries.GetStatus().Store is not null);
         Assert.Equal(100, restarted.Deliveries.GetPersistentCounters()["connection/1/mqtt/acknowledged"]);
         Assert.Equal(1, restarted.Deliveries.GetPersistentCounters()["connection/1/mqtt/wireOversized"]);
+        Assert.Equal(1, restarted.Deliveries.GetPersistentCounters()["connection/1/mqtt/bufferDropped"]);
+        Assert.Equal(1, restarted.Deliveries.GetPersistentCounters()["connection/1/mqtt/bufferFull"]);
+        Assert.Equal(1, restarted.Deliveries.GetPersistentCounters()["connection/1/mqtt/bufferFailed"]);
         Assert.DoesNotContain(restarted.Deliveries.GetPersistentCounters().Keys, key => key.Contains("secret", StringComparison.Ordinal));
         await restarted.StopAsync(TestContext.Current.CancellationToken);
     }

@@ -12,6 +12,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
     Func<CancellationToken, Task>? waitForActivation = null) : IOutputAdapter
 {
     private IMqttClient? _client;
+    private MqttReceiveBuffer? _receiveBuffer;
     private readonly CancellationTokenSource _outboundStop = new();
     private string? _connectedVersion;
     private long _lastPing;
@@ -68,24 +69,35 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 // IsConnected=false 也可能仍在异步 DisconnectCore 中；旧对象不能再次 Connect。
                 // 用新的客户端代次重连，保留接收器中的持久订阅状态和实际 ClientId。
                 Reset();
-                var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => input?.RecordWireOversized()));
-                _client = client;
+                IMqttClient? client = null;
+                Func<MqttApplicationMessageReceivedEventArgs, CancellationToken, Task>? receive = null;
                 if (input is not null)
                 {
                     var generation = new CancellationTokenSource();
                     lock (_receiveLock)
                     { _receiveCancellation = generation; }
                     var receiveToken = generation.Token;
-                    client.ApplicationMessageReceivedAsync += args => input.ReceiveAsync(args, () =>
+                    receive = async (args, transportToken) =>
                     {
-                        lock (_receiveLock)
-                        { if (ReferenceEquals(_receiveCancellation, generation)) { Volatile.Write(ref _inputFailed, 1); } }
-                        try
-                        { generation.Cancel(); }
-                        catch (ObjectDisposedException) { }
-                        client.Dispose();
-                    }, receiveToken);
+                        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(receiveToken, transportToken);
+                        await input.ReceiveAsync(args, () =>
+                        {
+                            lock (_receiveLock)
+                            { if (ReferenceEquals(_receiveCancellation, generation)) { Volatile.Write(ref _inputFailed, 1); } }
+                            try
+                            { generation.Cancel(); }
+                            catch (ObjectDisposedException) { }
+                            client!.Dispose();
+                        }, lifetime.Token);
+                    };
+                    if (input.BufferBudget is not null)
+                    { _receiveBuffer = new MqttReceiveBuffer(input.BufferBudget, 100, receive, input.ReportBuffer, time); }
                 }
+                client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
+                    () => input?.RecordWireOversized(), receiveBuffer: _receiveBuffer));
+                _client = client;
+                if (_receiveBuffer is null && receive is not null)
+                { client.ApplicationMessageReceivedAsync += args => receive(args, CancellationToken.None); }
                 var builder = new MqttClientOptionsBuilder()
                     .WithTcpServer(settings.Host, settings.Port)
                     .WithStreamProvider(new MqttStreamProvider(connector))
@@ -188,6 +200,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
         }
         _client?.Dispose();
         _client = null;
+        _receiveBuffer?.Dispose();
+        _receiveBuffer = null;
         _connectedVersion = null;
     }
 

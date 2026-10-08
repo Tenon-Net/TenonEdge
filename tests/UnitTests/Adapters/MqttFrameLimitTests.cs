@@ -122,6 +122,84 @@ public sealed class MqttFrameLimitTests
         Assert.True(source.Disconnected);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4096)]
+    public async Task AdmissionDropsQosZeroBeforeDecoderAndPreservesNextControlFrame(int fragment)
+    {
+        byte[] wire = [.. Header(16384), .. new byte[16384], 0xd0, 0];
+        using var source = new SourceChannel(wire, fragment);
+        var admissions = new List<(byte, int)>();
+        using var channel = new MqttFrameLimitChannel(source, 16384, () => Assert.Fail("未超限。"), (header, length) =>
+        {
+            admissions.Add((header, length));
+            return header != 0x30;
+        });
+        using var adapter = new MqttChannelAdapter(channel,
+            new MqttPacketFormatterAdapter(MqttProtocolVersion.V311, new MqttBufferWriter(4096, 65536)), new MqttNetNullLogger());
+        Assert.IsType<MqttPingRespPacket>(await adapter.ReceivePacketAsync(Token));
+        Assert.Equal(new (byte, int)[] { (0x30, 16384), (0xd0, 0) }, admissions);
+        Assert.Equal(wire.Length, source.BytesRead);
+        Assert.InRange(source.MaximumReadSize, 1, 4096);
+    }
+
+    [Theory]
+    [InlineData(0x32)] // QoS 1
+    [InlineData(0xd0)] // 控制报文
+    public async Task AdmissionCannotSilentlyDiscardQosOneOrControlPackets(byte header)
+    {
+        using var source = new SourceChannel([header, 1, 0xff], 4096);
+        using var channel = new MqttFrameLimitChannel(source, 128, () => { }, (_, _) => false);
+        var destination = new byte[32];
+        await Assert.ThrowsAsync<MqttProtocolViolationException>(() => channel.ReadAsync(destination, 0, 32, Token));
+        Assert.Equal(new byte[32], destination); // 固定头也未交给库。
+        Assert.Equal(2, source.BytesRead); // 没有正文读取。
+        await Assert.ThrowsAsync<MqttProtocolViolationException>(() => channel.ReadAsync(destination, 0, 32, Token));
+        Assert.Equal(2, source.BytesRead);
+    }
+
+    [Fact]
+    public async Task AdmissionFailureDoesNotExposeHeaderOrReadBody()
+    {
+        using var source = new SourceChannel([0x32, 1, 0xff], 4096);
+        using var channel = new MqttFrameLimitChannel(source, 128, () => { }, (_, _) => throw new IOException("budget exhausted"));
+        var destination = new byte[32];
+        await Assert.ThrowsAsync<IOException>(() => channel.ReadAsync(destination, 0, 32, Token));
+        Assert.Equal(new byte[32], destination);
+        Assert.Equal(2, source.BytesRead);
+        await Assert.ThrowsAsync<MqttProtocolViolationException>(() => channel.ReadAsync(destination, 0, 32, Token));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TruncatedDroppedFrameFaultsWithoutExposingPartialHeader(bool body)
+    {
+        using var source = new SourceChannel(body ? [0x30, 3, 1] : [0x30, 0x80], 1);
+        using var channel = new MqttFrameLimitChannel(source, 128, () => { }, (_, _) => false);
+        var destination = new byte[32];
+        await Assert.ThrowsAsync<MqttProtocolViolationException>(() => channel.ReadAsync(destination, 0, 32, Token));
+        Assert.Equal(new byte[32], destination);
+        var reads = source.Reads;
+        await Assert.ThrowsAsync<MqttProtocolViolationException>(() => channel.ReadAsync(destination, 0, 32, Token));
+        Assert.Equal(reads, source.Reads);
+    }
+
+    [Fact]
+    public async Task OneByteConsumerReceivesAcceptedHeaderExactlyOnceAfterAdmission()
+    {
+        byte[] wire = [.. Header(128), .. new byte[128], 0xd0, 0];
+        using var source = new SourceChannel(wire, 4096);
+        var admissions = 0;
+        using var channel = new MqttFrameLimitChannel(source, 128, () => { }, (_, _) => { admissions++; return true; });
+        using var output = new MemoryStream();
+        var buffer = new byte[1];
+        while (await channel.ReadAsync(buffer, 0, 1, Token) != 0)
+        { output.WriteByte(buffer[0]); }
+        Assert.Equal(wire, output.ToArray());
+        Assert.Equal(2, admissions);
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static byte[] Header(int length)
     {
@@ -147,6 +225,7 @@ public sealed class MqttFrameLimitTests
     {
         public int BytesRead { get; private set; }
         public int Reads { get; private set; }
+        public int MaximumReadSize { get; private set; }
         public int ReadsAtEnd { get; private set; }
         public byte[] Written { get; private set; } = [];
         public bool EndOfPacket { get; private set; }
@@ -160,6 +239,7 @@ public sealed class MqttFrameLimitTests
         public Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
             Reads++;
+            MaximumReadSize = Math.Max(MaximumReadSize, count);
             if (BytesRead == wire.Length)
             { ReadsAtEnd++; }
             var read = Math.Min(Math.Min(count, fragment), wire.Length - BytesRead);

@@ -19,7 +19,8 @@ public sealed class InputUnitContext
         IClockSyncStatus clock,
         IInputReadReporter reads,
         InputMessageWriter messages,
-        Task? activation = null)
+        Task? activation = null,
+        IInputBufferBudget? bufferBudget = null)
     {
         BusinessKeys.Validate(deviceKey, nameof(deviceKey));
         BusinessKeys.Validate(inputKey, nameof(inputKey));
@@ -33,6 +34,7 @@ public sealed class InputUnitContext
         _clock = clock;
         Reads = reads;
         Messages = messages;
+        BufferBudget = bufferBudget;
         _activation = activation ?? Task.CompletedTask;
     }
 
@@ -68,4 +70,7 @@ public sealed class InputUnitContext
     /// 不在单元内另建缓冲。
     /// </summary>
     public InputMessageWriter Messages { get; }
+
+    /// <summary>协议正文分配前的进程共享缓冲预算；未启用时为 null。</summary>
+    public IInputBufferBudget? BufferBudget { get; }
 }

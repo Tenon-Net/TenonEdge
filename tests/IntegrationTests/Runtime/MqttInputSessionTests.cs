@@ -89,8 +89,10 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Contains("handoffFailed", failures);
     }
 
-    [Fact]
-    public async Task HandoffDeadlineDisconnectsAndLateCompletionCannotAcknowledge()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HandoffDeadlineDisconnectsAndLateCompletionCannotAcknowledge(bool buffered)
     {
         var broker = fixture.Require();
         var topic = MqttProbe.NewTopic("handoff-deadline");
@@ -99,6 +101,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         var late = new TaskCompletionSource<InputHandoffStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
         var timedOut = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var reports = new ConcurrentQueue<string>();
+        var budget = new TenonEdge.Runtime.Diagnostics.InFlightBudget(1024 * 1024, 65536);
         var input = new MqttInputReceiver([new(topic, 1, (_, _) =>
         {
             entered.TrySetResult();
@@ -108,7 +111,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             reports.Enqueue(reason);
             if (reason == "handoffTimeout")
             { timedOut.TrySetResult(); }
-        });
+        }, bufferBudget: buffered ? budget : null);
         await using var session = new MqttSession(Settings(broker), NewId(), new Credentials(), time, new CountingConnector(), input);
         using var deadline = MqttProbe.Timeout(Token);
         Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
@@ -122,8 +125,15 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         time.Advance(TimeSpan.FromSeconds(5));
         await timedOut.Task.WaitAsync(deadline.Token);
         await OutputPipelineTests.UntilAsync(() => !session.IsConnected);
-        late.SetResult(InputHandoffStatus.Committed);
-        // The receiver has already terminated and disposed this connection generation.
+        try
+        {
+            if (buffered)
+            { Assert.True(budget.Status.ReservedBytes > 0); }
+        }
+        finally { late.TrySetResult(InputHandoffStatus.Committed); }
+        await input.QuiesceAsync(deadline.Token);
+        await OutputPipelineTests.UntilAsync(() => budget.Status.ReservedBytes == 0);
+        // 连接已先中止；实际迟到绑定结束后才能释放原始额度，仍然不能 ACK。
         Assert.DoesNotContain("acknowledged", reports);
         Assert.False(session.IsConnected);
     }

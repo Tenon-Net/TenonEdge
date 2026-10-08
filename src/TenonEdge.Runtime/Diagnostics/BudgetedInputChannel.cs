@@ -71,7 +71,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             ArgumentNullException.ThrowIfNull(produce);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumMessageBytes);
             ArgumentOutOfRangeException.ThrowIfLessThan(maximumWorkingBytes, maximumMessageBytes);
-            if (maximumWorkingBytes > owner._budget.Capacity)
+            if (maximumWorkingBytes > owner._budget.WorkingCapacity)
             { throw new InputMessageSizeException("输入解析工作超过全局在途预算。"); }
             cancellationToken.ThrowIfCancellationRequested();
             if (owner._closed.Task.IsCompleted)
@@ -79,7 +79,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             // 单写者：检查后只有读取者能减少数量，不在满通道时先分配正文或解析树。
             if (owner._inner.Reader.Count >= owner._capacity)
             { return false; }
-            var reserved = Math.Max(maximumWorkingBytes, Math.Min(owner.Charge(maximumMessageBytes), owner._budget.Capacity));
+            var reserved = Math.Max(maximumWorkingBytes, Math.Min(owner.Charge(maximumMessageBytes), owner._budget.WorkingCapacity));
             if (!owner._budget.TryReserve(reserved))
             { return false; }
             try
@@ -124,11 +124,11 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             ArgumentNullException.ThrowIfNull(produce);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumMessageBytes);
             ArgumentOutOfRangeException.ThrowIfLessThan(maximumWorkingBytes, maximumMessageBytes);
-            if (maximumWorkingBytes > owner._budget.Capacity)
+            if (maximumWorkingBytes > owner._budget.WorkingCapacity)
             { throw new InputMessageSizeException("输入解析工作超过全局在途预算。"); }
             var outputPhase = owner.Charge(maximumMessageBytes);
             // 双上限允许保守结果上界超过总额度；预约总额度后按实际消息复核，而非拒绝所有小报文。
-            var reserved = Math.Max(maximumWorkingBytes, capOutputPhase ? Math.Min(outputPhase, owner._budget.Capacity) : outputPhase);
+            var reserved = Math.Max(maximumWorkingBytes, capOutputPhase ? Math.Min(outputPhase, owner._budget.WorkingCapacity) : outputPhase);
             await ReserveAsync(reserved, cancellationToken);
             try
             {
@@ -201,7 +201,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
         private void ValidateSize(long bytes)
         {
-            if (bytes > owner._budget.Capacity)
+            if (bytes > owner._budget.WorkingCapacity)
             { throw new InputMessageSizeException("输入消息及输出预留超过全局在途预算。"); }
         }
 

@@ -21,6 +21,9 @@ public sealed class RuntimeOptions
     /// <summary>进程共享的输入/分发在途字节预算（总设计 §8.7）。</summary>
     public long InFlightBytes { get; init; } = 64L * 1024 * 1024;
 
+    /// <summary>总在途额度中保留给协议原始缓冲的分区；不能与解析额度互借。</summary>
+    public long InputBufferBytes { get; init; }
+
     /// <summary>每个输入通道的容量（总设计 §8.4：每个输入 100 条）。</summary>
     public int InputChannelCapacity { get; init; } = 100;
 
@@ -37,6 +40,8 @@ public sealed class RuntimeOptions
 
         ArgumentOutOfRangeException.ThrowIfLessThan(InputChannelCapacity, 1, nameof(InputChannelCapacity));
         ArgumentOutOfRangeException.ThrowIfLessThan(InFlightBytes, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(InputBufferBytes);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(InputBufferBytes, InFlightBytes);
         return this;
     }
 }

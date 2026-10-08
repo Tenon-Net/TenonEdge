@@ -69,6 +69,9 @@ public sealed class MqttHostInputTests(MosquittoBrokerFixture fixture) : IClassF
                 using var started = host.CreateClient();
                 Assert.Single(host.Services.GetServices<IRuntimePlanAdapterProvider>());
                 Assert.DoesNotContain(host.Services.GetServices<IOutputAdapterFactory>(), factory => factory.Kind == "output.mqtt");
+                var runtime = host.Services.GetRequiredService<TenonEdge.Runtime.Lifecycle.RuntimeHost>();
+                Assert.Equal(8L * 1024 * 1024, runtime.InFlight.BufferCapacity);
+                Assert.Equal(64L * 1024 * 1024, runtime.InFlight.Status.CapacityBytes);
                 var cache = host.Services.GetRequiredService<DeliveryCache>();
                 await OutputPipelineTests.UntilAsync(() => cache.GetPersistentCounters().GetValueOrDefault("connection/1/mqtt/retainedIgnored") == 1);
                 await MqttProbe.PublishAsync(peer, topic + "/in", "{\"v\":9223372036854775807}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, Token);

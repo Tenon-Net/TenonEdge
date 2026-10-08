@@ -35,7 +35,7 @@ internal static class RuntimeRegistration
         services.AddSingleton<IInputUnitFactory, SimulatorInputFactory>();
         services.AddSingleton<IJsonInputDecoderFactory, JsonInputDecoderFactory>();
         services.AddSingleton<IInputUnitFactory, HttpInputFactory>();
-        services.AddSingleton(_ => new RuntimeOptions().Validate());
+        services.AddSingleton(_ => new RuntimeOptions { InputBufferBytes = 8L * 1024 * 1024 }.Validate());
         services.AddSingleton(provider => new DeliveryCache(
             new DeliveryCacheOptions
             {

@@ -1,17 +1,84 @@
+using TenonEdge.Abstractions.Contracts;
+
 namespace TenonEdge.Runtime.Diagnostics;
 
-/// <summary>进程共享的在途字节额度；等待不占线程，取消不会遗留额度。</summary>
-public sealed class InFlightBudget(long capacity)
+/// <summary>进程共享的在途字节额度；可在总额度内划出原始输入分区，剩余供解析/分发。
+/// 分区不互借，避免已接收的原始报文挤占其解析所需额度；状态和峰值统计包含两者。
+/// 普通等待不占线程；原始缓冲租约必须由数据实际持有者释放，不随等待取消释放。</summary>
+public sealed class InFlightBudget : IInputBufferBudget
 {
     private readonly Lock _lock = new();
     private long _used;
     private long _peak;
+    private long _bufferUsed;
     private TaskCompletionSource _changed = NewSignal();
-    public long Capacity { get; } = capacity > 0 ? capacity : throw new ArgumentOutOfRangeException(nameof(capacity));
+    private TaskCompletionSource _bufferChanged = NewSignal();
+    public InFlightBudget(long capacity, long bufferCapacity = 0)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
+        ArgumentOutOfRangeException.ThrowIfNegative(bufferCapacity);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bufferCapacity, capacity);
+        Capacity = capacity;
+        BufferCapacity = bufferCapacity;
+    }
+
+    public long Capacity { get; }
+    public long BufferCapacity { get; }
+    internal long WorkingCapacity => Capacity - BufferCapacity;
+
+    public IDisposable? TryReserveBuffer(long bytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytes);
+        lock (_lock)
+        {
+            if (bytes > BufferCapacity - _bufferUsed)
+            { return null; }
+            var lease = new BufferLease(this, bytes);
+            _bufferUsed += bytes;
+            _peak = Math.Max(_peak, _used + _bufferUsed);
+            return lease;
+        }
+    }
+
+    public async ValueTask<IDisposable> ReserveBufferAsync(long bytes, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytes);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(bytes, BufferCapacity);
+        while (true)
+        {
+            Task changed;
+            lock (_lock)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (TryReserveBuffer(bytes) is { } lease)
+                { return lease; }
+                changed = _bufferChanged.Task;
+            }
+            await changed.WaitAsync(cancellationToken);
+        }
+    }
+
+    private void ReleaseBuffer(long bytes)
+    {
+        TaskCompletionSource changed;
+        lock (_lock)
+        {
+            _bufferUsed -= bytes;
+            changed = _bufferChanged;
+            _bufferChanged = NewSignal();
+        }
+        changed.TrySetResult();
+    }
+
+    private sealed class BufferLease(InFlightBudget owner, long bytes) : IDisposable
+    {
+        private InFlightBudget? _owner = owner;
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.ReleaseBuffer(bytes);
+    }
 
     public InFlightBudgetStatus Status
     {
-        get { lock (_lock) { return new(Capacity, _used, _peak); } }
+        get { lock (_lock) { return new(Capacity, _used + _bufferUsed, _peak); } }
     }
 
     internal bool TryReserve(long bytes)
@@ -19,23 +86,27 @@ public sealed class InFlightBudget(long capacity)
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytes);
         lock (_lock)
         {
-            if (bytes > Capacity - _used) { return false; }
+            if (bytes > WorkingCapacity - _used)
+            { return false; }
             _used += bytes;
-            _peak = Math.Max(_peak, _used);
+            _peak = Math.Max(_peak, _used + _bufferUsed);
             return true;
         }
     }
 
     internal async ValueTask ReserveAsync(long bytes, CancellationToken token)
     {
-        if (bytes > Capacity) { throw new ArgumentOutOfRangeException(nameof(bytes), "单条消息超过在途预算。"); }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytes);
+        if (bytes > WorkingCapacity)
+        { throw new ArgumentOutOfRangeException(nameof(bytes), "单条消息超过在途预算。"); }
         while (true)
         {
             Task changed;
             lock (_lock)
             {
                 token.ThrowIfCancellationRequested();
-                if (TryReserve(bytes)) { return; }
+                if (TryReserve(bytes))
+                { return; }
                 changed = _changed.Task;
             }
 
@@ -46,14 +117,15 @@ public sealed class InFlightBudget(long capacity)
     internal async ValueTask WaitForAvailableAsync(long bytes, CancellationToken token)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytes);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(bytes, Capacity);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(bytes, WorkingCapacity);
         while (true)
         {
             Task changed;
             lock (_lock)
             {
                 token.ThrowIfCancellationRequested();
-                if (bytes <= Capacity - _used) { return; }
+                if (bytes <= WorkingCapacity - _used)
+                { return; }
                 changed = _changed.Task;
             }
 
@@ -66,7 +138,8 @@ public sealed class InFlightBudget(long capacity)
         TaskCompletionSource changed;
         lock (_lock)
         {
-            if (bytes <= 0 || bytes > _used) { throw new InvalidOperationException("在途额度释放不匹配。"); }
+            if (bytes <= 0 || bytes > _used)
+            { throw new InvalidOperationException("在途额度释放不匹配。"); }
             _used -= bytes;
             changed = _changed;
             _changed = NewSignal();
