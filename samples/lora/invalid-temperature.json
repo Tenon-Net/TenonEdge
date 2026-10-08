@@ -1,0 +1,13 @@
+{
+  "time": "2026-01-01T00:00:00Z",
+  "deviceInfo": {
+    "applicationId": "00000000-0000-0000-0000-000000000001",
+    "devEui": "0011223344556677",
+    "deviceName": "artificial-soil-001"
+  },
+  "object": {
+    "temperature": "not-a-number",
+    "moisture": 41.5,
+    "batteryPercent": 92
+  }
+}

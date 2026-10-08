@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "units": [
+    {
+      "kind": "input.mqtt",
+      "key": "soil-001/up",
+      "configuration": {
+        "connectionId": 1,
+        "host": "127.0.0.1",
+        "port": 1883,
+        "usePassword": true,
+        "topicFilter": "application/00000000-0000-0000-0000-000000000001/device/0011223344556677/event/up",
+        "qos": 1,
+        "processRetained": false,
+        "upstreamTime": {
+          "path": "/time",
+          "format": "rfc3339",
+          "source": "upstream"
+        },
+        "fields": [
+          {
+            "key": "temperature",
+            "path": "/object/temperature",
+            "type": "number"
+          },
+          {
+            "key": "moisture",
+            "path": "/object/moisture",
+            "type": "number"
+          },
+          {
+            "key": "batteryPercent",
+            "path": "/object/batteryPercent",
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "input.mqtt",
+      "key": "soil-002/up",
+      "configuration": {
+        "connectionId": 1,
+        "host": "127.0.0.1",
+        "port": 1883,
+        "usePassword": true,
+        "topicFilter": "application/00000000-0000-0000-0000-000000000001/device/1122334455667788/event/up",
+        "qos": 1,
+        "processRetained": false,
+        "upstreamTime": {
+          "path": "/time",
+          "format": "rfc3339",
+          "source": "upstream"
+        },
+        "fields": [
+          {
+            "key": "temperature",
+            "path": "/object/temperature",
+            "type": "number"
+          },
+          {
+            "key": "moisture",
+            "path": "/object/moisture",
+            "type": "number"
+          },
+          {
+            "key": "batteryPercent",
+            "path": "/object/batteryPercent",
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "output.mqtt",
+      "key": "lora-out",
+      "configuration": {
+        "connectionId": 1,
+        "host": "127.0.0.1",
+        "port": 1883,
+        "usePassword": true,
+        "topic": "tenon/lora/{deviceKey}",
+        "qos": 1,
+        "inputs": [
+          "soil-001/up",
+          "soil-002/up"
+        ],
+        "mapping": [
+          {
+            "target": "temperature",
+            "sourceField": "temperature",
+            "type": "number",
+            "unit": "degC",
+            "required": true
+          },
+          {
+            "target": "soilMoisture",
+            "sourceField": "moisture",
+            "type": "number",
+            "unit": "%",
+            "required": true
+          },
+          {
+            "target": "batteryPercent",
+            "sourceField": "batteryPercent",
+            "type": "integer",
+            "unit": "%",
+            "required": true
+          }
+        ]
+      }
+    }
+  ]
+}

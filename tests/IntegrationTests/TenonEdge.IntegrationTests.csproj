@@ -34,6 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="../../samples/lora/*.json" Link="Samples/Lora/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- T0-11 测试 Broker 的配置，测试运行时复制进容器。 -->
     <None Update="Probes/Mqtt/mosquitto.conf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

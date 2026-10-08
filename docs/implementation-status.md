@@ -1694,6 +1694,29 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 上述新增证据不代表 MQTT 全部连接生命周期、T2-08 长期资源验收或 T3 已完成。Modbus 选型及 TCP UnitId 冲突仍以维护者明确答复为准，未把建议当成批准；已异步提交建议，继续不受影响的任务，不因等待答复停止整个开发。
 
+### 2.67 T2-07 已解码 LoRa 样例与真实 MQTT 软件链路
+
+按总设计 §21.5—§21.6 先交付不依赖 Modbus 决策的 MQTT 软件子场景，不将 T2-06 的全部协议依赖视为已完成。
+
+- 新增 `docs/lora-integration.md` 和 `samples/lora/`：两台人工土壤传感器的已解码事件子集、缺少解码对象/非法温度的负样本，以及可由实际后端读取的 `runtime-seed.json`。无真实设备数据、凭证、无线密钥，没有复制 ChirpStack 源码、安装其服务或新增协议依赖。
+- 种子使用两条精确主题绑定两个逻辑设备，共享 MQTT 连接，扇入同一通用输出但不 join；明确 RFC 3339 上游时间、三个固定类型字段、湿度重命名、必填规则及输出主题。报文设备名不参与自动绑定，Body DevEUI 与错误主题的一致性检查不在本例中，文档已说明。
+- 文档区分网关接收、上游时间和真实采样时间，说明上游 QoS 0 不能靠订阅 QoS 1 升级可靠性；列出解码、JSON、Broker 持久化、账号 ACL 和脱敏前提，不将样本或参考的预发布源码当作型号兼容验证。
+- 新增 `LoraMqttSampleTests`，通过测试构建复制直接读取这五个仓库 JSON 文件，不在测试里另造一套业务配置。使用真实 Mosquitto 2.1.2 测试容器、实际产品 Host、首次设置/会话/凭证 API，以及独立 MQTT 客户端。
+- LR-AT-01 软件子场景：已解码数值经真实输入、必填映射和发送缓存到独立接收端；核对标准信封的数值、类型、时间来源、时间、设备与主题。
+- LR-AT-02 软件子场景：两台逻辑设备交替发布，分别检查 23.7/41.5/92 与 18.2/55.5/81，不串字段、设备或主题。
+- LR-AT-03 软件子场景：只有 Base64 data/缺少 object，以及非法温度，均由显式必填规则拒绝本输出路径，不补 0 或旧值。持久计数精确为 2 条路径拒绝、2 次必填失败、3 项缺失、1 项类型转换失败；状态 API 也可读到拒绝计数。6 条输入共确认，只有 4 条合法输出提交并发送删除。用后续合法报文与计数作屏障，不靠“等一会没有报文”判定。
+
+开发中失败与定位：首个完整测试在订阅就绪前超时（`/tmp/tenonedge-lora-sample-focused.log`）。缩小到启动状态和种子解析后，确认是样例将时间来源写成 `Upstream`，而已有协议固定字符串为 `upstream`，种子在冻结前即被拒绝，Host 保持 Idle；不是共享连接或 Broker 问题。修正样例字符串，没有修改生产解析器、放宽协议或延长超时。保留启动/解析失败日志 `/tmp/tenonedge-lora-sample-startup.log`、`/tmp/tenonedge-lora-sample-parse.log`；移除了临时数据库诊断读取，保留样例直接解析与 Active 状态断言作为清晰的失败入口。
+
+环境：Linux x64、SDK 10.0.401、MQTTnet 5.2.0.1603、`eclipse-mosquitto:2.1.2-alpine`。
+
+1. `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~LoraMqttSampleTests`：修正后 **1 通过、0 失败/跳过**，覆盖以上三个软件子场景；日志 `/tmp/tenonedge-lora-sample-green.log`。
+2. `dotnet format TenonEdge.sln --no-restore --include tests/IntegrationTests/Runtime/LoraMqttSampleTests.cs`：退出 0；日志 `/tmp/tenonedge-lora-format.log`。五份样例 JSON 逐份解析有效，`git diff --check` 通过。
+
+3. `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=lora-sample' --results-directory /tmp/tenonedge-lora-sample --blame-hang-timeout 5m --blame-hang-dump-type none`：**768 单元 + 679 集成 = 1447 通过，0 失败/跳过**，退出 0；日志 `/tmp/tenonedge-lora-full.log`，两个 TRX Counters 独立核对。
+
+未覆盖：实际传感器上报周期与无线补传、真实 LoRaWAN 网络服务、LR-AT-06 实物链路、任何厂商型号兼容、Broker 断电持久化完整矩阵以及 T2-07/08 整体退出；不新增无线协议栈、设备自动发现、下行控制或网页。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
