@@ -51,7 +51,7 @@ internal sealed class MosquittoBroker : IAsyncDisposable
     /// <summary>Broker 服务器证书的 SHA-256 指纹（十六进制大写）。</summary>
     public string ServerCertificateSha256 { get; }
 
-    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false, int? maxQueuedMessages = null, int? maxQueuedBytes = null)
+    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false, int? maxQueuedMessages = null, int? maxQueuedBytes = null, bool deviceAcl = false)
     {
         if (maxQueuedMessages is <= 0)
         { throw new ArgumentOutOfRangeException(nameof(maxQueuedMessages)); }
@@ -77,6 +77,13 @@ internal sealed class MosquittoBroker : IAsyncDisposable
             await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
                 $"\nmax_queued_bytes {maximumBytes.ToString(CultureInfo.InvariantCulture)}\n", cancellationToken);
         }
+        if (deviceAcl)
+        {
+            await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
+                "\nacl_file /mosquitto/config/acl\n", cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(files.Path, "acl"),
+                $"user {UserName}\ntopic read devices/#\nuser sensor-a\ntopic write devices/sensor-a/#\nuser sensor-b\ntopic write devices/sensor-b/#\n", cancellationToken);
+        }
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.crt"), certificate, cancellationToken);
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.key"), key, cancellationToken);
 
@@ -86,7 +93,9 @@ internal sealed class MosquittoBroker : IAsyncDisposable
             // 以 root 把配置、证书复制进容器并生成密码文件，交给 mosquitto 用户；Mosquitto 2.1 要求密码文件归运行用户所有且不可被其他人读取。
             const string Setup =
                 "set -e; if [ ! -f /mosquitto/config/server.key ]; then cp /probe/mosquitto.conf /probe/server.crt /probe/server.key /mosquitto/config/; "
-                + $"mosquitto_passwd -b -c /mosquitto/config/passwd {UserName} {Password}; fi; "
+                + $"mosquitto_passwd -b -c /mosquitto/config/passwd {UserName} {Password}; "
+                + "if [ -f /probe/acl ]; then cp /probe/acl /mosquitto/config/acl; "
+                + $"mosquitto_passwd -b /mosquitto/config/passwd sensor-a {Password}; mosquitto_passwd -b /mosquitto/config/passwd sensor-b {Password}; fi; fi; "
                 + "chown mosquitto:mosquitto /mosquitto/data /mosquitto/config/*; chmod 0600 /mosquitto/config/passwd /mosquitto/config/server.key; "
                 + "exec mosquitto -c /mosquitto/config/mosquitto.conf";
             var ports = stablePorts ? SelectHostPorts() : (Plain: "", Tls: "");

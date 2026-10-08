@@ -1820,6 +1820,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-queue' --results-directory /tmp/tenonedge-broker-queue --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 695 集成 = 1575 项测试断言通过，0 失败、0 跳过**，包含 §2.77 的 1 项已知缺口刻画，不能用总数抹去待解决的漏订阅风险。TRX Counters 已核对，日志 `/tmp/tenonedge-broker-queue-full.log`。限定修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 和 `git diff --check` 通过。
 - AT-27 软件子场景、V-09 的离线队列上限范围获得实测；这不是 Host 重启/配置应用全过程或完整 V-09 通过。环境同 §2.76，未新增生产 Broker 部署模板或改变默认产品配额。
 
+### 2.79 T2-07 / V-09 设备 Topic 发布授权与只读网关账号（2026-10-09）
+
+- 独占测试 Broker 增加文件 ACL 配置：两个独立测试设备账号 sensor-a/sensor-b 只能写各自 devices/<账号>/#；网关 probe-user 只读 devices/#。均为人工测试账号，不是生产密码或部署模板，不改变其他 Broker 用例的权限。
+- 正式 MqttSession/MqttInputReceiver 作为网关接收端：两个设备各自合法发布均到达，双向跨设备伪装发布均不到达；只读网关自身发布也不到达。最后一条合法设备 barrier 作为接收顺序屏障，实际核对完整主题与载荷序列，而非 sleep 后检查空队列。
+- 额外确认 MQTT 3.1.1 的边界：被 ACL 拒绝的 QoS 1 发布仍返回成功 PUBACK，产品发送结果因此为 Ack；它只表示 Broker 级确认，不证明 ACL 放行或终端接收。此行为须进入后续部署排障说明，不能把设备 ACL 错误冒充网关丢包。
+- 聚焦命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~DeviceAccountsCannotSpoofEachOtherAndGatewayAccountIsReadOnly`：1 项通过，日志 `/tmp/tenonedge-broker-acl-focused.log`。匿名/错误密码场景仍由既有 MqttPublishProbeTests 覆盖；本项未实测设备账号的读取拒绝、ACL 热更新或会话过期。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-acl' --results-directory /tmp/tenonedge-broker-acl --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 696 集成 = 1576 项测试断言通过，0 失败、0 跳过**，仍包含 §2.77 的已知缺口刻画，不代表该风险已解决。TRX Counters 已核对，日志 `/tmp/tenonedge-broker-acl-full.log`。限定修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 与 `git diff --check` 通过。
+- 适用范围为附带接入 Broker 的只读网关账号；外部 Broker 上需要输入/输出共用连接时，账号权限须与实际用途对应，不把此测试配置机械套到所有连接。环境同 §2.76。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

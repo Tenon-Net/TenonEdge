@@ -945,6 +945,45 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         }
     }
 
+    [Fact]
+    public async Task DeviceAccountsCannotSpoofEachOtherAndGatewayAccountIsReadOnly()
+    {
+        Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
+        await using var broker = await MosquittoBroker.StartAsync(Token, deviceAcl: true);
+        using var deadline = MqttProbe.Timeout(Token);
+        var values = new ConcurrentQueue<string>();
+        var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var input = new MqttInputReceiver([new("devices/#", 1, (message, _) =>
+        {
+            var value = message.ConvertPayloadToString();
+            values.Enqueue(message.Topic + ":" + value);
+            if (value == "barrier") { barrier.TrySetResult(); }
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        })], TimeProvider.System, _ => { });
+        var settings = Settings(broker);
+        await using var gateway = new MqttSession(settings, NewId(), new Credentials(), TimeProvider.System, new CountingConnector(), input);
+        Assert.Equal(OutputSendStatus.Ack, (await gateway.MaintainAsync(deadline.Token)).Status);
+        using var sensorA = new MqttClientFactory().CreateMqttClient();
+        using var sensorB = new MqttClientFactory().CreateMqttClient();
+        MqttClientOptions Options(string username) => new MqttClientOptionsBuilder()
+            .WithTcpServer("127.0.0.1", broker.Port).WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V311)
+            .WithClientId(NewId()).WithCleanSession().WithCredentials(username, MosquittoBroker.Password).Build();
+        Assert.Equal(MQTTnet.MqttClientConnectResultCode.Success, (await sensorA.ConnectAsync(Options("sensor-a"), deadline.Token)).ResultCode);
+        Assert.Equal(MQTTnet.MqttClientConnectResultCode.Success, (await sensorB.ConnectAsync(Options("sensor-b"), deadline.Token)).ResultCode);
+        const string A = "devices/sensor-a/up";
+        const string B = "devices/sensor-b/up";
+        Assert.Equal(MqttClientPublishReasonCode.Success, (await MqttProbe.PublishAsync(sensorA, A, "a"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token)).ReasonCode);
+        Assert.Equal(MqttClientPublishReasonCode.Success, (await MqttProbe.PublishAsync(sensorA, B, "spoof-b"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token)).ReasonCode);
+        Assert.Equal(MqttClientPublishReasonCode.Success, (await MqttProbe.PublishAsync(sensorB, A, "spoof-a"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token)).ReasonCode);
+        Assert.Equal(MqttClientPublishReasonCode.Success, (await MqttProbe.PublishAsync(sensorB, B, "b"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token)).ReasonCode);
+        // 3.1.1 的 PUBACK 没有“未授权”原因码；发送端的 Ack 不能作为 ACL 放行或终端收到的证据。
+        Assert.Equal(OutputSendStatus.Ack, (await gateway.SendAsync(new("gateway-write"u8.ToArray(), A, 1,
+            settings.Fingerprint(MosquittoBroker.UserName, "account"), "test"), deadline.Token)).Status);
+        await MqttProbe.PublishAsync(sensorA, A, "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+        await barrier.Task.WaitAsync(deadline.Token);
+        Assert.Equal($"{A}:a,{B}:b,{A}:barrier", string.Join(',', values));
+    }
+
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
     { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
     private static string NewId() => "input-session-" + Guid.NewGuid().ToString("N");
