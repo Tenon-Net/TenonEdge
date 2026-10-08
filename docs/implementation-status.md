@@ -1744,6 +1744,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 初次局部格式校验发现 else 换行和 using 排序，已修正。局部 `dotnet format TenonEdge.sln --verify-no-changes --no-restore --include src/TenonEdge.Adapters/Modbus/ModbusReadPlanner.cs tests/UnitTests/Adapters/ModbusReadPlannerTests.cs` 与 `git diff --check` 通过。
 - 格式检查结束后顺序重跑上述全量命令（结果前缀 `modbus-planner-repeat`，目录 `/tmp/tenonedge-modbus-planner-repeat`）：**861 单元 + 679 集成 = 1540 通过，0 失败、0 跳过**，TRX Counters 已核对。日志 `/tmp/tenonedge-modbus-planner-repeat.log`；这次通过不抹去前次偶发超时。环境沿用 §2.68。
 
+### 2.71 T2-02 专用请求线程与取消所有权（2026-10-09）
+
+- 新增内部连接级请求执行器：每实例一个专用线程执行阻塞式协议 I/O，不用线程池包装同步读取；候选队列容量为 1。输入准入仍由既有共享连接租约串行器负责，不建立第二套连接管理。
+- 当前请求注册关闭连接的取消动作，排队请求取消不会关闭当前连接。取消后等待真实读取及取消回调退出，才完成请求/启动下一项；迟到的正常返回也不能作为成功结果。释放执行器关闭准入、取消当前项及排队项，实际读取不退出就保持释放未完成，避免用停止成功掩盖后台残留。
+- 调用契约：read 与 abort 捕获同一代连接；read 不得自行换连接；abort 只关闭这个句柄且不得阻塞。此执行器尚未由正式 Modbus 会话注册，不宣称完整 AT-13 单实例生命周期通过。
+- 6 项单元场景：固定非线程池线程、读取异常后的继续执行、排队取消隔离、主动取消后的真实退出屏障、停止排空/重复释放/停止后拒绝、满队列等待取消、忽略取消读取保留停止未完成（部分用例包含多个断言场景）。2 项回环 TCP 集成场景：对端不发响应时，通过请求取消或执行器释放关闭本次 socket，读取在 3 秒验证期限内退出；普通读超时设 10 秒，不能靠其超时冒充取消成功。
+- 初次构建因测试等待没有传 TestContext 取消令牌而被 xUnit1051 拒绝；已补齐，没有禁用分析器。随后聚焦执行当时的 5 单元 + 2 集成全部通过，日志 `/tmp/tenonedge-modbus-executor-focused2.log`；停止不合作读的第 6 项单元随后加入全量验证。
+- 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-executor' --results-directory /tmp/tenonedge-modbus-executor --blame-hang-timeout 5m --blame-hang-dump-type none`：**867 单元 + 681 集成 = 1548 通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-executor-full.log`。本次文件经限定 `--include` 的 `dotnet format` 格式化，`git diff --check` 通过。
+- 本项不包含 UnitId 范围、NModbus 正式依赖、帧匹配/静默排空、从站快速失败/退避与公平调度；这些仍须继续实现。环境沿用 §2.68。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
