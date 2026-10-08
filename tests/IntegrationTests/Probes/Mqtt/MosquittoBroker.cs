@@ -51,8 +51,12 @@ internal sealed class MosquittoBroker : IAsyncDisposable
     /// <summary>Broker 服务器证书的 SHA-256 指纹（十六进制大写）。</summary>
     public string ServerCertificateSha256 { get; }
 
-    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false)
+    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false, int? maxQueuedMessages = null, int? maxQueuedBytes = null)
     {
+        if (maxQueuedMessages is <= 0)
+        { throw new ArgumentOutOfRangeException(nameof(maxQueuedMessages)); }
+        if (maxQueuedBytes is <= 0)
+        { throw new ArgumentOutOfRangeException(nameof(maxQueuedBytes)); }
         var files = TemporaryDirectory.Create();
         var authority = TestCertificateAuthority.Create("TenonEdge Probe CA");
         var (certificate, key, fingerprint) = authority.IssueServerCertificate(ServerName);
@@ -62,6 +66,16 @@ internal sealed class MosquittoBroker : IAsyncDisposable
             // 不自动保存：分别实测正常停止的检查点与强杀前尚未保存的窗口。
             await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
                 "\npersistence true\npersistence_location /mosquitto/data/\nautosave_interval 0\n", cancellationToken);
+        }
+        if (maxQueuedMessages is { } maximum)
+        {
+            await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
+                $"\nmax_queued_messages {maximum.ToString(CultureInfo.InvariantCulture)}\n", cancellationToken);
+        }
+        if (maxQueuedBytes is { } maximumBytes)
+        {
+            await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
+                $"\nmax_queued_bytes {maximumBytes.ToString(CultureInfo.InvariantCulture)}\n", cancellationToken);
         }
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.crt"), certificate, cancellationToken);
         await File.WriteAllTextAsync(Path.Combine(files.Path, "server.key"), key, cancellationToken);

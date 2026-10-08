@@ -1811,6 +1811,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-checkpoint' --results-directory /tmp/tenonedge-broker-checkpoint --blame-hang-timeout 5m --blame-hang-dump-type none`：880 单元 + 691 集成 = **1571 项测试断言通过，0 失败、0 跳过**。其中 1 项是上述已知缺口刻画，不能用这个总数宣称 MQTT 可靠性验收完成。TRX Counters 已核对，日志 `/tmp/tenonedge-broker-checkpoint-full.log`。初次格式检查发现两个换行问题、阻止全量执行；限定文件格式化修正后才执行上述全量，`git diff --check` 通过。
 - 环境同 §2.76；本批未安装其他 Broker/插件，未把快照周期 0 当成生产推荐值。
 
+### 2.78 T2-07 / V-09 Broker 离线积存条数与字节边界（2026-10-09）
+
+- 独占 Mosquitto 配置可设置 max_queued_messages / max_queued_bytes；测试使用正式输入会话和 SQLite 订阅日志，在输入断开后发布 10 条 QoS 1 消息，逐条确认发布端收到成功 PUBACK，再恢复输入核对补收范围。
+- 4 格实际结果：条数上限 1/3 时只补收最先的 1/3 条；字节上限 1/5、每条载荷 2 字节时同样补收最先的 1/3 条，其余新消息被 Broker 丢弃。字节检查针对已有积存，最后一条可跨过阈值，因此该参数不能被当成包含元数据的严格内存硬上限；本测试不推断 RSS。
+- 会话仍返回 SessionPresent=true，不重订，也不产生 sessionLost；Broker 日志明确出现该 ClientId 的 outgoing messages dropped。恢复后实际新 barrier 到达作为顺序屏障，不使用固定等待证明丢失。发布端 PUBACK 不能证明网关已接管，Broker 外部丢弃也不能伪造网关接收计数。
+- 聚焦命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~OfflineBrokerQueueDropsNewMessagesBeyondLimitDespitePublisherPubacks`：4 项通过，日志 `/tmp/tenonedge-broker-queue-focused3.log`；首轮构建缺少 ReadOnlySequence 扩展的 System.Buffers 引用而失败，补齐后条数两格及最终四格均通过，没有改 MQTTnet API/包版本。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=broker-queue' --results-directory /tmp/tenonedge-broker-queue --blame-hang-timeout 5m --blame-hang-dump-type none`：**880 单元 + 695 集成 = 1575 项测试断言通过，0 失败、0 跳过**，包含 §2.77 的 1 项已知缺口刻画，不能用总数抹去待解决的漏订阅风险。TRX Counters 已核对，日志 `/tmp/tenonedge-broker-queue-full.log`。限定修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 和 `git diff --check` 通过。
+- AT-27 软件子场景、V-09 的离线队列上限范围获得实测；这不是 Host 重启/配置应用全过程或完整 V-09 通过。环境同 §2.76，未新增生产 Broker 部署模板或改变默认产品配额。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

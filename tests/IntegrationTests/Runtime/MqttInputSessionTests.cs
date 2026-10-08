@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
@@ -886,6 +887,62 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         await barrier.Task.WaitAsync(deadline.Token);
         Assert.Equal("barrier", Assert.Single(values));
         Assert.Equal(2, journal.Read(identity).Count); // 本地的确认日志不能证明 Broker 检查点包含同样的订阅。
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(3, false)]
+    [InlineData(1, true)]
+    [InlineData(3, true)]
+    public async Task OfflineBrokerQueueDropsNewMessagesBeyondLimitDespitePublisherPubacks(int limit, bool byteLimit)
+    {
+        Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
+        await using var broker = await MosquittoBroker.StartAsync(Token,
+            maxQueuedMessages: byteLimit ? 100 : limit, maxQueuedBytes: byteLimit ? limit * 2 - 1 : null);
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var topic = MqttProbe.NewTopic("offline-queue-limit");
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var journal = new MqttSubscriptionStore(database.Database);
+        using var deadline = MqttProbe.Timeout(Token);
+        var original = new MqttInputReceiver([new(topic, 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, journal, identity);
+        await using (var first = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await first.MaintainAsync(deadline.Token)).Status); }
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
+        using (publisher)
+        {
+            for (var index = 0; index < 10; index++)
+            {
+                var result = await MqttProbe.PublishAsync(publisher, topic, [(byte)index, 0], MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+                Assert.Equal(MqttClientPublishReasonCode.Success, result.ReasonCode);
+            }
+            var values = new ConcurrentQueue<byte>();
+            var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reports = new ConcurrentQueue<string>();
+            var restored = new MqttInputReceiver([new(topic, 1, (message, _) =>
+            {
+                var value = message.Payload.ToArray()[0];
+                values.Enqueue(value);
+                if (value == 255) { barrier.TrySetResult(); }
+                if (values.Count == limit) { drained.TrySetResult(); }
+                return Task.FromResult(InputHandoffStatus.Rejected);
+            })], TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+            await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
+            Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+            Assert.True(restored.LastSessionPresent);
+            Assert.DoesNotContain("subscribed", reports);
+            await drained.Task.WaitAsync(deadline.Token);
+            await MqttProbe.PublishAsync(publisher, topic, [255], MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            await barrier.Task.WaitAsync(deadline.Token);
+            // 字节上限先检查已有积存：2 字节消息在上限 1/5 下会接收 1/3 条，允许最后一条跨界。
+            // 因此它不是包括消息元数据在内的严格内存上限；这里只实测此版本的离线载荷积存行为。
+            Assert.Equal(Enumerable.Range(0, limit).Select(value => (byte)value).Append((byte)255), values);
+            Assert.DoesNotContain("sessionLost", reports);
+            Assert.Contains($"Outgoing messages are being dropped for client {identity.ClientId}", await broker.LogsAsync(deadline.Token), StringComparison.Ordinal);
+        }
     }
 
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
