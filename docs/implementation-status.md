@@ -1838,6 +1838,14 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 会话类回归：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MqttInputSessionTests --logger 'trx;LogFilePrefix=mqtt-payload' --results-directory /tmp/tenonedge-mqtt-payload --blame-hang-timeout 5m --blame-hang-dump-type none`：**36 项断言通过，0 失败、0 跳过**，含 §2.77 已知缺口刻画；日志 `/tmp/tenonedge-mqtt-payload-session.log`，TRX Counters 已核对。只改测试，本轮未重跑整套解决方案，最近全量基线见 §2.79。限定修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 和 `git diff --check` 通过。
 - 环境同 §2.76；本批只新增测试，不改变 1 MiB 输入上限或原始缓冲算法。
 
+### 2.81 T2 输出构建错误的非秘密边界（2026-10-09）
+
+- 发现 MQTT 输出工厂把已捕获的 ArgumentException / JsonException.Message 原样公开，并把原始异常保留为 InnerException。未知 JSON 属性名和凭证提供者的异常说明因而可进入 RuntimeUnitBuildException，对外诊断或后续日志都可能回显不可信配置内容。
+- 两项回归测试先确定性失败：未知属性名与凭证解析器异常中的人工敏感标记均出现在异常 ToString；日志 `/tmp/tenonedge-mqtt-build-red.log`。工厂改为固定安全说明，不保留这两类原始异常链；保留单元标识和 RuntimeUnitBuildException 类型，原来的配置拒绝语义不变。
+- `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~MqttOutputTests`：33 项通过，日志 `/tmp/tenonedge-mqtt-build-green.log`。
+- 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-build' --results-directory /tmp/tenonedge-mqtt-build --blame-hang-timeout 5m --blame-hang-dump-type none`：**882 单元 + 698 集成 = 1580 项测试断言通过，0 失败、0 跳过**；含 §2.77 已知缺口刻画，不代表订阅回滚风险已修复。TRX Counters 已核对，日志 `/tmp/tenonedge-mqtt-build-full.log`。限定两个修改文件的 `dotnet format --verify-no-changes --no-restore --include …` 与 `git diff --check` 通过。环境同 §2.76。
+- 边界：只修复此工厂已经捕获的两类构建错误，不声称所有适配器、监督者未知异常及停止/释放日志已脱敏；§7 待处理 22 中的运行时统一异常策略仍须继续落实。测试标记完全人工，不含真实凭证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

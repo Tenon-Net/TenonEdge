@@ -9,6 +9,31 @@ namespace TenonEdge.UnitTests.Adapters;
 public sealed class MqttOutputTests
 {
     [Fact]
+    public void BuildFailureDoesNotExposeUnknownConfigurationPropertyOrInnerException()
+    {
+        const string Marker = "fixture-sensitive-config-key";
+        var factory = new MqttOutputFactory(new Credentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections());
+        var exception = Assert.Throws<RuntimeUnitBuildException>(() => factory.Build(Plan(Configuration(JsonSerializer.Serialize(new Dictionary<string, bool> { [Marker] = true })))));
+        Assert.DoesNotContain(Marker, exception.ToString(), StringComparison.Ordinal);
+        Assert.Contains("MQTT", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildFailureDoesNotExposeCredentialResolverExceptionDetails()
+    {
+        var factory = new MqttOutputFactory(new FailingCredentials(), TimeProvider.System, new NoNetwork(), new TenonEdge.Runtime.Connections.SharedConnections());
+        var exception = Assert.Throws<RuntimeUnitBuildException>(() => factory.Build(Plan(Configuration("{\"usePassword\":true}"))));
+        Assert.DoesNotContain("fixture-sensitive-credential", exception.ToString(), StringComparison.Ordinal);
+        Assert.Equal(Plan(Configuration("{}")).Id, exception.UnitId);
+    }
+
+    private sealed class FailingCredentials : ICredentialResolver
+    {
+        public MqttCredentialIdentity? DescribeMqtt(long connectionId) => null;
+        public MqttCredential? ResolveMqtt(long connectionId, string recipient) => throw new ArgumentException("fixture-sensitive-credential");
+    }
+
+    [Fact]
     public void ConnectionIdentityIsIndependentOfOutputAndCanonicalAcrossHostCasing()
     {
         var output = MqttOutputSettings.Parse(Configuration("{}"));

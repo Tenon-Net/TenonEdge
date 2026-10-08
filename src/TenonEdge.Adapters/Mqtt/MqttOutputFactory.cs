@@ -32,7 +32,8 @@ public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvi
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)
         {
-            throw new RuntimeUnitBuildException(plan.Id, exception.Message, exception);
+            // 解析器可回显未知属性名，凭证提供者异常也可能含秘密；不能把原异常链写入状态或日志。
+            throw new RuntimeUnitBuildException(plan.Id, "MQTT 输出配置或凭证无效，请检查连接、主题和认证设置。");
         }
     }
 }
