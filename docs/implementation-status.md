@@ -1468,6 +1468,24 @@ Host 尚未注册新的提供者或开放 input.mqtt 配置；正式注册时必
 
 边界：本节验证普通停止时 SQLite 受阻后恢复的混合连接路径，不等于强杀、永久网络/存储挂起、失败配置应用后恢复旧计划等全部场景通过。跨进程订阅状态/旧 ClientId 清理、故障成员协调、退避抖动和库内接收队列资源限制仍待处理，T3 配置切换尚未实施。本轮未提交、未推送，继续原 T2/T3 与实际网页目标。
 
+
+### 2.58 T2-03 子项：本地检查点与 MQTT 输入退避抖动
+
+维护者授权“整理提交一下未提交的，然后继续”。截至 §2.57 的输入接管、计划隔离、Host 接入和停机排空整理为本地提交 `adca485`；提交前核对原始 TRX：734 个单元测试、644 个集成测试通过，失败/跳过均为 0。未推送，不代表 T2 或网页验收完成。
+
+随后补充 MQTT 输入维护循环的重试抖动：失败基准仍为 1、2、4、8、16、30 秒并封顶，每次随机缩短最多 10%；成功恢复固定一秒维护间隔，同时重置失败退避。状态由各输入运行实例持有，等待仍使用注入的 TimeProvider 和停止令牌。不引用 Runtime 内部实现、不新增依赖或连接管理器。
+
+新增 5 个确定性单元用例：不同随机样本下的指数增长与范围、长期封顶不溢出、成功重置且不消耗随机数、实例状态隔离。这里验证的是单个输入维护循环的退避，不宣称共享连接所有调用者已经统一连接级重试调度，也不替代断网/多设备压力实测。
+
+验证环境：Linux x64、SDK 10.0.401；实际命令与结果：
+
+- `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~MqttInputRetryDelayTests`：5 通过，0 失败/跳过；日志 `/tmp/tenonedge-mqtt-jitter-unit.log`。
+- `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=mqtt-jitter' --results-directory /tmp/tenonedge-mqtt-jitter-full --blame-hang-timeout 5m --blame-hang-dump-type none`：739 单元 + 644 集成 = **1383 通过**，0 失败/跳过；日志 `/tmp/tenonedge-mqtt-jitter-full.log`，TRX 在结果目录。
+- `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include src/TenonEdge.Adapters/Mqtt/MqttPlanAdapters.cs src/TenonEdge.Adapters/Mqtt/MqttInputRetryDelay.cs tests/UnitTests/Adapters/MqttInputRetryDelayTests.cs`：退出 0；日志 `/tmp/tenonedge-mqtt-jitter-format.log`。
+- `git diff --check`：通过。
+
+未完成边界保持：跨进程订阅集合持久化与协调、旧 ClientId 会话清理、MQTTnet 接收队列内存边界、故障成员订阅协调及异常停止场景仍需继续；T2-03、AT-25、T2 和可视化访问目标均未标为完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

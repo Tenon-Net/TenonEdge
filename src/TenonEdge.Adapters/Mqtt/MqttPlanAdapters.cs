@@ -146,7 +146,7 @@ internal sealed class MqttPlanAdapters
                 var group = input.Connection.Group.Value;
                 quiesce = stoppingToken.Register(group.BeginQuiesce);
                 lease = group.Acquire();
-                var delay = TimeSpan.FromSeconds(1);
+                var retry = new MqttInputRetryDelay();
                 while (true)
                 {
                     using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(input.Settings.TimeoutMs), input.Context.Time);
@@ -158,11 +158,7 @@ internal sealed class MqttPlanAdapters
                     { result = new(OutputSendStatus.Retry); }
                     if (result.Status != OutputSendStatus.Ack)
                     { input.Context.Reads.ReadFailed(input.Context.Time.GetUtcNow(), "MQTT 输入连接不可用，请检查网络、订阅、出站策略或凭证。"); }
-                    else
-                    { delay = TimeSpan.FromSeconds(1); }
-                    await Task.Delay(delay, input.Context.Time, stoppingToken);
-                    if (result.Status != OutputSendStatus.Ack)
-                    { delay = TimeSpan.FromSeconds(Math.Min(30, delay.TotalSeconds * 2)); }
+                    await Task.Delay(retry.Next(result.Status == OutputSendStatus.Ack), input.Context.Time, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
