@@ -1894,6 +1894,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=acl-reload' --results-directory /tmp/tenonedge-acl-reload --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 714 集成 = 1602 项测试断言通过，0 失败、0 跳过**；含 §2.77 已知缺口刻画。TRX Counters 已核对，日志 `/tmp/tenonedge-acl-reload-full.log`。环境同 §2.84，未增加包或镜像。首轮格式检查指出一处 if 换行，修正后两项 C# 文件限定格式检查与 `git diff --check` 通过（`/tmp/tenonedge-acl-reload-format2.log`）。
 - 边界：只证明在线订阅的读权限收回/恢复；未证明设备账号读权限全矩阵、离线积存重连时的 ACL 重检、账号吊销或过期、实物接入。§2.77 订阅回滚风险与待确认决策没有改变。
 
+### 2.87 T2-07 / V-09 离线积存的 ACL 撤权与恢复（2026-10-09）
+
+- 通过正式 MqttSession 建立持久订阅并写本地订阅日志，释放网关客户端后，由 sensor-a 向 private 与 barrier 各发布一条非 retained 的 QoS 1 消息并获得 PUBACK。随后重载 ACL，再以相同 ClientId 和重新打开的本地订阅存储建立新会话。
+- 两个对照场景：不撤权时，重连收到 queued-private、queued-barrier 两条，证明旧会话有离线积存；撤权时只收到 queued-barrier。两者 SessionPresent 均为 true，产品都没有重新订阅或报 sessionLost，因此不是 CleanSession 清空或重新建立订阅造成的差异。
+- 同一发布连接的有序 barrier 是读取终点，不依赖固定睡眠。随后恢复 private 权限并发送 fresh-private / fresh-barrier，接收端恰好按顺序收到新消息，没有先收到曾被撤权丢弃的 queued-private。这里证明 Broker 侧授权隔离，不把 Broker 丢弃记作网关已接管或已入库。
+- 初次编译 CA1861 提示常量数组断言，改为比较准确有序字符串后再执行，编译日志 `/tmp/tenonedge-acl-offline.log`。聚焦命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~OfflineQueuedMessagesAreRecheckedAgainstReloadedReadAcl`：2 项通过、零失败/跳过（`/tmp/tenonedge-acl-offline2.log`）。
+- 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=acl-offline' --results-directory /tmp/tenonedge-acl-offline --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 716 集成 = 1604 项测试断言通过，0 失败、0 跳过**；仍含 §2.77 已知缺口刻画。日志 `/tmp/tenonedge-acl-offline-full.log`，TRX Counters 已核对。限定修改文件的格式校验和 `git diff --check` 通过；环境同 §2.84，无新包/镜像。
+- 边界：未验证已经发出但尚未 PUBACK 的在途消息撤权、设备账号读权限全矩阵、密码吊销、会话过期或 Broker 真实断电；不改变 §2.77 订阅回滚缺口，不代表 T2-07 整体退出。选型与协议策略仍待维护者确认。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

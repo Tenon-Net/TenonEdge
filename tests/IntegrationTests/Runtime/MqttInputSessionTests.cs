@@ -1042,6 +1042,69 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OfflineQueuedMessagesAreRecheckedAgainstReloadedReadAcl(bool revoke)
+    {
+        Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
+        await using var broker = await MosquittoBroker.StartAsync(Token, deviceAcl: true);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(Token, deadline.Token);
+        using var database = TestConfigStore.Create();
+        database.Initialize();
+        var settings = Settings(broker);
+        var identity = new MqttSessionIdentity(settings.Recipient, NewId());
+        var original = new MqttInputReceiver([new("devices/#", 1, (_, _) => Task.FromResult(InputHandoffStatus.Rejected))],
+            TimeProvider.System, _ => { }, new MqttSubscriptionStore(database.Database), identity);
+        await using (var first = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), original))
+        { Assert.Equal(OutputSendStatus.Ack, (await first.MaintainAsync(operation.Token)).Status); }
+
+        using var sensor = new MqttClientFactory().CreateMqttClient();
+        var options = new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", broker.Port)
+            .WithProtocolVersion(MQTTnet.Formatter.MqttProtocolVersion.V311).WithClientId(NewId()).WithCleanSession()
+            .WithCredentials("sensor-a", MosquittoBroker.Password).Build();
+        Assert.Equal(MqttClientConnectResultCode.Success, (await sensor.ConnectAsync(options, operation.Token)).ResultCode);
+        async Task PublishAsync(string topic, string value)
+        {
+            Assert.Equal(MqttClientPublishReasonCode.Success,
+                (await MqttProbe.PublishAsync(sensor, topic, System.Text.Encoding.UTF8.GetBytes(value),
+                    MqttQualityOfServiceLevel.AtLeastOnce, operation.Token)).ReasonCode);
+        }
+        // 原持久客户端已经退出，两个 QoS 1 报文都在旧 ACL 仍允许时到达 Broker。
+        await PublishAsync("devices/sensor-a/private", "queued-private");
+        await PublishAsync("devices/sensor-a/barrier", "queued-barrier");
+        await broker.ReloadDeviceAclAsync(denyPrivateTopic: revoke, operation.Token);
+
+        var messages = System.Threading.Channels.Channel.CreateUnbounded<string>();
+        var reports = new ConcurrentQueue<string>();
+        var restored = new MqttInputReceiver([new("devices/#", 1, (message, _) =>
+        {
+            Assert.True(messages.Writer.TryWrite(message.ConvertPayloadToString()));
+            return Task.FromResult(InputHandoffStatus.Rejected);
+        })], TimeProvider.System, reports.Enqueue, new MqttSubscriptionStore(database.Database), identity);
+        await using var gateway = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
+        Assert.Equal(OutputSendStatus.Ack, (await gateway.MaintainAsync(operation.Token)).Status);
+        Assert.True(restored.LastSessionPresent);
+        Assert.DoesNotContain("subscribed", reports);
+        Assert.DoesNotContain("sessionLost", reports);
+        var received = new List<string>();
+        while (true)
+        {
+            var value = await messages.Reader.ReadAsync(operation.Token);
+            received.Add(value);
+            if (value == "queued-barrier")
+            { break; }
+        }
+        Assert.Equal(revoke ? "queued-barrier" : "queued-private,queued-barrier", string.Join(',', received));
+        // 再恢复读取权限并发新报文：被撤权丢弃的积存不能随后当作新报文复活。
+        await broker.ReloadDeviceAclAsync(denyPrivateTopic: false, operation.Token);
+        await PublishAsync("devices/sensor-a/private", "fresh-private");
+        await PublishAsync("devices/sensor-a/barrier", "fresh-barrier");
+        Assert.Equal("fresh-private", await messages.Reader.ReadAsync(operation.Token));
+        Assert.Equal("fresh-barrier", await messages.Reader.ReadAsync(operation.Token));
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(1)]
     public async Task BrokerPayloadBoundaryIsCountedWithoutPoisoningBufferedConnection(int qos)
