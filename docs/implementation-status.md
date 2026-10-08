@@ -1717,6 +1717,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 未覆盖：实际传感器上报周期与无线补传、真实 LoRaWAN 网络服务、LR-AT-06 实物链路、任何厂商型号兼容、Broker 断电持久化完整矩阵以及 T2-07/08 整体退出；不新增无线协议栈、设备自动发现、下行控制或网页。
 
+### 2.68 T2-02 寄存器纯解码（2026-10-09）
+
+- 新增独立于协议库的内部解码器：寄存器取位、16/32/64 位有符号/无符号整数、float32/float64；32/64 位覆盖四种字节序，64 位整数不经过 double，非有限值返回 `nonFinite`，缺词、多词及无效配置拒绝解码。
+- AT-02 / V-05 子场景：58 项软件单元用例覆盖手写已知线序、超过 2^53 的整数、负数、位号 0–15、四种字节序下 NaN/正负无穷及 JSON 精度。没有网络请求，不代表正式协议适配、迟到帧、调度或实物验收通过。
+- 环境：Linux x64、.NET SDK 10.0.401；沿用真实 Mosquitto 测试环境。
+- 命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-codec' --results-directory /tmp/tenonedge-modbus-codec --blame-hang-timeout 5m --blame-hang-dump-type none`。
+- 结果：826 单元 + 679 集成 = **1505 通过，0 失败、0 跳过**；日志 `/tmp/tenonedge-modbus-codec-full.log`，TRX 位于上述结果目录。初次局部格式校验发现测试 writer 的换行问题，已修正；未变更算法。
+- 不修改 UnitId 范围、依赖选型或注册；TCP 0–255 / RTU over TCP 1–247 的建议仍待维护者确认，T2-02 不定稿。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
