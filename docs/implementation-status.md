@@ -1726,6 +1726,14 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 结果：826 单元 + 679 集成 = **1505 通过，0 失败、0 跳过**；日志 `/tmp/tenonedge-modbus-codec-full.log`，TRX 位于上述结果目录。初次局部格式校验发现测试 writer 的换行问题，已修正；未变更算法。
 - 不修改 UnitId 范围、依赖选型或注册；TCP 0–255 / RTU over TCP 1–247 的建议仍待维护者确认，T2-02 不定稿。
 
+### 2.69 T2-02 地址规范化子项（2026-10-09）
+
+- 将协议偏移、显式功能码下的从 1 开始寄存器号、含前缀的 5/6 位手册编号分成三个内部入口，不猜测 `40001` 的输入模式。前缀 0/1/3/4 对应功能码 01/02/04/03，保留线圈编号的前导零。
+- 校验零基偏移与整个点位宽度，包含最后合法地址、多寄存器跨界及整数溢出输入；拒绝非法前缀、零编号、非 ASCII 数字、符号和多余空格。
+- 24 项新增地址用例；`dotnet test tests/UnitTests -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-address' --results-directory /tmp/tenonedge-modbus-address`：**850 单元通过，0 失败、0 跳过**。日志 `/tmp/tenonedge-modbus-address.log`，TRX Counters 已核对。该子项后未重跑集成测试，最近集成基线见 §2.68。
+- `dotnet format TenonEdge.sln --verify-no-changes --no-restore --include src/TenonEdge.Adapters/Modbus/ModbusRegisterDecoder.cs tests/UnitTests/Adapters/ModbusRegisterDecoderTests.cs src/TenonEdge.Adapters/Modbus/ModbusAddress.cs tests/UnitTests/Adapters/ModbusAddressTests.cs` 与 `git diff --check` 通过。
+- 环境同 §2.68。本项仅内部地址纯函数，尚未接入草稿 API/点表/读取块；不代表 AT-02 或 T2-02 完整通过。接下来继续连续读取块及调度，UnitId 与库选型仍不擅自定稿。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
