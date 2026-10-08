@@ -78,6 +78,45 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Contains("handoffFailed", failures);
     }
 
+    [Fact]
+    public async Task HandoffDeadlineDisconnectsAndLateCompletionCannotAcknowledge()
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("handoff-deadline");
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var late = new TaskCompletionSource<InputHandoffStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var timedOut = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reports = new ConcurrentQueue<string>();
+        var input = new MqttInputReceiver([new(topic, 1, (_, _) =>
+        {
+            entered.TrySetResult();
+            return late.Task; // Deliberately ignores cancellation: must never send a late ACK.
+        })], time, reason =>
+        {
+            reports.Enqueue(reason);
+            if (reason == "handoffTimeout")
+            { timedOut.TrySetResult(); }
+        });
+        await using var session = new MqttSession(Settings(broker), NewId(), new Credentials(), time, new CountingConnector(), input);
+        using var deadline = MqttProbe.Timeout(Token);
+        Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+        var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), Token);
+        using (publisher)
+        {
+            await MqttProbe.PublishAsync(publisher, topic, "{}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+        }
+        await entered.Task.WaitAsync(deadline.Token);
+        Assert.DoesNotContain("acknowledged", reports);
+        time.Advance(TimeSpan.FromSeconds(5));
+        await timedOut.Task.WaitAsync(deadline.Token);
+        await OutputPipelineTests.UntilAsync(() => !session.IsConnected);
+        late.SetResult(InputHandoffStatus.Committed);
+        // The receiver has already terminated and disposed this connection generation.
+        Assert.DoesNotContain("acknowledged", reports);
+        Assert.False(session.IsConnected);
+    }
+
     private static MqttConnectionSettings Settings(MosquittoBroker broker) => new()
     { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
     private static string NewId() => "input-session-" + Guid.NewGuid().ToString("N");

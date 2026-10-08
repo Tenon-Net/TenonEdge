@@ -1293,6 +1293,12 @@ T2-05 仍在进行中，没有运行路线/页面完成证据。
 
 剩余：确认期限/取消的确定性覆盖、SQLite 联合接管、Host 输入工厂与 JSON 解码、每连接全部输入启动/失败后的订阅屏障、跨进程订阅增删协调、MQTTnet 内部无界接收队列的资源限制。当前接收器仅保存进程内已订阅集合，尚未接入 Host，不声称正式输入完成。继续 T2-03，不提前创建 web/。
 
+### 2.43 T2-03 继续：接管期限与迟到结果
+
+§2.36—§2.42 已整理为本地提交 `071aee8`，未推送。继续增加真实 Mosquitto + FakeTimeProvider 用例：接管回调故意忽略取消，等待期间没有确认；推进 5 秒后报告 handoffTimeout 并断开连接，旧接管任务随后返回 Committed 也没有确认。此处仍是受控接管回调，不冒充 SQLite 联合验收。
+
+命令：`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MqttInputSessionTests --logger 'trx;LogFilePrefix=deadline' --results-directory /tmp/tenonedge-mqtt-deadline`，**3/3 通过，0 失败/跳过**（包含新增 1 项）；日志 `/tmp/tenonedge-mqtt-deadline.log`。本次仅新增测试，未重跑全量；全量基线仍为 §2.42 的 1302 项。后续继续 SQLite 联合接管与 Host 输入生命周期协调，T2-03 未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
