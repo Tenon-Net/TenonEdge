@@ -154,6 +154,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 }
 
                 var target = factory.Build(unit);
+                if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
+                { throw new ArgumentException("输出格式化预算无效或超过全局在途预算。"); }
                 if (target.Id != unit.Id)
                 {
                     throw new ArgumentException("输出工厂标识与计划不一致。");
@@ -164,7 +166,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new ArgumentException("同一连接不能定义多个输出单元。");
                 }
 
-                if (outputs.Any(output => output.Target.Recipient == target.Recipient && output.Target.ClientId == target.ClientId))
+                if (target.ClientId is not null && outputs.Any(output => output.Target.Recipient == target.Recipient && output.Target.ClientId == target.ClientId))
                 {
                     throw new ArgumentException("同一 Broker 的 ClientId 冲突。");
                 }
@@ -260,8 +262,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         {
             var channel = (BudgetedInputChannel)input.Channel!;
             var paths = prepared.Outputs.Count(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
-            // 冻结 payload 拷贝及组装暂存各一份；保守预留，不代表实际堆占用。
-            channel.OutputReservationBytes = paths * 2L * DeliveryDraft.MaximumPayloadBytes;
+            // 按协议声明预留报文、冻结拷贝及非秘密元数据；不代表实际堆占用。
+            channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                .Sum(output => output.Target.FormattingReservationBytes);
             channel.ReserveSerializationWorkspace = paths > 0;
         }
 
@@ -472,7 +475,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
             foreach (var reader in _inputChannels.Values)
             {
-                while (reader.TryRead(out _)) { }
+                while (reader.TryRead(out _))
+                { }
             }
         }
 

@@ -55,6 +55,7 @@ public sealed class OutboundHttpTransportTests
         using var handler = OutboundHttpTransport.CreateHandler(new OutboundConnector(new DenyPolicy()));
         Assert.False(handler.UseProxy);
         Assert.False(handler.UseCookies);
+        Assert.Equal(0, handler.MaxResponseDrainSize);
         Assert.False(handler.AllowAutoRedirect);
         Assert.NotNull(handler.ConnectCallback);
     }

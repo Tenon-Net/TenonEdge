@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Features.SystemInfo;
+using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
 
 namespace TenonEdge.IntegrationTests.SystemInfo;
@@ -18,6 +19,10 @@ public sealed class ClockSyncMonitorTests
         await using var baseFactory = new TenonEdgeApplicationFactory();
         var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
+            // 保留生产 ClockSyncMonitor 注册，只隔离同样会主动读取时钟的清理服务。
+            // 否则启动清理的一次读取会被误当成监控器的第二次周期采样。
+            services.Remove(Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IHostedService)
+                && descriptor.ImplementationType == typeof(DataRetentionService)));
             services.AddSingleton<IClockSyncStatus>(clock);
         }));
         ClockSyncMonitor monitor;

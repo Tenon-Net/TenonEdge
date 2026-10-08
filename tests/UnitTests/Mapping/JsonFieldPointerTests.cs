@@ -1,5 +1,5 @@
 using System.Text.Json;
-using TenonEdge.Runtime.Mapping;
+using TenonEdge.Abstractions.Messages;
 
 namespace TenonEdge.UnitTests.Mapping;
 

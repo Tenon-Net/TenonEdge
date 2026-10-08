@@ -54,7 +54,7 @@ internal sealed class InputDispatcherUnit(
                         var output = target.CreateMessage(state.Message, id);
                         drafts.Add(new DeliveryDraft(id, target.ConnectionId, state.Message.SourceMessageId, state.Message.DeviceKey,
                             revision, output.Payload, output.Fingerprint, output.FingerprintSummary,
-                            output.Address, output.QualityOfService));
+                            output.Address, output.QualityOfService, output.Headers));
                     }
                     catch (ArgumentException)
                     {

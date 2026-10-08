@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace TenonEdge.Runtime.Mapping;
+namespace TenonEdge.Abstractions.Messages;
 
 /// <summary>
 /// RFC 6901 字符串形式的固定字段定位；在构建时验证，不执行查询、脚本或 URI 解码。
@@ -14,15 +14,18 @@ public sealed class JsonFieldPointer
     public JsonFieldPointer(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
-        if (path.Length == 0) { _tokens = []; return; }
-        if (path[0] != '/') { throw new ArgumentException("JSON Pointer 必须为空或以 / 开头。", nameof(path)); }
+        if (path.Length == 0)
+        { _tokens = []; return; }
+        if (path[0] != '/')
+        { throw new ArgumentException("JSON Pointer 必须为空或以 / 开头。", nameof(path)); }
         _tokens = path[1..].Split('/');
         for (var index = 0; index < _tokens.Length; index++)
         {
             var token = _tokens[index];
             for (var offset = 0; offset < token.Length; offset++)
             {
-                if (token[offset] != '~') { continue; }
+                if (token[offset] != '~')
+                { continue; }
                 if (++offset == token.Length || token[offset] is not ('0' or '1'))
                 {
                     throw new ArgumentException("JSON Pointer 转义仅允许 ~0 与 ~1。", nameof(path));
@@ -46,12 +49,15 @@ public sealed class JsonFieldPointer
                 var next = default(JsonElement);
                 foreach (var property in current.EnumerateObject())
                 {
-                    if (!property.NameEquals(token)) { continue; }
-                    if (found) { return false; }
+                    if (!property.NameEquals(token))
+                    { continue; }
+                    if (found)
+                    { return false; }
                     found = true;
                     next = property.Value;
                 }
-                if (!found) { return false; }
+                if (!found)
+                { return false; }
                 current = next;
             }
             else if (current.ValueKind == JsonValueKind.Array)
@@ -59,12 +65,15 @@ public sealed class JsonFieldPointer
                 if (token.Length == 0 || (token.Length > 1 && token[0] == '0') ||
                     token.Any(character => character is < '0' or > '9') ||
                     !int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var index) ||
-                    index >= current.GetArrayLength()) { return false; }
+                    index >= current.GetArrayLength())
+                { return false; }
                 current = current[index];
             }
-            else { return false; }
+            else
+            { return false; }
         }
-        if (current.ValueKind == JsonValueKind.Undefined) { return false; }
+        if (current.ValueKind == JsonValueKind.Undefined)
+        { return false; }
         value = current;
         return true;
     }

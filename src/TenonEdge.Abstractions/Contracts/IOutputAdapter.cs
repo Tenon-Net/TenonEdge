@@ -9,10 +9,12 @@ public interface IOutputTarget
     RuntimeUnitId Id { get; }
     long ConnectionId { get; }
     IReadOnlyList<string> Inputs { get; }
-    string ClientId { get; }
+    string? ClientId { get; }
     string Recipient { get; }
     string CredentialVersion { get; }
     string CurrentFingerprint { get; }
+    /// <summary>输入入队前预留的每路径格式化上界；默认包含报文及冻结拷贝，协议可增加非秘密元数据暂存。</summary>
+    long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes;
     OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId);
     IOutputAdapter CreateAdapter();
 }
@@ -23,7 +25,8 @@ public interface IOutputAdapter : IAsyncDisposable
     Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken);
 }
 
-public sealed record OutputMessage(ReadOnlyMemory<byte> Payload, string Address, int QualityOfService, string Fingerprint, string FingerprintSummary);
+public sealed record OutputMessage(ReadOnlyMemory<byte> Payload, string Address, int? QualityOfService, string Fingerprint, string FingerprintSummary,
+    IReadOnlyDictionary<string, string>? Headers = null);
 
 public enum OutputSendStatus { Ack, Retry, RejectMessage, SuspendTarget }
 

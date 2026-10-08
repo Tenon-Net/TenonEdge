@@ -1,8 +1,8 @@
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Deliveries;
-using TenonEdge.Runtime.Lifecycle;
 using TenonEdge.Runtime.Diagnostics;
+using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.Runtime.Outputs;
 
@@ -219,8 +219,8 @@ internal sealed class OutputSenderUnit(
     {
         try
         {
-            var result = await _adapter.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService!.Value,
-                record.Fingerprint, record.FingerprintSummary), token);
+            var result = await _adapter.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService,
+                record.Fingerprint, record.FingerprintSummary, record.Headers), token);
             return Enum.IsDefined(result.Status) ? result : new(OutputSendStatus.Retry, "输出返回未知结果。", CountsTowardPoison: true);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

@@ -107,6 +107,31 @@ public sealed class FieldValue : IEquatable<FieldValue>
         return new FieldValue(Representation.String, text: value);
     }
 
+    /// <summary>仅提取整数和 decimal 的精确数值，不把浮点或字符串隐式转换为 decimal。</summary>
+    public bool TryGetExactNumber(out decimal value)
+    {
+        value = _representation switch
+        {
+            Representation.Int64 => _bits,
+            Representation.UInt64 => unchecked((ulong)_bits),
+            Representation.Decimal => _decimal,
+            _ => default,
+        };
+        return _representation is Representation.Int64 or Representation.UInt64 or Representation.Decimal;
+    }
+
+    /// <summary>仅提取原始浮点表示；float32 精确提升为 double，整数不会经过此入口丢失精度。</summary>
+    public bool TryGetFloatingNumber(out double value)
+    {
+        value = _representation switch
+        {
+            Representation.Single => BitConverter.Int32BitsToSingle(unchecked((int)_bits)),
+            Representation.Double => BitConverter.Int64BitsToDouble(_bits),
+            _ => default,
+        };
+        return _representation is Representation.Single or Representation.Double;
+    }
+
     /// <summary>写出 JSON 值。</summary>
     public void WriteTo(Utf8JsonWriter writer)
     {

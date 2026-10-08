@@ -22,6 +22,8 @@ public static class OutboundHttpTransport
         UseProxy = false,
         AllowAutoRedirect = false,
         UseCookies = false,
+        // 达到读取上限或无需正文时直接关闭流，不为复用连接在 Dispose 后继续排空未读取的正文。
+        MaxResponseDrainSize = 0,
         ConnectCallback = (context, token) => connector.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, token),
     };
 }
