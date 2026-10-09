@@ -2449,6 +2449,22 @@ Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test Te
 
 边界与剩余：本节是软件/本机网络与浏览器验证，不是外部 HTTP 平台或实物测试；失败/非 JSON 正文仍不展示。MQTT 实时抓取、证书表单与部分安全场景、T3-05 图编译及 T3-06 应用/回滚仍未完成，尚不能通过网页独立配置并启动采集路线，不宣称 T3 或持续目标完成。
 
+### 2.121 T3-07 MQTT 单条采样内核与独立诊断会话（2026-10-10）
+
+接续 HTTP 网页采样，推进 MQTT 实时抓取内核。已回读参考目录 SUMMARY 与 MQTTnet 笔记中的手动确认、连接代次、回调清理和无界接收队列风险；只借模式，未复制参考代码。**本节尚未注册 MQTT 采样 API/网页入口，不记作 MQTT 网页抓取已交付。**
+
+- `ISharedConnections.AcquireDiagnostic` 为短期独立诊断分配管理器内部标识，不使用/替换正数业务 ConnectionId。与正式连接共用 500 个总上限及原串行执行、实际操作退出后释放的责任；没有另建连接管理实例、运行时或后台任务。测试覆盖多个诊断互不共享、正式租约不受影响、达到总上限时工厂不运行、关闭中的实际 I/O 仍占用额度。
+- `MqttReadPreview` 使用随机 `te-sample-*` ClientId、MQTT 3.1.1、CleanSession 临时订阅，不使用配置中的正式 ClientId、不借正式接收回调、不改持久订阅表。此处是独立的诊断订阅，不是第二个正式输入/输出客户端；其 PUBACK 只确认自身临时会话。这样避免临时订阅改变正式订阅 QoS、重复触发正式 retained 投递或提前确认尚未持久接管的业务消息。
+- 复用正式出站连接器/TLS 默认校验和 `MqttReceiveBuffer`，单槽原始接收缓冲在正文分配前预约调用者提供的共享 `IInputBufferBudget`，不进入 MQTTnet 无界 PUBLISH 队列。只抓取第一条匹配消息；允许以 retained 作样本，单独返回 retained/dup/QoS。返回前关闭客户端并等待原始接收与回调实际退出，确认预算归还；不将“等待取消”当成 I/O 清理。
+- 默认整次 30 秒（包含建连/订阅/等待/解码），建连加订阅还受连接超时限制；不重连、不发布业务报文、不写样本或发送队列。使用密码时从指定 ConnectionId/Recipient 解析当前凭证，缺失不降级匿名；订阅前与返回前重核版本，变化则不返回旧凭证采得的内容。
+- 载荷限 1 MiB、有效 UTF-8、JSON 深度 64，复用正式字段解码与 HTTP 的有界/精确数值展示。JSON 展示分配 60 KiB，给主题和元数据留空间；超长/命中当前密码的主题省略并置 `TopicOmitted`。常见敏感键、密码明文或 URL 转义回显隐藏原文与字段；仍不承诺识别任意秘密编码。结果 ToString 不含主题/样本；错误只返安全码。后续网页仍须明确完整、未脱敏、未截断的样本才能用于推断。
+
+真实 Mosquitto 与原始 TCP 测试：最初 **8 项通过**（`/tmp/tenonedge-mqtt-sample-targeted.log`）；加入四个线序用例后 **12 项通过**（`/tmp/tenonedge-mqtt-sample-targeted2.log`），均 0 失败/跳过。真实 Broker 验证已存在的持久客户端在抓取期间仍能 PING，诊断能读 retained 的精确 int64；关闭正式客户端后用同 ClientId 重连、不重订阅仍收到其 DUP 未确认消息，证明诊断确认没有接管正式消息。另覆盖凭证回显、敏感键、非法 JSON、显示预算、取消/短期限、缺失凭证/非法 Filter 不联网、密码拒绝及不可信 TLS。TCP 夹具验证 CONNECT 的随机身份/CleanSession 位、非 retained QoS 0、非法 UTF-8、SUBACK 拒绝，以及只发送超大 Remaining Length 声明而不发正文时立即关闭。最后新增可控时钟的默认 30 秒期限用例，随下述回归通过。
+
+首轮协议回归的单元工程因新增夹具使用过宽 `System.Exception` 被 CA2201 拒绝构建，不能视作整体通过；集成部分实际 **223 项通过**（`/tmp/tenonedge-mqtt-sample-regression.log`）。夹具改为 `InvalidOperationException`，未放宽规则。最终环境 Linux x64、SDK 10.0.401 / .NET 10.0.12、Release；命令 `dotnet test --no-restore -c Release --filter 'FullyQualifiedName~Mqtt|FullyQualifiedName~SharedConnections|FullyQualifiedName~HttpReadPreview' --blame-hang-timeout 5m --blame-hang-dump-type none --logger trx --results-directory /tmp/tenonedge-mqtt-sample-regression-final` **108 单元 + 224 集成 = 332 项通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-sample-regression-final.log`），TRX 非零/无跳过门禁通过。`dotnet format --no-restore --verify-no-changes` 与 `git diff --check` 通过（`/tmp/tenonedge-mqtt-sample-format-verify.log`）。
+
+未重跑全量后端/前端，完整基线仍见 §2.120。尚缺宿主草稿快照与角色/CSRF/额度 API、页面抓取及 retained 提示/样本推断接线、外部 Broker 兼容验证；图编译/应用/回滚仍未完成。某些 Broker ACL 限定固定 ClientId 时可能拒绝随机诊断身份，按安全错误报告，不冒用正式 ClientId 或绕过 ACL。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

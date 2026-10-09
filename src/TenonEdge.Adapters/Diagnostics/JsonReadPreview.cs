@@ -26,11 +26,11 @@ internal static class JsonReadPreview
         { "password", "passwd", "pwd", "secret", "clientsecret", "token", "accesstoken", "refreshtoken", "apikey", "authorization", "cookie", "setcookie" };
 
     internal static JsonReadPreviewResult Render(JsonElement root, IJsonInputDecoder? decoder, HttpCredential? credential,
-        ClockSyncState clockState, DateTimeOffset receivedAt, int? statusCode, CancellationToken cancellationToken, int maximumDisplayBytes = MaximumDisplayBytes)
+        ClockSyncState clockState, DateTimeOffset receivedAt, int? statusCode, CancellationToken cancellationToken, int maximumDisplayBytes = MaximumDisplayBytes, string[]? additionalSecrets = null)
     {
         var raw = root.GetRawText();
         var rawBytes = Encoding.UTF8.GetByteCount(raw);
-        var secrets = CredentialForms(credential);
+        var secrets = CredentialForms(credential).Concat(additionalSecrets ?? []).Where(value => value.Length > 0).ToArray();
         if (ContainsSensitive(root, secrets, cancellationToken))
         { return new(false, "payload.redacted", statusCode, null, rawBytes, false, false, true, receivedAt, null, null, false, []); }
         var decoded = decoder?.Decode(root, receivedAt, clockState, cancellationToken);

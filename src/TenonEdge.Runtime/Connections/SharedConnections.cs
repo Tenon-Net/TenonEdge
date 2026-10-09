@@ -37,6 +37,25 @@ public sealed class SharedConnections : ISharedConnections
         }
     }
 
+    public IConnectionLease<T> AcquireDiagnostic<T>(string protocol, Func<T> create) where T : class, IAsyncDisposable
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(protocol);
+        ArgumentNullException.ThrowIfNull(create);
+        lock (_lock)
+        {
+            if (_entries.Count >= MaximumConnections)
+            { throw new InvalidOperationException("共享连接达到 500 个上限。"); }
+            // 业务 ID 为正；有限连接集合中的负数空槽只属于本次诊断，不由调用者指定。
+            long key = -1;
+            while (_entries.ContainsKey(key))
+            { key--; }
+            var session = create() ?? throw new InvalidOperationException("连接工厂返回空实例。");
+            var entry = new Entry(session, protocol, "diagnostic");
+            _entries.Add(key, entry);
+            return new Lease<T>(this, key, entry);
+        }
+    }
+
     private async ValueTask ReleaseAsync(long key, Entry entry)
     {
         lock (_lock)

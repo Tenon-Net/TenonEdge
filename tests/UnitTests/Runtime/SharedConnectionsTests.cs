@@ -115,6 +115,51 @@ public sealed class SharedConnectionsTests
         }
     }
 
+    [Fact]
+    public async Task DiagnosticsHaveIndependentIdentitiesAndDoNotDisplaceRuntime()
+    {
+        var manager = new SharedConnections();
+        var runtime = new Session();
+        await using var business = manager.Acquire(1, "mqtt", "runtime", () => runtime);
+        var diagnostic = new Session();
+        await using (var first = manager.AcquireDiagnostic("mqtt-preview", () => diagnostic))
+        await using (var second = manager.AcquireDiagnostic("mqtt-preview", () => new Session()))
+        {
+            Assert.Same(diagnostic, await first.ExecuteAsync((value, _) => Task.FromResult(value), Token));
+            Assert.NotSame(diagnostic, await second.ExecuteAsync((value, _) => Task.FromResult(value), Token));
+            Assert.Same(runtime, await business.ExecuteAsync((value, _) => Task.FromResult(value), Token));
+        }
+        Assert.Equal(1, diagnostic.Disposals);
+        Assert.Equal(0, runtime.Disposals);
+    }
+
+    [Fact]
+    public async Task DiagnosticsShareGlobalCapacityAndReserveItUntilRealIoExits()
+    {
+        var manager = new SharedConnections();
+        var leases = Enumerable.Range(0, SharedConnections.MaximumConnections)
+            .Select(_ => manager.AcquireDiagnostic("mqtt-preview", () => new Session())).ToArray();
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => manager.AcquireDiagnostic<Session>("mqtt-preview", () => throw new InvalidOperationException("must not create")));
+            Assert.Throws<InvalidOperationException>(() => manager.Acquire(1, "mqtt", "runtime", () => new Session()));
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pending = leases[0].ExecuteAsync(async (_, _) => { await release.Task; return true; }, Token);
+            var closing = leases[0].DisposeAsync().AsTask();
+            Assert.False(closing.IsCompleted);
+            Assert.Throws<InvalidOperationException>(() => manager.AcquireDiagnostic("mqtt-preview", () => new Session()));
+            release.SetResult();
+            await pending;
+            await closing;
+            await using var next = manager.AcquireDiagnostic("mqtt-preview", () => new Session());
+        }
+        finally
+        {
+            foreach (var lease in leases)
+            { await lease.DisposeAsync(); }
+        }
+    }
+
     private sealed class FailedDisposal : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => ValueTask.FromException(new IOException("test-disposal"));
