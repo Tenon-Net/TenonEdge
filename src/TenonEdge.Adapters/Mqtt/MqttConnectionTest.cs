@@ -1,3 +1,4 @@
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using MQTTnet;
@@ -7,7 +8,7 @@ using TenonEdge.Abstractions.Contracts;
 
 namespace TenonEdge.Adapters.Mqtt;
 
-public sealed record MqttConnectionTestResult(bool Success, string Code, int? ConnAckCode, double ElapsedMs);
+public sealed record MqttConnectionTestResult(bool Success, string Code, int? ConnAckCode, double ElapsedMs, MqttConnectionTestStep[] Steps);
 
 /// <summary>
 /// 显式触发的 MQTT 连接测试：独立随机 ClientId、CleanSession，不订阅、不发布、不写队列。
@@ -31,10 +32,12 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
         var started = time.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.TimeoutMs), time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        using var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => { }, AdmitFrame));
+        var trace = new MqttConnectionTestTrace(time, settings.Tls);
+        using var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => { }, AdmitFrame,
+            connected: () => trace.Begin("protocol")));
         var options = new MqttClientOptionsBuilder()
             .WithTcpServer(settings.Host, settings.Port)
-            .WithStreamProvider(new MqttStreamProvider(connector))
+            .WithStreamProvider(new MqttStreamProvider(new MqttTestConnector(connector, trace)))
             .WithProtocolVersion(MqttProtocolVersion.V311)
             .WithCleanSession()
             .WithClientId("te-test-" + Guid.NewGuid().ToString("N"))
@@ -42,8 +45,17 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
             .WithTimeout(TimeSpan.FromMilliseconds(settings.TimeoutMs));
         if (credential is not null)
         { options.WithCredentials(credential.Username, credential.Password); }
+        string? certificateFailure = null;
         if (settings.Tls)
-        { options.WithTlsOptions(tls => tls.UseTls()); }
+        {
+            options.WithTlsOptions(tls => tls.UseTls().WithCertificateValidationHandler(args =>
+            {
+                // 与 MQTTnet 未设置 IgnoreCertificateChainErrors 时的默认条件完全相同。
+                // 使用 OS 当前时间解释 BCL 的时间有效性结果，不用可注入业务时钟重做信任判断。
+                Volatile.Write(ref certificateFailure, MqttCertificateFailure.Classify(args.SslPolicyErrors, args.Chain, DateTime.UtcNow));
+                return args.SslPolicyErrors == SslPolicyErrors.None;
+            }));
+        }
         try
         {
             var result = await client.ConnectAsync(options.Build(), linked.Token);
@@ -59,11 +71,11 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
             AuthenticationException or MqttCommunicationException or MqttProtocolViolationException)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Result(deadline.IsCancellationRequested ? "timeout" : Classify(exception), null);
+            return Result(deadline.IsCancellationRequested ? "timeout" : Volatile.Read(ref certificateFailure) ?? Classify(exception), null);
         }
 
         MqttConnectionTestResult Result(string code, int? connAckCode) =>
-            new(code == "success", code, connAckCode, time.GetElapsedTime(started).TotalMilliseconds);
+            new(code == "success", code, connAckCode, time.GetElapsedTime(started).TotalMilliseconds, trace.Finish(code));
     }
 
     private static bool AdmitFrame(byte header, int remainingLength)

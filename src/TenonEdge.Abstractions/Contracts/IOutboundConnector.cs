@@ -12,7 +12,13 @@ public interface IOutboundAddressPolicy
 public interface IOutboundConnector
 {
     ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken);
+
+    /// <summary>按调用观察解析/建连边界，不含主机、地址或秘密。未提供诊断的实现不报告阶段，不能据此伪造分阶段成功。</summary>
+    ValueTask<Stream> ConnectAsync(string host, int port, Action<OutboundConnectionStage> progress, CancellationToken cancellationToken) =>
+        ConnectAsync(host, port, cancellationToken);
 }
+
+public enum OutboundConnectionStage { Resolving, Connecting }
 
 /// <summary>解析出的目标均不在当前出站允许范围，不能当作协议数据错误重试。</summary>
 public sealed class OutboundAccessDeniedException : IOException

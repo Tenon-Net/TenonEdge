@@ -250,7 +250,7 @@ export interface paths {
         put?: never;
         /**
          * 测试未保存的 MQTT 参数到 CONNACK；独立 ClientId，不保存、不订阅、不发布
-         * @description 认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回总耗时和脱敏分类，尚不提供逐阶段耗时。
+         * @description 认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回分阶段结果和脱敏分类；MQTT 3.1.1 认证与协议握手共享 CONNACK 耗时，不可相加。
          */
         post: operations["testMqttConnection"];
         delete?: never;
@@ -886,6 +886,15 @@ export interface components {
             connAckCode: null | number | string;
             /** Format: double */
             elapsedMs: number | string;
+            steps: components["schemas"]["MqttConnectionTestStep"][];
+        };
+        MqttConnectionTestStep: {
+            stage: string;
+            status: string;
+            /** Format: double */
+            elapsedMs?: null | number | string;
+            code?: null | string;
+            timingGroup?: null | string;
         };
         MqttCredentialMetadata: {
             /** Format: int64 */

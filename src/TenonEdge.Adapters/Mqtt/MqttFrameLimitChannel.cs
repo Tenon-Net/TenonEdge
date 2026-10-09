@@ -12,7 +12,7 @@ namespace TenonEdge.Adapters.Mqtt;
 /// 与 MQTTnet 接收循环一样只允许一个读取者，写入路径不变。
 /// </summary>
 internal sealed class MqttFrameLimitChannel(IMqttChannel inner, int maximumRemainingLength, Action oversized,
-    Func<byte, int, bool>? admit = null, Func<byte, int, CancellationToken, ValueTask<bool>>? admitAsync = null) : IMqttChannel
+    Func<byte, int, bool>? admit = null, Func<byte, int, CancellationToken, ValueTask<bool>>? admitAsync = null, Action? connected = null) : IMqttChannel
 {
     private readonly byte[] _header = new byte[5];
     private byte[]? _discard;
@@ -25,7 +25,11 @@ internal sealed class MqttFrameLimitChannel(IMqttChannel inner, int maximumRemai
     public EndPoint RemoteEndPoint => inner.RemoteEndPoint;
     public EndPoint LocalEndPoint => inner.LocalEndPoint;
     public bool IsSecureConnection => inner.IsSecureConnection;
-    public Task ConnectAsync(CancellationToken cancellationToken) => inner.ConnectAsync(cancellationToken);
+    public async Task ConnectAsync(CancellationToken cancellationToken)
+    {
+        await inner.ConnectAsync(cancellationToken);
+        connected?.Invoke();
+    }
     public Task DisconnectAsync(CancellationToken cancellationToken) => inner.DisconnectAsync(cancellationToken);
     public Task WriteAsync(ReadOnlySequence<byte> buffer, bool isEndOfPacket, CancellationToken cancellationToken) =>
         inner.WriteAsync(buffer, isEndOfPacket, cancellationToken);

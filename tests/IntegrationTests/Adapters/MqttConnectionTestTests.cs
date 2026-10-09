@@ -10,6 +10,7 @@ namespace TenonEdge.IntegrationTests.Adapters;
 [Trait("Category", "RealBroker")]
 public sealed class MqttConnectionTestTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
 {
+    private static readonly string[] SuccessfulSteps = ["success", "success", "skipped", "success", "success"];
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static MqttCredential Credential => new(MosquittoBroker.UserName, MosquittoBroker.Password, "fixture", "1");
 
@@ -29,6 +30,8 @@ public sealed class MqttConnectionTestTests(MosquittoBrokerFixture fixture) : IC
                 var result = await probe.RunAsync(settings, Credential, Token);
                 Assert.True(result.Success);
                 Assert.Equal("success", result.Code);
+                Assert.Equal(SuccessfulSteps, result.Steps.Select(step => step.Status));
+                Assert.Equal(result.Steps[3].ElapsedMs, result.Steps[4].ElapsedMs);
                 Assert.Equal(0, result.ConnAckCode);
                 Assert.True(result.ElapsedMs >= 0);
                 await existing.PingAsync(Token);
@@ -47,7 +50,7 @@ public sealed class MqttConnectionTestTests(MosquittoBrokerFixture fixture) : IC
         var probe = new MqttConnectionTest(new OutboundConnector(new Policy(true)), TimeProvider.System);
         var result = await probe.RunAsync(Settings(broker.TlsPort) with { Host = "localhost", Tls = true }, Credential, Token);
         Assert.False(result.Success);
-        Assert.Equal("certificate.invalid", result.Code);
+        Assert.Equal("certificate.untrusted", result.Code);
         Assert.Null(result.ConnAckCode);
     }
 
@@ -92,6 +95,9 @@ public sealed class MqttConnectionTestTests(MosquittoBrokerFixture fixture) : IC
         var probe = new MqttConnectionTest(new OutboundConnector(new Policy(false)), TimeProvider.System);
         var result = await probe.RunAsync(Settings(((IPEndPoint)listener.LocalEndpoint).Port), Credential, Token);
         Assert.Equal("outbound.denied", result.Code);
+        Assert.Equal("success", result.Steps[0].Status);
+        Assert.Equal("failed", result.Steps[1].Status);
+        Assert.Equal("notReached", result.Steps[4].Status);
         Assert.Null(result.ConnAckCode);
         Assert.False(listener.Pending());
     }
@@ -106,6 +112,8 @@ public sealed class MqttConnectionTestTests(MosquittoBrokerFixture fixture) : IC
         using var accepted = await listener.AcceptTcpClientAsync(Token);
         var result = await operation;
         Assert.Equal("timeout", result.Code);
+        Assert.Equal("failed", result.Steps.Single(step => step.Stage == "protocol").Status);
+        Assert.Equal("unknown", result.Steps.Single(step => step.Stage == "authentication").Status);
         await AssertClosedAsync(accepted);
     }
 

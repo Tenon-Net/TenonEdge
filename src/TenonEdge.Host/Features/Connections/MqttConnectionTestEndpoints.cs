@@ -28,7 +28,7 @@ internal static class MqttConnectionTestEndpoints
         api.MapPost("/connections/test/mqtt", Test).WithTags("Connections")
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("testMqttConnection")
             .WithSummary("测试未保存的 MQTT 参数到 CONNACK；独立 ClientId，不保存、不订阅、不发布")
-            .WithDescription("认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回总耗时和脱敏分类，尚不提供逐阶段耗时。")
+            .WithDescription("认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回分阶段结果和脱敏分类；MQTT 3.1.1 认证与协议握手共享 CONNACK 耗时，不可相加。")
             .WithMetadata(new RequestBodyLimit(32 * 1024))
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(429);
         return api;

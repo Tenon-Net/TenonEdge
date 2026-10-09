@@ -2311,6 +2311,28 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：目前只返回总耗时，功能 §2.4 的 DNS/TCP/TLS/认证/协议逐阶段耗时尚未实现；证书失败当前统一分类，尚未分不受信任/过期/主机名。网页信任/客户端证书、HTTP/Modbus 测试、实时抓取仍待继续；既有运行时凭证轮换隔离问题仍按 §2.104 跟踪。不是全功能连接测试验收，不是实物/现场网络兼容性验证。图编译与应用/回滚仍未完成，目标保持进行中。
 
+### 2.113 T3-04 MQTT 分阶段诊断与证书失败解释（2026-10-10）
+
+继续 §2.112 的真实测试，不新增协议或依赖，不创建第二套运行时。读取固定 MQTTnet 源码的 `MqttTcpChannel` TLS 默认回调与证书校验事件，确认默认接受条件为 `SslPolicyErrors.None`；本次仅添加解释，不复制源码或放宽信任条件。
+
+- 出站连接器增加按调用观察解析/建连边界的重载，原调用仍走同一解析、IP 筛选和连接算法；不把观察到的域名再交给 Socket 解析。未实现阶段观察的连接器保留兼容调用，但其解析阶段/耗时显示未知，不编造成功。回调不含主机、地址或凭证内容，不是单例全局事件。
+- MQTT 有界通道在真实 TCP/TLS Connect 完成后通知诊断，不能把证书验证回调发生就当作 TLS 完成。每次测试只保留固定五阶段结果；单调时钟测区间，失败终止当前阶段，后续为“未到达”，未启用 TLS 为“未启用”。冻结结果后忽略迟到回调。
+- MQTT 3.1.1 认证与协议握手的可观察结果均来自同一个 CONNACK：返回同一 `timingGroup=mqtt.connack`，两个阶段共享实测区间，界面明确不可相加。只有成功 CONNACK 确认认证成功；认证拒绝为失败，超时/其他协议拒绝时认证为“未能确认”，不杜撰独立认证耗时或成功状态。
+- TLS 回调仍严格要求 `SslPolicyErrors.None`；不关闭主机名、证书链或吊销检查，不导入系统信任。失败仅保留固定代码，不保留证书内容。多重错误按缺证书、主机名、吊销、有效期、信任链、吊销状态不可确认、其他错误确定首要原因；界面展示首要问题不表示其他问题已排除。证书有效期按 OS 校验时间解释，不用业务可注入时钟改写验证结果。
+- API 返回阶段列表，OpenAPI/前端类型及网页阶段表同步；真实出站拒绝显示解析成功、TCP 失败、后续未到达，而非整体五阶段都失败。未记录临时密码、外部响应正文或证书正文。
+
+验证：定向 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~MqttConnection|FullyQualifiedName~OutboundConnector|FullyQualifiedName~OpenApiDocument|FullyQualifiedName~ManagementApiAccess'` **5 单元 + 39 集成通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-stages-targeted4.log`）；此后增加两个解释/阶段边界单测，最终完整结果见下。初次编译被 CA1068（CancellationToken 非末参）和 CA1861（循环内常量数组）拒绝，已调整参数顺序/静态测试常量，无禁用分析器（`/tmp/tenonedge-mqtt-stages-targeted*.log` 保留）。
+
+真实本机 TLS 夹具使用每次生成的自签证书，通过真实 SslStream 握手分别得到不受信任、主机名不符、过期、尚未生效四种失败；均断开且服务器未读到 MQTT 应用字节，因此没有在 TLS 校验通过前发送测试凭证。这不是实物设备测试，不等于已完成客户端证书/自定义 CA 功能。真实 Mosquitto 与既有串行测试核对协议阶段成功/失败；注入时钟验证 5/7/11/13 ms 阶段边界以及 CONNACK 共享计时，不能把这些固定时间当作性能实测。
+
+网页：从实际 Development Host 重新导出 OpenAPI/类型（`/tmp/tenonedge-mqtt-stages-api-final.log`），`npm run build`、lint、format:check 通过；**119 Vitest + 15 Playwright 通过**，非零/零跳过报告门禁通过（`/tmp/tenonedge-mqtt-stages-web-unit.log`、`/tmp/tenonedge-mqtt-stages-browser.log`）。浏览器核对真实策略拒绝的五阶段状态，已查看阶段表截图 `mqtt-connection-test.png`；不把未到达 TLS/认证/协议显示成已验证。
+
+全量回归发现测试调度问题，未隐去失败：`artifacts/test-results/t3-mqtt-stages/` 与 `t3-mqtt-stages-final/` 两轮均为 **1071 单元通过，911 集成通过、1 集成失败**。分别在既有 `NModbusLeavesAFollowingTcpFrameForTheNextRequest`、`FluentModbusAcceptsATcpResponseFromAnotherUnit` 的首次读取超过 300 ms（不是待验证的后续旧帧断言失败）。第一个用例原样单独运行 1 次再连续 10 次均通过；Modbus 旧帧类与本次 MQTT 类的缩小组合 **35 项通过**（`/tmp/tenonedge-modbus-stale-diagnostic.log`、`/tmp/tenonedge-modbus-stale-repeat-*.log`、`/tmp/tenonedge-modbus-mqtt-cohort.log`）。两种探针直接调用候选库，不走本次增加观察回调的正式出站连接器。证据支持全量负载相关的时序窗口问题，但未取得精确线程调度链，不宣称已定位 OS/库内部原因。
+
+为使协议比较不同时承担其他测试的调度压力，仅将该旧帧比较类放入 `DisableParallelization=true` 的 xUnit collection；保留全部断言、300 ms 超时、故障注入和候选库行为，不修改正式运行时、不全局关闭并行、不跳过用例。隔离后完整回归 **1071 单元 + 912 集成 = 1983 项通过，0 失败/跳过**，两程序集 TRX 门禁通过；之前失败 TRX 保留。实际命令为 `dotnet build TenonEdge.sln -c Release --no-restore`（0 警告/错误，`/tmp/tenonedge-mqtt-stages-isolation-build2.log`）和 `dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger 'trx;LogFilePrefix=t3-mqtt-stages-isolated' --results-directory artifacts/test-results/t3-mqtt-stages-isolated --blame-hang-timeout 5m --blame-hang-dump-type none`（`/tmp/tenonedge-mqtt-stages-isolated-full.log`）。这是一次隔离后的全量通过，不是对任意负载稳定性的认证。collection 标识类最初以 Collection 结尾触发 CA1711，改名后构建通过；不抑制分析规则。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 退出 0（`/tmp/tenonedge-mqtt-stages-isolated-format.log`）。
+
+剩余：吊销、离线 CRL/OCSP、过期中间证书、有效受信任 TLS 的诊断展示尚未逐项实测；不将分类代码存在等同于这些场景通过。HTTP/Modbus 测试、客户端证书/信任表单、实时抓取继续实施；T3-05 图编译/预览、T3-06 应用/回滚仍未完成，完整网页配置目标尚未达到。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

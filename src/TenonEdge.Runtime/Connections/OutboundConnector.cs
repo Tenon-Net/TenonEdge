@@ -19,13 +19,23 @@ public sealed class OutboundConnector : IOutboundConnector
         _resolve = resolve;
     }
 
-    public async ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken)
+    public ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken) =>
+        ConnectCoreAsync(host, port, null, cancellationToken);
+
+    public ValueTask<Stream> ConnectAsync(string host, int port, Action<OutboundConnectionStage> progress, CancellationToken cancellationToken) =>
+        ConnectCoreAsync(host, port, progress, cancellationToken);
+
+    private async ValueTask<Stream> ConnectCoreAsync(string host, int port, Action<OutboundConnectionStage>? progress, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
         cancellationToken.ThrowIfCancellationRequested();
+        progress?.Invoke(OutboundConnectionStage.Resolving);
         var addresses = IPAddress.TryParse(host, out var literal) ? [literal] : await _resolve(host, cancellationToken);
+        if (addresses.Length == 0)
+        { throw new SocketException((int)SocketError.HostNotFound); }
+        progress?.Invoke(OutboundConnectionStage.Connecting);
         SocketException? lastFailure = null;
         foreach (var candidate in addresses)
         {
@@ -52,8 +62,6 @@ public sealed class OutboundConnector : IOutboundConnector
         }
         if (lastFailure is not null)
         { throw lastFailure; }
-        if (addresses.Length == 0)
-        { throw new SocketException((int)SocketError.HostNotFound); }
         throw new OutboundAccessDeniedException();
     }
 }

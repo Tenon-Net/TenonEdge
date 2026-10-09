@@ -72,6 +72,39 @@ public sealed class OutboundConnectorTests
         Assert.Equal(SocketError.HostNotFound, error.SocketErrorCode);
     }
 
+    [Fact]
+    public async Task ObservedBoundariesDoNotReResolveOrBypassPolicy()
+    {
+        var stages = new List<OutboundConnectionStage>();
+        var resolutions = 0;
+        var connector = new OutboundConnector(new Policy((address, _) =>
+        {
+            Assert.Equal(IPAddress.Loopback, address);
+            Assert.Equal(OutboundConnectionStage.Connecting, stages[^1]);
+            return false;
+        }), (_, _) =>
+        {
+            Assert.Equal(OutboundConnectionStage.Resolving, Assert.Single(stages));
+            resolutions++;
+            return Task.FromResult<IPAddress[]>([IPAddress.Loopback]);
+        });
+        await Assert.ThrowsAsync<OutboundAccessDeniedException>(() =>
+            connector.ConnectAsync("fixture.invalid", 1883, stages.Add, TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(1, resolutions);
+        Assert.Equal([OutboundConnectionStage.Resolving, OutboundConnectionStage.Connecting], stages);
+    }
+
+    [Fact]
+    public async Task EmptyResolutionDoesNotReportConnectionStage()
+    {
+        var stages = new List<OutboundConnectionStage>();
+        var connector = new OutboundConnector(new Policy((_, _) => throw new InvalidOperationException()),
+            (_, _) => Task.FromResult(Array.Empty<IPAddress>()));
+        await Assert.ThrowsAsync<SocketException>(() =>
+            connector.ConnectAsync("fixture.invalid", 1883, stages.Add, TestContext.Current.CancellationToken).AsTask());
+        Assert.Equal(OutboundConnectionStage.Resolving, Assert.Single(stages));
+    }
+
     private sealed class Policy(Func<IPAddress, int, bool> allow) : IOutboundAddressPolicy
     {
         public bool IsAllowed(IPAddress address, int port) => allow(address, port);

@@ -1880,6 +1880,19 @@ test('MQTT test uses unsaved parameters, reports real policy denial and does not
     expect((await response).status()).toBe(200)
     await expect(panel.getByRole('status')).toContainText('被出站规则拦截')
     await expect(panel.getByRole('status')).toContainText('127.0.0.1:1883')
+    const stages = panel.getByRole('table', { name: '连接测试阶段结果' })
+    await expect(
+        stages.getByRole('row').filter({ hasText: '地址解析' }),
+    ).toContainText('成功')
+    await expect(
+        stages.getByRole('row').filter({ hasText: '建立 TCP 连接' }),
+    ).toContainText('失败')
+    await expect(
+        stages.getByRole('row').filter({ hasText: 'TLS 握手' }),
+    ).toContainText('未启用')
+    await expect(
+        stages.getByRole('row').filter({ hasText: '协议握手' }),
+    ).toContainText('未到达')
     await expect(panel.getByLabel('临时密码', { exact: true })).toHaveValue('')
     expect(
         await (await page.request.get('/api/edge-admin/v1/connections')).json(),

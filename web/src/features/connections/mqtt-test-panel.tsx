@@ -136,6 +136,67 @@ export function MqttTestPanel({ form }: { form: ConnectionForm }) {
                         ` · CONNACK ${test.data.connAckCode}`}
                 </p>
             )}
+            {test.data && (
+                <div className="overflow-x-auto">
+                    <table
+                        className="w-full text-left text-sm"
+                        aria-label={t('connections.mqttTest.stepsTitle')}
+                    >
+                        <thead>
+                            <tr>
+                                {['stage', 'status', 'elapsed', 'reason'].map(
+                                    (column) => (
+                                        <th
+                                            className="border-b p-2"
+                                            key={column}
+                                        >
+                                            {t(
+                                                `connections.mqttTest.${column}`,
+                                            )}
+                                        </th>
+                                    ),
+                                )}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {test.data.steps.map((step) => (
+                                <tr key={step.stage}>
+                                    <th
+                                        scope="row"
+                                        className="border-b p-2 font-medium"
+                                    >
+                                        {t(
+                                            `connections.mqttTest.stages.${step.stage}`,
+                                        )}
+                                    </th>
+                                    <td className="border-b p-2">
+                                        {t(
+                                            `connections.mqttTest.statuses.${step.status}`,
+                                        )}
+                                    </td>
+                                    <td className="border-b p-2">
+                                        {step.elapsedMs == null
+                                            ? '—'
+                                            : `${Number(step.elapsedMs).toFixed(1)} ms`}
+                                    </td>
+                                    <td className="border-b p-2">
+                                        {step.code && step.code !== 'success'
+                                            ? t(
+                                                  `connections.mqttTest.results.${step.code}`,
+                                                  {
+                                                      defaultValue: t(
+                                                          'connections.mqttTest.failed',
+                                                      ),
+                                                  },
+                                              )
+                                            : '—'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </section>
     )
 }
