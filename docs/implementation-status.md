@@ -1956,6 +1956,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-points' --results-directory /tmp/tenonedge-modbus-points-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**962 单元 + 761 集成 = 1723 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-points-full.log`）。Linux x64 / SDK 10.0.401。五个新增 C# 文件的限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-points-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-points-restore.log`）与 `git diff --check` 通过，未新增依赖。
 - 尚未注册 input.modbus；计划工厂、设备多组调度、全局在途预算、诊断事件与宿主端到端测试是下一步。此处没有前端，没有把组件集成测试当成 T2 完成。
 
+### 2.93 T2-02 Modbus 计划工厂与预算化输入循环（2026-10-09）
+
+- 新增 ModbusPlanAdapterProvider，每次 Prepare 创建独立输入工厂；Build 只校验/绑定，不联网、不取得租约、不启动线程。相同计划与上下文的监督重建返回新单元并复用绑定；拒绝跨计划复用、同连接物理参数不一致、同设备连接/UnitId 不一致、跨组重复点位 key，连接上限 256。失败构建在登记前退出，后续合法组仍可构建；激活后冻结新绑定。
+- RunAsync 等待现有激活屏障后取得 SharedConnections 租约，同连接全部启用 UnitId 在创建会话时提供。输入使用既有 InputMessageWriter.ProduceAsync，先预约按点数估算的工作/消息额度（8192 + 点数 × 1024 字节），再读取/解码，正常周期不重叠、不补采；预算或租约等待超出周期计 overrun，停止取消等待实际 I/O 并释放租约与预算。不绕过出站连接器，不增加 Task.Run 阻塞读取或另一套运行时。
+- 同设备组使用串行设备准入及共享退避；失败窗口以最短组周期划分，同一窗口不把多个失败组累计成多次离线证据。UnitId 首次读取超时后，窗口内同设备其他组快速失败，不再发送请求；其他 UnitId 不受该设备退避影响。非超时错误以各组最近实际周期结果保守判定，未知组不是失败；多组异步周期的完整验收仍须后续扩充。
+- 接入既有读取完成/失败/overrun 上报，异常帧诊断仅带数值异常码，无外部正文。补充分离 ConnectionAttempted 与 WasRequested：实际建连失败可计当前设备周期失败，但退避期间没尝试连接不能伪造新失败；连接健康的请求事实仍仅由真正发送的请求维护。真实建连失败连续三次的离线状态及退避跳过已有测试。
+- 8 项新增集成测试：TCP/RTU 激活前零连接、激活后真实值/时间来源/预算释放；沉默 UnitId 与健康 UnitId 共用一个物理连接；预算耗尽零网络且截止计一次 overrun；停止打断真实阻塞读取；无污染的跨组校验与监督重建；同 UnitId 多组每窗口只发一次超时请求并共享退避；实际建连拒绝与无尝试退避的诊断区别。测试通过真实运行单元与 BudgetedInputChannel，不是把工厂 Build 成功当成采集通过；仍为本机模拟从站，不是实物。
+- 首轮构建修正嵌套 Unit 不能直接捕获外层主构造参数（改为显式 owner 服务字段）；首轮测试修正实际 InFlightBudget API 使用（TryReserve/Capacity/Release，而非不存在的 LimitBytes）。原始日志 `/tmp/tenonedge-modbus-factory-build.log`、`/tmp/tenonedge-modbus-factory-target.log`。预算截止用例先完成激活再同步进入 RunAsync，不靠固定 sleep 等待就绪。最终聚焦 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~ModbusInputTests|FullyQualifiedName~ModbusConnectionSettingsTests|FullyQualifiedName~ModbusDevicePollingStateTests'`，24 既有单元 + 8 新集成通过（`/tmp/tenonedge-modbus-factory-target4.log`）。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-factory' --results-directory /tmp/tenonedge-modbus-factory-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**962 单元 + 769 集成 = 1731 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-factory-full.log`）。Linux x64 / SDK 10.0.401。五个本批 C# 文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-factory-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-factory-restore.log`）与 `git diff --check` 通过；未新增依赖。
+- 尚未在 Host 注册 provider 或开放 Modbus 种子校验；下一步接入 Host、跨协议连接冲突/全计划约束及真实输出链路。当前多组错误聚合、不同周期/多逻辑设备同 UnitId、长周期预算/压力、资源上限及真实离线恢复还须补齐完整验收，不能标记 T2-02 或 T2 完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

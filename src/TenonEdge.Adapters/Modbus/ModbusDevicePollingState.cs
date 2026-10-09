@@ -28,7 +28,7 @@ internal sealed class ModbusDevicePollingState
     internal void Record(ModbusCycleResult cycle)
     {
         ArgumentNullException.ThrowIfNull(cycle);
-        if (cycle.Overrun || !cycle.HasActualRequest)
+        if (cycle.Overrun || !cycle.HasActualAttempt)
         { return; }
         if (cycle.HasSuccessfulRead)
         {

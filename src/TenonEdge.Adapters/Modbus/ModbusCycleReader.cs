@@ -6,6 +6,7 @@ namespace TenonEdge.Adapters.Modbus;
 internal sealed record ModbusCycleResult(bool Overrun, ImmutableArray<ModbusReadResult> Blocks)
 {
     internal bool HasSuccessfulRead => !Overrun && Blocks.Any(block => block.Outcome == ModbusRequestOutcome.Success);
+    internal bool HasActualAttempt => !Overrun && Blocks.Any(block => block.WasRequested || block.ConnectionAttempted);
     internal bool HasActualRequest => !Overrun && Blocks.Any(block => block.WasRequested);
 }
 

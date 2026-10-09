@@ -4,7 +4,7 @@ using TenonEdge.Abstractions.Contracts;
 namespace TenonEdge.Adapters.Modbus;
 
 internal sealed record ModbusReadResult(ModbusRequestOutcome Outcome, bool WasRequested,
-    ushort[]? Registers = null, bool[]? Bits = null, byte? ExceptionCode = null);
+    ushort[]? Registers = null, bool[]? Bits = null, byte? ExceptionCode = null, bool ConnectionAttempted = false);
 
 /// <summary>一个物理连接的会话；所有读取须经同一 IConnectionLease 串行准入。
 /// 拥有一条同步 I/O 工作线程，最后租约等待实际 I/O 完成后才销毁。构造不联网。
@@ -76,9 +76,9 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
                 _retryStarted = null;
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
-            { Reset(backoff: true); return new(ModbusRequestOutcome.ConnectionError, false); }
+            { Reset(backoff: true); return new(ModbusRequestOutcome.ConnectionError, false, ConnectionAttempted: true); }
             catch (Exception exception) when (exception is IOException or SocketException)
-            { Reset(backoff: true); return new(ModbusRequestOutcome.ConnectionError, false); }
+            { Reset(backoff: true); return new(ModbusRequestOutcome.ConnectionError, false, ConnectionAttempted: true); }
             catch
             { Reset(backoff: false); throw; }
         }
