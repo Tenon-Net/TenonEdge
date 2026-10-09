@@ -79,7 +79,8 @@ public sealed class StandardEnvelopeTests
         var text = new string(character, length);
         var message = propertyName ? TextMessage(text, "") : TextMessage("value", text);
         var before = GC.GetAllocatedBytesForCurrentThread();
-        try { _ = StandardEnvelope.Serialize(message, DeliveryId); }
+        try
+        { _ = StandardEnvelope.Serialize(message, DeliveryId); }
         catch (ArgumentException) { /* 包含实际转义后超限的拒绝路径。 */ }
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.InRange(allocated, 1, StandardEnvelope.SerializationReservationBytes(message.BudgetBytes));

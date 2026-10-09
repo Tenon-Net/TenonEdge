@@ -38,7 +38,8 @@ public sealed class HttpOutputResponse(HttpSuccessRule? successRule = null)
         var status = (int)response.StatusCode;
         if (status is >= 200 and <= 299)
         {
-            if (successRule is null) { return new(OutputSendStatus.Ack); }
+            if (successRule is null)
+            { return new(OutputSendStatus.Ack); }
             return await EvaluateBodyAsync(response, now, cancellationToken);
         }
         if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge or HttpStatusCode.UnprocessableEntity or HttpStatusCode.Conflict)
@@ -52,7 +53,8 @@ public sealed class HttpOutputResponse(HttpSuccessRule? successRule = null)
 
     private async Task<OutputSendResult> EvaluateBodyAsync(HttpResponseMessage response, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (response.Content.Headers.ContentLength > MaximumBodyBytes) { return Retry(response, now, true); }
+        if (response.Content.Headers.ContentLength > MaximumBodyBytes)
+        { return Retry(response, now, true); }
         var buffer = ArrayPool<byte>.Shared.Rent(MaximumBodyBytes + 1);
         try
         {
@@ -62,10 +64,12 @@ public sealed class HttpOutputResponse(HttpSuccessRule? successRule = null)
             while (length <= MaximumBodyBytes)
             {
                 var read = await stream.ReadAsync(buffer.AsMemory(length, MaximumBodyBytes + 1 - length), cancellationToken);
-                if (read == 0) { break; }
+                if (read == 0)
+                { break; }
                 length += read;
             }
-            if (length > MaximumBodyBytes) { return Retry(response, now, true); }
+            if (length > MaximumBodyBytes)
+            { return Retry(response, now, true); }
             using var document = JsonDocument.Parse(buffer.AsMemory(0, length));
             return successRule!.Matches(document.RootElement) ? new(OutputSendStatus.Ack) : Retry(response, now, true);
         }

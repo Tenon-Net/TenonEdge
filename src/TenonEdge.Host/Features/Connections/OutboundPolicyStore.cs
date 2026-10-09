@@ -14,7 +14,8 @@ internal sealed class OutboundPolicyStore(ConfigDatabase database, AuditTrail au
     {
         using var client = database.CreateIsolatedClient();
         var row = client.Queryable<OutboundPolicyRecord>().InSingle(1);
-        if (row is null) { return new(null, [], []); }
+        if (row is null)
+        { return new(null, [], []); }
         try
         {
             var normalized = Normalize(new(
@@ -34,15 +35,18 @@ internal sealed class OutboundPolicyStore(ConfigDatabase database, AuditTrail au
         return database.InTransaction(client =>
         {
             var row = client.Queryable<OutboundPolicyRecord>().InSingle(1);
-            if (row?.Version != request.ExpectedVersion) { throw new OutboundPolicyConflictException(); }
+            if (row?.Version != request.ExpectedVersion)
+            { throw new OutboundPolicyConflictException(); }
             var existed = row is not null;
             row ??= new OutboundPolicyRecord();
             row.Version = Guid.NewGuid().ToString("N");
             row.Networks = JsonSerializer.Serialize(networks);
             row.LocalPorts = JsonSerializer.Serialize(localPorts);
             row.UpdatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
-            if (existed) { client.Updateable(row).ExecuteCommand(); }
-            else { client.Insertable(row).ExecuteCommand(); }
+            if (existed)
+            { client.Updateable(row).ExecuteCommand(); }
+            else
+            { client.Insertable(row).ExecuteCommand(); }
             audit.Append(client, new AuditEntry("system.outboundPolicyChanged", AuditResults.Success, account, sourceIp,
                 "outbound", JsonSerializer.Serialize(new { previousVersion = request.ExpectedVersion, version = row.Version, networks, localPorts })));
             return new OutboundPolicyState(row.Version, networks, localPorts);
@@ -60,7 +64,8 @@ internal sealed class OutboundPolicyStore(ConfigDatabase database, AuditTrail au
         }
         var networks = request.Networks.Select(rule =>
         {
-            if (rule is null || !IPNetwork.TryParse(rule.Cidr, out var network)) { throw new ArgumentException("出站 CIDR 无效。"); }
+            if (rule is null || !IPNetwork.TryParse(rule.Cidr, out var network))
+            { throw new ArgumentException("出站 CIDR 无效。"); }
             return new OutboundNetworkGrant(network.ToString(), rule.Port);
         }).Distinct().ToArray();
         var localPorts = request.LocalPorts.Distinct().Order().ToArray();

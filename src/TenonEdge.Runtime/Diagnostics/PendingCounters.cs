@@ -11,18 +11,21 @@ internal sealed class PendingCounters
     public void RecordActivity(RuntimeActivity activity, long count = 1)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);
-        lock (_lock) { _activity[(int)activity] = checked(_activity[(int)activity] + count); }
+        lock (_lock)
+        { _activity[(int)activity] = checked(_activity[(int)activity] + count); }
     }
 
     public RuntimeActivityTotals ActivitySnapshot()
     {
-        lock (_lock) { return new(_activity[0], _activity[1], _activity[2], _activity[3], _activity[4], _activity[5]); }
+        lock (_lock)
+        { return new(_activity[0], _activity[1], _activity[2], _activity[3], _activity[4], _activity[5]); }
     }
 
     public void Add(string name, long count = 1)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);
-        if (count == 0) { return; }
+        if (count == 0)
+        { return; }
         lock (_lock)
         {
             _values[name] = checked(_values.GetValueOrDefault(name) + count);
@@ -31,7 +34,8 @@ internal sealed class PendingCounters
 
     public IReadOnlyDictionary<string, long> Snapshot()
     {
-        lock (_lock) { return new Dictionary<string, long>(_values, StringComparer.Ordinal); }
+        lock (_lock)
+        { return new Dictionary<string, long>(_values, StringComparer.Ordinal); }
     }
 
     public void Committed(IReadOnlyDictionary<string, long> snapshot)
@@ -41,9 +45,12 @@ internal sealed class PendingCounters
             foreach (var (name, count) in snapshot)
             {
                 var remaining = _values[name] - count;
-                if (remaining < 0) { throw new InvalidOperationException("计数快照重复确认。"); }
-                if (remaining == 0) { _values.Remove(name); }
-                else { _values[name] = remaining; }
+                if (remaining < 0)
+                { throw new InvalidOperationException("计数快照重复确认。"); }
+                if (remaining == 0)
+                { _values.Remove(name); }
+                else
+                { _values[name] = remaining; }
             }
         }
     }

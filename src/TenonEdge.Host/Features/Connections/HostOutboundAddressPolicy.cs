@@ -1,10 +1,10 @@
 using System.Net;
-using System.Text.Json;
-using Microsoft.Data.Sqlite;
-using SqlSugar;
 using System.Net.NetworkInformation;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Data.Sqlite;
+using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Runtime.Connections;
@@ -17,7 +17,8 @@ internal sealed class HostOutboundAddressPolicy(IConfiguration configuration, Li
     public bool IsAllowed(IPAddress address, int port)
     {
         var management = new HashSet<int>();
-        if (listeners.Http is { } http) { management.Add(http.Port); }
+        if (listeners.Http is { } http)
+        { management.Add(http.Port); }
         management.Add(listeners.Https.Port);
         if (management.Remove(0))
         {
@@ -27,7 +28,8 @@ internal sealed class HostOutboundAddressPolicy(IConfiguration configuration, Li
                 // 动态端口尚未绑定，不能拿 0 当作管理端口后放过本机访问。由连接重试等待宿主就绪。
                 throw new IOException("管理监听地址尚未就绪，暂不建立出站连接。");
             }
-            foreach (var endpoint in bound) { management.Add(new Uri(endpoint).Port); }
+            foreach (var endpoint in bound)
+            { management.Add(new Uri(endpoint).Port); }
         }
 
         OutboundAddressRules rules;

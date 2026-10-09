@@ -123,7 +123,9 @@ public sealed class OutboundPolicyTests
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
         database.Client.Insertable(new OutboundPolicyRecord
         {
-            Version = "corrupt", Networks = networks, LocalPorts = localPorts
+            Version = "corrupt",
+            Networks = networks,
+            LocalPorts = localPorts
         }).ExecuteCommand();
         var policy = factory.Services.GetRequiredService<IOutboundAddressPolicy>();
         var exception = Assert.Throws<IOException>(() => policy.IsAllowed(IPAddress.Parse("10.20.30.40"), 1883));

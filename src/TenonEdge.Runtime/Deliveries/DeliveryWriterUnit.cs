@@ -61,7 +61,8 @@ internal sealed partial class DeliveryWriterUnit(
         var lastMaintenance = time.GetTimestamp();
         async Task FlushCountersAsync()
         {
-            if (!queue.PendingCounters.HasValues) { return; }
+            if (!queue.PendingCounters.HasValues)
+            { return; }
             connection ??= Open(queue.Store.OpenWriteConnection, batch);
             if (!Commit(connection, []))
             {
@@ -157,7 +158,8 @@ internal sealed partial class DeliveryWriterUnit(
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) { return; }
+        if (_disposed)
+        { return; }
         _disposed = true;
         if (!_runStarted && queue.PendingCounters.HasValues)
         {

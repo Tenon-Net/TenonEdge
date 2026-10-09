@@ -26,7 +26,8 @@ public sealed class PendingCounterTests
         var counters = new PendingCounters();
         await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Task.Run(() =>
         {
-            for (var i = 0; i < 100; i++) { counters.Add("input/meter/read/overruns"); }
+            for (var i = 0; i < 100; i++)
+            { counters.Add("input/meter/read/overruns"); }
         }, TestContext.Current.CancellationToken)));
         Assert.Equal(2000, counters.Snapshot()["input/meter/read/overruns"]);
     }

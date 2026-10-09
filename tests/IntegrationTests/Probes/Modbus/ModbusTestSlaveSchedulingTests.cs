@@ -20,7 +20,8 @@ public sealed class ModbusTestSlaveSchedulingTests
         {
             SynchronizationContext.SetSynchronizationContext(original);
             blocked.Resume.TrySetResult();
-            if (slave is not null) { await slave.DisposeAsync(); }
+            if (slave is not null)
+            { await slave.DisposeAsync(); }
         }
     }
 

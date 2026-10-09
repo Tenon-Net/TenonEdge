@@ -13,7 +13,8 @@ public static class OutboundHttpTransport
         ArgumentNullException.ThrowIfNull(connector);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
         var handler = CreateHandler(connector);
-        try { return new HttpClient(handler, disposeHandler: true) { Timeout = timeout }; }
+        try
+        { return new HttpClient(handler, disposeHandler: true) { Timeout = timeout }; }
         catch { handler.Dispose(); throw; }
     }
 

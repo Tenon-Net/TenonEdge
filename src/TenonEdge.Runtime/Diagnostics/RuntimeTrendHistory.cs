@@ -30,7 +30,8 @@ public sealed class RuntimeTrendHistory(TimeProvider time)
             var duration = time.GetElapsedTime(_previousTimestamp, timestamp);
             var uptime = time.GetElapsedTime(_started, timestamp);
             var bucket = uptime.Ticks / Interval.Ticks;
-            if (bucket <= _previousBucket) { return; }
+            if (bucket <= _previousBucket)
+            { return; }
             if (duration > Retention)
             {
                 // 暂停超过整个窗口，无法把期间的累计数归属到最近一小时；只重建基线，不伪造曲线。
@@ -46,7 +47,8 @@ public sealed class RuntimeTrendHistory(TimeProvider time)
                 Delta(totals.RejectedPaths, _previous.RejectedPaths),
                 Delta(totals.StorageFailedRecordAttempts, _previous.StorageFailedRecordAttempts));
             Trim(timestamp);
-            while (_points.Count >= MaximumPoints) { _points.Dequeue(); }
+            while (_points.Count >= MaximumPoints)
+            { _points.Dequeue(); }
             _points.Enqueue((timestamp, point));
             _previous = totals;
             _previousTimestamp = timestamp;
