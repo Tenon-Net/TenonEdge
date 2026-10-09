@@ -2486,6 +2486,19 @@ API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release 
 
 剩余：外部 Broker/实物与更完整证书场景尚未验证；图编译与路线样本预览（T3-05）、应用/回滚（T3-06）、测试发送与其余诊断场景尚未完成，不能据此宣称网页独立配置并启动采集路线已经可用。后续首先推进图编译/预览，不扩展协议或引入脚本引擎。
 
+### 2.123 T3-05 图拓扑校验与有界路径展开（2026-10-10）
+
+接续 §2.122，先实现总设计 §7.2、功能 §5 的内部纯拓扑阶段。`RouteTopology` 是编译快照，不是已定稿的对外图草稿格式；本批不注册 API、不迁移数据库、不改变 RuntimePlan，也不声称 T3-05 已完成。
+
+- 校验启用路线的 schema/node 版本、业务键、节点类型、连线方向/重复/端点、悬空节点和环。错误包含路线、节点、来源、连线索引或字段位置；环定位使用实际回边，不误报处于 Kahn 残余集合中的下游输出。未启用的错误草稿不参与编译，全部停用返回空拓扑。
+- 来源须存在、启用、与输入类型一致，身份为 `deviceKey/inputKey`；不同来源不能复用同一业务身份（包括不同协议）。多来源节点核对字段 key/type，一致性不要求单位相同；最终平台同名字段的 type/unit 一致性留待输出语义编译。
+- 每路线最多 50 节点、每输入节点 500 来源、全局 2000 个实际引用来源。逐图逆拓扑饱和计数，跨路线/节点累计每来源最多 32 路径、全局最多 20,000；所有预算通过之后才枚举。菱形汇入同一输出仍保留各条路径，不去重；有效结果按路线、输入节点、来源业务身份、下游节点排序。
+- 新增 31 个单元场景，包括 50 节点/96 连线、潜在 `2^24` 路径的提前拒绝，精确 20,000 路径边界，32/33、500/501、2000/2001 边界，100 个固定种子随机 DAG 对比独立穷举，字段顺序/单位差异、跨协议身份冲突、环定位、取消等。测试计时只用于诊断，不视为硬件性能承诺。
+
+验证：Linux x64、SDK 10.0.401、Release。初次增补测试触发 CA1861（断言临时常量数组），改成等价模式断言后重新执行；该次构建失败不计为通过。最终 `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-topology-regression --blame-hang-timeout 5m --blame-hang-dump-type none`：**1104 单元 + 1020 集成 = 2124 项通过，0 失败/跳过**（`/tmp/tenonedge-topology-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-topology-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过；`dotnet format --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-topology-format-verify.log`），`git diff --cached --check` 通过。前端未修改，本批未重跑浏览器测试。
+
+剩余：保存图格式/草稿 API、真实来源目录快照、映射配置和逐节点字段传播、输出引用/格式/平台一致性、RuntimePlan 生成、无输出 I/O/无入队的样本预览、画布接线及 T3-06 应用/回滚仍未完成。现有分发器每目标仅支持一次映射，后续须实现连续映射语义，不能静默丢弃中间映射。此次纯函数软件验证不代表外部设备、网页执行路线或完整 AT-07/13/29 验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
