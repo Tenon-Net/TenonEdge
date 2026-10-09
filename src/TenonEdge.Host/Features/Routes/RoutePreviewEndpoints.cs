@@ -18,7 +18,7 @@ internal sealed record RoutePreviewResponse(string Version, bool Previewed, bool
     public override string ToString() => "Route preview response (body omitted)";
 }
 
-internal static class RoutePreviewEndpoints
+internal static partial class RoutePreviewEndpoints
 {
     public static RouteGroupBuilder MapRoutePreviewEndpoints(this RouteGroupBuilder api)
     {
@@ -27,6 +27,7 @@ internal static class RoutePreviewEndpoints
             .WithDescription("MQTT/HTTP 按来源的 JSON 定位与时间解码；Modbus/模拟来源接受已解码字段对象，不做寄存器或字节序仿真。样本最多 64 KiB，整个响应最多 64 KiB，截断结果仅供显示。")
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithMetadata(new RequestBodyLimit(1024 * 1024))
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(429).ProducesProblem(504);
+        MapHttpSamplePreview(api);
         return api;
     }
 

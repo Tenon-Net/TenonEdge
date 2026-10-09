@@ -23,6 +23,7 @@ type Result = {
     sample: string
     signal: AbortSignal
     pending: boolean
+    onsite: boolean
     data?: Response
     error?: unknown
 }
@@ -92,8 +93,15 @@ export function RoutePreview({
     )
     const invalid =
         bytes > 65536 || !sample.trim() || !selected || options.overLimit
-    async function preview() {
-        if (disabled || invalid) return
+    async function preview(onsite = false) {
+        if (
+            disabled ||
+            !selected ||
+            options.overLimit ||
+            (onsite ? selected.kind !== 'input.http' : invalid)
+        )
+            return
+        if (onsite && !window.confirm(t('routes.preview.httpConfirm'))) return
         request.current?.abort()
         const controller = new AbortController()
         request.current = controller
@@ -103,15 +111,22 @@ export function RoutePreview({
             source,
             sample,
             signal: controller.signal,
+            onsite,
         }
         setResult({ ...captured, pending: true })
         try {
-            const data = await routes.preview(
-                { ...newRoute(version), document },
-                selected!.id,
-                sample,
-                controller.signal,
-            )
+            const data = onsite
+                ? await routes.previewHttp(
+                      { ...newRoute(version), document },
+                      selected!.id,
+                      controller.signal,
+                  )
+                : await routes.preview(
+                      { ...newRoute(version), document },
+                      selected!.id,
+                      sample,
+                      controller.signal,
+                  )
             if (!controller.signal.aborted)
                 setResult({ ...captured, pending: false, data })
         } catch (error) {
@@ -131,6 +146,12 @@ export function RoutePreview({
             {t('routes.preview.locate', { name: nodeName(id) })}
         </Button>
     )
+    const problem =
+        current?.error instanceof ApiError ? current.error.problem : null
+    const code =
+        problem && typeof problem === 'object' && 'code' in problem
+            ? problem.code
+            : null
     const data = current?.data
     return (
         <section
@@ -233,6 +254,18 @@ export function RoutePreview({
                 >
                     {t('routes.preview.run')}
                 </Button>
+                {selected?.kind === 'input.http' && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        disabled={
+                            disabled || options.overLimit || current?.pending
+                        }
+                        onClick={() => void preview(true)}
+                    >
+                        {t('routes.preview.httpRun')}
+                    </Button>
+                )}
                 {current?.pending && (
                     <Button
                         type="button"
@@ -266,7 +299,17 @@ export function RoutePreview({
             )}
             {current?.error instanceof ApiError &&
             current.error.status === 409 ? (
-                <p role="alert">{t('routes.conflict')}</p>
+                <p role="alert">
+                    {t(
+                        code === 'connection.inUse'
+                            ? 'routes.preview.connectionBusy'
+                            : 'routes.conflict',
+                    )}
+                </p>
+            ) : current?.onsite &&
+              current.error instanceof ApiError &&
+              current.error.status === 422 ? (
+                <p role="alert">{t('routes.preview.httpUnavailable')}</p>
             ) : (
                 <ErrorMessage error={current?.error} />
             )}
@@ -275,6 +318,13 @@ export function RoutePreview({
                     className="space-y-3"
                     aria-label={t('routes.preview.results')}
                 >
+                    <p>
+                        {t(
+                            current.onsite
+                                ? 'routes.preview.httpResult'
+                                : 'routes.preview.manualResult',
+                        )}
+                    </p>
                     {!data.previewed && (
                         <p role="alert">{t('routes.preview.invalid')}</p>
                     )}

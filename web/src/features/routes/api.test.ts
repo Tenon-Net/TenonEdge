@@ -248,3 +248,53 @@ describe('route API lossless transport', () => {
         expect(JSON.stringify(form)).toBe(original)
     })
 })
+
+it('HTTP onsite preview sends only versioned graph and source, preserving constants', async () => {
+    let body = ''
+    let sent: Request | undefined
+    const f = fixture(async (input) => {
+        sent = new Request(input)
+        body = await sent.text()
+        return new Response(
+            '{"version":"v1","previewed":false,"invalidUpstreamTime":false,"result":null,"issues":[]}',
+            { headers: { 'Content-Type': 'application/json' } },
+        )
+    })
+    const form = newRoute('v1')
+    form.document = decodeGraph(graph)
+    const original = JSON.stringify(form)
+    const controller = new AbortController()
+    await f.api.previewHttp(form, 123, controller.signal)
+    expect(sent?.url).toBe(
+        'http://gateway.test/api/edge-admin/v1/routes/preview/http',
+    )
+    expect(body).toContain('"constant":9223372036854775807')
+    expect(body).toContain('"constant":0.1234567890123456789012345678')
+    expect(body).not.toContain('sampleJson')
+    expect(JSON.stringify(form)).toBe(original)
+    expect(sent?.signal.aborted).toBe(false)
+})
+
+it('HTTP onsite preview propagates cancellation while a request is active', async () => {
+    let started!: () => void
+    const received = new Promise<void>((resolve) => {
+        started = resolve
+    })
+    const f = fixture(async (input) => {
+        const request = new Request(input)
+        return new Promise<Response>((_, reject) => {
+            request.signal.addEventListener(
+                'abort',
+                () => reject(new Error('cancelled')),
+                { once: true },
+            )
+            started()
+        })
+    })
+    const controller = new AbortController()
+    const pending = f.api.previewHttp(newRoute('v1'), 123, controller.signal)
+    const rejected = expect(pending).rejects.toThrow('cancelled')
+    await received
+    controller.abort()
+    await rejected
+})

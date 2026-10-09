@@ -3855,7 +3855,7 @@ test('route manual preview UI keeps exact values, invalidates edits, preserves s
         .getByRole('button', { name: '打开 preview-ui', exact: true })
         .click()
     const panel = page.getByRole('region', {
-        name: '手工样本预览',
+        name: '路线样本预览',
         exact: true,
     })
     const sourceId = graph.nodes.find(
@@ -3919,7 +3919,7 @@ test('route manual preview UI cancels late responses and retains local input on 
 }) => {
     await openFieldAnalysisRoute(page, 'preview-cancel')
     const panel = page.getByRole('region', {
-        name: '手工样本预览',
+        name: '路线样本预览',
         exact: true,
     })
     const select = panel.getByLabel('预览数据来源', { exact: true })
@@ -3996,4 +3996,160 @@ test('route manual preview UI cancels late responses and retains local input on 
         .click()
     await expect(sample).toHaveValue('')
     await expect(run).toBeDisabled()
+})
+
+test('route HTTP onsite preview confirms one real read, preserves manual text and never posts output', async ({
+    page,
+}) => {
+    const calls: string[] = []
+    let responseBody = '{"value":9223372036854775807}'
+    const peer = createServer((request, response) => {
+        calls.push(request.method + ' ' + request.url)
+        response.writeHead(200, { 'Content-Type': 'application/json' })
+        response.end(responseBody)
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string') throw new Error('listener')
+    try {
+        const { headers, saved } = await openFieldAnalysisRoute(
+            page,
+            'onsite-http',
+        )
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        expect(
+            (
+                await page.request.put(policyUrl, {
+                    headers,
+                    data: {
+                        expectedVersion: policy.version,
+                        networks: policy.networks,
+                        localPorts: [...policy.localPorts, address.port],
+                    },
+                })
+            ).status(),
+        ).toBe(200)
+        const connectionResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: saved.version,
+                    key: 'onsite-http',
+                    name: 'Onsite HTTP',
+                    kind: 'http',
+                    http: {
+                        baseAddress: 'http://127.0.0.1:' + address.port + '/',
+                    },
+                },
+            },
+        )
+        expect(connectionResponse.status()).toBe(200)
+        const connection = await connectionResponse.json()
+        const deviceResponse = await page.request.post(
+            '/api/edge-admin/v1/devices',
+            {
+                headers,
+                data: {
+                    expectedVersion: connection.version,
+                    key: 'onsite-http-device',
+                    name: 'Onsite',
+                    kind: 'http',
+                    connectionId: connection.connection.id,
+                },
+            },
+        )
+        expect(deviceResponse.status()).toBe(200)
+        const device = await deviceResponse.json()
+        const inputResponse = await page.request.post(
+            '/api/edge-admin/v1/devices/' + device.device.id + '/inputs',
+            {
+                headers,
+                data: {
+                    expectedVersion: device.version,
+                    key: 'values',
+                    name: 'Values',
+                    http: {
+                        path: 'values',
+                        fields: [
+                            { key: 'f000', path: '/value', type: 'integer' },
+                        ],
+                    },
+                },
+            },
+        )
+        expect(inputResponse.status()).toBe(200)
+        const input = await inputResponse.json()
+        const graph = saved.route.graph
+        graph.nodes.find((node: { id: string }) => node.id === 'in').type =
+            'input.http'
+        graph.nodes.find(
+            (node: { id: string }) => node.id === 'in',
+        ).config.sourceIds = [input.input.id]
+        graph.nodes.find(
+            (node: { id: string }) => node.id === 'out',
+        ).config.connectionId = connection.connection.id
+        expect(
+            (
+                await page.request.put(
+                    '/api/edge-admin/v1/routes/' + saved.route.id,
+                    {
+                        headers,
+                        data: {
+                            expectedVersion: input.version,
+                            key: saved.route.key,
+                            name: saved.route.name,
+                            enabled: false,
+                            graph,
+                        },
+                    },
+                )
+            ).status(),
+        ).toBe(200)
+        await page.reload()
+        await page
+            .getByRole('button', { name: '打开 onsite-http', exact: true })
+            .click()
+        const panel = page.getByRole('region', {
+            name: '路线样本预览',
+            exact: true,
+        })
+        await panel
+            .getByLabel('预览数据来源', { exact: true })
+            .selectOption('input.http:' + input.input.id)
+        const sample = panel.getByLabel('手工 JSON 样本（不保存）', {
+            exact: true,
+        })
+        await sample.fill('deliberately invalid manual JSON')
+        const run = panel.getByRole('button', {
+            name: '现场读取 HTTP 一次并预览',
+            exact: true,
+        })
+        page.once('dialog', (dialog) => dialog.dismiss())
+        await run.click()
+        expect(calls).toEqual([])
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        await expect(
+            panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true }),
+        ).toHaveText('{"result":9223372036854775807}')
+        await expect(
+            panel.getByText(/本次结果来自现场 HTTP 读取/),
+        ).toBeVisible()
+        await expect(sample).toHaveValue('deliberately invalid manual JSON')
+        expect(calls).toEqual(['GET /values'])
+        responseBody = '{"password":"fixture-secret","value":42}'
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        await expect(panel.getByRole('alert')).toContainText('样本已截断/脱敏')
+        await expect(
+            panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true }),
+        ).toHaveCount(0)
+        await expect(sample).toHaveValue('deliberately invalid manual JSON')
+        expect(calls).toEqual(['GET /values', 'GET /values'])
+    } finally {
+        peer.closeAllConnections()
+        await new Promise<void>((resolve) => peer.close(() => resolve()))
+    }
 })

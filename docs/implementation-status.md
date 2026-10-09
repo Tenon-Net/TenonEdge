@@ -2715,6 +2715,28 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 本批只变更前端和文档，未重跑后端 2246 项，沿用 §2.136 基线；未连接真实设备或发送输出。显示截断/多路径混合成功失败的浏览器专项仍需补齐（核心已有 §2.135 测试）。临时浏览器 Host 已清理，常驻调试实例未更新；仅整理本地提交，不推送。下一步仍是 T3-05 最近消息与显式现场采样桥接，非 T3-06 或 G1 提前实施。
 
+### 2.138 T3-05 HTTP 现场样本到路线预览的首条协议链路（2026-10-10）
+
+接续 §2.137，落地功能 §4.2 第二种样本来源的 **HTTP 子场景**。先完成一条可操作、可核对的 HTTP 链路，再继续 MQTT/Modbus 和运行中最近消息；不将此批记作三类样本来源或完整 T3-05 验收。
+
+- 新增 `POST /routes/preview/http`：原编辑版本、当前图、图内 sourceId；不接收 URL、凭证或伪装的客户端现场样本。版本与引用在短事务快照读取，退出事务后调用现有 HttpReadPreview。共享串行会话、凭证接收方检查、出站策略和响应限制均沿用已验证的一次读取，不复制协议实现。
+- 保留实际读取 ReceivedAt 和本次校时状态，用同一快照描述解码，复用 RouteSamplePreview 的路径映射/报文组装；不连接输出、不改草稿、不应用、不入队。完整且未脱敏才可桥接；读取失败/显示截断/敏感内容隐藏返回 422 与稳定代码，不能用不完整字段继续计算。**当前仍受一次读取的 64 KiB 展示预算限制，大报文现场预览尚未全覆盖**。
+- 角色/CSRF/1 MiB 请求体与共享全局 4/会话 2 准入保持一致。整次读取加计算 30 秒，504 与连接参数冲突 409 分开；前端为路线预览放宽到 35 秒（含完整响应体），不放宽普通管理请求。补充客户端截止时间和请求中取消测试。
+- 画布面板改称“路线样本预览”，HTTP 来源新增独立按钮与联网确认。取消确认不发请求；实际读取不使用或覆盖手工文本，结果明确标注样本来源。422 提示完整性/脱敏边界，连接占用不误报为版本冲突；既有结果过期、取消与节点定位规则保持。
+- 新增后端 8 项场景：三角色、真实 HTTP GET/精确整数/实际采集时间/输出监听器无连接/草稿版本与路线列表不变；脱敏、截断、非法 JSON 拒绝；匿名/CSRF/陈旧版本/外来源无联网；共享额度拒绝及验证失败释放额度。真实 HTTP 是本机测试对端，不是真实设备。浏览器新增确认取消、实际 GET 后输出文本、手工文本保留、敏感样本拒绝且旧结果清除，目标只收到预期 GET，未收到 POST。
+
+验证中修正：公开测试方法不能使用内部 UserRole 类型，改传字符串；首次全量测试发现两份受保护端点登记及 operationId 白名单未补，按新增受保护 API 显式补齐；首次浏览器种子与已有模拟设备 key 冲突，改用独立 HTTP 设备 key。客户端取消测试最初在已完成请求之后断言传播，改为等待请求进入 fetch 后再取消（完成后移除监听器是既有正确行为）。失败轮不计通过。
+
+验证环境：Linux x64 / .NET SDK 10.0.401 / Node 22.23.2 / npm 11.21.0 / Chromium 156.0.8078.4。最终命令与结果：
+
+- web/：`npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check`、`run build` 通过；`run test -- --reporter=json --outputFile=reports/unit.json` **209 通过，0 失败/跳过**（`/tmp/tenonedge-route-http-web.log`、`web/reports/unit.json`）。
+- OpenAPI 从临时真实 Development Host 导出，新增路径和 DTO，客户端精确图常量传输测试通过（`/tmp/tenonedge-route-http-openapi.log`）。
+- `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route HTTP onsite|route manual preview|upstream fields|mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'`：**16 通过，0 失败/跳过**（`/tmp/tenonedge-route-http-browser-final.log`，43.0 秒）。
+- `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-http-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none`：**1184 单元 + 1070 集成 = 2254 通过，0 失败/跳过**（`/tmp/tenonedge-route-http-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-route-http-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-route-http-trx-verify.log`）。
+- `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-http-format-verify.log`）；README 更新后 web/ 格式复核通过（`/tmp/tenonedge-route-http-web-format-final.log`）。
+
+最近消息、MQTT/Modbus 现场样本、HTTP 大报文完整消息桥接、现场请求中断/截止时间的专项 UI 与 API 故障注入仍须补齐；共享服务既有测试不等于新端点专项全部完成。未推送、发布或更新常驻调试实例；未将路线输出文本当作外部输出验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
