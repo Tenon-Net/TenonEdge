@@ -138,6 +138,10 @@ test('failed login is not replayed and a transient error preserves entered value
     await expect(page.getByRole('alert')).toContainText('账号或密码错误')
 })
 
+// Configuration scenarios reuse one real login in memory; authentication scenarios above remain isolated.
+let editorCookies: Parameters<
+    import('@playwright/test').BrowserContext['addCookies']
+>[0] = []
 async function openPointEditor(page: import('@playwright/test').Page) {
     const setup = await page.request.get('/api/edge-admin/v1/setup')
     if ((await setup.json()).state === 'uninitialized') {
@@ -151,13 +155,19 @@ async function openPointEditor(page: import('@playwright/test').Page) {
         expect(completed.status()).toBe(200)
         await page.context().clearCookies()
     }
+    if (editorCookies.length) await page.context().addCookies(editorCookies)
     await page.goto('/prototypes/points')
-    await page.getByLabel('账号', { exact: true }).fill('browser-admin')
-    await page.getByLabel('密码', { exact: true }).fill('Changed-fixture-5938')
-    await page.getByRole('button', { name: '登录', exact: true }).click()
+    if (!editorCookies.length) {
+        await page.getByLabel('账号', { exact: true }).fill('browser-admin')
+        await page
+            .getByLabel('密码', { exact: true })
+            .fill('Changed-fixture-5938')
+        await page.getByRole('button', { name: '登录', exact: true }).click()
+    }
     await expect(
         page.getByRole('heading', { name: '点表交互原型' }),
     ).toBeVisible()
+    editorCookies = await page.context().cookies()
 }
 function pointText(count: number, badIndex = -1, start = 0) {
     return Array.from({ length: count }, (_, offset) => {
@@ -834,4 +844,164 @@ test('HTTP credential form writes each supported authentication kind without ech
         path: 'test-results/connection-credential.png',
         fullPage: true,
     })
+})
+
+test('device drafts persist real references, preserve conflicted edits, and never apply', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    const fixtureSession = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const fixtureConnections = await (
+        await page.request.get('/api/edge-admin/v1/connections')
+    ).json()
+    if (
+        !fixtureConnections.connections.some(
+            (c: { key: string }) => c.key === 'browser-plc',
+        )
+    ) {
+        const created = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers: { 'X-CSRF-Token': fixtureSession.csrfToken },
+                data: {
+                    expectedVersion: fixtureConnections.version,
+                    key: 'browser-plc',
+                    name: '更新后的 PLC',
+                    kind: 'modbus',
+                    modbus: { host: '10.20.30.40' },
+                },
+            },
+        )
+        expect(created.status()).toBe(200)
+    }
+    await page.getByRole('link', { name: '设备草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建设备', exact: true }).click()
+    await page.getByLabel('设备 key', { exact: true }).fill('browser-meter')
+    await page.getByLabel('设备名称', { exact: true }).fill('浏览器电表')
+    await page.getByLabel('设备分组', { exact: true }).fill('一号车间')
+    await page
+        .getByRole('combobox', { name: '引用连接', exact: true })
+        .selectOption({ label: '更新后的 PLC (browser-plc)' })
+    await page.getByLabel('UnitId', { exact: true }).fill('255')
+    await page
+        .getByRole('button', { name: '保存设备草稿', exact: true })
+        .click()
+    await expect(page.getByRole('status')).toHaveText(
+        '设备草稿已保存；尚未应用。',
+    )
+    await page.reload()
+    const meter = page.getByRole('button', { name: /浏览器电表 browser-meter/ })
+    await meter.click()
+    await expect(page.getByLabel('设备 key', { exact: true })).toBeDisabled()
+    await expect(page.getByLabel('UnitId', { exact: true })).toHaveValue('255')
+    await expect(page.getByLabel('设备分组', { exact: true })).toHaveValue(
+        '一号车间',
+    )
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const snapshot = await (
+        await page.request.get('/api/edge-admin/v1/devices')
+    ).json()
+    const connections = await (
+        await page.request.get('/api/edge-admin/v1/connections')
+    ).json()
+    const plc = connections.connections.find(
+        (c: { key: string }) => c.key === 'browser-plc',
+    )
+    const rejectedDelete = await page.request.delete(
+        '/api/edge-admin/v1/connections/' +
+            plc.id +
+            '?expectedVersion=' +
+            snapshot.version,
+        { headers: { 'X-CSRF-Token': session.csrfToken } },
+    )
+    expect(rejectedDelete.status()).toBe(409)
+    expect((await rejectedDelete.json()).code).toBe(
+        'connection.deviceReferenced',
+    )
+    await page.getByLabel('设备名称', { exact: true }).fill('保留设备编辑')
+    const concurrent = await page.request.post('/api/edge-admin/v1/devices', {
+        headers: { 'X-CSRF-Token': session.csrfToken },
+        data: {
+            expectedVersion: snapshot.version,
+            key: 'other-simulator',
+            name: '另一个编辑者',
+            kind: 'simulator',
+        },
+    })
+    expect(concurrent.status()).toBe(200)
+    await page
+        .getByRole('button', { name: '保存设备草稿', exact: true })
+        .click()
+    await expect(
+        page.getByText(
+            '草稿版本或引用冲突，输入已保留。刷新后确认重新载入，不会自动覆盖。',
+        ),
+    ).toBeVisible()
+    await expect(page.getByLabel('设备名称', { exact: true })).toHaveValue(
+        '保留设备编辑',
+    )
+    await page.route('**/api/edge-admin/v1/devices', (route) =>
+        route.request().method() === 'GET'
+            ? route.fulfill({
+                  status: 500,
+                  contentType: 'application/problem+json',
+                  body: '{"status":500}',
+              })
+            : route.continue(),
+    )
+    const failed = page.waitForResponse(
+        (response) =>
+            response.url().endsWith('/devices') && response.status() === 500,
+    )
+    await page
+        .getByRole('button', { name: '刷新设备与连接', exact: true })
+        .click()
+    await failed
+    await expect(page.getByLabel('设备名称', { exact: true })).toHaveValue(
+        '保留设备编辑',
+    )
+    await page.unroute('**/api/edge-admin/v1/devices')
+    await page
+        .getByRole('button', { name: '刷新设备与连接', exact: true })
+        .click()
+    await expect(
+        page.getByRole('button', { name: '重新载入设备', exact: true }),
+    ).toBeEnabled()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page
+        .getByRole('button', { name: '重新载入设备', exact: true })
+        .click()
+    await expect(page.getByLabel('设备名称', { exact: true })).toHaveValue(
+        '浏览器电表',
+    )
+    await page.getByLabel('设备名称', { exact: true }).fill('已更新的电表')
+    await page
+        .getByRole('button', { name: '保存设备草稿', exact: true })
+        .click()
+    await page
+        .getByRole('button', { name: /已更新的电表 browser-meter/ })
+        .click()
+    await page.screenshot({
+        path: 'test-results/device-draft.png',
+        fullPage: true,
+    })
+    const runtime = await (
+        await page.request.get('/api/edge-admin/v1/runtime/status')
+    ).json()
+    expect(runtime.coordinator.activeRevision).toBeNull()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: '删除设备', exact: true }).click()
+    await expect(page.getByRole('status')).toHaveText(
+        '设备草稿已删除；运行配置未改变。',
+    )
+    const final = await (
+        await page.request.get('/api/edge-admin/v1/devices')
+    ).json()
+    expect(
+        final.devices.some((d: { key: string }) => d.key === 'browser-meter'),
+    ).toBe(false)
 })

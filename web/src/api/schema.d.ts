@@ -364,6 +364,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看设备草稿及全局草稿版本，不代表运行状态 */
+        get: operations["getDeviceDrafts"];
+        put?: never;
+        /** 新建设备草稿，保存不改变运行配置 */
+        post: operations["createDeviceDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新设备草稿，key 不可修改 */
+        put: operations["updateDeviceDraft"];
+        post?: never;
+        /** 删除未被引用的设备草稿 */
+        delete: operations["deleteDeviceDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -464,6 +500,44 @@ export interface components {
             schemaVersion: number | string;
             configStoreId: string;
         };
+        DeviceDraft: {
+            /** Format: int64 */
+            id: number | string;
+            key: string;
+            name: string;
+            kind: components["schemas"]["DeviceKind"];
+            group: null | string;
+            /** Format: int64 */
+            connectionId: null | number | string;
+            /** Format: int32 */
+            unitId: null | number | string;
+            addressNotation: components["schemas"]["ModbusAddressNotation"];
+            enabled: boolean;
+        };
+        DeviceDraftList: {
+            version: string;
+            devices: components["schemas"]["DeviceDraft"][];
+        };
+        DeviceDraftRequest: {
+            expectedVersion: string;
+            key: string;
+            name: string;
+            kind: components["schemas"]["DeviceKind"];
+            group?: null | string;
+            /** Format: int64 */
+            connectionId?: null | number | string;
+            /** Format: int32 */
+            unitId?: null | number | string;
+            addressNotation?: components["schemas"]["ModbusAddressNotation"];
+            /** @default true */
+            enabled: boolean;
+        };
+        DeviceDraftResult: {
+            version: string;
+            device: components["schemas"]["DeviceDraft"];
+        };
+        /** @enum {unknown} */
+        DeviceKind: "modbus" | "mqtt" | "http" | "simulator";
         DiskSpaceInfo: {
             /** Format: int64 */
             totalBytes: number | string;
@@ -566,6 +640,8 @@ export interface components {
             accountName: null | string;
             password: null | string;
         };
+        /** @enum {unknown} */
+        ModbusAddressNotation: "offset" | "manual";
         ModbusConnectionDraft: {
             host: string;
             /**
@@ -1920,6 +1996,226 @@ export interface operations {
             header?: never;
             path: {
                 connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getDeviceDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceDraftList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    createDeviceDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceDraftResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    updateDeviceDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceDraftResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    deleteDeviceDraft: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                deviceId: number;
             };
             cookie?: never;
         };

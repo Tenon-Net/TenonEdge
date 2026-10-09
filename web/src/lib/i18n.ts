@@ -1,3 +1,4 @@
+import { deviceStrings } from '../features/devices/strings'
 import {
     connectionStrings,
     credentialStrings,
@@ -13,6 +14,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                devices: deviceStrings,
                 points: pointStrings,
                 canvas: canvasStrings,
                 connections: connectionStrings,

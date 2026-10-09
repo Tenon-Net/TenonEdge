@@ -2162,6 +2162,25 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余与安全边界：旧 T1/T2 种子入口仍允许在不存在草稿时不带草稿版本预置凭证，未宣称完成旧入口资源归属迁移；现有待发/失败检查仍是凭证事务前的快照，活跃运行时跨库凭证轮换协调/隔离竞态尚须在 T3 收尾。客户端证书、信任证书、连接测试、设备/来源/点位持久草稿、复制/CSV/字段推断未完成；T3-05 编译与 T3-06 应用/回滚未实现。现有表单子场景通过不代表 AT-18 或完整可视化配置验收通过。未推送、未发版，远端 CI 与真实设备未验证，总目标仍未完成。
 
+### 2.105 T3-04 设备基础草稿与连接引用保护（2026-10-10）
+
+继续已授权 T3-04 的设备基础信息子项，前置与 §2.104 相同；按功能 §3.1/3.2、总设计 §10.2 实施。重新核对本机参考目录 SUMMARY 与 neuron 笔记，仅参考设备/分组/点位分工，不拷贝 LGPL 源码，不引入依赖。
+
+- 配置库显式迁移 **13** 新增 `device_draft`，稳定 ID 纳入启动发号下限；全局唯一不可变 deviceKey、名称、单层分组、协议类型、连接引用、启停，以及 Modbus UnitId/地址写法。物理设备必须引用同类型已存连接，模拟设备不能携带连接或 Modbus 字段。TCP UnitId 0—255、RTU over TCP 1—247，规范化名称/分组并检查长度与控制字符。
+- 设备 CRUD、全局草稿版本、引用校验和审计同一配置事务；只读可查、配置人员/管理员可写，沿既有会话与 CSRF。真实 Host API 与 OpenAPI 已更新。保存只改草稿，不构造运行单元、不外发。种子不会自动转换成设备草稿。
+- 有设备引用时禁止删除连接（数据库外键与应用检查）；连接帧格式修改会重新校验引用设备，不能把 UnitId 0/255 的 TCP 设备变成非法 RTU 设备。三种保留运行快照引用的设备 key 不能被删除或被新草稿占用，既有源/输出输入引用按 schema 1 检查。
+- 新增 `/devices` 真实页面，左侧名称/key 搜索、分组与草稿启用筛选，右侧设备基本信息及协议相关字段。按角色禁用修改，key 创建后禁改；查询在 TanStack Query、本地表单与捕获版本在 Zustand，GET500/409/刷新不覆盖输入，重新载入/离站丢弃须确认。设备与连接读取版本不一致时要求刷新，避免新建/打开时使用两个草稿版本；写入仍由后端原子校验。
+
+实际验证：
+
+1. 环境沿 §2.104。最终后端全量 **1004 单元 + 843 集成 = 1847 通过，0 失败/跳过**；命令 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t3-device' --results-directory artifacts/test-results/t3-device --blame-hang-timeout 5m --blame-hang-dump-type none`，日志 `/tmp/tenonedge-device-full.log`。TRX 门禁 `python3 .github/scripts/verify-test-results.py artifacts/test-results/t3-device --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过。新增 12 个参数单测与 14 项设备 CRUD/角色/CSRF、真实数据目录重建持久化、同版本并发、审计失败回滚、引用/跨实体草稿版本/帧格式联动的集成子场景；快照采用数据库夹具，不是实物采集验证。
+2. `dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-device-format-verify.log`）。`node /tmp/tenonedge-export-draft-api.mjs` 从临时 Development Host 导出实际文档并生成客户端，临时 Host/数据已清理；前端 build、lint、format:check 通过，主入口约 512 kB 提示未隐藏。Vitest `npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json`：**103 通过，0 失败/跳过**，日志 `/tmp/tenonedge-device-web-tests.log`，构建日志 `/tmp/tenonedge-device-web-build2.log`。
+3. 浏览器最终 **10 通过，0 失败/跳过**，命令沿 §2.104，日志 `/tmp/tenonedge-device-browser-final.log`；新增真实新建设备、重载持久化、连接删除被引用拦截、并发草稿冲突、GET500 保留编辑、显式重载更新与删除、运行版本不变场景。前端报告门禁 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 通过；已查看截图 `web/test-results/device-draft.png`。
+4. 初轮定向验证发现公开测试方法使用内部 enum 的编译错误及新增端点清单顺序不符，随后修正为整数参数转内部类型并按实际端点排序；第二轮分析器指出测试参数名称 pointer 不合约定，改为 referenceKind。修正后定向 12 单元 + 22 集成通过，没有放宽业务断言。前端第一次构建发现 OpenAPI long 接受 string/number，按既有安全整数 ID 约定显式 Number 转换；第二次构建通过。
+5. 首轮浏览器 **9 通过/1 失败**：第 10 次新会话登录触发真实每分钟 10 次限流，设备场景尚未开始，不能算设备通过。失败页面明确为登录限流；配置类测试改为仅在进程内复用一个真实 Cookie 会话，不写磁盘、不改变产品限流，认证用例仍各自独立。原失败日志 `/tmp/tenonedge-device-browser.log` 保留。第二轮 9 通过/1 失败是 select 的精确 label 定位，依据实际可访问树改用 combobox 角色定位（与已有连接表单一致），未改变业务断言；独立设备场景随后 1 项通过，日志 `/tmp/tenonedge-device-browser-targeted.log`。
+
+剩余：本批仅设备基础配置，不含数据来源/点位的持久化、设备连同来源与点位复制、CSV、字段推断、运行状态；这些仍须继续实现。来源/路线/平台映射持久化后必须补入设备变更与删除引用检查，返回引用方清单；未实现的对象不据此宣称安全验收完成。凭证的旧种子入口与活跃轮换边界仍见 §2.104，证书/信任/连接测试、T3-05 编译、T3-06 应用/回滚仍待完成。实际软件子场景不等于 AT-18/完整 T3 验收，不声称已具备可用采集路线。未推送、未发版、未进行实物验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

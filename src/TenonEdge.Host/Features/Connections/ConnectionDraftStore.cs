@@ -6,6 +6,7 @@ using SqlSugar;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
+using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -47,6 +48,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             }
             if (client.Queryable<ConnectionDraftRecord>().Any(row => row.BusinessKey == draft.Key && row.Id != id))
             { throw new DraftWriteException("connection.duplicateKey"); }
+            DeviceDraftStore.ValidateConnectionChange(client, draft);
             var row = new ConnectionDraftRecord { Id = id, BusinessKey = draft.Key, Content = content };
             if (existing is null)
             { client.Insertable(row).ExecuteCommand(); }
@@ -64,7 +66,9 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var row = client.Queryable<ConnectionDraftRecord>().InSingle(id) ?? throw new DraftWriteException("connection.notFound");
-        // T3-04 的设备/输入引用检查随其实体接入同一事务；种子仍可存在，不允许删掉被保留运行版本使用的编号。
+        if (client.Queryable<DeviceDraftRecord>().Any(device => device.ConnectionId == id))
+        { throw new DraftWriteException("connection.deviceReferenced"); }
+        // 种子仍可存在，不允许删掉被保留运行版本使用的编号。
         if (HasRetainedReference(client, id))
         { throw new DraftWriteException("connection.referenced"); }
         if (deliveries.ReadPending(id, 0, 1).Count != 0 || deliveries.ReadFailed(id, 0, 1).Count != 0 || deliveries.ReadQuarantined(id, 0, 1).Count != 0)

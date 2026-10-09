@@ -1,0 +1,48 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http.HttpResults;
+using TenonEdge.Host.Bootstrap;
+using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Security;
+
+namespace TenonEdge.Host.Features.Devices;
+
+internal static class DeviceDraftEndpoints
+{
+    public static RouteGroupBuilder MapDeviceDraftEndpoints(this RouteGroupBuilder api)
+    {
+        var group = api.MapGroup("/devices").WithTags("Devices");
+        group.MapGet("", (DeviceDraftStore store) => TypedResults.Ok(store.Read()))
+            .WithName("getDeviceDrafts").WithSummary("查看设备草稿及全局草稿版本，不代表运行状态");
+        group.MapPost("", (DeviceDraftRequest request, DeviceDraftStore store, HttpContext context) => Write(null, request, store, context))
+            .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("createDeviceDraft")
+            .WithSummary("新建设备草稿，保存不改变运行配置").ProducesProblem(409).ProducesProblem(403);
+        group.MapPut("/{deviceId:long}", (long deviceId, DeviceDraftRequest request, DeviceDraftStore store, HttpContext context) => Write(deviceId, request, store, context))
+            .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("updateDeviceDraft")
+            .WithSummary("更新设备草稿，key 不可修改").ProducesProblem(409).ProducesProblem(404).ProducesProblem(403);
+        group.MapDelete("/{deviceId:long}", Delete).RequireAuthorization(AuthorizationPolicies.Configurator)
+            .WithName("deleteDeviceDraft").WithSummary("删除未被引用的设备草稿")
+            .ProducesProblem(409).ProducesProblem(404).ProducesProblem(403);
+        return api;
+    }
+
+    private static Results<Ok<DeviceDraftResult>, ValidationProblem, ProblemHttpResult> Write(long? id,
+        DeviceDraftRequest request, DeviceDraftStore store, HttpContext context)
+    {
+        try
+        { return TypedResults.Ok(store.Write(id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["device"] = ["设备参数无效，请检查标识、名称、连接类型、UnitId 及地址写法。"] }); }
+        catch (FormatException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["device"] = ["设备参数格式无效。"] }); }
+        catch (DraftWriteException exception) { return Failure(exception); }
+    }
+
+    private static Results<Ok<DraftVersion>, ProblemHttpResult> Delete(long deviceId, string expectedVersion,
+        DeviceDraftStore store, HttpContext context)
+    {
+        try
+        { return TypedResults.Ok(store.Delete(deviceId, expectedVersion, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        catch (DraftWriteException exception) { return Failure(exception); }
+    }
+
+    private static ProblemHttpResult Failure(DraftWriteException exception) => ApiProblems.Problem(
+        exception.Code == "device.notFound" ? 404 : 409, exception.Code, "草稿未修改，请核对版本、唯一标识和引用关系后重试。");
+}

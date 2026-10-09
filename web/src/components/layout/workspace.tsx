@@ -69,6 +69,13 @@ export function Workspace() {
                     >
                         {t('connections.title')}
                     </Link>
+                    <Link
+                        to="/devices"
+                        className="rounded-md p-2 hover:bg-accent"
+                        activeProps={{ className: 'bg-accent font-medium' }}
+                    >
+                        {t('devices.title')}
+                    </Link>
                 </nav>
             </aside>
             <div className="min-w-0">

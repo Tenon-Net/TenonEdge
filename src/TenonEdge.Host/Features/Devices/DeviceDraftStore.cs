@@ -1,0 +1,127 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using SqlSugar;
+using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Connections;
+using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Storage;
+using TenonEdge.Host.Storage.Ids;
+
+namespace TenonEdge.Host.Features.Devices;
+
+/// <summary>设备基础配置草稿；引用校验、版本、实体与审计共用短事务，无运行时副作用。</summary>
+internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
+
+    public DeviceDraftList Read() => database.InTransaction(client => new DeviceDraftList(
+        ConfigurationDraft.ReadVersion(client),
+        client.Queryable<DeviceDraftRecord>().OrderBy(row => row.Id).ToList().Select(Decode).ToArray()));
+
+    public DeviceDraftResult Write(long? existingId, DeviceDraftRequest request, string? account, string? sourceIp)
+    {
+        var id = existingId ?? ids.NextId();
+        return database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
+            var connection = request.ConnectionId is { } connectionId ? ConnectionDraftStore.Read(client, connectionId) : null;
+            var device = DeviceDraftValidation.Normalize(id, request, connection);
+            var existing = existingId is null ? null : client.Queryable<DeviceDraftRecord>().InSingle(id)
+                ?? throw new DraftWriteException("device.notFound");
+            if (existing is not null && existing.BusinessKey != device.Key)
+            { throw new DraftWriteException("device.immutableKey"); }
+            if (client.Queryable<DeviceDraftRecord>().Any(row => row.BusinessKey == device.Key && row.Id != id))
+            { throw new DraftWriteException("device.duplicateKey"); }
+            if (existing is null && HasRetainedReference(client, device.Key))
+            { throw new DraftWriteException("device.reservedKey"); }
+            var row = new DeviceDraftRecord
+            {
+                Id = id,
+                BusinessKey = device.Key,
+                ConnectionId = device.ConnectionId,
+                Content = JsonSerializer.Serialize(device, Json),
+            };
+            if (existing is null)
+            { client.Insertable(row).ExecuteCommand(); }
+            else
+            { client.Updateable(row).ExecuteCommand(); }
+            var version = ConfigurationDraft.Advance(client, time);
+            audit.Append(client, new AuditEntry(existing is null ? "device.draftCreated" : "device.draftUpdated",
+                AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
+                JsonSerializer.Serialize(new { key = device.Key, previousVersion = request.ExpectedVersion, version })));
+            return new DeviceDraftResult(version, device);
+        });
+    }
+
+    public DraftVersion Delete(long id, string expectedVersion, string? account, string? sourceIp) => database.InTransaction(client =>
+    {
+        ConfigurationDraft.CheckVersion(client, expectedVersion);
+        var row = client.Queryable<DeviceDraftRecord>().InSingle(id) ?? throw new DraftWriteException("device.notFound");
+        // 来源、路线及平台映射持久化后须在这里补入同事务引用检查。
+        if (HasRetainedReference(client, row.BusinessKey))
+        { throw new DraftWriteException("device.referenced"); }
+        client.Deleteable(row).ExecuteCommand();
+        var version = ConfigurationDraft.Advance(client, time);
+        audit.Append(client, new AuditEntry("device.draftDeleted", AuditResults.Success, account, sourceIp,
+            id.ToString(CultureInfo.InvariantCulture), JsonSerializer.Serialize(new { previousVersion = expectedVersion, version })));
+        return new DraftVersion(version);
+    });
+
+    internal static void ValidateConnectionChange(SqlSugarClient client, ConnectionDraft connection)
+    {
+        foreach (var device in client.Queryable<DeviceDraftRecord>().Where(row => row.ConnectionId == connection.Id).ToList().Select(Decode))
+        {
+            try
+            {
+                DeviceDraftValidation.Normalize(device.Id, new("check", device.Key, device.Name, device.Kind, device.Group,
+                    device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled), connection);
+            }
+            catch (ArgumentException) { throw new DraftWriteException("connection.deviceConflict"); }
+        }
+    }
+
+    private static bool HasRetainedReference(SqlSugarClient client, string key)
+    {
+        var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
+        foreach (var revision in new[] { state.EffectiveRevision, state.PreviousRevision, state.PendingRevision }.OfType<long>().Distinct())
+        {
+            var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
+                ?? throw new InvalidOperationException("运行版本引用缺失。");
+            var plan = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
+            if (plan.Units.Any(unit =>
+                unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal) && unit.Id.KeySegments[0] == key ||
+                unit.Configuration.TryGetProperty("inputs", out var inputs) &&
+                    inputs.EnumerateArray().Any(input => input.GetString()!.Split('/')[0] == key)))
+            { return true; }
+        }
+        return false;
+    }
+
+    private static DeviceDraft Decode(DeviceDraftRecord row)
+    {
+        var device = JsonSerializer.Deserialize<DeviceDraft>(row.Content, Json) ?? throw new JsonException("设备草稿为空。");
+        if (device.Id != row.Id || device.Key != row.BusinessKey || device.ConnectionId != row.ConnectionId)
+        { throw new JsonException("设备草稿标识或连接引用不一致。"); }
+        return device;
+    }
+}
+
+[SugarTable("device_draft")]
+internal sealed class DeviceDraftRecord
+{
+    [SugarColumn(ColumnName = "id", IsPrimaryKey = true)]
+    public long Id { get; set; }
+    [SugarColumn(ColumnName = "business_key")]
+    public string BusinessKey { get; set; } = string.Empty;
+    [SugarColumn(ColumnName = "connection_id", IsNullable = true)]
+    public long? ConnectionId { get; set; }
+    [SugarColumn(ColumnName = "content")]
+    public string Content { get; set; } = string.Empty;
+}
