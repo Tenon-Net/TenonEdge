@@ -36,6 +36,8 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
         var started = time.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs), time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        if (!settings.UsePassword && credentials.DescribeMqtt(settings.ConnectionId) is not null)
+        { return Failure("credential.changed"); }
         var credential = settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) : null;
         if (settings.UsePassword && credential is null)
         { return Failure("credential.unavailable"); }
@@ -90,7 +92,9 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                 token.ThrowIfCancellationRequested();
                 return CredentialUnchanged() ? result : Failure("credential.changed");
 
-                bool CredentialUnchanged() => !settings.UsePassword || credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient)?.Version == credential!.Version;
+                bool CredentialUnchanged() => settings.UsePassword
+                    ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient)?.Version == credential!.Version
+                    : credentials.DescribeMqtt(settings.ConnectionId) is null;
 
                 async Task Receive(MqttApplicationMessageReceivedEventArgs args, CancellationToken lifetime)
                 {

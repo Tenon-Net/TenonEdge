@@ -62,6 +62,10 @@ internal static class RuntimeRegistration
         services.AddSingleton<ModbusConnectionTest>();
         services.AddSingleton<ModbusReadPreview>();
         services.AddSingleton<HttpReadPreview>();
+        services.AddSingleton(provider => new MqttReadPreview(
+            provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<IOutboundConnector>(),
+            provider.GetRequiredService<ICredentialResolver>(), provider.GetRequiredService<IJsonInputDecoderFactory>(),
+            provider.GetRequiredService<RuntimeHost>().InFlight, provider.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IRuntimePlanAdapterProvider, ModbusPlanAdapterProvider>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
         services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>

@@ -106,6 +106,45 @@ describe('single same-origin API client', () => {
             fetchWithDeadline(new Request('http://gateway.test'), fetcher, 5),
         ).rejects.toThrow('aborted')
     })
+    it.each([
+        ['POST', '/api/edge-admin/v1/devices/42/preview/mqtt', 35000],
+        ['POST', '/api/edge-admin/v1/devices/42/preview/http', 35000],
+        ['POST', '/api/edge-admin/v1/devices/42/preview/modbus', 35000],
+        ['POST', '/api/edge-admin/v1/connections/test/mqtt', 65000],
+        ['POST', '/api/edge-admin/v1/connections/test/http', 65000],
+        ['POST', '/api/edge-admin/v1/connections/test/modbus', 65000],
+        ['GET', '/api/edge-admin/v1/auth/session', 15000],
+        ['POST', '/api/edge-admin/v1/auth/logout', 15000],
+        ['GET', '/api/edge-admin/v1/devices/42/preview/mqtt', 15000],
+    ])(
+        'bounds %s %s at %i ms without cutting off server work',
+        async (method, path, deadline) => {
+            vi.useFakeTimers()
+            try {
+                let signal: AbortSignal | undefined
+                const result = fetchWithDeadline(
+                    new Request('http://gateway.test' + path, { method }),
+                    async (input) => {
+                        signal = new Request(input).signal
+                        return new Promise<Response>((_resolve, reject) =>
+                            signal!.addEventListener(
+                                'abort',
+                                () => reject(new Error('aborted')),
+                                { once: true },
+                            ),
+                        )
+                    },
+                ).catch((error) => error.message)
+                await vi.advanceTimersByTimeAsync(deadline - 1)
+                expect(signal?.aborted).toBe(false)
+                await vi.advanceTimersByTimeAsync(1)
+                expect(await result).toBe('aborted')
+                expect(vi.getTimerCount()).toBe(0)
+            } finally {
+                vi.useRealTimers()
+            }
+        },
+    )
     it('the deadline includes a real HTTP response body that stalls after its headers', async () => {
         const server = createServer((_request, response) => {
             response.writeHead(200, { 'Content-Type': 'application/json' })

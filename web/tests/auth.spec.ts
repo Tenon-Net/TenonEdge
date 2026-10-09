@@ -2570,3 +2570,262 @@ test('HTTP live sample preserves exact numbers, requires explicit inference and 
         }
     }
 })
+
+test('MQTT capture marks retained data, preserves exact values, adopts samples explicitly and cancels or times out cleanly', async ({
+    page,
+}) => {
+    test.setTimeout(65000)
+    const requests: string[] = []
+    const sockets = new Set<Socket>()
+    let payload: string | null = '{"value":9223372036854775807,"extra":42}'
+    const send = (socket: Socket, header: number, body: Buffer) => {
+        let length = body.length
+        const prefix = [header]
+        do {
+            const digit = length % 128
+            length = Math.floor(length / 128)
+            prefix.push(digit | (length > 0 ? 128 : 0))
+        } while (length > 0)
+        socket.write(Buffer.concat([Buffer.from(prefix), body]))
+    }
+    const peer = createTcpServer((socket) => {
+        sockets.add(socket)
+        socket.on('close', () => sockets.delete(socket))
+        let pending = Buffer.alloc(0)
+        socket.on('data', (chunk) => {
+            pending = Buffer.concat([pending, chunk])
+            while (pending.length >= 2) {
+                let count = 1,
+                    length = 0,
+                    multiplier = 1,
+                    complete = false
+                for (; count < Math.min(pending.length, 5); count++) {
+                    const digit = pending[count]
+                    length += (digit & 127) * multiplier
+                    multiplier *= 128
+                    if (!(digit & 128)) {
+                        count++
+                        complete = true
+                        break
+                    }
+                }
+                if (!complete || pending.length < count + length) return
+                const kind = pending[0] >> 4
+                const body = pending.subarray(count, count + length)
+                pending = pending.subarray(count + length)
+                if (kind === 1) {
+                    expect(body[7] & 2).toBe(2)
+                    const id = body
+                        .subarray(12, 12 + body.readUInt16BE(10))
+                        .toString()
+                    expect(id).toMatch(/^te-sample-/)
+                    socket.write(Buffer.from([0x20, 2, 0, 0]))
+                } else if (kind === 8) {
+                    const topic = body
+                        .subarray(4, 4 + body.readUInt16BE(2))
+                        .toString()
+                    requests.push(topic)
+                    socket.write(Buffer.from([0x90, 3, body[0], body[1], 0]))
+                    if (payload != null) {
+                        const topicBytes = Buffer.from(topic)
+                        const prefix = Buffer.alloc(2)
+                        prefix.writeUInt16BE(topicBytes.length)
+                        send(
+                            socket,
+                            0x31,
+                            Buffer.concat([
+                                prefix,
+                                topicBytes,
+                                Buffer.from(payload),
+                            ]),
+                        )
+                    }
+                } else if (kind === 12) socket.write(Buffer.from([0xd0, 0]))
+            }
+        })
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string')
+        throw new Error('fixture-address')
+    let restore: (() => Promise<void>) | undefined
+    try {
+        await openPointEditor(page)
+        const session = await (
+            await page.request.get('/api/edge-admin/v1/auth/session')
+        ).json()
+        const headers = { 'X-CSRF-Token': session.csrfToken }
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        const allowed = await page.request.put(policyUrl, {
+            headers,
+            data: {
+                ...policy,
+                expectedVersion: policy.version,
+                version: undefined,
+                localPorts: [...policy.localPorts, address.port],
+            },
+        })
+        expect(allowed.status()).toBe(200)
+        const allowedVersion = (await allowed.json()).version
+        restore = async () => {
+            expect(
+                (
+                    await page.request.put(policyUrl, {
+                        headers,
+                        data: {
+                            expectedVersion: allowedVersion,
+                            networks: policy.networks,
+                            localPorts: policy.localPorts,
+                        },
+                    })
+                ).status(),
+            ).toBe(200)
+        }
+        const version = (
+            await (
+                await page.request.get('/api/edge-admin/v1/connections')
+            ).json()
+        ).version
+        const connectionResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: version,
+                    key: 'mqtt-sample',
+                    name: 'MQTT 抓取连接',
+                    kind: 'mqtt',
+                    mqtt: {
+                        host: '127.0.0.1',
+                        port: address.port,
+                        clientId: 'must-not-use-production-id',
+                    },
+                },
+            },
+        )
+        expect(connectionResponse.status()).toBe(200)
+        const connection = await connectionResponse.json()
+        const deviceResponse = await page.request.post(
+            '/api/edge-admin/v1/devices',
+            {
+                headers,
+                data: {
+                    expectedVersion: connection.version,
+                    key: 'mqtt-sample',
+                    name: 'MQTT 抓取设备',
+                    kind: 'mqtt',
+                    connectionId: connection.connection.id,
+                },
+            },
+        )
+        expect(deviceResponse.status()).toBe(200)
+        const device = await deviceResponse.json()
+        const inputUrl = `/api/edge-admin/v1/devices/${device.device.id}/inputs`
+        const inputResponse = await page.request.post(inputUrl, {
+            headers,
+            data: {
+                expectedVersion: device.version,
+                key: 'values',
+                name: 'MQTT 抓取来源',
+                mqtt: {
+                    topicFilter: 'values',
+                    qos: 0,
+                    fields: [{ key: 'value', path: '/value', type: 'integer' }],
+                },
+            },
+        })
+        expect(inputResponse.status()).toBe(200)
+        const before = await (await page.request.get(inputUrl)).json()
+        await page.goto(`/devices/${device.device.id}/inputs`)
+        await page
+            .getByRole('button', { name: /MQTT 抓取来源 \(values\)/ })
+            .click()
+        const panel = page.getByRole('region', {
+            name: '当前 MQTT 来源实时抓取',
+            exact: true,
+        })
+        await page.getByLabel('MQTT Topic', { exact: true }).fill('unsaved')
+        await panel
+            .getByRole('button', { name: '抓取一条消息', exact: true })
+            .click()
+        await expect(panel.getByRole('status')).toContainText('success')
+        expect(requests).toEqual(['unsaved'])
+        await expect(panel).toContainText('保留消息：')
+        await expect(panel).toContainText('9223372036854775807')
+        await expect(panel).toContainText('超过 JavaScript 安全整数范围')
+        expect(await (await page.request.get(inputUrl)).json()).toEqual(before)
+        const use = panel.getByRole('button', {
+            name: '用作字段推断样本',
+            exact: true,
+        })
+        await page.getByLabel('MQTT Topic', { exact: true }).fill('changed')
+        await expect(use).toBeDisabled()
+        await page.getByLabel('MQTT Topic', { exact: true }).fill('unsaved')
+        await use.click()
+        await expect(
+            page.getByRole('textbox', { name: '临时 JSON 样本', exact: true }),
+        ).toHaveValue(payload)
+        await page
+            .getByRole('button', { name: '解析样本字段', exact: true })
+            .click()
+        await page.getByLabel('选择样本字段 /extra', { exact: true }).check()
+        await page
+            .getByRole('button', { name: '添加选中字段', exact: true })
+            .click()
+        expect(await (await page.request.get(inputUrl)).json()).toEqual(before)
+        await page
+            .getByRole('button', { name: '保存来源草稿', exact: true })
+            .click()
+        await expect(panel).toHaveCount(0)
+        const after = await (await page.request.get(inputUrl)).json()
+        expect(after.inputs[0].mqtt.topicFilter).toBe('unsaved')
+        expect(after.inputs[0].mqtt.fields).toContainEqual(
+            expect.objectContaining({ path: '/extra', type: 'number' }),
+        )
+        await page
+            .getByRole('button', { name: /MQTT 抓取来源 \(values\)/ })
+            .click()
+        for (const body of [
+            '{"password":"fixture-private","value":42}',
+            JSON.stringify({ value: '中'.repeat(40000) }),
+        ]) {
+            payload = body
+            await panel
+                .getByRole('button', { name: '抓取一条消息', exact: true })
+                .click()
+            await expect(panel.getByRole('status')).toBeVisible()
+            await expect(use).toBeDisabled()
+            await expect(panel).toContainText('结果已脱敏或截断')
+            await expect(panel).not.toContainText('fixture-private')
+        }
+        payload = null
+        await panel
+            .getByRole('button', { name: '抓取一条消息', exact: true })
+            .click()
+        await expect.poll(() => sockets.size).toBe(1)
+        await panel
+            .getByRole('button', { name: '取消抓取', exact: true })
+            .click()
+        await expect.poll(() => sockets.size).toBe(0)
+        await panel
+            .getByRole('button', { name: '抓取一条消息', exact: true })
+            .click()
+        await expect(panel.getByRole('status')).toContainText('timeout', {
+            timeout: 35000,
+        })
+        await expect(panel).toContainText('采样超时：整次最多 30 秒')
+        await expect.poll(() => sockets.size).toBe(0)
+        expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({})
+        expect(await page.evaluate(() => ({ ...sessionStorage }))).toEqual({})
+    } finally {
+        try {
+            await restore?.()
+        } finally {
+            for (const socket of sockets) socket.destroy()
+            await new Promise<void>((resolve, reject) =>
+                peer.close((error) => (error ? reject(error) : resolve())),
+            )
+        }
+    }
+})

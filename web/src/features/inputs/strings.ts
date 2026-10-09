@@ -1,4 +1,17 @@
 export const inputStrings = {
+    mqttPreview: {
+        title: '当前 MQTT 来源实时抓取',
+        notice: '使用已保存连接与凭证，以独立随机 ClientId 临时订阅当前主题；不改变正式订阅、不保存或应用。最多等待 30 秒。未映射上游时间时，接收时间不代表设备采样时间。',
+        run: '抓取一条消息',
+        waiting: '正在等待消息…',
+        cancel: '取消抓取',
+        timeout:
+            '采样超时：整次最多 30 秒，建连和订阅还受连接超时限制。请检查主题、权限与上游发布状态。',
+        retained: '保留消息：这是 Broker 补发的最后一条样本，不一定是新采样。',
+        duplicate: 'DUP 标记：此消息可能是重复投递。',
+        topicOmitted: '主题因过长或包含敏感内容未显示。',
+        receivedAt: '接收时间',
+    },
     httpPreview: {
         sourceTitle: '当前 HTTP 来源实时采样',
         deviceTitle: '整台 HTTP 设备实时采样',
@@ -143,7 +156,7 @@ export const inputStrings = {
         connectionError: '模拟连接错误比例',
     },
     title: '数据来源与点位',
-    notice: '来源与点表保存在设备所属的全局草稿，保存不会读取设备或应用配置。支持 Modbus、MQTT、HTTP 与模拟来源；支持粘贴样本推断字段；实时抓取尚未接入。',
+    notice: '来源与点表保存在设备所属的全局草稿，保存不会读取设备或应用配置。支持 Modbus、MQTT、HTTP 与模拟来源；支持粘贴样本推断字段，以及显式触发 Modbus 读取、HTTP 采样和 MQTT 单条抓取；采样不会保存配置。',
     device: '所属设备：{{name}}（{{key}}）',
     new: '新建采集组',
     refresh: '刷新来源与设备',

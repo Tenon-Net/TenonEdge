@@ -107,7 +107,7 @@ export const connectionStrings = {
     },
     notice: '这些连接保存在网关配置库的全局草稿中，刷新页面后仍保留。保存、启停或删除草稿均不改变运行配置；编译与应用界面尚在实施。',
     security:
-        '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。Modbus/MQTT/HTTP 可显式测试连接；Modbus 设备可在来源页读取一次；客户端证书、信任证书及 MQTT/HTTP 实时抓取尚未接入。',
+        '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。Modbus/MQTT/HTTP 可显式测试连接；Modbus、MQTT、HTTP 设备可在来源页显式读取或采样；客户端证书和信任证书表单尚未接入。',
     add: '新建连接',
     edit: '编辑连接',
     view: '查看连接',

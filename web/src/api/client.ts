@@ -2,11 +2,32 @@ import createClient from 'openapi-fetch'
 import type { paths } from './schema'
 import { ApiError } from './errors'
 
+// Explicit long operations need time for the server deadline and bounded cleanup/response.
+// Keep ordinary management reads/writes short; do not disable deadlines globally.
+function managementDeadline(request: Request) {
+    const path = new URL(request.url).pathname
+    if (request.method === 'POST') {
+        if (
+            /^\/api\/edge-admin\/v1\/devices\/\d+\/preview\/(mqtt|http|modbus)$/.test(
+                path,
+            )
+        )
+            return 35000
+        if (
+            /^\/api\/edge-admin\/v1\/connections\/test\/(mqtt|http|modbus)$/.test(
+                path,
+            )
+        )
+            return 65000
+    }
+    return 15000
+}
+
 // No AbortSignal.any/timeout: Chrome 111 and ordinary HTTP must work too.
 export async function fetchWithDeadline(
     request: Request,
     fetcher: typeof fetch = fetch,
-    milliseconds = 15000,
+    milliseconds = managementDeadline(request),
 ) {
     const controller = new AbortController()
     const abort = () => controller.abort(request.signal.reason)

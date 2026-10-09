@@ -339,6 +339,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/preview/mqtt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 使用已保存设备连接显式抓取 MQTT 来源的一条消息，不保存、应用或入发送队列
+         * @description Source 为未保存来源；否则须按 InputId 选择已保存来源。独立随机 ClientId/CleanSession 诊断订阅，不改变正式订阅或其确认；整次最多 30 秒，显示最多 64 KiB，标记保留消息。
+         */
+        post: operations["previewMqttSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -1152,6 +1172,24 @@ export interface components {
             /** @default false */
             retainExisting: boolean;
             expectedDraftVersion?: null | string;
+        };
+        MqttReadPreviewRequest: {
+            expectedVersion: string;
+            /** Format: int64 */
+            inputId?: null | number | string;
+            source?: null | components["schemas"]["MqttSourceDraft"];
+        };
+        MqttReadPreviewResult: {
+            code: string;
+            topic: null | string;
+            topicOmitted: boolean;
+            retained: boolean;
+            duplicate: boolean;
+            /** Format: int32 */
+            qos: null | number | string;
+            /** Format: double */
+            elapsedMs: number | string;
+            preview: null | components["schemas"]["JsonReadPreviewResult"];
         };
         MqttSourceDraft: {
             topicFilter: string;
@@ -2210,6 +2248,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HttpDevicePreviewResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    previewMqttSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MqttReadPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MqttReadPreviewResult"];
                 };
             };
             /** @description Bad Request */

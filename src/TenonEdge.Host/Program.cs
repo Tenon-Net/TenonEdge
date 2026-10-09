@@ -51,6 +51,7 @@ app.MapManagementApi()
     .MapInputDraftEndpoints()
     .MapModbusReadPreviewEndpoints()
     .MapHttpReadPreviewEndpoints()
+    .MapMqttReadPreviewEndpoints()
     .MapPointCsvEndpoints();
 
 // 后台服务因未处理的异常结束时宿主随之停止，这里改用非零退出码，使服务管理器把它当作失败并重启（启动保护据此计数）。

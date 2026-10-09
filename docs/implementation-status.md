@@ -2465,6 +2465,27 @@ Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test Te
 
 未重跑全量后端/前端，完整基线仍见 §2.120。尚缺宿主草稿快照与角色/CSRF/额度 API、页面抓取及 retained 提示/样本推断接线、外部 Broker 兼容验证；图编译/应用/回滚仍未完成。某些 Broker ACL 限定固定 ClientId 时可能拒绝随机诊断身份，按安全错误报告，不冒用正式 ClientId 或绕过 ACL。
 
+### 2.122 T3-07 MQTT 抓取 API、网页与长操作客户端期限（2026-10-10）
+
+接续 §2.121，实施功能 §3.4/4.1 的单来源 MQTT 实时抓取；不把本节记作完整 T3-07、图编译或应用链路完成。
+
+- `POST /devices/{deviceId}/preview/mqtt` 采用 Configurator/Administrator、本地会话/CSRF、1 MiB 请求体限制，复用全局 4 / 每会话 2 的预览准入。Source 可传当前未保存来源；否则须指定归属该设备的 InputId。版本、设备/连接类型、来源归属和字段/Topic/QoS/时间配置在短事务中核对；联网只持有纯快照，不保存草稿或发送记录。
+- 已保存连接和凭证由后端取得，不能由来源覆盖地址或密码。凭证记录存在但密文失效/接收方失配时仍要求认证，不降级匿名；另补“快照为匿名、执行时已新增绑定凭证”检查，返回 `credential.changed`，订阅与返回前也复核。这不等于解决 §2.104 中正式运行时的完整凭证轮换栅栏问题。
+- `MqttReadPreview` 单例使用现有 `RuntimeHost.InFlight` 的原始缓冲分区，没有另造预算或第二运行时；临时客户端仍经 §2.121 的诊断租约拥有/释放，不修改正式订阅和持久确认。真实 OpenAPI 导出后重新生成 TypeScript 类型，并更新权限/操作清单。
+- 来源编辑页增加显式抓取、取消、清除结果、Topic/QoS/接收时间/原文值与质量展示；RETAIN 明确提示“Broker 补发的最后一条样本，不一定是新采样”，DUP 与主题省略单独提示。完整且未脱敏的结果可显式采用为推断样本；来源编辑后旧结果不可采用，仍须解析、勾选、添加、保存才改变草稿。结果只在组件内存，离开或取消时中止请求，不进查询缓存或浏览器存储。
+
+关键失败与修复：浏览器首个真实 30 秒等待用例失败（`/tmp/tenonedge-mqtt-ui-targeted.log`），不是 Broker 或服务端超时失效，而是公共客户端 `fetchWithDeadline` 的 **15 秒**默认期限提前取消了请求，页面只能显示通用错误。按确定的 POST 路径给设备预览 35 秒、连接测试 65 秒（覆盖服务端最多 30/60 秒并留响应余量），普通查询/写入仍为 15 秒；继续覆盖读取整个响应正文、调用者取消、会话代次和不自动重试，不使用要求安全上下文的新 AbortSignal API。增加 9 个可控定时器用例验证协议路径、普通读写及错误方法的不同期限。超时文案区分整次上限与较短的连接/订阅期限，不能把所有超时都说成真的等待了 30 秒。同步更新来源/连接页面的旧“实时抓取尚未接入”说明。
+
+API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release --filter 'FullyQualifiedName~MqttReadPreview' --logger trx --results-directory /tmp/tenonedge-mqtt-api-targeted` **19 项通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-api-targeted.log`）。API 场景使用真实 Mosquitto，覆盖管理员/配置人员/只读角色、保留消息和精确 int64、未保存 Topic 不改草稿、匿名/CSRF/版本/归属/非法 Filter、缺少来源、共用准入，以及已有凭证记录的密文被夹具置空时不匿名联网；操作结束共享原始缓冲归零。新增匿名快照凭证变更用例随完整回归执行。
+
+首轮完整后端 **1073 单元通过，集成 1017 通过 / 3 失败**（`/tmp/tenonedge-mqtt-api-full.log`）：新增路由和 operationId 在三个静态清单中未按原有字典序放置，实际结果正确但期望顺序错误；调整清单顺序，未删除权限或 OpenAPI 检查。最终 Linux x64、SDK 10.0.401 / .NET 10.0.12、Release，`dotnet test --no-restore -c Release --blame-hang-timeout 5m --blame-hang-dump-type none --logger trx --results-directory /tmp/tenonedge-mqtt-api-full-final` **1073 单元 + 1020 集成 = 2093 项通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-api-full-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-mqtt-api-full-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过。`dotnet format --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-mqtt-api-format-verify.log`），Release 构建 0 警告/错误。
+
+最终前端环境 Node 22.23.2 / npm 11.21.0 / Chromium 156.0.8078.4，实际命令使用 `npx --yes npm@11.21.0`：`npm run build`（含 tsc）、lint、format:check 通过；`npm test -- --reporter=default --reporter=json --outputFile=reports/unit.json` **128 Vitest 通过**（`/tmp/tenonedge-mqtt-ui-unit-final.log`）。`TENONEDGE_TEST_URL=http://192.168.0.88:18082 PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json npm run test:e2e -- --reporter=list,json` **20 Playwright 通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-ui-full-final.log`，约 1.4 分钟；新增 MQTT 场景 32.0 秒）。`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 非零/无跳过门禁通过；`git diff --check` 通过。
+
+浏览器场景经真实 Host 与本机 TCP MQTT 夹具检查 CONNECT 随机身份/CleanSession、未保存 Topic、retained 标记、精确 `9223372036854775807`、来源变化禁用旧样本、仅显式保存新增字段/Topic、敏感与截断样本禁止采用、取消后真实连接关闭、实际等待 30 秒后显示服务端 timeout、local/sessionStorage 为空。结束恢复出站策略、关闭夹具；Node 服务仅为测试，不进入产品部署。
+
+剩余：外部 Broker/实物与更完整证书场景尚未验证；图编译与路线样本预览（T3-05）、应用/回滚（T3-06）、测试发送与其余诊断场景尚未完成，不能据此宣称网页独立配置并启动采集路线已经可用。后续首先推进图编译/预览，不扩展协议或引入脚本引擎。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

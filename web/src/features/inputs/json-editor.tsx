@@ -1,3 +1,4 @@
+import { MqttPreviewPanel } from './mqtt-preview-panel'
 import { HttpPreviewPanel } from './http-preview-panel'
 import { inputRequest } from './model'
 import { SampleEditor } from './sample-editor'
@@ -223,7 +224,21 @@ export function JsonSourceEditor({
                                           blocked={readOnly}
                                       />
                                   )
-                                : undefined
+                                : form.kind === 'mqtt'
+                                  ? (accept) => (
+                                        <MqttPreviewPanel
+                                            deviceId={deviceId}
+                                            version={form.version}
+                                            inputId={form.id}
+                                            source={() =>
+                                                inputRequest(form, [], 'offset')
+                                                    .mqtt!
+                                            }
+                                            onSample={accept}
+                                            blocked={readOnly}
+                                        />
+                                    )
+                                  : undefined
                         }
                         append={(fields) =>
                             patch({ fields: [...form.fields, ...fields] })
