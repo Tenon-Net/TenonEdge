@@ -2563,6 +2563,16 @@ API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release 
 
 环境沿用 §2.126。web/ 中执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 均通过；初次 lint 的控制字符正则警告已以局部说明处理，最终无警告。`run test -- --reporter=json --outputFile=reports/unit.json` **155 通过、0 失败/跳过**（`/tmp/tenonedge-route-codec-tests-final.log`）。`run build` 通过（`/tmp/tenonedge-route-codec-build.log`）；`TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'canvas|real setup'` **3 通过**，使用临时真实 Host 与 Chromium 156，覆盖首次设置/本地会话和既有画布拖连/属性/历史/复制交互（`/tmp/tenonedge-route-codec-browser.log`）。这些浏览器用例不是“已保存路线往返”的证据；实际 API 请求接入、节点属性表单及浏览器精度往返仍待下一子项。后端未改动，未重跑其全套测试；既有 §2.126 的 2199 项是前批基线，不计为本批新执行。未更新常驻调试实例、未推送。
 
+### 2.128 T3-05 路线浏览器 API 保精度传输边界（2026-10-10）
+
+接续 §2.127，新增 `web/src/features/routes/api.ts`，为下一步路线页面提供列表、详情、新建/更新、复制、删除和静态编译调用。全部使用已有 openapi-fetch 客户端与生成路径/请求类型，不创建另一套 fetch/会话/CSRF 机制。
+
+- 详情、新建/更新及复制响应采用 `parseAs: text`，按保精度解析器读取完整响应后解码 graph；不先经过 response.json。响应信封允许额外 64 KiB 元数据，图仍单独按 1 MiB/16 层核查。配置常量保留数字 token 与数字/字符串类型。
+- 写请求使用真实类型化图对象与局部 bodySerializer；整份请求按 1 MiB 预算检查后输出原始数值 token，避免序列化 RouteNumber 包装对象或舍入。新增与修改分别 POST/PUT，复制使用专用端点，删除和编译传入显式版本。传入/读回实体 ID 须为正安全整数，拒绝超出浏览器无损编号范围和非整数字面量。
+- 不改变调用者的编辑表单与所读版本，不静默重试 409/500/403/401；沿用旧会话响应拦截、未认证会话清除和查询 AbortSignal。此模块不调用应用接口，静态编译失败按结构化结果返回。
+
+web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 通过；`run test -- --reporter=json --outputFile=reports/unit.json` **171 通过、0 失败/跳过**（`/tmp/tenonedge-route-api-tests-final.log`）。新增 16 项测试通过实际 openapi-fetch 序列化/中间件，以可控 fetch 响应核对精确 int64/小数请求正文及响应、CSRF/Cookie、POST/PUT/复制、失败不重试/不改编辑、旧账号响应、取消、整请求大小、编号/形状拒绝和版本化删除/编译。**这是客户端传输单元测试，不是浏览器已对真实服务器保存路线的验收**；本批没有重跑后端或浏览器，画布页面消费此模块及真实 HTTP 往返仍待下一子项。环境沿用 §2.127，未更新调试实例、未推送。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

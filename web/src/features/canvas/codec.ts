@@ -13,7 +13,7 @@ import {
     type RouteJson,
 } from './json'
 
-function object(value: RouteJson): Record<string, RouteJson> {
+export function routeObject(value: RouteJson): Record<string, RouteJson> {
     if (
         !value ||
         typeof value !== 'object' ||
@@ -48,11 +48,11 @@ export function defaultConfig(kind: NodeKind): string {
 }
 /** Reject ambiguous JSON, not incomplete graph semantics; the server compiles those. */
 export function normalizeConfigText(text: string): string {
-    return writeRouteJson(object(readRouteJson(text)))
+    return writeRouteJson(routeObject(readRouteJson(text)))
 }
 /** Input must be response text, never a response.json() value. */
 export function decodeGraph(text: string): GraphDocument {
-    const graph = object(readRouteJson(text))
+    const graph = routeObject(readRouteJson(text))
     keys(graph, ['schemaVersion', 'nodes', 'edges', 'layout'])
     one(graph.schemaVersion)
     if (
@@ -64,7 +64,7 @@ export function decodeGraph(text: string): GraphDocument {
         throw new Error('graph')
     const seen = new Set<string>()
     const nodes = graph.nodes.map((value) => {
-        const node = object(value)
+        const node = routeObject(value)
         keys(node, ['id', 'type', 'version', 'name', 'config'])
         one(node.version)
         const nodeId = id(node.id)
@@ -84,11 +84,11 @@ export function decodeGraph(text: string): GraphDocument {
             id: nodeId,
             kind,
             name,
-            configText: writeRouteJson(object(node.config)),
+            configText: writeRouteJson(routeObject(node.config)),
         }
     })
     const edges = graph.edges.map((value, index) => {
-        const edge = object(value)
+        const edge = routeObject(value)
         keys(edge, ['source', 'target'])
         return {
             id: `edge-${index}`,
@@ -96,12 +96,12 @@ export function decodeGraph(text: string): GraphDocument {
             target: id(edge.target),
         }
     })
-    const layout = object(graph.layout)
+    const layout = routeObject(graph.layout)
     keys(layout, ['nodes'])
     const positions: Record<string, Position> = Object.fromEntries(
-        Object.entries(object(layout.nodes)).map(([key, value]) => {
+        Object.entries(routeObject(layout.nodes)).map(([key, value]) => {
             if (!seen.has(key)) throw new Error('graph')
-            const point = object(value)
+            const point = routeObject(value)
             keys(point, ['x', 'y'])
             if (
                 !(point.x instanceof RouteNumber) ||
@@ -130,22 +130,25 @@ export function decodeGraph(text: string): GraphDocument {
         layout: { positions },
     }
 }
-export function encodeGraph(doc: GraphDocument): string {
-    const text = writeRouteJson({
+export function graphRequest(doc: GraphDocument) {
+    return {
         schemaVersion: doc.schemaVersion,
         nodes: doc.definition.nodes.map((node) => ({
             id: node.id,
             type: node.kind,
             version: 1,
             name: node.name,
-            config: object(readRouteJson(node.configText)),
+            config: routeObject(readRouteJson(node.configText)),
         })),
         edges: doc.definition.edges.map((edge) => ({
             source: edge.source,
             target: edge.target,
         })),
         layout: { nodes: doc.layout.positions },
-    })
+    }
+}
+export function encodeGraph(doc: GraphDocument): string {
+    const text = writeRouteJson(graphRequest(doc))
     decodeGraph(text) // same structural guard in both directions; no topology rejection
     return text
 }

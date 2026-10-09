@@ -16,10 +16,14 @@ export type RouteJson =
 export const maxGraphBytes = 1024 * 1024
 
 /** Bounded token reader works without JSON.rawJSON or reviver source support. */
-export function readRouteJson(text: string): RouteJson {
+export function readRouteJson(
+    text: string,
+    maximumBytes = maxGraphBytes,
+    maximumDepth = 16,
+): RouteJson {
     if (
-        text.length > maxGraphBytes ||
-        new TextEncoder().encode(text).length > maxGraphBytes
+        text.length > maximumBytes ||
+        new TextEncoder().encode(text).length > maximumBytes
     )
         throw new Error('limit')
     // Native syntax validation only. Its rounded result is deliberately discarded.
@@ -30,7 +34,7 @@ export function readRouteJson(text: string): RouteJson {
         ) ?? []
     let cursor = 0
     function read(depth: number): RouteJson {
-        if (depth > 16) throw new Error('limit')
+        if (depth > maximumDepth) throw new Error('limit')
         const token = tokens[cursor++]
         if (token === '{') {
             const entries: [string, RouteJson][] = []
