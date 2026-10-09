@@ -1,4 +1,4 @@
-/** Product-owned local prototype format. Never contains React Flow state. */
+/** Product-owned editor state. Use codec.ts for the persisted API format. */
 export const nodeKinds = [
     'input.modbus',
     'input.mqtt',
@@ -11,7 +11,12 @@ export const nodeKinds = [
 ] as const
 export type NodeKind = (typeof nodeKinds)[number]
 export type Position = { x: number; y: number }
-export type GraphNode = { id: string; kind: NodeKind; name: string }
+export type GraphNode = {
+    id: string
+    kind: NodeKind
+    name: string
+    configText: string
+}
 export type GraphEdge = { id: string; source: string; target: string }
 export type GraphDocument = {
     schemaVersion: 1
@@ -73,6 +78,11 @@ export function topologyHints(doc: GraphDocument) {
         .map((n) => n.id)
 }
 export function checkPosition(position: Position) {
-    if (!Number.isFinite(position.x) || !Number.isFinite(position.y))
+    if (
+        !Number.isFinite(position.x) ||
+        !Number.isFinite(position.y) ||
+        Math.abs(position.x) > 10000000 ||
+        Math.abs(position.y) > 10000000
+    )
         throw new GraphEditError('position')
 }

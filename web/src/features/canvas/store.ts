@@ -1,4 +1,5 @@
 import { createStore } from 'zustand/vanilla'
+import { defaultConfig, normalizeConfigText, encodeGraph } from './codec'
 import {
     checkPosition,
     connectionError,
@@ -18,6 +19,8 @@ type State = {
     selectedNodes: string[]
     selectedEdges: string[]
     clipboard: GraphDocument | null
+    load: (document: GraphDocument) => void
+    configure: (id: string, text: string) => void
     select: (nodes: string[], edges: string[]) => void
     add: (kind: NodeKind, name: string, position: Position) => string
     connect: (source: string, target: string) => void
@@ -31,7 +34,15 @@ type State = {
 }
 export function createGraphEditor() {
     let sequence = 0
-    const nextId = () => `g${++sequence}`
+    const usedIds = new Set<string>()
+    const nextId = () => {
+        let id: string
+        do {
+            id = `g${++sequence}`
+        } while (usedIds.has(id))
+        usedIds.add(id)
+        return id
+    }
     return createStore<State>((set, get) => {
         const commit = (document: GraphDocument) => {
             const state = get()
@@ -50,6 +61,39 @@ export function createGraphEditor() {
             selectedNodes: [],
             selectedEdges: [],
             clipboard: null,
+            load: (document) => {
+                encodeGraph(document)
+                const copy = structuredClone(document)
+                usedIds.clear()
+                for (const item of [
+                    ...copy.definition.nodes,
+                    ...copy.definition.edges,
+                ])
+                    usedIds.add(item.id)
+                set({
+                    document: copy,
+                    past: [],
+                    future: [],
+                    selectedNodes: [],
+                    selectedEdges: [],
+                    clipboard: null,
+                })
+            },
+            configure: (id, text) => {
+                const configText = normalizeConfigText(text)
+                const doc = get().document
+                const document = {
+                    ...doc,
+                    definition: {
+                        ...doc.definition,
+                        nodes: doc.definition.nodes.map((node) =>
+                            node.id === id ? { ...node, configText } : node,
+                        ),
+                    },
+                }
+                encodeGraph(document)
+                commit(document)
+            },
             select: (selectedNodes, selectedEdges) =>
                 set({ selectedNodes, selectedEdges }),
             add: (kind, name, position) => {
@@ -62,7 +106,10 @@ export function createGraphEditor() {
                     ...doc,
                     definition: {
                         ...doc.definition,
-                        nodes: [...doc.definition.nodes, { id, kind, name }],
+                        nodes: [
+                            ...doc.definition.nodes,
+                            { id, kind, name, configText: defaultConfig(kind) },
+                        ],
                     },
                     layout: {
                         positions: {
@@ -190,7 +237,9 @@ export function createGraphEditor() {
                         ],
                     ),
                 )
-                commit({
+                for (const position of Object.values(positions))
+                    checkPosition(position)
+                const pasted = {
                     ...doc,
                     definition: {
                         nodes: [...doc.definition.nodes, ...nodes],
@@ -199,7 +248,9 @@ export function createGraphEditor() {
                     layout: {
                         positions: { ...doc.layout.positions, ...positions },
                     },
-                })
+                }
+                encodeGraph(pasted)
+                commit(pasted)
                 set({
                     selectedNodes: nodes.map((n) => n.id),
                     selectedEdges: [],

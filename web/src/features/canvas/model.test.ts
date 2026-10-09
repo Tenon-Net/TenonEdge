@@ -18,7 +18,12 @@ describe('local graph document and history', () => {
         const { state, add } = fixture()
         const id = add('input.modbus')
         expect(state().document.definition.nodes).toEqual([
-            { id, kind: 'input.modbus', name: 'input.modbus' },
+            {
+                id,
+                kind: 'input.modbus',
+                name: 'input.modbus',
+                configText: '{"sourceIds":[]}',
+            },
         ])
         expect(state().document.layout.positions).toEqual({
             [id]: { x: 10, y: 20 },

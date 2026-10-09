@@ -2552,6 +2552,17 @@ API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release 
 
 完整无输出样本预览、画布属性/引用与保精度读取、应用/回滚仍待后续；本节不是浏览器执行路线、外部设备、凭证准备或完整 T3 验收。
 
+### 2.127 T3-05 画布持久化格式转换与保精度编辑状态（2026-10-10）
+
+接续 §2.126，先补画布接入真实草稿必需的数据边界；本节不是路线 CRUD 页面或应用功能完成。
+
+- 新增 `canvas/codec.ts`，显式转换后端 nodes/type/version/config、edges 和 layout.nodes 与本地编辑器 definition/kind/configText/layout.positions；不提交 React Flow 私有状态。拒绝未知图/节点版本、未知形状、重复节点和非法坐标；保留可保存但不可执行的悬空、重复边和环，语义错误仍由服务器编译。缺失布局使用确定性显示位置。
+- 节点配置在 Zustand 历史/剪贴板中保存为 JSON 文本。`canvas/json.ts` 先用原生 JSON.parse 仅做语法校验并丢弃结果，再用有界 token reader 保留数值原文；序列化按 token 写出，不把数字常量变成字符串。无需新增依赖、JSON.rawJSON 或新版 reviver source。重复对象成员（含转义同名）、超过 16 层或 1 MiB UTF-8 拒绝；生成 JSON 逐片累计字节预算再合并。不把此实现等同 Chrome 111 实机验证。
+- 编辑器新增 load/configure，载入新路线清空旧历史/选择/剪贴板，防御复制；生成新 ID 避开已加载 ID。配置修改与复制粘贴先验证整个持久化图大小，失败不改变文档/历史。坐标按后端 ±10,000,000 边界检查，粘贴偏移越界也原子拒绝。
+- 新增 27 个用例覆盖 int64、高精度小数、指数、负零、数字字符串类型、转义/原型键、重复成员、语法/大小/深度限制，以及载入—修改名称/位置—复制—撤销/重做—编码/解码保精度、版本/形状拒绝和失败原子性。没有使用普通 JSON.parse 的舍入结果保存配置。
+
+环境沿用 §2.126。web/ 中执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 均通过；初次 lint 的控制字符正则警告已以局部说明处理，最终无警告。`run test -- --reporter=json --outputFile=reports/unit.json` **155 通过、0 失败/跳过**（`/tmp/tenonedge-route-codec-tests-final.log`）。`run build` 通过（`/tmp/tenonedge-route-codec-build.log`）；`TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'canvas|real setup'` **3 通过**，使用临时真实 Host 与 Chromium 156，覆盖首次设置/本地会话和既有画布拖连/属性/历史/复制交互（`/tmp/tenonedge-route-codec-browser.log`）。这些浏览器用例不是“已保存路线往返”的证据；实际 API 请求接入、节点属性表单及浏览器精度往返仍待下一子项。后端未改动，未重跑其全套测试；既有 §2.126 的 2199 项是前批基线，不计为本批新执行。未更新常驻调试实例、未推送。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
