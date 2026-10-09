@@ -2576,74 +2576,8 @@ test('MQTT capture marks retained data, preserves exact values, adopts samples e
 }) => {
     test.setTimeout(65000)
     const requests: string[] = []
-    const sockets = new Set<Socket>()
     let payload: string | null = '{"value":9223372036854775807,"extra":42}'
-    const send = (socket: Socket, header: number, body: Buffer) => {
-        let length = body.length
-        const prefix = [header]
-        do {
-            const digit = length % 128
-            length = Math.floor(length / 128)
-            prefix.push(digit | (length > 0 ? 128 : 0))
-        } while (length > 0)
-        socket.write(Buffer.concat([Buffer.from(prefix), body]))
-    }
-    const peer = createTcpServer((socket) => {
-        sockets.add(socket)
-        socket.on('close', () => sockets.delete(socket))
-        let pending = Buffer.alloc(0)
-        socket.on('data', (chunk) => {
-            pending = Buffer.concat([pending, chunk])
-            while (pending.length >= 2) {
-                let count = 1,
-                    length = 0,
-                    multiplier = 1,
-                    complete = false
-                for (; count < Math.min(pending.length, 5); count++) {
-                    const digit = pending[count]
-                    length += (digit & 127) * multiplier
-                    multiplier *= 128
-                    if (!(digit & 128)) {
-                        count++
-                        complete = true
-                        break
-                    }
-                }
-                if (!complete || pending.length < count + length) return
-                const kind = pending[0] >> 4
-                const body = pending.subarray(count, count + length)
-                pending = pending.subarray(count + length)
-                if (kind === 1) {
-                    expect(body[7] & 2).toBe(2)
-                    const id = body
-                        .subarray(12, 12 + body.readUInt16BE(10))
-                        .toString()
-                    expect(id).toMatch(/^te-sample-/)
-                    socket.write(Buffer.from([0x20, 2, 0, 0]))
-                } else if (kind === 8) {
-                    const topic = body
-                        .subarray(4, 4 + body.readUInt16BE(2))
-                        .toString()
-                    requests.push(topic)
-                    socket.write(Buffer.from([0x90, 3, body[0], body[1], 0]))
-                    if (payload != null) {
-                        const topicBytes = Buffer.from(topic)
-                        const prefix = Buffer.alloc(2)
-                        prefix.writeUInt16BE(topicBytes.length)
-                        send(
-                            socket,
-                            0x31,
-                            Buffer.concat([
-                                prefix,
-                                topicBytes,
-                                Buffer.from(payload),
-                            ]),
-                        )
-                    }
-                } else if (kind === 12) socket.write(Buffer.from([0xd0, 0]))
-            }
-        })
-    })
+    const { peer, sockets } = mqttCapturePeer(() => payload, requests)
     await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
     const address = peer.address()
     if (!address || typeof address === 'string')
@@ -4150,6 +4084,254 @@ test('route HTTP onsite preview confirms one real read, preserves manual text an
         expect(calls).toEqual(['GET /values', 'GET /values'])
     } finally {
         peer.closeAllConnections()
+        await new Promise<void>((resolve) => peer.close(() => resolve()))
+    }
+})
+
+function mqttCapturePeer(payload: () => string | null, requests: string[]) {
+    const sockets = new Set<Socket>()
+    const send = (socket: Socket, header: number, body: Buffer) => {
+        let length = body.length
+        const prefix = [header]
+        do {
+            const digit = length % 128
+            length = Math.floor(length / 128)
+            prefix.push(digit | (length > 0 ? 128 : 0))
+        } while (length > 0)
+        socket.write(Buffer.concat([Buffer.from(prefix), body]))
+    }
+    const peer = createTcpServer((socket) => {
+        sockets.add(socket)
+        socket.on('close', () => sockets.delete(socket))
+        let pending = Buffer.alloc(0)
+        socket.on('data', (chunk) => {
+            pending = Buffer.concat([pending, chunk])
+            while (pending.length >= 2) {
+                let count = 1,
+                    length = 0,
+                    multiplier = 1,
+                    complete = false
+                for (; count < Math.min(pending.length, 5); count++) {
+                    const digit = pending[count]
+                    length += (digit & 127) * multiplier
+                    multiplier *= 128
+                    if (!(digit & 128)) {
+                        count++
+                        complete = true
+                        break
+                    }
+                }
+                if (!complete || pending.length < count + length) return
+                const kind = pending[0] >> 4
+                const body = pending.subarray(count, count + length)
+                pending = pending.subarray(count + length)
+                if (kind === 1) {
+                    expect(body[7] & 2).toBe(2)
+                    const id = body
+                        .subarray(12, 12 + body.readUInt16BE(10))
+                        .toString()
+                    expect(id).toMatch(/^te-sample-/)
+                    socket.write(Buffer.from([0x20, 2, 0, 0]))
+                } else if (kind === 8) {
+                    const topic = body
+                        .subarray(4, 4 + body.readUInt16BE(2))
+                        .toString()
+                    requests.push(topic)
+                    socket.write(Buffer.from([0x90, 3, body[0], body[1], 0]))
+                    const message = payload()
+                    if (message != null) {
+                        const topicBytes = Buffer.from(topic)
+                        const prefix = Buffer.alloc(2)
+                        prefix.writeUInt16BE(topicBytes.length)
+                        send(
+                            socket,
+                            0x31,
+                            Buffer.concat([
+                                prefix,
+                                topicBytes,
+                                Buffer.from(message),
+                            ]),
+                        )
+                    }
+                } else if (kind === 12) socket.write(Buffer.from([0xd0, 0]))
+                else if (kind === 3) requests.push('UNEXPECTED PUBLISH')
+            }
+        })
+    })
+    return { peer, sockets }
+}
+
+test('route MQTT onsite preview confirms diagnostic capture and marks retained values without publishing', async ({
+    page,
+}) => {
+    let payload: string | null = '{"value":9223372036854775807}'
+    const requests: string[] = []
+    const { peer, sockets } = mqttCapturePeer(() => payload, requests)
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string') throw new Error('listener')
+    try {
+        const { headers, saved } = await openFieldAnalysisRoute(
+            page,
+            'onsite-mqtt',
+        )
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        expect(
+            (
+                await page.request.put(policyUrl, {
+                    headers,
+                    data: {
+                        expectedVersion: policy.version,
+                        networks: policy.networks,
+                        localPorts: [...policy.localPorts, address.port],
+                    },
+                })
+            ).status(),
+        ).toBe(200)
+        const connectionResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: saved.version,
+                    key: 'onsite-mqtt',
+                    name: 'MQTT',
+                    kind: 'mqtt',
+                    mqtt: {
+                        host: '127.0.0.1',
+                        port: address.port,
+                        clientId: 'must-not-use-production-id',
+                    },
+                },
+            },
+        )
+        expect(connectionResponse.status()).toBe(200)
+        const connection = await connectionResponse.json()
+        const deviceResponse = await page.request.post(
+            '/api/edge-admin/v1/devices',
+            {
+                headers,
+                data: {
+                    expectedVersion: connection.version,
+                    key: 'onsite-mqtt-device',
+                    name: 'MQTT',
+                    kind: 'mqtt',
+                    connectionId: connection.connection.id,
+                },
+            },
+        )
+        expect(deviceResponse.status()).toBe(200)
+        const device = await deviceResponse.json()
+        const inputResponse = await page.request.post(
+            '/api/edge-admin/v1/devices/' + device.device.id + '/inputs',
+            {
+                headers,
+                data: {
+                    expectedVersion: device.version,
+                    key: 'values',
+                    name: 'Values',
+                    mqtt: {
+                        topicFilter: 'route/values',
+                        fields: [
+                            { key: 'f000', path: '/value', type: 'integer' },
+                        ],
+                    },
+                },
+            },
+        )
+        expect(inputResponse.status()).toBe(200)
+        const input = await inputResponse.json()
+        const graph = saved.route.graph
+        graph.nodes.find((node: { id: string }) => node.id === 'in').type =
+            'input.mqtt'
+        graph.nodes.find(
+            (node: { id: string }) => node.id === 'in',
+        ).config.sourceIds = [input.input.id]
+        const output = graph.nodes.find(
+            (node: { id: string }) => node.id === 'out',
+        )
+        output.type = 'output.mqtt'
+        output.config = {
+            connectionId: connection.connection.id,
+            topic: 'different/output',
+            qos: 0,
+            payload: output.config.payload,
+        }
+        expect(
+            (
+                await page.request.put(
+                    '/api/edge-admin/v1/routes/' + saved.route.id,
+                    {
+                        headers,
+                        data: {
+                            expectedVersion: input.version,
+                            key: saved.route.key,
+                            name: saved.route.name,
+                            enabled: false,
+                            graph,
+                        },
+                    },
+                )
+            ).status(),
+        ).toBe(200)
+        await page.reload()
+        await page
+            .getByRole('button', { name: '打开 onsite-mqtt', exact: true })
+            .click()
+        const panel = page.getByRole('region', {
+            name: '路线样本预览',
+            exact: true,
+        })
+        await panel
+            .getByLabel('预览数据来源', { exact: true })
+            .selectOption('input.mqtt:' + input.input.id)
+        const sample = panel.getByLabel('手工 JSON 样本（不保存）', {
+            exact: true,
+        })
+        await sample.fill('manual text is not a captured message')
+        const run = panel.getByRole('button', {
+            name: '抓取 MQTT 一条消息并预览',
+            exact: true,
+        })
+        page.once('dialog', (dialog) => dialog.dismiss())
+        await run.click()
+        expect(requests).toEqual([])
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        const body = panel.getByLabel('将要发送的 JSON（仅预览）', {
+            exact: true,
+        })
+        await expect(body).toHaveText('{"result":9223372036854775807}')
+        await expect(panel.getByRole('alert')).toContainText('Broker 保留消息')
+        await expect(sample).toHaveValue(
+            'manual text is not a captured message',
+        )
+        expect(requests).toEqual(['route/values'])
+        payload = null
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        await expect.poll(() => requests.length).toBe(2)
+        await panel
+            .getByRole('button', { name: '取消预览', exact: true })
+            .click()
+        await expect(body).toHaveCount(0)
+        await expect.poll(() => sockets.size).toBe(0)
+        await expect(sample).toHaveValue(
+            'manual text is not a captured message',
+        )
+        payload = '{"password":"fixture-secret","value":42}'
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        await expect(panel.getByRole('alert')).toContainText('样本已截断/脱敏')
+        await expect(body).toHaveCount(0)
+        expect(requests).toEqual([
+            'route/values',
+            'route/values',
+            'route/values',
+        ])
+    } finally {
+        for (const socket of sockets) socket.destroy()
         await new Promise<void>((resolve) => peer.close(() => resolve()))
     }
 })

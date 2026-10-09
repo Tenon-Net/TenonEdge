@@ -91,6 +91,8 @@ export function RoutePreview({
         () => new TextEncoder().encode(sample).length,
         [sample],
     )
+    const mqtt = selected?.kind === 'input.mqtt'
+    const canAcquire = selected?.kind === 'input.http' || mqtt
     const invalid =
         bytes > 65536 || !sample.trim() || !selected || options.overLimit
     async function preview(onsite = false) {
@@ -98,10 +100,20 @@ export function RoutePreview({
             disabled ||
             !selected ||
             options.overLimit ||
-            (onsite ? selected.kind !== 'input.http' : invalid)
+            (onsite ? !canAcquire : invalid)
         )
             return
-        if (onsite && !window.confirm(t('routes.preview.httpConfirm'))) return
+        if (
+            onsite &&
+            !window.confirm(
+                t(
+                    mqtt
+                        ? 'routes.preview.mqttConfirm'
+                        : 'routes.preview.httpConfirm',
+                ),
+            )
+        )
+            return
         request.current?.abort()
         const controller = new AbortController()
         request.current = controller
@@ -116,7 +128,7 @@ export function RoutePreview({
         setResult({ ...captured, pending: true })
         try {
             const data = onsite
-                ? await routes.previewHttp(
+                ? await (mqtt ? routes.previewMqtt : routes.previewHttp)(
                       { ...newRoute(version), document },
                       selected!.id,
                       controller.signal,
@@ -254,7 +266,7 @@ export function RoutePreview({
                 >
                     {t('routes.preview.run')}
                 </Button>
-                {selected?.kind === 'input.http' && (
+                {canAcquire && (
                     <Button
                         type="button"
                         variant="outline"
@@ -263,7 +275,11 @@ export function RoutePreview({
                         }
                         onClick={() => void preview(true)}
                     >
-                        {t('routes.preview.httpRun')}
+                        {t(
+                            mqtt
+                                ? 'routes.preview.mqttRun'
+                                : 'routes.preview.httpRun',
+                        )}
                     </Button>
                 )}
                 {current?.pending && (
@@ -309,7 +325,13 @@ export function RoutePreview({
             ) : current?.onsite &&
               current.error instanceof ApiError &&
               current.error.status === 422 ? (
-                <p role="alert">{t('routes.preview.httpUnavailable')}</p>
+                <p role="alert">
+                    {t(
+                        mqtt
+                            ? 'routes.preview.mqttUnavailable'
+                            : 'routes.preview.httpUnavailable',
+                    )}
+                </p>
             ) : (
                 <ErrorMessage error={current?.error} />
             )}
@@ -321,10 +343,27 @@ export function RoutePreview({
                     <p>
                         {t(
                             current.onsite
-                                ? 'routes.preview.httpResult'
+                                ? mqtt
+                                    ? 'routes.preview.mqttResult'
+                                    : 'routes.preview.httpResult'
                                 : 'routes.preview.manualResult',
                         )}
                     </p>
+                    {data.mqtt && (
+                        <div>
+                            <p>MQTT QoS {data.mqtt.qos ?? '—'}</p>
+                            {data.mqtt.retained && (
+                                <p role="alert">
+                                    {t('routes.preview.retained')}
+                                </p>
+                            )}
+                            {data.mqtt.duplicate && (
+                                <p role="alert">
+                                    {t('routes.preview.duplicate')}
+                                </p>
+                            )}
+                        </div>
+                    )}
                     {!data.previewed && (
                         <p role="alert">{t('routes.preview.invalid')}</p>
                     )}

@@ -2737,6 +2737,30 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 最近消息、MQTT/Modbus 现场样本、HTTP 大报文完整消息桥接、现场请求中断/截止时间的专项 UI 与 API 故障注入仍须补齐；共享服务既有测试不等于新端点专项全部完成。未推送、发布或更新常驻调试实例；未将路线输出文本当作外部输出验收。
 
+### 2.139 T3-05 MQTT 单条现场样本到路线预览（2026-10-10）
+
+接续 §2.138，完成 MQTT 诊断抓取与路线预览的桥接，对应功能 §4.2 的 MQTT 子场景；**尚不包括 Modbus、运行中最近消息、大报文完整消息桥接或完整 T3-05 验收**。
+
+- 新增 `POST /routes/preview/mqtt`，仅接受原编辑版本、当前图及图内 sourceId。快照读取“存在 MQTT 凭证记录”的事实，已作废凭证也不允许降级匿名。复用现有 MqttReadPreview 的随机 ClientId/CleanSession、连接管理器容量、受限出站、凭证检查和有界收包，不新建正式运行单元、不改正式订阅。
+- 只将完整且未脱敏的捕获正文按同一快照描述与实际 ReceivedAt 解码后送入纯计算。采样失败、截断或脱敏返回 422 与稳定 `preview.mqtt.*` 代码；权限、CSRF、1 MiB 请求、共享准入与整体 30 秒截止时间保持不变。客户端期限 35 秒，取消与旧响应失效沿用既有机制。
+- RoutePreviewResponse 增加可空 `mqtt` 元数据，只有 retained/duplicate/qos，不扩大为原始捕获报告或接收 Topic。手工/HTTP 返回 null。界面明确保留消息可能来自历史发布、DUP 不等于新事件；诊断捕获与正式来源“处理保留消息”策略不同，不拿预览成功证明正式输入会接纳该消息。
+- MQTT 来源显示独立抓取按钮与联网确认。取消确认不订阅，取消进行中的捕获会关闭诊断连接；手工文本不参与现场请求、不被结果覆盖。输出仍只生成将要发送的报文，没有 PUBLISH 或发送缓存写入。
+- 新增 8 项真实 Mosquitto Broker 后端测试：三角色下的保留消息/精确整数/QoS/输出监听器无连接/草稿不变与预算释放；脱敏、截断、非法 JSON 不计算；已作废凭证不匿名回退；匿名/CSRF/版本/外来源拒绝。不是生产设备或正式路线应用验收。
+- 浏览器新增真实 TCP MQTT 协议对端用例，检查随机诊断 ClientId 与 CleanSession、确认取消、保留消息告警、精确输出 JSON、手工文本保留、请求中取消后 socket 关闭、敏感样本拒绝，未收到输出 PUBLISH。将已有单条采样测试的协议对端提取为共用测试辅助函数并回归；它不是完整 Broker，真实 Broker 证据来自上述后端用例。
+- OpenAPI 和精确图常量客户端已更新。HTTP/MQTT 现场客户端共享参数化的精度与请求中取消测试，并新增 MQTT 路线预览的 35 秒期限测试。未新增依赖。
+
+验证中，浏览器种子直接把已规范化 HTTP 输出改成 MQTT，残留 HTTP 专有空字段而被图格式校验拒绝 400；修正为保留 payload、重建 MQTT 配置后重跑通过，未削弱后端未知字段拒绝规则。
+
+环境沿用 §2.138，命令及证据：
+
+- `dotnet test tests/IntegrationTests --no-restore -c Release --filter FullyQualifiedName~RouteMqttPreviewTests`：**8 通过，0 失败/跳过**（`/tmp/tenonedge-route-mqtt-tests.log`）。
+- web/ `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 通过，`run test -- --reporter=json --outputFile=reports/unit.json` **212 通过，0 失败/跳过**（`/tmp/tenonedge-route-mqtt-web.log`、`web/reports/unit.json`）。`run build` 通过（`/tmp/tenonedge-route-mqtt-web-build.log`）。OpenAPI 导出见 `/tmp/tenonedge-route-mqtt-openapi.log`。
+- `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-mqtt-format-verify.log`）；web README 更新后格式复核通过（`/tmp/tenonedge-route-mqtt-format-web-final.log`）。
+- `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-mqtt-regression --blame-hang-timeout 5m --blame-hang-dump-type none`：**1184 单元 + 1078 集成 = 2262 通过，0 失败/跳过**（`/tmp/tenonedge-route-mqtt-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-route-mqtt-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-route-mqtt-trx.log`）。
+- `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route MQTT onsite|MQTT capture marks|route HTTP onsite|route manual preview|upstream fields|mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'`：**18 通过，0 失败/跳过**（`/tmp/tenonedge-route-mqtt-browser-final.log`，1.4 分钟）。
+
+最近消息与 Modbus 样本继续按 T3-05 推进；完整显示预算之外的原始消息桥接、MQTT 新端点配额/截止时间专项故障注入、DUP 浏览器专项仍需补齐。已覆盖的底层服务测试不等于新端点各故障路径都经专项验证。未推送、发布或更新常驻调试实例。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

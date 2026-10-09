@@ -390,6 +390,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/preview/mqtt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 显式抓取图内 MQTT 来源一条消息并预览路线；不发布、不保存、不入队
+         * @description 复用随机 ClientId/CleanSession 诊断订阅，不影响正式订阅。标记保留/重复消息；完整且未脱敏才计算，失败或截断返回 422。整次 30 秒。
+         */
+        post: operations["previewRouteMqttSample"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -1548,6 +1568,18 @@ export interface components {
             /** Format: int64 */
             sourceId: number | string;
         };
+        RouteMqttPreviewRequest: {
+            expectedVersion: string;
+            graph: components["schemas"]["RouteGraph"];
+            /** Format: int64 */
+            sourceId: number | string;
+        };
+        RouteMqttSampleInfo: {
+            retained: boolean;
+            duplicate: boolean;
+            /** Format: int32 */
+            qos: null | number | string;
+        };
         RouteNodePosition: {
             /** Format: double */
             x: number | string;
@@ -1598,6 +1630,7 @@ export interface components {
             invalidUpstreamTime: boolean;
             result: null | components["schemas"]["RouteSamplePreviewResult"];
             issues: components["schemas"]["RouteTopologyIssue"][];
+            mqtt?: null | components["schemas"]["RouteMqttSampleInfo"];
         };
         RoutePreviewStage: {
             nodeId: string;
@@ -2810,6 +2843,102 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RouteHttpPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutePreviewResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    previewRouteMqttSample: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteMqttPreviewRequest"];
             };
         };
         responses: {

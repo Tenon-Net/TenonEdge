@@ -3,7 +3,17 @@ export const routeStrings = {
     references: '来源 / 输出连接',
     preview: {
         title: '路线样本预览',
-        notice: '使用当前图已确认配置计算所选来源的路径，不访问输出、不入队、不应用。手工模式不采集；HTTP 现场读取须另行确认。样本只留在内存，不写入草稿。最近消息及 MQTT/Modbus 现场样本尚未接入。',
+        notice: '使用当前图已确认配置计算所选来源的路径，不访问输出、不入队、不应用。手工模式不采集；HTTP/MQTT 现场采样须另行确认。样本只留在内存，不写入草稿。最近消息及 Modbus 现场样本尚未接入。',
+        mqttRun: '抓取 MQTT 一条消息并预览',
+        mqttConfirm:
+            '将使用独立随机 ClientId/CleanSession 诊断订阅，等待所选 Topic Filter 的一条消息（最多 30 秒，可能是保留消息）。不改变正式订阅、不发布、不入队。继续？',
+        mqttResult:
+            '本次结果来自 MQTT 诊断订阅抓取，不使用手工文本框；不代表正式订阅或输出已验收。',
+        mqttUnavailable:
+            'MQTT 抓取失败，或样本已截断/脱敏，不能用于路线预览。请在设备的单条抓取面板核对原因；本地手工样本仍保留。',
+        retained:
+            '这是 Broker 保留消息，可能来自历史发布，不代表刚刚采集的数据。',
+        duplicate: '消息带 DUP 标记，不代表新的业务事件。',
         httpRun: '现场读取 HTTP 一次并预览',
         httpUnavailable:
             'HTTP 读取失败，或样本已截断/脱敏，不能用于路线预览。请在设备的一次读取面板核对原因；本地手工样本仍保留。',

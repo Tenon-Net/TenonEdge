@@ -7,7 +7,11 @@ import { ApiError } from './errors'
 function managementDeadline(request: Request) {
     const path = new URL(request.url).pathname
     if (request.method === 'POST') {
-        if (/^\/api\/edge-admin\/v1\/routes\/preview(?:\/http)?$/.test(path))
+        if (
+            /^\/api\/edge-admin\/v1\/routes\/preview(?:\/(?:http|mqtt))?$/.test(
+                path,
+            )
+        )
             return 35000
         if (
             /^\/api\/edge-admin\/v1\/devices\/\d+\/preview\/(mqtt|http|modbus)$/.test(
