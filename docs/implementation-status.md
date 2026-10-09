@@ -2661,6 +2661,21 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 - `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'upstream fields|mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'`：**12 通过，0 失败/跳过**（`/tmp/tenonedge-field-ui-browser-verified.log`，35.3 秒）。
 - 本批未改后端，未重跑 .NET 回归，后端基线仍见 §2.133。无真实设备/外部输出验证，无发版/推送。下一子项为无输出、无入队的路径样本预览，其后才推进 T3-06。
 
+### 2.135 T3-05 路径样本预览纯执行核心（2026-10-10）
+
+接续 §2.134，按功能 §4.2、§5 和 AT-07/29/30 的相关子场景，先完成接收已取得 `EdgeMessage` 样本的预览核心。**尚无预览 API/页面入口，也未交付“最近消息、现场读取、手工 JSON”三种样本来源的产品流程；不据此宣称网页样本预览通过。**
+
+- `RouteSamplePreview` 接收当前图快照、明确的来源编号与带身份的样本；拒绝样本设备/来源身份不符。先复用有界拓扑计数与来源字段描述检查整张图，再仅执行所选来源的路径。允许预览停用的路线草稿，不更改草稿启用状态；来源自身仍按既有拓扑规则校验。
+- 每条路径复用正式 `FieldMapping` 顺序执行，保留各阶段字段类型、单位、精确值文本、good/bad/missing 及规则问题。必填缺失/转换失败仅终止该路径，其他路径继续；可选缺失不变成 0，bad 原因保留。映射引用字段不存在、输出连接配置错误和输出必填缺值同样按节点/路径返回，不把一个分支错误变成整次空结果。
+- 输出配置与全图编译共用既有检查函数，使用正式 `OutputPayloadFormat` / `StandardEnvelope` 组装，不重新实现数字转换或 JSON 拼接。HTTP 展示固定相对路径、非秘密静态头、Content-Type 和预览 deliveryId 对应的 Idempotency-Key；MQTT 展示正式 Topic 展开与 QoS。每条路径生成独立的临时 deliveryId，sourceMessageId/采集时间沿用样本。预览编号不代表队列投递。
+- 核心没有运行单元工厂、连接管理、发送器、凭证解析器或队列依赖，不创建输出适配器。不能以静态预览证明凭证、访问策略或目标在线；本批没有真实接收端无流量探针，后续 API 集成阶段补证。
+- `RoutePreviewDisplay` 将全部响应（含字段、正文、路径/节点元数据、错误与 JSON 转义）按保守累计序列化字节限制为 64 KiB。大值、深路径和后续结果均显式标记全局/局部截断；显示额度耗尽不停止其他合法路径的计算。正文另遵守正式 256 KiB 发送上限，截断的显示文本不能当作完整报文发送。规则工作区仍受正式 4 MiB 限制，输入样本受解码结果与原始 JSON 合计预算限制，循环尊重取消。
+- 为支持逐路径捕获错误，修正 `RouteFieldPropagation` 的校验缓存：只有成功验证字段存在性后才缓存。原先在检查前加入缓存，在全图编译遇错立即退出时不影响结果；预览继续其他路径时会让同一失败上游/节点组合的后续路径漏检。新增重复失败路径用例锁定该行为。
+
+新增 13 项单元场景覆盖连续映射、JSON Pointer、int64/uint64 与高精度小数、正式报文逐字对照、HTTP 头覆盖/幂等编号、MQTT Topic/QoS/占位符、三类必填错误隔离、可选缺失与 bad、重复失败校验缓存、输出配置/组装失败隔离、UTF-8/JSON 转义显示截断、32 路径 × 16 阶段的整体显示预算、映射/输出超限、取消、身份、环与多来源选择。初次构建发现 CA1869（测试序列化选项未缓存）并修复；首次定向执行 33 通过/1 失败，测试错误地把标准信封的 quality 对象当作字符串，修正为读取 reason 后 34 通过，之后补充两项预算用例进入完整回归。
+
+验证：Linux x64 / SDK 10.0.401；`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-preview-core-format-verify.log`）。`dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-preview-core-regression --blame-hang-timeout 5m --blame-hang-dump-type none`：**1178 单元 + 1053 集成 = 2231 通过，0 失败/跳过**（`/tmp/tenonedge-preview-core-regression.log`）；`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-preview-core-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对两个程序集通过（`/tmp/tenonedge-preview-core-trx-verify.log`）。本批未改前端/公开 API，未重跑浏览器，未更新常驻实例、发版或推送。下一子项是接入带权限、CSRF、版本、请求体/并发/超时限制的预览端点与样本解码，再完成画布入口和三种样本来源；T3-06 应用/回滚仍在其后。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -123,7 +123,7 @@ internal static class RoutePlanCompiler
         }
     }
 
-    private static JsonElement Output(RouteGraphNode node, string[] inputs, JsonElement[] stages, RouteCompilationSnapshot snapshot, string route)
+    internal static JsonElement Output(RouteGraphNode node, string[] inputs, JsonElement[] stages, RouteCompilationSnapshot snapshot, string route)
     {
         if (node.Type == "output.tenon")
         { throw Error("output.unavailable", route, node.Id); }
@@ -184,7 +184,7 @@ internal static class RoutePlanCompiler
         throw Error("output.connectionKind", route, node.Id);
     }
 
-    private static void ValidateOutputFields(RouteGraphNode output, ImmutableArray<MappedFieldSchema> fields, string route, long source)
+    internal static void ValidateOutputFields(RouteGraphNode output, ImmutableArray<MappedFieldSchema> fields, string route, long source)
     {
         if (!output.Config.TryGetProperty("payload", out var payload))
         { return; }

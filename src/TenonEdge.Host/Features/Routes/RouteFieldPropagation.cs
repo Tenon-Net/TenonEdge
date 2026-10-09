@@ -24,12 +24,13 @@ internal sealed class RouteFieldPropagation(IReadOnlyDictionary<string, RouteGra
                 { throw new RouteTopologyException(new("mapping.configuration", path.RouteKey, id, path.SourceId)); }
                 _mappings.Add(id, mapping);
             }
-            if (_checked.Add((id, upstream)))
+            if (!_checked.Contains((id, upstream)))
             {
                 var known = fields.Select(field => field.Key).ToHashSet(StringComparer.Ordinal);
                 foreach (var referenced in mapping.ReferencedFields)
                 { if (!known.Contains(referenced)) { throw new RouteTopologyException(new("field.missing", path.RouteKey, id, path.SourceId, FieldKey: referenced)); } }
             }
+            _checked.Add((id, upstream));
             fields = mapping.Schema;
             upstream = "map/" + id;
         }
