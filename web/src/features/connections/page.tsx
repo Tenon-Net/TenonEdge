@@ -1,5 +1,6 @@
 import { CredentialPanel } from './credential-panel'
 import { MqttTestPanel } from './mqtt-test-panel'
+import { HttpTestPanel } from './http-test-panel'
 import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
@@ -40,6 +41,7 @@ export function ConnectionsPage() {
     const [search, setSearch] = useState('')
     const [kind, setKind] = useState('')
     const [notice, setNotice] = useState('')
+    const [testGeneration, setTestGeneration] = useState(0)
     const [localError, setLocalError] = useState('')
     const dirty = form !== null && JSON.stringify(form) !== original
     useBlocker({
@@ -97,6 +99,7 @@ export function ConnectionsPage() {
     function open(connection?: Connection) {
         if (!query.data || (dirty && !window.confirm(t('connections.discard'))))
             return
+        setTestGeneration((value) => value + 1)
         const next = connectionForm(query.data.version, connection)
         setForm(next)
         setOriginal(JSON.stringify(next))
@@ -592,8 +595,11 @@ export function ConnectionsPage() {
                     </div>
                 </form>
             )}
+            {form?.kind === 'http' && canEdit && (
+                <HttpTestPanel key={testGeneration} form={form} />
+            )}
             {form?.kind === 'mqtt' && canEdit && (
-                <MqttTestPanel key={form.id ?? 'new'} form={form} />
+                <MqttTestPanel key={testGeneration} form={form} />
             )}
             {form?.id !== undefined &&
                 form.kind !== 'modbus' &&

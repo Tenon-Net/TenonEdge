@@ -10,9 +10,25 @@ namespace TenonEdge.Adapters.Http;
 /// <summary>由共享连接管理拥有的 HTTP 客户端；请求路径、凭证及成功约定逐次提供，不绑死某个输出节点。</summary>
 internal sealed class HttpConnectionSession : IAsyncDisposable
 {
-    private readonly HttpClient _client;
-    public HttpConnectionSession(IOutboundConnector connector, int timeoutMs) =>
+    private HttpClient _client;
+    private readonly IOutboundConnector _connector;
+    private readonly int _timeoutMs;
+    public HttpConnectionSession(IOutboundConnector connector, int timeoutMs)
+    {
+        _connector = connector;
+        _timeoutMs = timeoutMs;
         _client = OutboundHttpTransport.CreateClient(connector, TimeSpan.FromMilliseconds(timeoutMs));
+    }
+
+    // 调用者必须持有同一共享连接的串行租约。仅显式测试重建空闲连接，不能在一次测试中同时持有两个活动客户端。
+    internal async Task<HttpConnectionTestResult> TestConnectionAsync(HttpRequestSettings settings, HttpRequestMessage request,
+        bool credentialUsed, TimeProvider time, CancellationToken token)
+    {
+        _client.Dispose();
+        try
+        { return await HttpConnectionTest.ExecuteAsync(settings, request, credentialUsed, _connector, time, token); }
+        finally { _client = OutboundHttpTransport.CreateClient(_connector, TimeSpan.FromMilliseconds(_timeoutMs)); }
+    }
 
     public async Task<OutputSendResult> SendOutputAsync(HttpOutputSettings settings, IHttpCredentialResolver credentials, TimeProvider time, OutputMessage message, CancellationToken cancellationToken)
     {
@@ -92,7 +108,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         return await HttpInputResponse.ReadAsync(response, cancellationToken);
     }
 
-    private static void ApplyCredential(HttpRequestMessage request, HttpCredential credential)
+    internal static void ApplyCredential(HttpRequestMessage request, HttpCredential credential)
     {
         var identity = credential.Identity;
         HttpCredentialValidation.Validate(identity.Kind, identity.Username, identity.Name, credential.Secret);

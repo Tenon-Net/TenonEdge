@@ -68,7 +68,7 @@ public sealed class MqttConnectionTestApiTests(MosquittoBrokerFixture fixture) :
         TestAccounts.Create(factory.Services, "tester", ApiRequests.StrongPassword, UserRole.Configurator);
         using var client = await factory.CreateLoggedInClientAsync("tester", Token);
         using var response = await client.PostJsonAsync(Endpoint, Request with
-        { Authentication = MqttTestAuthentication.Stored, CredentialConnectionId = 123 }, Token);
+        { Authentication = ConnectionTestAuthentication.Stored, CredentialConnectionId = 123 }, Token);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains("credential.unavailable", await response.Content.ReadAsStringAsync(Token), StringComparison.Ordinal);
     }
@@ -106,14 +106,14 @@ public sealed class MqttConnectionTestApiTests(MosquittoBrokerFixture fixture) :
         credentials.Write(saved.Connection.Id, new($"mqtt://127.0.0.1:{broker.Port}", MosquittoBroker.UserName,
             MosquittoBroker.Password, ExpectedDraftVersion: saved.Version), "fixture", null, false);
         var metadata = credentials.Read(saved.Connection.Id);
-        var request = new MqttConnectionTestRequest(new("127.0.0.1", broker.Port), MqttTestAuthentication.Provided,
+        var request = new MqttConnectionTestRequest(new("127.0.0.1", broker.Port), ConnectionTestAuthentication.Provided,
             Username: MosquittoBroker.UserName, Password: MosquittoBroker.Password);
         using var provided = await client.PostJsonAsync(Endpoint, request, Token);
         Assert.Equal(HttpStatusCode.OK, provided.StatusCode);
         Assert.True((await provided.Content.ReadFromJsonAsync<MqttConnectionTestResult>(Token))!.Success);
         request = request with
         {
-            Authentication = MqttTestAuthentication.Stored,
+            Authentication = ConnectionTestAuthentication.Stored,
             CredentialConnectionId = saved.Connection.Id,
             Username = null,
             Password = null

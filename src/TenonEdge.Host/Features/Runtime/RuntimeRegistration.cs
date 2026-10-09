@@ -58,6 +58,7 @@ internal static class RuntimeRegistration
         services.AddSingleton<ISharedConnections, SharedConnections>();
         services.AddSingleton<PreviewOperationBudget>();
         services.AddSingleton<MqttConnectionTest>();
+        services.AddSingleton<HttpConnectionTest>();
         services.AddSingleton<IRuntimePlanAdapterProvider, ModbusPlanAdapterProvider>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
         services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>

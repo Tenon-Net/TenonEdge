@@ -2333,6 +2333,23 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：吊销、离线 CRL/OCSP、过期中间证书、有效受信任 TLS 的诊断展示尚未逐项实测；不将分类代码存在等同于这些场景通过。HTTP/Modbus 测试、客户端证书/信任表单、实时抓取继续实施；T3-05 图编译/预览、T3-06 应用/回滚仍未完成，完整网页配置目标尚未达到。
 
+### 2.114 T3-04 HTTP 真实连接测试与共享会话串行化（2026-10-10）
+
+沿用功能 §2.4、总设计 §5/§6.6/§8.7，不新增平台客户端或 Node 运行服务。回读 IoTEdge 笔记的 HTTP/秘密与“界面已有不等于实现”反例，只借取舍，不复制源码。核对实际 .NET 10.0.12 reference XML 的 `SocketsHttpHandler.PlaintextStreamFilter` 与 `PlaintextStream`，经真实网络测试确认可以在 TCP/TLS 完成后观察协议阶段，而非仅根据 API 名称推定行为。
+
+- `POST /connections/test/http` 仅 Configurator/Administrator，本地会话/CSRF 与 MQTT 共用同一准入方法和宿主单例额度（全局 4、每会话 2）；请求体 128 KiB。未保存连接仅领取进程内唯一临时 ID，不插入草稿；已保存连接必须是 HTTP 草稿。匿名、临时四类凭证、已存凭证由显式认证模式选择；已存凭证按规范化完整基础地址绑定，接收方改变/凭证缺失返回 409，不降级匿名。
+- 测试通过既有 `ISharedConnections` 的同编号/配置身份借用 `HttpConnectionSession`，与采集/输出排入同一串行执行器；不是旁路另建同编号会话。借用配置冲突、释放中或连接数上限返回 409。总期限包括串行等待；等待超时显示“本次未联网”，所有网络阶段保持未到达。
+- 显式 HTTP 测试在串行租约内先释放该会话的空闲客户端，再建立本次测试客户端；测试结束后释放它并恢复一个尚未联网的普通客户端。任一时刻只有一个活动客户端，不中断同一执行器内的在途读取/发送；网页事前提示重建空闲客户端。这样 DNS/TCP/TLS 阶段是本次实测，不把复用旧连接伪装成重新握手。
+- 只对规范化基础地址发送一次 HTTP/1.1 GET，复用正式 `OutboundHttpTransport`、出站校验、凭证格式与编码。禁用代理/Cookie/重定向，最多 64 KiB 响应头；`ResponseHeadersRead` 后只返回状态码，不读取/显示正文，关闭时也不排空正文。证书回调保持 `SslPolicyErrors.None`，不关闭现有校验。四类临时秘密仅在请求内存中使用，不记录在结果、审计或草稿中。
+- 收到 2xx 时连接测试 Success 为 true；其他 HTTP 状态仍明确显示，协议阶段成功表示确实收到有效响应头，不表示业务成功。401/403 显示认证/授权拒绝；携带凭证但收到其他状态仍不能证明服务器校验了凭证，认证显示“未能确认”；未使用凭证且未被拒绝则“未启用”。复用的阶段结果/证书解释移入 Adapters/Diagnostics，MQTT 的认证语义保持不变。`ConnectionTestStep` 与 `ConnectionTestAuthentication` 为共用 OpenAPI 类型，既有 MQTT JSON 字段/枚举值不变。
+- 网页支持未保存表单、临时 Basic/Bearer/API Key Header/Query、已存凭证、实际状态码和阶段表；HTTP/MQTT 共用阶段展示。秘密不进入 mutation variables 或浏览器持久存储，完成后清空；重新开启编辑器递增测试表单代次，放弃新建表单后也不会继承旧临时秘密/结果。
+
+定向验证：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~HttpConnectionTest|FullyQualifiedName~MqttConnection|FullyQualifiedName~ConnectionCertificate|FullyQualifiedName~OpenApiDocument|FullyQualifiedName~ManagementApiAccess'` **7 单元 + 55 集成通过，0 失败/跳过**（`/tmp/tenonedge-http-test-targeted3.log`）。包括四类凭证线上编码/查询转义、200/302/401/403/500 状态、巨大但不发送的正文不阻塞返回、不跟随重定向、策略拒绝、超时/取消、共享队列等待与配置冲突。既有会话借用回归先真实采集，再测试，再采集；给测试工厂传入禁止联网的连接器仍成功，证明实际使用原会话而非另开工厂；观测旧 TCP 流关闭及后续采集成功。
+
+真实本机 SslStream 夹具同时覆盖 HTTP/MQTT 的不受信任、主机名不符、过期、尚未生效，失败时服务器没有读到应用层凭证字节；不是外部真实设备证据。网页独立场景 **1 项通过**（`/tmp/tenonedge-http-test-browser.log`）：真实 .NET Host 连接 Playwright 进程中的回环 HTTP 服务器，看到一次 GET/Bearer、HTTP 204 与认证未确认；再返回 302 且不发送声明的巨大正文，网页仍及时返回、服务器没有第二个重定向请求；草稿和浏览器持久存储不变。完整浏览器回归也覆盖重新打开新建表单清除临时状态；已查看 `web/test-results/http-connection-test.png`，实际 HTTP 302 与五阶段结果展示正常。
+
+完整回归：Linux x64、SDK 10.0.401 / .NET 10.0.12、Release；`dotnet build TenonEdge.sln -c Release --no-restore`、`dotnet test TenonEdge.sln -c Release --no-build --no-restore`（TRX：`artifacts/test-results/t3-http-test/`）及 TRX 非零/无跳过门禁通过，**1071 单元 + 934 集成 = 2005 项通过，0 失败/跳过**；`dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过。日志：`/tmp/tenonedge-http-test-final-build.log`、`/tmp/tenonedge-http-test-full.log`、`/tmp/tenonedge-http-test-final-format.log`。前端 Node 22.23.2 / npm 11.21.0，`test` **119 项通过**、`test:e2e` **16 项通过**，typecheck/lint/format:check 与非零/无跳过报告门禁均通过；报告 `web/reports/unit.json`、`web/reports/browser.json`，日志 `/tmp/tenonedge-http-test-web-unit.log`、`/tmp/tenonedge-http-test-web-full.log`。剩余：Modbus 连接测试/读取预览、实时抓取、信任及客户端证书表单仍待实现；TLS 吊销/离线状态等 §2.113 未验证项未借本轮改称通过。HTTP 并不自动验证业务响应规则或平台绑定。T3-05 图编译、T3-06 应用/回滚仍未完成，完整网页配置目标未达成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

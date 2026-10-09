@@ -259,6 +259,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/test/http": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 通过共享会话串行测试未保存的 HTTP 参数，只 GET 基础地址，不保存、不读取正文或跟随重定向
+         * @description 显式测试重建该会话空闲客户端；运行参数不匹配时拒绝借用。stored 使用已存凭证且接收方必须匹配。HTTP 状态不能单独证明认证有效。
+         */
+        post: operations["testHttpConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -562,6 +582,19 @@ export interface components {
         };
         /** @enum {unknown} */
         ConnectionKind: "modbus" | "mqtt" | "http";
+        /**
+         * @default none
+         * @enum {unknown}
+         */
+        ConnectionTestAuthentication: "none" | "stored" | "provided";
+        ConnectionTestStep: {
+            stage: string;
+            status: string;
+            /** Format: double */
+            elapsedMs?: null | number | string;
+            code?: null | string;
+            timingGroup?: null | string;
+        };
         DeliveryCacheStatus: {
             storageFault: boolean;
             lastError: null | string;
@@ -665,8 +698,24 @@ export interface components {
                 [key: string]: string;
             };
         };
+        HttpConnectionTestRequest: {
+            connection: components["schemas"]["HttpConnectionDraft"];
+            /** Format: int64 */
+            connectionId?: null | number | string;
+            authentication?: components["schemas"]["ConnectionTestAuthentication"];
+            credential?: null | components["schemas"]["HttpTestCredential"];
+        };
+        HttpConnectionTestResult: {
+            success: boolean;
+            code: string;
+            /** Format: int32 */
+            statusCode: null | number | string;
+            /** Format: double */
+            elapsedMs: number | string;
+            steps: components["schemas"]["ConnectionTestStep"][];
+        };
         /** @enum {unknown} */
-        HttpCredentialKind: "basic" | "bearer" | "apiKeyHeader" | "apiKeyQuery" | null;
+        HttpCredentialKind: "basic" | "bearer" | "apiKeyHeader" | "apiKeyQuery";
         HttpCredentialMetadata: {
             /** Format: int64 */
             connectionId: number | string;
@@ -705,6 +754,12 @@ export interface components {
                 [key: string]: string;
             };
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
+        };
+        HttpTestCredential: {
+            kind: components["schemas"]["HttpCredentialKind"];
+            secret: string;
+            username?: null | string;
+            name?: null | string;
         };
         HttpValidationProblemDetails: {
             type?: null | string;
@@ -873,7 +928,7 @@ export interface components {
         };
         MqttConnectionTestRequest: {
             connection: components["schemas"]["MqttConnectionDraft"];
-            authentication?: components["schemas"]["MqttTestAuthentication"];
+            authentication?: components["schemas"]["ConnectionTestAuthentication"];
             /** Format: int64 */
             credentialConnectionId?: null | number | string;
             username?: null | string;
@@ -886,15 +941,7 @@ export interface components {
             connAckCode: null | number | string;
             /** Format: double */
             elapsedMs: number | string;
-            steps: components["schemas"]["MqttConnectionTestStep"][];
-        };
-        MqttConnectionTestStep: {
-            stage: string;
-            status: string;
-            /** Format: double */
-            elapsedMs?: null | number | string;
-            code?: null | string;
-            timingGroup?: null | string;
+            steps: components["schemas"]["ConnectionTestStep"][];
         };
         MqttCredentialMetadata: {
             /** Format: int64 */
@@ -927,11 +974,6 @@ export interface components {
             processRetained: boolean;
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
         };
-        /**
-         * @default none
-         * @enum {unknown}
-         */
-        MqttTestAuthentication: "none" | "stored" | "provided";
         OutboundNetworkGrant: {
             cidr: string;
             /** Format: int32 */
@@ -1650,6 +1692,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MqttConnectionTestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    testHttpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HttpConnectionTestRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HttpConnectionTestResult"];
                 };
             };
             /** @description Bad Request */

@@ -1,10 +1,10 @@
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 
-namespace TenonEdge.Adapters.Mqtt;
+namespace TenonEdge.Adapters.Diagnostics;
 
 /// <summary>只解释平台 TLS 校验结果，不建立新的信任链、不改变接受条件、不保留证书正文。</summary>
-internal static class MqttCertificateFailure
+internal static class CertificateFailure
 {
     internal static string? Classify(SslPolicyErrors errors, X509Chain? chain, DateTime utcNow)
     {

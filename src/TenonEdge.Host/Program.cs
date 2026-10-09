@@ -45,6 +45,7 @@ app.MapManagementApi()
     .MapOutboundPolicyEndpoints()
     .MapConnectionDraftEndpoints()
     .MapMqttConnectionTestEndpoints()
+    .MapHttpConnectionTestEndpoints()
     .MapDeviceDraftEndpoints()
     .MapInputDraftEndpoints()
     .MapPointCsvEndpoints();

@@ -745,6 +745,98 @@
         }
       }
     },
+    "/api/edge-admin/v1/connections/test/http": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "通过共享会话串行测试未保存的 HTTP 参数，只 GET 基础地址，不保存、不读取正文或跟随重定向",
+        "description": "显式测试重建该会话空闲客户端；运行参数不匹配时拒绝借用。stored 使用已存凭证且接收方必须匹配。HTTP 状态不能单独证明认证有效。",
+        "operationId": "testHttpConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HttpConnectionTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpConnectionTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
       "get": {
         "tags": [
@@ -2677,6 +2769,50 @@
           "http"
         ]
       },
+      "ConnectionTestAuthentication": {
+        "enum": [
+          "none",
+          "stored",
+          "provided"
+        ],
+        "default": "none"
+      },
+      "ConnectionTestStep": {
+        "required": [
+          "stage",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "elapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "code": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "timingGroup": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "DeliveryCacheStatus": {
         "required": [
           "storageFault",
@@ -3101,13 +3237,87 @@
         },
         "additionalProperties": false
       },
+      "HttpConnectionTestRequest": {
+        "required": [
+          "connection"
+        ],
+        "type": "object",
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/HttpConnectionDraft"
+          },
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/ConnectionTestAuthentication"
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpTestCredential"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "HttpConnectionTestResult": {
+        "required": [
+          "success",
+          "code",
+          "statusCode",
+          "elapsedMs",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "statusCode": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "elapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionTestStep"
+            }
+          }
+        }
+      },
       "HttpCredentialKind": {
         "enum": [
           "basic",
           "bearer",
           "apiKeyHeader",
-          "apiKeyQuery",
-          null
+          "apiKeyQuery"
         ]
       },
       "HttpCredentialMetadata": {
@@ -3262,6 +3472,34 @@
               {
                 "$ref": "#/components/schemas/SourceTimeMapping"
               }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "HttpTestCredential": {
+        "required": [
+          "kind",
+          "secret"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/HttpCredentialKind"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "username": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         },
@@ -3915,7 +4153,7 @@
             "$ref": "#/components/schemas/MqttConnectionDraft"
           },
           "authentication": {
-            "$ref": "#/components/schemas/MqttTestAuthentication"
+            "$ref": "#/components/schemas/ConnectionTestAuthentication"
           },
           "credentialConnectionId": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -3977,44 +4215,8 @@
           "steps": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/MqttConnectionTestStep"
+              "$ref": "#/components/schemas/ConnectionTestStep"
             }
-          }
-        }
-      },
-      "MqttConnectionTestStep": {
-        "required": [
-          "stage",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "stage": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "elapsedMs": {
-            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
-            "type": [
-              "null",
-              "number",
-              "string"
-            ],
-            "format": "double"
-          },
-          "code": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "timingGroup": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },
@@ -4137,14 +4339,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "MqttTestAuthentication": {
-        "enum": [
-          "none",
-          "stored",
-          "provided"
-        ],
-        "default": "none"
       },
       "OutboundNetworkGrant": {
         "required": [

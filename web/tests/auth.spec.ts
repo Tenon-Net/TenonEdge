@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { createServer } from 'node:http'
 
 test('real setup, session, CSRF password change, logout and offline assets', async ({
     page,
@@ -1903,4 +1904,143 @@ test('MQTT test uses unsaved parameters, reports real policy denial and does not
         path: 'test-results/mqtt-connection-test.png',
         fullPage: true,
     })
+})
+
+test('HTTP unsaved test performs one real GET with transient credentials, status and phases without reading a body or following redirects', async ({
+    page,
+}) => {
+    const calls: {
+        url: string | undefined
+        authorization: string | undefined
+    }[] = []
+    let status = 204
+    const peer = createServer((request, response) => {
+        calls.push({
+            url: request.url,
+            authorization: request.headers.authorization,
+        })
+        response.writeHead(status, {
+            Location: '/must-not-follow',
+            'Content-Length': status === 204 ? '0' : '10000000',
+        })
+        response.flushHeaders()
+        if (status === 204) response.end()
+        // Other statuses deliberately never send the declared body.
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string')
+        throw new Error('fixture-listener-address')
+    try {
+        await openPointEditor(page)
+        await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+        const before = await (
+            await page.request.get('/api/edge-admin/v1/connections')
+        ).json()
+        const session = await (
+            await page.request.get('/api/edge-admin/v1/auth/session')
+        ).json()
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        const allowed = await page.request.put(policyUrl, {
+            headers: { 'X-CSRF-Token': session.csrfToken },
+            data: {
+                expectedVersion: policy.version,
+                networks: policy.networks,
+                localPorts: [...policy.localPorts, address.port],
+            },
+        })
+        expect(allowed.status()).toBe(200)
+        await page
+            .getByRole('button', { name: '新建连接', exact: true })
+            .click()
+        await page
+            .getByRole('combobox', { name: '协议类型', exact: true })
+            .selectOption('http')
+        await page
+            .getByLabel('HTTP 基础地址', { exact: true })
+            .fill(`http://127.0.0.1:${address.port}/base/`)
+        const panel = page.getByRole('region', {
+            name: 'HTTP 真实连接测试',
+            exact: true,
+        })
+        await panel
+            .getByRole('combobox', { name: '测试认证' })
+            .selectOption('provided')
+        await panel
+            .getByLabel('临时密码/Token/API Key', { exact: true })
+            .fill('fixture-browser-token')
+        await panel
+            .getByRole('button', { name: '测试 HTTP 连接', exact: true })
+            .click()
+        await expect(panel.getByRole('status')).toContainText('HTTP 204')
+        expect(calls).toEqual([
+            { url: '/base/', authorization: 'Bearer fixture-browser-token' },
+        ])
+        await expect(
+            panel.getByLabel('临时密码/Token/API Key', { exact: true }),
+        ).toHaveValue('')
+        const stages = panel.getByRole('table', { name: '连接测试阶段结果' })
+        await expect(
+            stages.getByRole('row').filter({ hasText: 'HTTP 请求与响应头' }),
+        ).toContainText('成功')
+        await expect(
+            stages
+                .getByRole('row')
+                .filter({ hasText: '认证（依据 HTTP 响应）' }),
+        ).toContainText('未能确认')
+        status = 302
+        await panel
+            .getByRole('combobox', { name: '测试认证' })
+            .selectOption('none')
+        await panel
+            .getByRole('button', { name: '测试 HTTP 连接', exact: true })
+            .click()
+        await expect(panel.getByRole('status')).toContainText('HTTP 302')
+        expect(calls).toHaveLength(2)
+        expect(calls[1]).toEqual({ url: '/base/', authorization: undefined })
+        expect(
+            await (
+                await page.request.get('/api/edge-admin/v1/connections')
+            ).json(),
+        ).toEqual(before)
+        expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({})
+        expect(await page.evaluate(() => ({ ...sessionStorage }))).toEqual({})
+        await page.screenshot({
+            path: 'test-results/http-connection-test.png',
+            fullPage: true,
+        })
+        await panel
+            .getByRole('combobox', { name: '测试认证' })
+            .selectOption('provided')
+        await panel
+            .getByLabel('临时密码/Token/API Key', { exact: true })
+            .fill('discard-this-fixture-secret')
+        page.once('dialog', (dialog) => dialog.accept())
+        await page
+            .getByRole('button', { name: '新建连接', exact: true })
+            .click()
+        await page
+            .getByRole('combobox', { name: '协议类型', exact: true })
+            .selectOption('http')
+        await expect(
+            page
+                .getByRole('region', { name: 'HTTP 真实连接测试' })
+                .getByRole('combobox', { name: '测试认证' }),
+        ).toHaveValue('none')
+        const restored = await page.request.put(policyUrl, {
+            headers: { 'X-CSRF-Token': session.csrfToken },
+            data: {
+                expectedVersion: (await allowed.json()).version,
+                networks: policy.networks,
+                localPorts: policy.localPorts,
+            },
+        })
+        expect(restored.status()).toBe(200)
+    } finally {
+        peer.closeAllConnections()
+        await new Promise<void>((resolve, reject) =>
+            peer.close((error) => (error ? reject(error) : resolve())),
+        )
+    }
 })

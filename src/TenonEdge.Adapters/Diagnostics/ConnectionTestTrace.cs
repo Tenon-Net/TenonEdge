@@ -1,14 +1,14 @@
 using TenonEdge.Abstractions.Contracts;
 
-namespace TenonEdge.Adapters.Mqtt;
+namespace TenonEdge.Adapters.Diagnostics;
 
-public sealed record MqttConnectionTestStep(string Stage, string Status, double? ElapsedMs = null, string? Code = null, string? TimingGroup = null);
+public sealed record ConnectionTestStep(string Stage, string Status, double? ElapsedMs = null, string? Code = null, string? TimingGroup = null);
 
-/// <summary>仅记录固定五阶段，不接收地址、证书或报文内容；MQTT 3.1.1 的认证/协议结果共享 CONNACK 区间。</summary>
-internal sealed class MqttConnectionTestTrace(TimeProvider time, bool tls)
+/// <summary>仅记录固定五阶段，不接收地址、证书或报文内容；按协议解释认证结果；HTTP 响应不等于已确认凭证有效。</summary>
+internal sealed class ConnectionTestTrace(TimeProvider time, bool tls)
 {
     private readonly Lock _lock = new();
-    private readonly Dictionary<string, MqttConnectionTestStep> _steps = new(StringComparer.Ordinal)
+    private readonly Dictionary<string, ConnectionTestStep> _steps = new(StringComparer.Ordinal)
     {
         ["address"] = new("address", "notReached"),
         ["connection"] = new("connection", "notReached"),
@@ -48,13 +48,19 @@ internal sealed class MqttConnectionTestTrace(TimeProvider time, bool tls)
         }
     }
 
-    internal MqttConnectionTestStep[] Finish(string code)
+    internal ConnectionTestStep[] FinishMqtt(string code) => Finish(code, code == "success",
+        code == "success" ? "success" : code == "credential.rejected" ? "failed" : "unknown", "mqtt.connack");
+
+    internal ConnectionTestStep[] FinishHttp(string code, int? statusCode, bool credentialUsed) => Finish(code, statusCode is not null,
+        statusCode is 401 or 403 ? "failed" : credentialUsed ? "unknown" : "skipped", "http.response", code != "connection.busy");
+
+    private ConnectionTestStep[] Finish(string code, bool protocolSucceeded, string authenticationStatus, string timingGroup, bool attempted = true)
     {
         lock (_lock)
         {
             if (!_finished)
             {
-                if (_current is null && code != "success")
+                if (attempted && _current is null && !protocolSucceeded)
                 {
                     if (_steps["connection"].Status == "success")
                     { _steps["protocol"] = new("protocol", "failed", Code: code); }
@@ -65,13 +71,15 @@ internal sealed class MqttConnectionTestTrace(TimeProvider time, bool tls)
                         _steps["connection"] = new("connection", "failed", Code: code);
                     }
                 }
-                Complete(code == "success" ? "success" : "failed", code);
+                Complete(_current == "protocol" && protocolSucceeded ? "success" : "failed", code);
                 var protocol = _steps["protocol"];
                 if (protocol.Status != "notReached")
                 {
-                    _steps["protocol"] = protocol with { TimingGroup = "mqtt.connack" };
-                    _steps["authentication"] = new("authentication", code == "success" ? "success"
-                        : code == "credential.rejected" ? "failed" : "unknown", protocol.ElapsedMs, code, "mqtt.connack");
+                    _steps["protocol"] = protocol with { TimingGroup = timingGroup };
+                    _steps["authentication"] = new("authentication", authenticationStatus,
+                        authenticationStatus == "skipped" ? null : protocol.ElapsedMs,
+                        authenticationStatus == "skipped" ? null : code,
+                        authenticationStatus == "skipped" ? null : timingGroup);
                 }
                 _finished = true;
             }
@@ -88,7 +96,7 @@ internal sealed class MqttConnectionTestTrace(TimeProvider time, bool tls)
     }
 }
 
-internal sealed class MqttTestConnector(IOutboundConnector inner, MqttConnectionTestTrace trace) : IOutboundConnector
+internal sealed class ObservedTestConnector(IOutboundConnector inner, ConnectionTestTrace trace) : IOutboundConnector
 {
     public async ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken)
     {

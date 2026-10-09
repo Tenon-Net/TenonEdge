@@ -5,10 +5,11 @@ using MQTTnet;
 using MQTTnet.Exceptions;
 using MQTTnet.Formatter;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Mqtt;
 
-public sealed record MqttConnectionTestResult(bool Success, string Code, int? ConnAckCode, double ElapsedMs, MqttConnectionTestStep[] Steps);
+public sealed record MqttConnectionTestResult(bool Success, string Code, int? ConnAckCode, double ElapsedMs, ConnectionTestStep[] Steps);
 
 /// <summary>
 /// 显式触发的 MQTT 连接测试：独立随机 ClientId、CleanSession，不订阅、不发布、不写队列。
@@ -32,12 +33,12 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
         var started = time.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.TimeoutMs), time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        var trace = new MqttConnectionTestTrace(time, settings.Tls);
+        var trace = new ConnectionTestTrace(time, settings.Tls);
         using var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => { }, AdmitFrame,
             connected: () => trace.Begin("protocol")));
         var options = new MqttClientOptionsBuilder()
             .WithTcpServer(settings.Host, settings.Port)
-            .WithStreamProvider(new MqttStreamProvider(new MqttTestConnector(connector, trace)))
+            .WithStreamProvider(new MqttStreamProvider(new ObservedTestConnector(connector, trace)))
             .WithProtocolVersion(MqttProtocolVersion.V311)
             .WithCleanSession()
             .WithClientId("te-test-" + Guid.NewGuid().ToString("N"))
@@ -52,7 +53,7 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
             {
                 // 与 MQTTnet 未设置 IgnoreCertificateChainErrors 时的默认条件完全相同。
                 // 使用 OS 当前时间解释 BCL 的时间有效性结果，不用可注入业务时钟重做信任判断。
-                Volatile.Write(ref certificateFailure, MqttCertificateFailure.Classify(args.SslPolicyErrors, args.Chain, DateTime.UtcNow));
+                Volatile.Write(ref certificateFailure, CertificateFailure.Classify(args.SslPolicyErrors, args.Chain, DateTime.UtcNow));
                 return args.SslPolicyErrors == SslPolicyErrors.None;
             }));
         }
@@ -75,7 +76,7 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
         }
 
         MqttConnectionTestResult Result(string code, int? connAckCode) =>
-            new(code == "success", code, connAckCode, time.GetElapsedTime(started).TotalMilliseconds, trace.Finish(code));
+            new(code == "success", code, connAckCode, time.GetElapsedTime(started).TotalMilliseconds, trace.FinishMqtt(code));
     }
 
     private static bool AdmitFrame(byte header, int remainingLength)

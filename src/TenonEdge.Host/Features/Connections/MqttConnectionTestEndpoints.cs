@@ -1,6 +1,3 @@
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Abstractions.Contracts;
@@ -12,10 +9,8 @@ using TenonEdge.Runtime.Diagnostics;
 
 namespace TenonEdge.Host.Features.Connections;
 
-internal enum MqttTestAuthentication { None, Stored, Provided }
-
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record MqttConnectionTestRequest(MqttConnectionDraft Connection, MqttTestAuthentication Authentication = MqttTestAuthentication.None,
+internal sealed record MqttConnectionTestRequest(MqttConnectionDraft Connection, ConnectionTestAuthentication Authentication = ConnectionTestAuthentication.None,
     long? CredentialConnectionId = null, string? Username = null, string? Password = null)
 {
     public override string ToString() => "MQTT connection test request (secret omitted)";
@@ -38,21 +33,18 @@ internal static class MqttConnectionTestEndpoints
         MqttConnectionTestRequest request, MqttConnectionTest probe, MqttCredentialStore credentials,
         PreviewOperationBudget budget, HttpContext context)
     {
-        var session = context.User.FindFirstValue(SessionClaims.CsrfToken);
-        if (string.IsNullOrEmpty(session))
-        { return ApiProblems.Problem(403, "preview.sessionRequired", "真实测试需要已认证的本地会话。"); }
-        using var lease = budget.TryAcquire(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(session))));
-        if (lease is null)
-        { return ApiProblems.Problem(429, "preview.busy", "当前预览任务过多，请等待已有任务结束。"); }
+        using var lease = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
+        if (failure is not null)
+        { return failure; }
         try
         {
             var value = request.Connection ?? throw new ArgumentException("缺少连接参数。");
             if (!Enum.IsDefined(request.Authentication) || value.Host != value.Host?.Trim() ||
-                request.Authentication == MqttTestAuthentication.Stored &&
+                request.Authentication == ConnectionTestAuthentication.Stored &&
                     (request.CredentialConnectionId is null || request.Username is not null || request.Password is not null) ||
-                request.Authentication != MqttTestAuthentication.Stored && request.CredentialConnectionId is not null ||
-                request.Authentication == MqttTestAuthentication.None && (request.Username is not null || request.Password is not null) ||
-                request.Authentication == MqttTestAuthentication.Provided && (request.Username is null || request.Password is null))
+                request.Authentication != ConnectionTestAuthentication.Stored && request.CredentialConnectionId is not null ||
+                request.Authentication == ConnectionTestAuthentication.None && (request.Username is not null || request.Password is not null) ||
+                request.Authentication == ConnectionTestAuthentication.Provided && (request.Username is null || request.Password is null))
             { throw new ArgumentException("认证参数无效。"); }
             var settings = new MqttConnectionSettings
             {
@@ -63,13 +55,13 @@ internal static class MqttConnectionTestEndpoints
                 ClientId = value.ClientId,
                 TimeoutMs = value.TimeoutMs,
                 PingIntervalMs = value.PingIntervalMs,
-                UsePassword = request.Authentication != MqttTestAuthentication.None,
+                UsePassword = request.Authentication != ConnectionTestAuthentication.None,
             }.ValidateConnection();
             // 只取一次接收方绑定的凭证快照；解析器在返回前关闭数据库客户端，不跨网络等待持有事务。
             var credential = request.Authentication switch
             {
-                MqttTestAuthentication.Stored => credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient),
-                MqttTestAuthentication.Provided => new MqttCredential(request.Username!, request.Password!, "transient-test", "transient-test"),
+                ConnectionTestAuthentication.Stored => credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient),
+                ConnectionTestAuthentication.Provided => new MqttCredential(request.Username!, request.Password!, "transient-test", "transient-test"),
                 _ => null,
             };
             if (settings.UsePassword && credential is null)

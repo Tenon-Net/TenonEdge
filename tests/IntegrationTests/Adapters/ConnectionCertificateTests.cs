@@ -5,22 +5,28 @@ using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
+using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Runtime.Connections;
 
 namespace TenonEdge.IntegrationTests.Adapters;
 
-public sealed class MqttConnectionCertificateTests
+public sealed class ConnectionCertificateTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Theory]
-    [InlineData("localhost", -1, 1, "certificate.untrusted")]
-    [InlineData("wrong.invalid", -1, 1, "certificate.nameMismatch")]
-    [InlineData("localhost", -2, -1, "certificate.expired")]
-    [InlineData("localhost", 1, 2, "certificate.notYetValid")]
+    [InlineData(false, "localhost", -1, 1, "certificate.untrusted")]
+    [InlineData(true, "localhost", -1, 1, "certificate.untrusted")]
+    [InlineData(false, "wrong.invalid", -1, 1, "certificate.nameMismatch")]
+    [InlineData(true, "wrong.invalid", -1, 1, "certificate.nameMismatch")]
+    [InlineData(false, "localhost", -2, -1, "certificate.expired")]
+    [InlineData(true, "localhost", -2, -1, "certificate.expired")]
+    [InlineData(false, "localhost", 1, 2, "certificate.notYetValid")]
+    [InlineData(true, "localhost", 1, 2, "certificate.notYetValid")]
     public async Task ActualTlsFailureIsClassifiedAndCredentialsNeverReachApplicationStream(
-        string name, int notBeforeDays, int notAfterDays, string expected)
+        bool http, string name, int notBeforeDays, int notAfterDays, string expected)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest($"CN={name}", key, HashAlgorithmName.SHA256);
@@ -37,17 +43,14 @@ public sealed class MqttConnectionCertificateTests
         deadline.CancelAfter(TimeSpan.FromSeconds(10));
         var token = deadline.Token;
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var probe = new MqttConnectionTest(new OutboundConnector(new LoopbackPolicy()), TimeProvider.System);
-        var operation = probe.RunAsync(new MqttConnectionSettings
-        { ConnectionId = 1, Host = "localhost", Port = port, Tls = true, UsePassword = true },
-            new MqttCredential("test-user", "fixture-never-send-before-tls", "fixture", "1"), token);
+        var operation = RunProbeAsync();
         using var accepted = await listener.AcceptTcpClientAsync(token);
         using var stream = new SslStream(accepted.GetStream());
         var peer = ReadPeerAsync();
         var result = await operation;
         Assert.False(result.Success);
         Assert.Equal(expected, result.Code);
-        Assert.Null(result.ConnAckCode);
+        Assert.Null(result.Reply);
         Assert.Equal("success", result.Steps.Single(step => step.Stage == "address").Status);
         Assert.Equal("success", result.Steps.Single(step => step.Stage == "connection").Status);
         var tls = result.Steps.Single(step => step.Stage == "tls");
@@ -56,6 +59,22 @@ public sealed class MqttConnectionCertificateTests
         Assert.Equal("notReached", result.Steps.Single(step => step.Stage == "protocol").Status);
         Assert.Equal(0, await peer);
         Assert.DoesNotContain("fixture-never-send-before-tls", result.ToString(), StringComparison.Ordinal);
+
+        async Task<(bool Success, string Code, int? Reply, ConnectionTestStep[] Steps)> RunProbeAsync()
+        {
+            var connector = new OutboundConnector(new LoopbackPolicy());
+            if (http)
+            {
+                var result = await new HttpConnectionTest(new SharedConnections(), connector, TimeProvider.System).RunAsync(
+                    new HttpRequestSettings { ConnectionId = 1, BaseAddress = $"https://localhost:{port}/" },
+                    new HttpCredential(new(HttpCredentialKind.Bearer, null, null, "fixture", "1"), "fixture-never-send-before-tls"), token);
+                return (result.Success, result.Code, result.StatusCode, result.Steps);
+            }
+            var mqtt = await new MqttConnectionTest(connector, TimeProvider.System).RunAsync(new MqttConnectionSettings
+            { ConnectionId = 1, Host = "localhost", Port = port, Tls = true, UsePassword = true },
+                new MqttCredential("test-user", "fixture-never-send-before-tls", "fixture", "1"), token);
+            return (mqtt.Success, mqtt.Code, mqtt.ConnAckCode, mqtt.Steps);
+        }
 
         async Task<int> ReadPeerAsync()
         {
