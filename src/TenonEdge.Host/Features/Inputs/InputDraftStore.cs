@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using SqlSugar;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
@@ -33,7 +34,7 @@ internal sealed class InputDraftStore(ConfigDatabase database, SnowflakeIdGenera
         {
             ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
             var device = DeviceDraftStore.Read(client, deviceId) ?? throw new DraftWriteException("device.notFound");
-            var input = InputDraftValidation.Normalize(id, device, request);
+            var input = InputDraftValidation.Normalize(id, device, request, device.ConnectionId is { } connectionId ? ConnectionDraftStore.Read(client, connectionId) : null);
             var existing = existingId is null ? null : client.Queryable<InputDraftRecord>().InSingle(id)
                 ?? throw new DraftWriteException("input.notFound");
             if (existing is not null && existing.DeviceId != deviceId)
@@ -43,8 +44,8 @@ internal sealed class InputDraftStore(ConfigDatabase database, SnowflakeIdGenera
             var siblings = ReadForDevice(client, deviceId).Where(other => other.Id != id).ToArray();
             if (siblings.Any(other => other.Key == input.Key))
             { throw new DraftWriteException("input.duplicateKey"); }
-            var keys = siblings.SelectMany(other => other.Modbus?.Points.Select(point => point.Key) ?? []).ToHashSet(StringComparer.Ordinal);
-            if (input.Modbus!.Points.Any(point => keys.Contains(point.Key)))
+            var keys = siblings.SelectMany(InputDraftValidation.FieldKeys).ToHashSet(StringComparer.Ordinal);
+            if (InputDraftValidation.FieldKeys(input).Any(keys.Contains))
             { throw new DraftWriteException("input.duplicateDeviceField"); }
             if (existing is null && HasRetainedReference(client, device.Key + "/" + input.Key))
             { throw new DraftWriteException("input.reservedKey"); }
@@ -81,12 +82,19 @@ internal sealed class InputDraftStore(ConfigDatabase database, SnowflakeIdGenera
     internal static InputDraft[] ReadForDevice(SqlSugarClient client, long deviceId) =>
         client.Queryable<InputDraftRecord>().Where(row => row.DeviceId == deviceId).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
 
-    internal static void ValidateDeviceChange(SqlSugarClient client, DeviceDraft device)
+    internal static void ValidateDeviceChange(SqlSugarClient client, DeviceDraft device, ConnectionDraft? replacement = null)
     {
         foreach (var input in ReadForDevice(client, device.Id))
         {
             if (input.Kind != device.Kind)
             { throw new DraftWriteException("device.sourceConflict"); }
+            var connection = replacement ?? (device.ConnectionId is { } id ? ConnectionDraftStore.Read(client, id) : null);
+            try
+            {
+                _ = InputDraftValidation.Normalize(input.Id, device, new("check", input.Key, input.Name, input.Enabled,
+                    input.Modbus, input.Mqtt, input.Http, input.Simulator), connection);
+            }
+            catch (ArgumentException) { throw new DraftWriteException("device.sourceConflict"); }
         }
     }
 

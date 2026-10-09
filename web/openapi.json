@@ -1846,7 +1846,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "新建 Modbus 来源草稿，不开始采集",
+        "summary": "新建设备来源草稿，不开始采集",
         "operationId": "createInputDraft",
         "parameters": [
           {
@@ -1909,7 +1909,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "保存 Modbus 来源及零基偏移点表，不改变运行配置",
+        "summary": "保存设备来源、字段或零基偏移点表，不改变运行配置",
         "operationId": "updateInputDraft",
         "parameters": [
           {
@@ -2700,6 +2700,15 @@
           }
         }
       },
+      "FieldType": {
+        "enum": [
+          "boolean",
+          "integer",
+          "number",
+          "string",
+          null
+        ]
+      },
       "FirstSetupInfo": {
         "required": [
           "completedAt",
@@ -2868,6 +2877,53 @@
           }
         }
       },
+      "HttpSourceDraft": {
+        "required": [
+          "path",
+          "fields"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonSourceField"
+            }
+          },
+          "periodMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 5000
+          },
+          "headers": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "upstreamTime": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceTimeMapping"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "HttpValidationProblemDetails": {
         "type": "object",
         "properties": {
@@ -2998,6 +3054,36 @@
                 "$ref": "#/components/schemas/ModbusSourceDraft"
               }
             ]
+          },
+          "mqtt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MqttSourceDraft"
+              }
+            ]
+          },
+          "http": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpSourceDraft"
+              }
+            ]
+          },
+          "simulator": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SimulatorSourceDraft"
+              }
+            ]
           }
         }
       },
@@ -3047,6 +3133,36 @@
               },
               {
                 "$ref": "#/components/schemas/ModbusSourceDraft"
+              }
+            ]
+          },
+          "mqtt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MqttSourceDraft"
+              }
+            ]
+          },
+          "http": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpSourceDraft"
+              }
+            ]
+          },
+          "simulator": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SimulatorSourceDraft"
               }
             ]
           }
@@ -3180,6 +3296,45 @@
             "format": "int64"
           }
         }
+      },
+      "JsonSourceField": {
+        "required": [
+          "key",
+          "path",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FieldType"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unit": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "LoginRequest": {
         "required": [
@@ -3484,6 +3639,48 @@
             ]
           }
         }
+      },
+      "MqttSourceDraft": {
+        "required": [
+          "topicFilter",
+          "fields"
+        ],
+        "type": "object",
+        "properties": {
+          "topicFilter": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonSourceField"
+            }
+          },
+          "qos": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 1
+          },
+          "processRetained": {
+            "type": "boolean",
+            "default": false
+          },
+          "upstreamTime": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourceTimeMapping"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "OutboundNetworkGrant": {
         "required": [
@@ -4113,6 +4310,83 @@
           }
         }
       },
+      "SimulatorSourceDraft": {
+        "type": "object",
+        "properties": {
+          "periodMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 5000
+          },
+          "template": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sampleJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "missingField": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double",
+            "default": 0
+          },
+          "invalidValue": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double",
+            "default": 0
+          },
+          "connectionError": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double",
+            "default": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "SourceTimeMapping": {
+        "required": [
+          "path",
+          "format"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "format": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UpstreamTimeFormat"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "StorageProtectionStatus": {
         "required": [
           "rejectNewRecords",
@@ -4230,6 +4504,14 @@
             "$ref": "#/components/schemas/ClockSyncState"
           }
         }
+      },
+      "UpstreamTimeFormat": {
+        "enum": [
+          "rfc3339",
+          "unixSeconds",
+          "unixMilliseconds",
+          null
+        ]
       },
       "UserRole": {
         "enum": [

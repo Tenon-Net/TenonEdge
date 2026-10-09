@@ -23,6 +23,7 @@ public sealed class ModbusFrameErrorComparisonTests(ITestOutputHelper output)
 
         var (exception, elapsed) = MeasureRead(() => client.Read(1, 0, 2));
         output.WriteLine($"NModbus CRC 错误：{elapsed.TotalMilliseconds:F0} ms，{Describe(exception)}");
+        output.WriteLine($"从站观测：连接 {slave.ConnectionCount}，收到请求 {slave.RequestCount}，写出应答 {slave.ResponseCount}。");
 
         Assert.Contains("Checksums failed to match", Assert.IsType<IOException>(exception).Message, StringComparison.Ordinal);
         Assert.True(elapsed < ReadTimeout, $"用了 {elapsed}，应在读取超时之前报错。");

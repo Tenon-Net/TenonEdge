@@ -85,6 +85,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
             {
                 DeviceDraftValidation.Normalize(device.Id, new("check", device.Key, device.Name, device.Kind, device.Group,
                     device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled), connection);
+                InputDraftStore.ValidateDeviceChange(client, device, connection);
             }
             catch (ArgumentException) { throw new DraftWriteException("connection.deviceConflict"); }
         }

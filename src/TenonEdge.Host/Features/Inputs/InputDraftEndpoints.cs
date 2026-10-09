@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Configuration;
@@ -15,11 +16,11 @@ internal static class InputDraftEndpoints
         group.MapPost("", (long deviceId, InputDraftRequest request, InputDraftStore store, HttpContext context) =>
             Write(deviceId, null, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("createInputDraft")
-            .WithSummary("新建 Modbus 来源草稿，不开始采集").WithMetadata(new RequestBodyLimit(16 * 1024 * 1024));
+            .WithSummary("新建设备来源草稿，不开始采集").WithMetadata(new RequestBodyLimit(16 * 1024 * 1024));
         group.MapPut("/{inputId:long}", (long deviceId, long inputId, InputDraftRequest request, InputDraftStore store, HttpContext context) =>
             Write(deviceId, inputId, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("updateInputDraft")
-            .WithSummary("保存 Modbus 来源及零基偏移点表，不改变运行配置").WithMetadata(new RequestBodyLimit(16 * 1024 * 1024));
+            .WithSummary("保存设备来源、字段或零基偏移点表，不改变运行配置").WithMetadata(new RequestBodyLimit(16 * 1024 * 1024));
         group.MapDelete("/{inputId:long}", Delete).RequireAuthorization(AuthorizationPolicies.Configurator)
             .WithName("deleteInputDraft").WithSummary("删除未被保留运行版本引用的来源草稿");
         return api;
@@ -37,7 +38,8 @@ internal static class InputDraftEndpoints
     {
         try
         { return TypedResults.Ok(store.Write(deviceId, id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
-        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["input"] = ["来源或点位参数无效，请检查 key、周期、地址、类型、字节序与位号。"] }); }
+        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["input"] = ["来源配置无效，请检查 key、协议参数、点位或字段类型、上游时间及模拟数据。"] }); }
+        catch (JsonException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["input"] = ["JSON 来源配置无效。"] }); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }
 

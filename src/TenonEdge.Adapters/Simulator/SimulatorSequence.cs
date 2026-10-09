@@ -23,6 +23,16 @@ internal sealed class SimulatorSequence
     private const string Frequency = "frequency";
     private const string Energy = "energy";
 
+    internal static IReadOnlyDictionary<string, FieldType> MeterFields { get; } =
+        new Dictionary<string, FieldType>
+        {
+            [Voltage] = FieldType.Number,
+            [Current] = FieldType.Number,
+            [Power] = FieldType.Number,
+            [Frequency] = FieldType.Number,
+            [Energy] = FieldType.Number,
+        }.ToImmutableDictionary(StringComparer.Ordinal);
+
     private readonly SimulatorSettings _settings;
     private readonly decimal _periodHours;
     private SplitMix64 _random;

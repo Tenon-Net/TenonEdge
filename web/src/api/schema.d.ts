@@ -410,7 +410,7 @@ export interface paths {
         /** 查看设备来源草稿和规范化点表 */
         get: operations["getInputDrafts"];
         put?: never;
-        /** 新建 Modbus 来源草稿，不开始采集 */
+        /** 新建设备来源草稿，不开始采集 */
         post: operations["createInputDraft"];
         delete?: never;
         options?: never;
@@ -426,7 +426,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** 保存 Modbus 来源及零基偏移点表，不改变运行配置 */
+        /** 保存设备来源、字段或零基偏移点表，不改变运行配置 */
         put: operations["updateInputDraft"];
         post?: never;
         /** 删除未被保留运行版本引用的来源草稿 */
@@ -583,6 +583,8 @@ export interface components {
         DraftVersion: {
             version: string;
         };
+        /** @enum {unknown} */
+        FieldType: "boolean" | "integer" | "number" | "string" | null;
         FirstSetupInfo: {
             /** Format: date-time */
             completedAt: string;
@@ -627,6 +629,19 @@ export interface components {
             /** Format: date-time */
             notAfter: string;
         };
+        HttpSourceDraft: {
+            path: string;
+            fields: components["schemas"]["JsonSourceField"][];
+            /**
+             * Format: int32
+             * @default 5000
+             */
+            periodMs: number | string;
+            headers?: null | {
+                [key: string]: string;
+            };
+            upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
+        };
         HttpValidationProblemDetails: {
             type?: null | string;
             title?: null | string;
@@ -656,6 +671,9 @@ export interface components {
             kind: components["schemas"]["DeviceKind"];
             enabled: boolean;
             modbus: null | components["schemas"]["ModbusSourceDraft"];
+            mqtt?: null | components["schemas"]["MqttSourceDraft"];
+            http?: null | components["schemas"]["HttpSourceDraft"];
+            simulator?: null | components["schemas"]["SimulatorSourceDraft"];
         };
         InputDraftList: {
             version: string;
@@ -668,6 +686,9 @@ export interface components {
             /** @default true */
             enabled: boolean;
             modbus?: null | components["schemas"]["ModbusSourceDraft"];
+            mqtt?: null | components["schemas"]["MqttSourceDraft"];
+            http?: null | components["schemas"]["HttpSourceDraft"];
+            simulator?: null | components["schemas"]["SimulatorSourceDraft"];
         };
         InputDraftResult: {
             version: string;
@@ -698,6 +719,13 @@ export interface components {
             dataRejected: number | string;
             /** Format: int64 */
             invalidUpstreamTimes: number | string;
+        };
+        JsonSourceField: {
+            key: string;
+            path: string;
+            type: null | components["schemas"]["FieldType"];
+            name?: null | string;
+            unit?: null | string;
         };
         LoginRequest: {
             accountName: null | string;
@@ -797,6 +825,18 @@ export interface components {
             /** @default false */
             retainExisting: boolean;
             expectedDraftVersion?: null | string;
+        };
+        MqttSourceDraft: {
+            topicFilter: string;
+            fields: components["schemas"]["JsonSourceField"][];
+            /**
+             * Format: int32
+             * @default 1
+             */
+            qos: number | string;
+            /** @default false */
+            processRetained: boolean;
+            upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
         };
         OutboundNetworkGrant: {
             cidr: string;
@@ -937,6 +977,34 @@ export interface components {
             windowClosesAt: null | string;
             resetAccountName: null | string;
         };
+        SimulatorSourceDraft: {
+            /**
+             * Format: int32
+             * @default 5000
+             */
+            periodMs: number | string;
+            template?: null | string;
+            sampleJson?: null | string;
+            /**
+             * Format: double
+             * @default 0
+             */
+            missingField: number | string;
+            /**
+             * Format: double
+             * @default 0
+             */
+            invalidValue: number | string;
+            /**
+             * Format: double
+             * @default 0
+             */
+            connectionError: number | string;
+        };
+        SourceTimeMapping: {
+            path: string;
+            format: null | components["schemas"]["UpstreamTimeFormat"];
+        };
         StorageProtectionStatus: {
             rejectNewRecords: boolean;
             spaceUnknown: boolean;
@@ -960,6 +1028,8 @@ export interface components {
             runtimeStartBlockers: components["schemas"]["RuntimeStartBlocker"][];
             clockSyncState: components["schemas"]["ClockSyncState"];
         };
+        /** @enum {unknown} */
+        UpstreamTimeFormat: "rfc3339" | "unixSeconds" | "unixMilliseconds" | null;
         /** @enum {unknown} */
         UserRole: "administrator" | "configurator" | "viewer";
     };

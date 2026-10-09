@@ -2201,6 +2201,27 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：MQTT、HTTP、模拟来源与字段表单尚未接入持久化；设备复制、CSV、字段推断、连接测试、客户端证书/信任表单仍未完成。来源/设备与路线草稿/平台映射的引用检查须随相应对象接入并给出引用方清单；当前仅既有运行快照保护。凭证边界继续见 §2.104。T3-05 编译与 T3-06 应用/回滚未完成，因此网页仍不能独立完成一条实际采集路线。未推送、未发版、未进行真实设备验证，总目标保持未完成。
 
+### 2.107 T3-04 MQTT、HTTP 与模拟来源草稿（2026-10-10）
+
+沿 §2.106 扩展既有来源表与页面，不新建重复草稿库、不启动协议会话。按功能 §3.4/3.5 对照真实适配器、JSON 定位与模拟输入代码，并复核本机参考项目笔记；只复用本项目校验，不复制第三方源码或新增依赖。
+
+- 同一 `InputDraft` 增加 MQTT、HTTP、Simulator 类型化参数分支，只允许与所属设备匹配的一种。所有协议继续共享草稿版本、事务、设备内来源/字段 key 唯一、授权/CSRF 与审计；既有 Modbus 数据不迁移、不重写。
+- MQTT 配置 Topic、QoS 0/1、保留消息处理与上游时间映射，复用正式适配器的订阅校验。JSON 字段包含 key、固定类型、JSON Pointer、显示名称和单位，元数据不混入运行解码器定义。上游时间明确声明 RFC 3339/Unix 秒/毫秒；缺少字段类型或时间格式不能被默认为 enum 零值。空字段表可存草稿，但后续编译仍须判定是否可运行。
+- HTTP 保存相对路径/非秘密查询、周期及来源级非秘密头；复用正式地址/头校验，禁止逃离基础路径、切主机、识别出的秘密头/查询名及忽略大小写重复头。连接与来源头合并后的数量/字节限制同样检查；连接或设备改引用时重新校验所属来源，失败不推进版本。
+- 模拟来源可选电表模板或自定义一层 JSON，设置周期和三种故障比例。通过正式模拟配置解析器做纯校验/字段描述，不执行模拟循环；模板字段与运行实现共用常量。自定义配置 JSON 以原文本保存，浏览器不先 JSON.parse，保留大于 JS 安全整数的值；拒绝重复/非法字段名、嵌套对象、null、未知模板和越界比例。自定义模拟数据是主动配置，明确告知会持久化；不与 MQTT/HTTP 的临时抓取样本混淆。
+- 来源页按设备协议显示真实表单：JSON 字段可手工增删、编辑定位/类型/名称/单位；MQTT 保留处理、HTTP 路径/头、模拟模式/固定数据/故障比例均真实保存。上游时间有独立启用标记，明确启用的根值定位空字符串不会被误删。查询与本地 Zustand 编辑继续分开，错误不清空表单；只读不能改写。
+
+实际验证：
+
+1. 环境沿 §2.106（SDK 10.0.401、Linux x64、Node 22.23.2、npm 11.21.0、Chromium 156.0.8078.4）。Release 构建 0 警告/错误；最终 `dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger 'trx;LogFilePrefix=t3-json-source-verified' --results-directory artifacts/test-results/t3-json-source-verified --blame-hang-timeout 5m --blame-hang-dump-type none` **1031 单元 + 863 集成 = 1894 项通过，0 失败/跳过**（`/tmp/tenonedge-json-source-full-verified.log`）；`verify-test-results.py` 两程序集非零门禁通过。此前定向 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~JsonSource|FullyQualifiedName~InputDraft|FullyQualifiedName~Simulator'` **53 单元 + 33 集成通过**（`/tmp/tenonedge-json-source-targeted2.log`），此后补入“缺少字段类型/时间格式拒绝”单元及 API 回归，已计入上述最终全量。
+2. 新增后端用例包括 MQTT QoS/Topic/保留/时间约束、固定 JSON 定位、HTTP 路径与秘密拒绝、合并头容量重新校验、模拟原始整数与非法样本；三种来源分别经真实 API 保存、重建 Host 后读取同 ID/版本/字段，以及同设备跨来源字段碰撞拒绝。没有连接真实 Broker/HTTP/设备，不声称采集验收。
+3. 前端字段声明、HTTP 重复头、模拟 JSON 原文及根值上游时间回归：`npm run test` **110 项通过**（`web/reports/unit.json`）。最终 `npm run build` 与全量 `npm run test:e2e -- --reporter=list,json` **12 项通过**（`/tmp/tenonedge-json-source-browser-verified.log`、`web/reports/browser.json`）；核看 MQTT/模拟来源截图，字段类型选择框最小宽度已修正。`dotnet format TenonEdge.sln --no-restore --verify-no-changes`、前端 typecheck/lint/format:check 与 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 均通过。来源浏览器独立用例已通过一次（`/tmp/tenonedge-json-source-browser-targeted2.log`）：三种协议逐项真实保存、重载，MQTT 未配时间就启用保留时返回 400 且保留输入，时间格式与字段类型/名称/单位正确持久化，模拟 9007199254740993 原文保持，运行版本未变化。
+4. 首次构建发现 RuntimeUnitBuildException 的命名空间缺失，按实际 Contracts 引入。初轮单测把 JSON Pointer 的字面量星号误当成非法通配表达式；实际定位器将它视为普通对象键，不展开数组，因此改测真正非法的 ~2 转义，未改变定位语义。首轮浏览器在模拟 textarea 的精确 label 定位超时，实际可访问树有正确 textbox，改用 textbox 角色定位后独立场景通过；没有放宽业务断言。
+
+5. 后端中间全量（`/tmp/tenonedge-json-source-full-final.log`、`artifacts/test-results/t3-json-source-final/`）曾出现 **1029 单元通过、862 集成通过、1 集成失败**：既有 `NModbusReportsAnRtuCrcErrorImmediately` 预期 CRC 异常却在约 306 ms 收到网络读取超时。原 300 ms 超时与断言均未放宽，增加从站连接/请求/应答计数输出辅助后续定位；独立重复原用例 **10/10 通过**（`/tmp/tenonedge-json-source-crc-recheck.log`）。失败根因仍未确定，不把“负载/调度”猜测写成修复结论。一次先前重检链在 Release 构建成功后退出 143，未生成重复/全量日志，不计为已执行；上述十次为重新实际执行。失败 TRX 保留。
+
+剩余：当前只有手工字段描述，粘贴样本字段推断与实时抓取尚未实现；设备复制、CSV、连接测试、客户端证书/信任表单仍待完成。JSON 字段表 1000 行浏览器性能尚未验证。草稿路线/平台映射的引用清单和保护须继续接入；凭证边界见 §2.104。T3-05 图编译/样本预览与 T3-06 应用/回滚未完成，因此四类来源草稿可保存仍不等于网页已经能启动完整采集路线。总目标保持未完成，未推送、未发版、无实物验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

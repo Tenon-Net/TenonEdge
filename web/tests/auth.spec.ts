@@ -1079,7 +1079,9 @@ test('Modbus source point table persists normalized offsets and a bounded 10000-
     await page
         .getByRole('button', { name: '保存来源草稿', exact: true })
         .click()
-    await expect(page.getByText('点表存在错误，请先修正标红行。')).toBeVisible()
+    await expect(
+        page.getByText('点表或来源表单存在错误，请检查标红行及重复请求头。'),
+    ).toBeVisible()
     page.once('dialog', (dialog) => dialog.accept())
     await page
         .getByRole('button', { name: '重新载入来源', exact: true })
@@ -1176,4 +1178,197 @@ test('Modbus source point table persists normalized offsets and a bounded 10000-
     page.once('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: '删除来源', exact: true }).click()
     await expect(page.getByRole('status')).toHaveText('来源草稿已删除。')
+})
+
+test('MQTT, HTTP and simulator sources save real typed fields without captured samples', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const headers = { 'X-CSRF-Token': session.csrfToken }
+    for (const kind of ['mqtt', 'http', 'simulator'] as const) {
+        let version = (
+            await (await page.request.get('/api/edge-admin/v1/devices')).json()
+        ).version
+        let connectionId: number | null = null
+        if (kind !== 'simulator') {
+            const result = await page.request.post(
+                '/api/edge-admin/v1/connections',
+                {
+                    headers,
+                    data: {
+                        expectedVersion: version,
+                        key: 'json-' + kind,
+                        name: 'JSON ' + kind,
+                        kind,
+                        ...(kind === 'mqtt'
+                            ? { mqtt: { host: '10.20.30.66' } }
+                            : {
+                                  http: {
+                                      baseAddress: 'https://example.test/api/',
+                                  },
+                              }),
+                    },
+                },
+            )
+            expect(result.status()).toBe(200)
+            const saved = await result.json()
+            version = saved.version
+            connectionId = saved.connection.id
+        }
+        const result = await page.request.post('/api/edge-admin/v1/devices', {
+            headers,
+            data: {
+                expectedVersion: version,
+                key: 'json-device-' + kind,
+                name: 'JSON 设备 ' + kind,
+                kind,
+                connectionId,
+            },
+        })
+        expect(result.status()).toBe(200)
+        const device = (await result.json()).device
+        const endpoint = '/api/edge-admin/v1/devices/' + device.id + '/inputs'
+        await page.goto('/devices/' + device.id + '/inputs')
+        await page
+            .getByRole('button', { name: '新建数据来源', exact: true })
+            .click()
+        await page.getByLabel('来源 key', { exact: true }).fill('source')
+        await page.getByLabel('来源名称', { exact: true }).fill('来源 ' + kind)
+        if (kind === 'simulator') {
+            await page
+                .getByRole('combobox', { name: '模拟数据方式', exact: true })
+                .selectOption('custom')
+            await page
+                .getByRole('textbox', {
+                    name: '模拟输入固定 JSON',
+                    exact: true,
+                })
+                .fill('{"count":9007199254740993,"healthy":true}')
+            await page.getByLabel('模拟缺字段比例', { exact: true }).fill('0.1')
+        } else {
+            await page
+                .getByRole('button', { name: '添加 JSON 字段', exact: true })
+                .click()
+            await page
+                .getByLabel('JSON 字段 1 key', { exact: true })
+                .fill('count')
+            await page
+                .getByLabel('JSON 字段 1 path', { exact: true })
+                .fill('/values/0')
+            await page
+                .getByRole('combobox', {
+                    name: 'JSON 字段 1 type',
+                    exact: true,
+                })
+                .selectOption('integer')
+            await page
+                .getByLabel('JSON 字段 1 name', { exact: true })
+                .fill('计数')
+            await page.getByLabel('JSON 字段 1 unit', { exact: true }).fill('n')
+            if (kind === 'mqtt') {
+                await page
+                    .getByLabel('MQTT Topic', { exact: true })
+                    .fill('plant/meter')
+                await page.getByLabel('处理保留消息', { exact: true }).check()
+                const rejected = page.waitForResponse(
+                    (response) =>
+                        response.url().endsWith('/inputs') &&
+                        response.request().method() === 'POST',
+                )
+                await page
+                    .getByRole('button', { name: '保存来源草稿', exact: true })
+                    .click()
+                expect((await rejected).status()).toBe(400)
+                await expect(
+                    page.getByLabel('JSON 字段 1 key', { exact: true }),
+                ).toHaveValue('count')
+                await page
+                    .getByLabel('上游时间 JSON 定位（可选）', { exact: true })
+                    .fill('/stamp')
+                await page
+                    .getByRole('combobox', {
+                        name: '上游时间格式',
+                        exact: true,
+                    })
+                    .selectOption('unixMilliseconds')
+            } else {
+                await page
+                    .getByLabel('HTTP 路径与非秘密查询参数', { exact: true })
+                    .fill('values?site=plant')
+                await page
+                    .getByRole('button', {
+                        name: '添加来源请求头',
+                        exact: true,
+                    })
+                    .click()
+                await page
+                    .getByLabel('来源请求头 1 名称', { exact: true })
+                    .fill('X-Site')
+                await page
+                    .getByLabel('来源请求头 1 值', { exact: true })
+                    .fill('plant')
+            }
+        }
+        await page
+            .getByRole('button', { name: '保存来源草稿', exact: true })
+            .click()
+        await expect(page.getByRole('status')).toHaveText(
+            '来源与点表已保存到网关草稿，尚未应用。',
+        )
+        const saved = (await (await page.request.get(endpoint)).json())
+            .inputs[0]
+        expect(saved.kind).toBe(kind)
+        if (kind === 'simulator') {
+            expect(saved.simulator.sampleJson).toBe(
+                '{"count":9007199254740993,"healthy":true}',
+            )
+            expect(saved.simulator.missingField).toBe(0.1)
+        } else {
+            expect(saved[kind].fields[0]).toMatchObject({
+                key: 'count',
+                path: '/values/0',
+                type: 'integer',
+                name: '计数',
+                unit: 'n',
+            })
+            expect(saved.simulator).toBeNull()
+            if (kind === 'mqtt')
+                expect(saved.mqtt.upstreamTime).toEqual({
+                    path: '/stamp',
+                    format: 'unixMilliseconds',
+                })
+            else expect(saved.http.headers).toEqual({ 'X-Site': 'plant' })
+        }
+        await page.reload()
+        await page
+            .getByRole('button', {
+                name: new RegExp('来源 ' + kind + ' \\(source\\)'),
+            })
+            .click()
+        if (kind === 'simulator')
+            await expect(
+                page.getByRole('textbox', {
+                    name: '模拟输入固定 JSON',
+                    exact: true,
+                }),
+            ).toHaveValue('{"count":9007199254740993,"healthy":true}')
+        else
+            await expect(
+                page.getByLabel('JSON 字段 1 key', { exact: true }),
+            ).toHaveValue('count')
+        await page.screenshot({
+            path: 'test-results/source-' + kind + '.png',
+            fullPage: true,
+        })
+        expect(
+            (
+                await (
+                    await page.request.get('/api/edge-admin/v1/runtime/status')
+                ).json()
+            ).coordinator.activeRevision,
+        ).toBeNull()
+    }
 })

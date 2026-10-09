@@ -94,7 +94,7 @@ internal static class ConnectionDraftValidation
         return new(id, request.Key, request.Name.Trim(), request.Kind, request.Enabled, modbus, mqtt, http);
     }
 
-    private static bool IsSecretName(string name)
+    internal static bool IsSecretName(string name)
     {
         var compact = string.Concat(name.Where(char.IsAsciiLetterOrDigit)).ToLowerInvariant();
         return compact.Contains("password", StringComparison.Ordinal) || compact.Contains("secret", StringComparison.Ordinal) ||

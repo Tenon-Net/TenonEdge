@@ -1,3 +1,4 @@
+import { JsonSourceEditor } from './json-editor'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
@@ -126,7 +127,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
             (dirty && !window.confirm(t('inputs.discard')))
         )
             return
-        const nextForm = inputForm(query.data!.version, input)
+        const nextForm = inputForm(query.data!.version, input, device!.kind)
         const nextMode: AddressMode =
             device?.addressNotation === 'manual' ? 'manual' : 'offset'
         const nextRows = inputRows(input, nextMode)
@@ -192,12 +193,16 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                 >
                     {t('inputs.refresh')}
                 </Button>
-                {canEdit && device?.kind === 'modbus' && (
+                {canEdit && device && (
                     <Button
                         disabled={!coherent || mutation.isPending}
                         onClick={() => open()}
                     >
-                        {t('inputs.new')}
+                        {t(
+                            device?.kind === 'modbus'
+                                ? 'inputs.new'
+                                : 'inputs.newGeneric',
+                        )}
                     </Button>
                 )}
             </div>
@@ -214,10 +219,12 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                         onClick={() => open(input)}
                     >
                         {input.name} ({input.key}) ·{' '}
-                        {t('inputs.points', {
-                            count: input.modbus?.points.length ?? 0,
-                            period: input.modbus?.periodMs,
-                        })}
+                        {input.kind === 'modbus'
+                            ? t('inputs.points', {
+                                  count: input.modbus?.points.length ?? 0,
+                                  period: input.modbus?.periodMs,
+                              })
+                            : t('devices.kinds.' + input.kind)}
                     </Button>
                 ))}
             </div>
@@ -260,23 +267,29 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                                     }
                                 />
                             </label>
-                            <label>
-                                {t('inputs.period')}
-                                <input
-                                    className={fieldClass}
-                                    required
-                                    type="number"
-                                    min={1000}
-                                    max={86400000}
-                                    step={1}
-                                    value={form.period}
-                                    onChange={(e) =>
-                                        patch({
-                                            period: Number(e.target.value),
-                                        })
-                                    }
-                                />
-                            </label>
+                            {form.kind !== 'mqtt' && (
+                                <>
+                                    <label>
+                                        {t('inputs.period')}
+                                        <input
+                                            className={fieldClass}
+                                            required
+                                            type="number"
+                                            min={1000}
+                                            max={86400000}
+                                            step={1}
+                                            value={form.period}
+                                            onChange={(e) =>
+                                                patch({
+                                                    period: Number(
+                                                        e.target.value,
+                                                    ),
+                                                })
+                                            }
+                                        />
+                                    </label>
+                                </>
+                            )}
                             <label className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
@@ -358,12 +371,20 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                             )}
                         </div>
                     </form>
-                    <PointEditor
-                        key={generation}
-                        store={points}
-                        managed
-                        readOnly={!canEdit || mutation.isPending}
-                    />
+                    {form.kind === 'modbus' ? (
+                        <PointEditor
+                            key={generation}
+                            store={points}
+                            managed
+                            readOnly={!canEdit || mutation.isPending}
+                        />
+                    ) : (
+                        <JsonSourceEditor
+                            form={form}
+                            patch={patch}
+                            readOnly={!canEdit || mutation.isPending}
+                        />
+                    )}
                 </section>
             )}
         </section>
