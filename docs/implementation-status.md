@@ -2410,6 +2410,22 @@ Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test Te
 
 首次前端全量 **119 Vitest + 18 Playwright 通过**；检查时补充无预览结果前不反复序列化万点表、非法编辑用字段错误反馈，并新增浏览器“改变周期后禁止采用旧样本、恢复后才允许采用”断言，最终前端 **119 Vitest + 18 Playwright 通过，0 失败/跳过**（45.1 秒），报告非零/无跳过门禁通过。Node 22.23.2 / npm 11.21.0 / Chromium 156.0.8078.4；`npm run build`（含 tsc）、lint、format:check 通过；实际使用 `npx --yes npm@11.21.0`，浏览器地址 `http://192.168.0.88:18082`。日志 `/tmp/tenonedge-modbus-preview-web-build-final2.log`、`/tmp/tenonedge-modbus-preview-web-unit2.log`、`/tmp/tenonedge-modbus-preview-web-full2.log`；报告 `web/reports/unit.json`、`web/reports/browser.json`。`git diff --check` 通过。剩余：MQTT/HTTP 实时采样、预览连接层更细原因分类、真实设备兼容；T3-05 图编译与 T3-06 应用/回滚仍未完成，不能据本节宣称完整可视化配置目标达到。
 
+### 2.119 T3-07 HTTP 实时采样内核与 JSON 展示边界（2026-10-10）
+
+接续 Modbus 网页读取，实施 HTTP 采样内核；尚未注册采样 API/前端入口，不把本节记作 HTTP 网页采样已交付。对照 IoTEdge 的 URL 凭证与“界面已有不等于功能已实现”反例，只借安全边界，不复制源码。
+
+- `HttpReadPreview` 通过正式 HTTP 的同编号/基础地址/超时身份借用共享串行会话；只 GET 一次配置路径，不旁路建客户端。与正式输入抽取共用的请求构造方法，逐次解析当前凭证并核对身份/接收方，不降级匿名。共享会话冲突拒绝借用；总请求期限包括排队、联网、解析和展示处理，调用者取消向上传播。
+- 复用 `HttpInputResponse` 的 1 MiB 正文/深度 64/有效 UTF-8/单个 JSON 校验，不跟随重定向、不自动解压、不使用代理或 Cookie；超限或失败释放时不排空剩余正文。只对成功状态解析 JSON；其他状态、非法 JSON、编码或大小失败仅返回安全原因码/状态，不回显失败正文。
+- 复用正式 `IJsonInputDecoderFactory` 的固定字段类型、精确数值与上游时间解析；结果以原文字符串附类型返回，不把 int64 转 double。未携带的字段与正式输入一样省略，转换失败返回质量原因。零字段可以只抓 JSON，采用网关接收时间；字段尚未定义时不提前冒充完成上游时间解码。
+- 展示 DTO 的正文和字段按实际 JSON 转义后的 UTF-8 字节限制，总计最多 64 KiB；正文分配最多 32 KiB 序列化预算，保留字段空间，按 Unicode 边界截断。正文/字段截断分别标记；截断或脱敏结果不允许作为完整样本。`RawBytes` 为已解析 JSON 根文本的 UTF-8 大小，不含 HTTP 头或根外空白。结果 `ToString` 不含正文。
+- 保守隐藏常见敏感键（含横线/下划线变体）或已用凭证的常见回显：明文、URL 编码、Basic 线序 Base64、JSON 转义还原后的字符串。命中时整个正文和字段都不返回，以免字段解析绕过正文脱敏。不是任意编码/加密秘密的通用识别保证，也不更改正式采集的字段内容。
+
+定向新用例首轮 **12 通过 / 1 失败**：固定样本时间相对真实主机时间在未来，正式解码器正确回退为 gateway，测试错误期望 upstream（`/tmp/tenonedge-http-read-targeted.log`）。给该用例注入明确接收时刻后 **13 项通过，0 失败/跳过**（`/tmp/tenonedge-http-read-targeted2.log`），未放宽正式时间校验。另补充在途正文截止与超大 Content-Length 不排空两项，随协议回归执行。
+
+真实本机 HTTP 软件场景覆盖原文 int64/质量/上游时间、302/401/500 和非法 JSON、中文及大字符串的转义后显示预算、嵌套敏感字段/JSON 转义及 Basic 凭证回显、缺失已绑定凭证、调用者取消、同一物理流先正式读取—预览—再正式读取。协议回归：Linux x64、SDK 10.0.401 / .NET 10.0.12、Release；`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~Http|FullyQualifiedName~JsonInputDecoder' --blame-hang-timeout 5m --blame-hang-dump-type none --logger trx --results-directory artifacts/test-results/t3-http-read-preview` **130 单元 + 157 集成 = 287 项通过，0 失败/跳过**，TRX 非零/无跳过门禁通过（`/tmp/tenonedge-http-read-regression.log`）。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 与 `git diff --check` 通过（`/tmp/tenonedge-http-read-format-verify.log`）。本子项未重跑完整前后端套件，完整基线仍见 §2.118。
+
+剩余：HTTP 采样 API 与网页、整台 HTTP 设备多来源编排、样本推断衔接，MQTT 实时抓取，以及证书表单和图编译/应用；不是外部平台或实物验证。失败/超限/非 JSON 正文当前不提供部分内容展示，不声称已覆盖所有调试子场景。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

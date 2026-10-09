@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Http;
 
@@ -95,17 +96,51 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
 
     public async Task<JsonDocument> ReadInputAsync(HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken)
     {
+        var (message, _) = CreateInputRequest(settings, credentials);
+        using var request = message;
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        return await HttpInputResponse.ReadAsync(response, cancellationToken);
+    }
+
+    internal async Task<JsonReadPreviewResult> ReadPreviewAsync(HttpInputSettings settings, IHttpCredentialResolver credentials,
+        IJsonInputDecoder? decoder, ClockSyncState clockState, TimeProvider time, CancellationToken cancellationToken)
+    {
+        var (message, credential) = CreateInputRequest(settings, credentials);
+        using var request = message;
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        try
+        {
+            using var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
+            return JsonReadPreview.Render(document.RootElement, decoder, credential, clockState, time.GetUtcNow(), (int)response.StatusCode, cancellationToken);
+        }
+        catch (HttpInputResponseException exception)
+        {
+            return JsonReadPreviewResult.Failure(exception.Failure switch
+            {
+                HttpInputFailure.Status => "http.status",
+                HttpInputFailure.TooLarge => "payload.tooLarge",
+                HttpInputFailure.Encoding => "payload.encoding",
+                _ => "payload.invalidJson"
+            }, (int)response.StatusCode);
+        }
+    }
+
+    private static (HttpRequestMessage Request, HttpCredential? Credential) CreateInputRequest(HttpInputSettings settings, IHttpCredentialResolver credentials)
+    {
         var identity = credentials.DescribeHttp(settings.ConnectionId);
         var credential = identity is null ? null : credentials.ResolveHttp(settings.ConnectionId, settings.BaseAddress);
         if (identity is not null && (credential is null || credential.Identity != identity))
-        { throw new InvalidOperationException("HTTP 凭证不可用或正在变化。"); }
-        using var request = new HttpRequestMessage(HttpMethod.Get, settings.Endpoint);
-        foreach (var pair in settings.Headers)
-        { request.Headers.Add(pair.Key, pair.Value); }
-        if (credential is not null)
-        { ApplyCredential(request, credential); }
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        return await HttpInputResponse.ReadAsync(response, cancellationToken);
+        { throw new HttpCredentialUnavailableException(); }
+        var request = new HttpRequestMessage(HttpMethod.Get, settings.Endpoint);
+        try
+        {
+            foreach (var pair in settings.Headers)
+            { request.Headers.Add(pair.Key, pair.Value); }
+            if (credential is not null)
+            { ApplyCredential(request, credential); }
+            return (request, credential);
+        }
+        catch { request.Dispose(); throw; }
     }
 
     internal static void ApplyCredential(HttpRequestMessage request, HttpCredential credential)
