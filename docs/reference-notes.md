@@ -145,3 +145,7 @@ TanStack Table 作为行/选择模型，TanStack Virtual 作为大表虚拟化�
 | @tanstack/table-core | 8.21.3 | MIT |
 | @tanstack/react-virtual | 3.14.14 | MIT |
 | @tanstack/virtual-core | 3.18.0 | MIT |
+
+### T3-03 画布依赖补充
+
+画布采用已确认的 React Flow：`@xyflow/react` **12.12.0**（MIT），通过 npm 安装并锁定，不移植参考项目源码、不安装 Node-RED。已核对实际安装包的节点拖动、连接结束、缩略图及无障碍配置接口后使用。传递依赖以 `web/package-lock.json` 为准；构建收集到 **61 个生产包**的许可文本（含本批新增 19 个），进入 `web/public/licenses/npm-notices.txt`。图定义及布局为产品自有本地格式，不保存 React Flow 私有状态。

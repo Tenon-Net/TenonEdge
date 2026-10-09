@@ -1,3 +1,4 @@
+import { canvasStrings } from '../features/canvas/strings'
 import { pointStrings } from '../features/points/strings'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
@@ -9,6 +10,7 @@ void i18n.use(initReactI18next).init({
         'zh-CN': {
             translation: {
                 points: pointStrings,
+                canvas: canvasStrings,
                 product: 'TenonEdge',
                 subtitle: '边缘接入与转发网关',
                 loading: '正在读取网关状态…',

@@ -56,6 +56,12 @@ export function Workspace() {
                     >
                         {t('points.title')}
                     </Link>
+                    <Link
+                        to="/prototypes/canvas"
+                        className="rounded-md px-3 py-2 text-sm hover:bg-accent"
+                    >
+                        {t('canvas.title')}
+                    </Link>
                 </nav>
             </aside>
             <div className="min-w-0">

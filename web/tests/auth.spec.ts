@@ -341,3 +341,202 @@ test('10000-row virtualization reaches the last editable row without a 10000-row
         fullPage: true,
     })
 })
+
+test('canvas drag/connect, cycle rejection, properties, clipboard and history use own local format', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1600, height: 1100 })
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '画布交互原型' }).click()
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const mutations: string[] = []
+    page.on('request', (request) => {
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method()))
+            mutations.push(request.url())
+    })
+    await page
+        .getByText('查看自有格式（定义与布局分离）', { exact: true })
+        .click()
+    const graph = async () =>
+        JSON.parse(
+            await page.getByTestId('graph-document').innerText(),
+        ) as import('../src/features/canvas/model').GraphDocument
+    const area = page.getByLabel('路线画布', { exact: true })
+    const box = (await area.boundingBox())!
+    async function drop(name: string, x: number, y: number) {
+        await page
+            .getByRole('button', { name, exact: true })
+            .dragTo(area, { targetPosition: { x, y } })
+    }
+    await drop('Modbus 输入', 130, 100)
+    await drop('字段映射', 420, 100)
+    await drop('字段映射', 420, 280)
+    await drop('MQTT 输出', 660, 280)
+    await expect
+        .poll(async () => (await graph()).definition.nodes.length)
+        .toBe(4)
+    await expect(page.locator('.react-flow__minimap-node')).toHaveCount(4)
+    await expect
+        .poll(async () =>
+            Number(
+                await page
+                    .locator('.react-flow__minimap-node')
+                    .first()
+                    .getAttribute('width'),
+            ),
+        )
+        .toBeGreaterThan(0)
+    const ids = (await graph()).definition.nodes.map((n) => n.id)
+    const node = (id: string) =>
+        page.locator(`.react-flow__node[data-id="${id}"]`)
+    async function connect(source: string, target: string) {
+        await node(source)
+            .locator('.react-flow__handle.source')
+            .dragTo(node(target).locator('.react-flow__handle.target'))
+    }
+    await connect(ids[0], ids[1])
+    await connect(ids[1], ids[2])
+    await connect(ids[2], ids[3])
+    await expect
+        .poll(async () => (await graph()).definition.edges.length)
+        .toBe(3)
+    await connect(ids[2], ids[1])
+    await expect(page.getByRole('alert')).toContainText('不允许自环或循环路线')
+    expect((await graph()).definition.edges).toHaveLength(3)
+    await node(ids[1]).click()
+    await page.getByLabel('节点名称', { exact: true }).fill('本地映射')
+    await page.getByRole('button', { name: '修改名称', exact: true }).click()
+    expect((await graph()).definition.nodes[1].name).toBe('本地映射')
+    const beforeMove = (await graph()).layout.positions[ids[1]]
+    const nodeBox = (await node(ids[1]).boundingBox())!
+    await page.mouse.move(nodeBox.x + 90, nodeBox.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(nodeBox.x + 120, nodeBox.y + 65, { steps: 12 })
+    await page.mouse.up()
+    await expect
+        .poll(async () => (await graph()).layout.positions[ids[1]].x)
+        .not.toBe(beforeMove.x)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    expect((await graph()).layout.positions[ids[1]]).toEqual(beforeMove)
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await node(ids[1]).click()
+    await page.getByRole('button', { name: '复制所选', exact: true }).click()
+    await page.getByRole('button', { name: '粘贴副本', exact: true }).click()
+    expect((await graph()).definition.nodes).toHaveLength(5)
+    await area.focus()
+    await page.keyboard.press('Delete')
+    expect((await graph()).definition.nodes).toHaveLength(4)
+    await page.keyboard.press('Control+z')
+    expect((await graph()).definition.nodes).toHaveLength(5)
+    await page.keyboard.press('Control+y')
+    expect((await graph()).definition.nodes).toHaveLength(4)
+    const serialized = JSON.stringify(await graph())
+    for (const privateField of [
+        'selected',
+        'dragging',
+        'measured',
+        'positionAbsolute',
+    ])
+        expect(serialized).not.toContain(`"${privateField}"`)
+    // Box selection and group movement are real pointer gestures, one undo restores the group.
+    const beforeGroup = (await graph()).layout.positions
+    const currentBox = (await area.boundingBox())!
+    await page.keyboard.down('Shift')
+    await page.mouse.move(currentBox.x + 10, currentBox.y + 10)
+    await page.mouse.down()
+    await page.mouse.move(
+        currentBox.x + currentBox.width - 10,
+        currentBox.y + 410,
+        { steps: 10 },
+    )
+    await page.mouse.up()
+    await page.keyboard.up('Shift')
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(4)
+    const selectedBox = (await node(ids[0]).boundingBox())!
+    await page.mouse.move(selectedBox.x + 90, selectedBox.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(selectedBox.x + 110, selectedBox.y + 40, {
+        steps: 10,
+    })
+    await page.mouse.up()
+    for (const id of ids)
+        expect((await graph()).layout.positions[id]).not.toEqual(
+            beforeGroup[id],
+        )
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    expect((await graph()).layout.positions).toEqual(beforeGroup)
+    const beforeView = await graph()
+    await page.getByRole('button', { name: '放大', exact: true }).click()
+    await page.getByRole('button', { name: '缩小', exact: true }).click()
+    await page.getByRole('button', { name: '适应画布', exact: true }).click()
+    expect(await graph()).toEqual(beforeView)
+    expect(mutations).toEqual([])
+    expect(errors).toEqual([])
+    await page.screenshot({ path: 'test-results/canvas.png', fullPage: true })
+    await page.getByRole('link', { name: '工作区', exact: true }).click()
+    await page.getByRole('link', { name: '画布交互原型' }).click()
+    await page
+        .getByText('查看自有格式（定义与布局分离）', { exact: true })
+        .click()
+    expect((await graph()).definition.nodes).toHaveLength(0)
+    expect(box.width).toBeGreaterThan(600)
+})
+
+test('canvas keeps 50-step UI history, text editing shortcuts and multi-node copy independent', async ({
+    page,
+}) => {
+    test.setTimeout(60_000)
+    await page.setViewportSize({ width: 1600, height: 1100 })
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '画布交互原型' }).click()
+    await page.getByRole('button', { name: '字段映射', exact: true }).click()
+    await page
+        .getByText('查看自有格式（定义与布局分离）', { exact: true })
+        .click()
+    const graph = async () =>
+        JSON.parse(
+            await page.getByTestId('graph-document').innerText(),
+        ) as import('../src/features/canvas/model').GraphDocument
+    for (let i = 0; i < 55; i++) {
+        await page.getByLabel('节点名称', { exact: true }).fill(`映射${i}`)
+        await page
+            .getByRole('button', { name: '修改名称', exact: true })
+            .click()
+    }
+    const area = page.getByLabel('路线画布', { exact: true })
+    await area.focus()
+    for (let i = 0; i < 50; i++) await page.keyboard.press('Control+z')
+    expect((await graph()).definition.nodes[0].name).toBe('映射4')
+    await expect(
+        page.getByRole('button', { name: '撤销', exact: true }),
+    ).toBeDisabled()
+    for (let i = 0; i < 50; i++) await page.keyboard.press('Control+y')
+    expect((await graph()).definition.nodes[0].name).toBe('映射54')
+    await expect(
+        page.getByRole('button', { name: '重做', exact: true }),
+    ).toBeDisabled()
+    await page.locator('.react-flow__node').click()
+    const input = page.getByLabel('节点名称', { exact: true })
+    await input.fill('未提交名称')
+    await input.press('Control+z')
+    expect((await graph()).definition.nodes[0].name).toBe('映射54')
+    await input.press('Control+a')
+    await input.press('Backspace')
+    expect((await graph()).definition.nodes).toHaveLength(1)
+    await page
+        .getByRole('button', { name: 'Modbus 输入', exact: true })
+        .dragTo(area, { targetPosition: { x: 60, y: 400 } })
+    const nodes = page.locator('.react-flow__node')
+    await nodes.nth(0).click()
+    await nodes.nth(1).click({ modifiers: ['Shift'] })
+    await expect(
+        page.getByText('选择一个节点编辑属性。', { exact: true }),
+    ).toBeVisible()
+    await area.focus()
+    await page.keyboard.press('Control+c')
+    await page.keyboard.press('Control+v')
+    expect((await graph()).definition.nodes).toHaveLength(4)
+    await page.keyboard.press('Delete')
+    expect((await graph()).definition.nodes).toHaveLength(2)
+})

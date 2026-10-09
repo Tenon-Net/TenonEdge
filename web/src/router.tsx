@@ -68,8 +68,21 @@ const pointsRoute = createRoute({
         'PointEditor',
     ),
 })
+const canvasRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/prototypes/canvas',
+    component: lazyRouteComponent(
+        () => import('./features/canvas/editor'),
+        'CanvasEditor',
+    ),
+})
 export const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, accountRoute, pointsRoute]),
+    routeTree: rootRoute.addChildren([
+        indexRoute,
+        accountRoute,
+        pointsRoute,
+        canvasRoute,
+    ]),
     defaultPreload: false,
 })
 declare module '@tanstack/react-router' {
