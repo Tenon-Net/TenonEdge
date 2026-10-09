@@ -30,8 +30,16 @@
 | T1 继续 | T1-06 目标隔离与暂停基础 | 待验收 | 本地通过；远端 CI 未执行 | §2.19、§4.14 |
 | T1 继续 | T1-07 资源保护与运行诊断基础 | 后端软件交付完成，待维护者验收 | 预算、存储保护、校时、状态/趋势及计数子场景通过；跨阶段 AT 不标整体通过 | §2.20 |
 | T1 继续 | T1-08 停机恢复与链路验收 | 后端软件交付完成，待维护者验收 | 队列损坏、4 个强制退出边界、真实 Broker 断网恢复及全量回归通过 | §2.21 |
-| T2 | T2-01 统一连接管理与出站校验 | 进行中 | 实际 IP 规则/连接及 MQTT 共享会话已接入；其余子项待完成 | §2.22 |
-| 后续 | T1-08、T2、T3 可视化访问 | 未开始 | 未执行 | 维护者授权继续到可视化访问，依次满足阶段前置；不含 T4/T5/G1 实施 |
+| T2 | T2-01 统一连接管理与出站校验 | 基础软件链路待验收，扩展子项未完成 | 三协议共享所有权/实际 IP 校验通过；显式代理和预览借用仍未交付 | §2.22、§2.98 |
+| T2 | T2-02 Modbus 采集 | 基础软件链路待验收 | TCP/RTU over TCP 软件从站、故障、共享 UnitId、Host 输出和规模停止通过；实物未验证 | §2.68—§2.74、§2.89—§2.97 |
+| T2 | T2-03 MQTT 输入与会话 | 基础软件链路待验收 | 真实 Broker、持久接管、背压、重订与进程重启通过；恢复边界见 §2.98 | §2.40—§2.66、§2.75—§2.88 |
+| T2 | T2-04 HTTP 输入与输出 | 基础软件链路待验收，证书子项未完成 | GET→Host→队列→POST、当前凭证、响应分类通过；客户端证书/连接信任未交付 | §2.27—§2.33、§2.98 |
+| T2 | T2-05 字段映射与数值时间 | 后端软件子集待验收 | 数值精度、时间、独立分支与三种输出格式通过；网页预览属 T3 | §2.23—§2.26、§2.32—§2.39 |
+| T2 | T2-06 输入复用与多输出 | 后端软件子集待验收 | 三协议共享链路及 Modbus Host 扇出/扇入通过；图编译与实时应用属 T3 | §2.34—§2.39、§2.96 |
+| T2 | T2-07 设备直连与 LoRa 样例 | 软件子集待验收 | 已解码样例、真实 Broker ACL/持久化/积存边界通过；无线实物未验证 | §2.67、§2.76—§2.87 |
+| T2 | T2-08 协议故障与资源回归 | 软件回归待验收，长期观察未完成 | 1754 项基线通过；连接/缓冲/线程有界和一分钟 Modbus 观测，不代表长期整机压力 | §2.62—§2.66、§2.80、§2.97—§2.98 |
+| T3 | T3-01 前端精简基础 | 进行中 | 先建立 .NET 静态托管边界；尚无前端构建或可视化访问 | §2.99 |
+| 后续 | T3-02—T3-11 可视化配置与验收 | 未开始 | 未执行 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
 
@@ -2007,6 +2015,36 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 首轮编译被 CA1711 拦下（测试组标记类型不应以 Collection 结尾），改名 ModbusResourceTestGroup 后通过（`/tmp/tenonedge-modbus-resources-target.log`、`/tmp/tenonedge-modbus-resources-target2.log`）。产品实现无需额外分支或改变上限。
 - 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-resources' --results-directory /tmp/tenonedge-modbus-resources-full --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 778 集成 = 1754 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-resources-full.log`）。Linux x64 / SDK 10.0.401，集成套件约 2 分 3 秒。单文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include tests/IntegrationTests/Runtime/ModbusResourceTests.cs`（`/tmp/tenonedge-modbus-resources-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-resources-restore.log`）与 `git diff --check` 通过；无新增依赖。
 - 证据覆盖 AT-08/13、V-05 与 T2-08 的连接数、线程所有权、真实阻塞取消及短时连续采集子场景；物理设备、全产品长期 RSS、完整 T2 退出复核与网页仍未完成。
+
+### 2.98 T2 基础链路退出复核与 T3 准入边界（2026-10-09）
+
+此次是既有证据复核，不是新增实物或性能验收。维护者已授权继续至可视化访问并按推荐决策推进；不把 Agent 自报当成维护者验收。§2.22 等较早条目中的“剩余/进行中”为当时快照，本节与 §1 汇总当前边界，保留历史失败记录。
+
+| 任务 / 验收子集 | 已核对的软件交付与证据 | 不据此声称完成的部分 |
+|---|---|---|
+| T2-01 / AT-06/18、BE-AT-03 | SharedConnections 的串行、租约/释放、容量和唯一身份；MQTT/HTTP/Modbus 都走实际 IP connector，禁系统代理/HTTP 自动跳转；§2.22、§2.36—§2.38、§2.50、§2.90 | 显式出站代理仍不支持，不能宣称代理支持已验收；管理预览借用随 T3-04/07 联动 |
+| T2-02 / AT-02/08/13、V-05 | NModbus 正式传输、地址/类型/字节序、超时/迟到帧/CRC、周期/UnitId、线程退出；ModbusHostTests 的 TCP/RTU→SQLite→独立 HTTP 接收端；§2.68—§2.74、§2.89—§2.97 | 模拟从站非厂商兼容，实物寄存器/网络故障未验证 |
+| T2-03 / AT-03/25/30、V-04 | 产品 Host、真实 Mosquitto、按持久接管确认、QoS 0 丢弃、接收预算、强杀恢复；§2.40—§2.66、§2.75—§2.88 | 重订恢复已知期望 Filter，不恢复 Broker 已丢消息，也不能发现 Broker 回滚复活的未知历史 Filter；旧 ClientId 与配置切换随 T3-06 |
+| T2-04 / AT-04/18/26、GW-12 | HttpInputTests.ProductHostGetsAndPostsThroughOneSharedAuthenticatedConnection 真实 GET/POST 共用 TCP、凭证 API、精确大整数/时间；HttpOutputTests 与响应测试覆盖四类结果、冻结/重试、慢响应/正文边界；§2.27—§2.33、§2.38—§2.39 | 客户端证书/每连接信任、连接测试与接收方编辑协同尚未交付，随 T3-04 补齐；不把密码/Token 软件测试等同全部认证方式 |
+| T2-05/06 / AT-07/29/30、GW-13 | 纯函数映射、不可变原文、质量/时间、整数逐位保留；不同输出的映射失败和网络故障隔离；ModbusHostTests 实际扇出与独立扇入；§2.23—§2.26、§2.32—§2.39、§2.96 | 当前显式 RuntimePlan，不是可视化图编译、草稿或实时应用；这些按 T3-04—06 执行 |
+| T2-07 / AT-27、V-09、LR-AT 软件子集 | 仓库 LoRa 人工已解码样例→真实 Broker→Host→独立接收端；Broker 账户 ACL 热重载、离线撤权、SIGKILL/检查点/积存边界；§2.67、§2.76—§2.87 | 无无线实物、无网络服务器联调、无断电零丢失承诺；Broker PUBACK 不等于终端业务成功 |
+| T2-08 / 本阶段故障和资源子集 | 256 Modbus 连接三轮启停/实际阻塞停止，32×64 点一分钟连续采集；MQTT 载荷分配前保护/TLS压力/预算释放；§2.62—§2.66、§2.80、§2.97 | 一分钟不是小时/天级压力，测试进程 RSS 不是产品 Host RSS；FD/CLR 冷启动差异未归因为无泄漏 |
+
+复核基线 `c0db632`，Linux x64 / SDK 10.0.401；重新读取 §2.97 的两个原始 TRX Counters：976 单元 + 778 集成 = **1754 实际执行且通过，0 失败/跳过**。命令和原始报告位置沿用该节，不把重新读报告计作再次运行。核对了当前 Host/HTTP/Modbus 测试源及计划 §5/6、FE-D01。
+
+结论：三输入与 MQTT/HTTP 输出的**基础软件链路稳定，满足 T3 基础链路准入**；可以开始 T3-01、随后优先 T3-02/03 原型。不将 T2 各跨阶段 AT/V 整体标为通过，不丢弃上表缺口。正式阶段验收、最低浏览器、真实设备及长期资源仍待相应证据。此次不批准 T4/T5/G1，不发布或推送。
+
+### 2.99 T3-01 .NET 静态资源与 SPA 路由边界（2026-10-09）
+
+- 按 §2.98 的基础链路准入开始 T3-01；本子项只建立正式 Host 的静态托管，不用测试 HTML 冒充前端交付。`WebAssets` 从标准 WebRootFileProvider 读取公开构建产物，不读取数据目录、不启 Node 服务、不增加业务 API 或修改既有认证。
+- 管道在路由、认证和授权之后处理静态文件；已有端点以及大小写不敏感的 `/api`、`/healthz`、`/readyz` 前缀不进入静态文件或 SPA。即使 WebRoot 错放了 API 同名文件也不公开它。
+- 只有 GET/HEAD、接受 `text/html` 且无文件扩展名的导航才回退 `index.html`；`/assets` 缺失文件永不回退，写操作/JSON 查询维持原错误。index 使用 `Cache-Control: no-store`，静态响应带 `nosniff`，其他资源支持 ETag/304；不伪造永久缓存策略。
+- 测试发现 ASP.NET 默认 StatusCodePages 在浏览器 `Accept: text/html` 下返回纯文本，不符合 API JSON 错误约定；改为显式执行 Problem result。保留真实 404/405/401，既有 Allow/认证质询仍由原管道提供，不回退成 200 页面。
+- `WebAssetsTests` 使用临时目录里的明确标注测试壳，真实 Program/生产环境管道；19 个新增场景覆盖首页/深链、HEAD、静态 JS/条件请求、未知 API/脚本、保留路径、不允许的方法、未经认证以及没有构建时仍 404。原端点清单和 OpenAPI 不变。
+- 首轮 19 项因测试夹具假定环境只注册一次而启动失败，改用 WebHostBuilder 的实际 HostingEnvironment，不改产品 DI；第二轮 6 通过/13 失败揭示上述 Accept 错误响应问题。原日志保留 `/tmp/tenonedge-web-assets-target.log`、`-target2.log`。修正后聚焦命令 `dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~WebAssetsTests|FullyQualifiedName~ErrorResponseTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~OpenApiDocumentTests' --logger 'trx;LogFileName=web-assets.trx' --results-directory /tmp/tenonedge-web-assets`：**31 通过，0 失败/跳过**（`/tmp/tenonedge-web-assets-target3.log`）。
+- 全量回归：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=web-assets-full' --results-directory /tmp/tenonedge-web-assets-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**976 单元 + 797 集成 = 1773 项通过，0 失败/跳过**，两个 TRX Counters 已核对；日志 `/tmp/tenonedge-web-assets-full.log`，Linux x64 / SDK 10.0.401。`dotnet restore TenonEdge.sln --locked-mode`、三个改动 C# 文件限定的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include …` 与 `git diff --check` 通过，日志 `/tmp/tenonedge-web-assets-restore.log`、`/tmp/tenonedge-web-assets-format-verify.log`。无新增依赖。
+- 前端来源准备：从 FE-D01 固定提交 `e16c87f213a5ba5e45964e9b67c792105ec74d26` 下载源码到 `/tmp/tenonedge-shadcn-source/`，再次核对 MIT / Copyright (c) 2024 Sat Naing 及 package.json；本机 Node 22.23.2、npm 10.9.8。仅核查，不照搬上游 Clerk/Axios/ESLint 依赖，不把上游版本范围视为本项目锁定版本。实际裁剪、来源清单与许可分发随下一 T3-01 子项提交。
+- **未完成：** 尚无 `web/`、真实前端构建/登录、浏览器测试或可访问产品页面；临时测试壳不进入发布物。FE-AT-07 仅服务端路由边界子场景，不称为离线浏览器或最低版本验证。T3-01 继续，再先做点表/画布原型。
 
 ## 3. 验收编号登记
 

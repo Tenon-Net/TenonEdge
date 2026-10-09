@@ -13,7 +13,9 @@ internal static class RequestPipeline
         app.UseExceptionHandler();
 
         // 没有响应体的 4xx/5xx（未匹配的路由、不允许的方法、未认证等）补写 ProblemDetails。
-        app.UseStatusCodePages();
+        // 浏览器导航的 Accept: text/html 也保持 JSON 错误，不退化为纯文本或 SPA 页面。
+        app.UseStatusCodePages(context => Results.Problem(statusCode: context.HttpContext.Response.StatusCode)
+            .ExecuteAsync(context.HttpContext));
 
         // 请求协议判定与受信任代理的转发头，须在认证之前：Cookie 名称与会话校验依赖判定结果。
         app.UseRequestSecurity();
@@ -22,6 +24,7 @@ internal static class RequestPipeline
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseTenonEdgeWebAssets();
 
         return app;
     }
