@@ -1043,6 +1043,120 @@
         }
       }
     },
+    "/api/edge-admin/v1/devices/{deviceId}/preview/http": {
+      "post": {
+        "tags": [
+          "Inputs"
+        ],
+        "summary": "使用已保存设备连接显式采样 HTTP 来源，不保存、应用或入发送队列",
+        "description": "Source 为未保存来源；否则按 InputId 或全部启用来源读取。整次共用 30 秒/64 KiB 显示容量，各来源仍受连接超时限制。截断或脱敏正文不可用于样本推断。",
+        "operationId": "previewHttpDevice",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HttpReadPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpDevicePreviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
       "get": {
         "tags": [
@@ -3620,6 +3734,77 @@
           }
         }
       },
+      "HttpDevicePreviewResult": {
+        "required": [
+          "totalSources",
+          "truncated",
+          "deadlineExceeded",
+          "elapsedMs",
+          "sources"
+        ],
+        "type": "object",
+        "properties": {
+          "totalSources": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "deadlineExceeded": {
+            "type": "boolean"
+          },
+          "elapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HttpSourcePreviewResult"
+            }
+          }
+        }
+      },
+      "HttpReadPreviewRequest": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "inputId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpSourceDraft"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "HttpsCertificateInfo": {
         "required": [
           "sha256Fingerprint",
@@ -3682,6 +3867,21 @@
           }
         },
         "additionalProperties": false
+      },
+      "HttpSourcePreviewResult": {
+        "required": [
+          "key",
+          "preview"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/JsonReadPreviewResult"
+          }
+        }
       },
       "HttpTestCredential": {
         "required": [
@@ -4081,6 +4281,140 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "JsonPreviewField": {
+        "required": [
+          "key",
+          "type",
+          "text",
+          "quality",
+          "reason",
+          "unsafeJavaScriptInteger"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quality": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unsafeJavaScriptInteger": {
+            "type": "boolean"
+          }
+        }
+      },
+      "JsonReadPreviewResult": {
+        "required": [
+          "success",
+          "code",
+          "statusCode",
+          "rawJson",
+          "rawBytes",
+          "rawTruncated",
+          "fieldsTruncated",
+          "redacted",
+          "receivedAt",
+          "collectedAt",
+          "timeSource",
+          "invalidUpstreamTime",
+          "fields"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "statusCode": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rawJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rawBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rawTruncated": {
+            "type": "boolean"
+          },
+          "fieldsTruncated": {
+            "type": "boolean"
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "receivedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "collectedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "timeSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimeSource"
+              }
+            ]
+          },
+          "invalidUpstreamTime": {
+            "type": "boolean"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonPreviewField"
+            }
+          },
+          "canUseAsSample": {
+            "type": "boolean"
           }
         }
       },
@@ -5843,6 +6177,15 @@
             "$ref": "#/components/schemas/ClockSyncState"
           }
         }
+      },
+      "TimeSource": {
+        "enum": [
+          "device",
+          "upstream",
+          "gateway",
+          "gateway-unsynced",
+          null
+        ]
       },
       "UpstreamTimeFormat": {
         "enum": [

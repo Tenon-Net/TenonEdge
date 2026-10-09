@@ -207,6 +207,85 @@ public sealed class HttpReadPreviewTests
         await peer.WaitAsync(TimeSpan.FromSeconds(5), Token);
     }
 
+    [Theory]
+    [InlineData("invalidPath")]
+    [InlineData("differentConnection")]
+    [InlineData("duplicateKey")]
+    public async Task InvalidLaterSourceRejectsEntirePreviewBeforeNetworking(string scenario)
+    {
+        using var listener = Listen();
+        var first = Settings(listener);
+        var second = scenario switch
+        {
+            "invalidPath" => first with { Path = "http://elsewhere.invalid/" },
+            "differentConnection" => first with { ConnectionId = 2 },
+            _ => first
+        };
+        await Assert.ThrowsAsync<ArgumentException>(() => Probe().RunSourcesAsync(
+            [new("first", first), new(scenario == "duplicateKey" ? "first" : "second", second)], ClockSyncState.Unknown, Token));
+        Assert.False(listener.Pending());
+    }
+
+    [Fact]
+    public async Task MultipleSourcesShareOnePhysicalConnectionAndAggregateDisplayBudget()
+    {
+        using var listener = Listen();
+        var body = JsonSerializer.Serialize(new { value = new string('中', 30000) });
+        var requests = 0;
+        var peer = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptTcpClientAsync(Token);
+            var stream = socket.GetStream();
+            using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+            while (await reader.ReadLineAsync(Token) is { } line)
+            {
+                Assert.Equal("GET /values HTTP/1.1", line);
+                while (await reader.ReadLineAsync(Token) is { Length: > 0 })
+                { }
+                requests++;
+                await Write(stream, $"HTTP/1.1 200 OK\r\nContent-Length: {Encoding.UTF8.GetByteCount(body)}\r\n\r\n{body}");
+            }
+        }, Token);
+        var sources = Enumerable.Range(0, 20).Select(index => new HttpPreviewSource($"source{index}", Settings(listener))).ToArray();
+        var result = await Probe().RunSourcesAsync(sources, ClockSyncState.Unknown, Token);
+        await peer.WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.True(result.Truncated);
+        Assert.False(result.DeadlineExceeded);
+        Assert.Equal(20, result.TotalSources);
+        Assert.InRange(result.Sources.Length, 2, 19);
+        Assert.Equal(result.Sources.Length, requests);
+        Assert.All(result.Sources, source => Assert.False(source.Preview.CanUseAsSample));
+        Assert.True(JsonSerializer.SerializeToUtf8Bytes(result, Json).Length <= 65536);
+        Assert.False(listener.Pending());
+    }
+
+    [Fact]
+    public async Task OverallDeadlineStopsBeforeNextSourceAndClosesStalledIo()
+    {
+        using var listener = Listen();
+        var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var peer = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptTcpClientAsync(Token);
+            var stream = socket.GetStream();
+            using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+            await ReadHeaders(reader);
+            await Write(stream, "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{");
+            accepted.SetResult();
+            Assert.Equal(0, await stream.ReadAsync(new byte[1], Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token));
+        }, Token);
+        var time = new FakeTimeProvider();
+        var pending = Probe(time: time).RunSourcesAsync([new("first", Settings(listener)), new("second", Settings(listener))],
+            ClockSyncState.Unknown, Token, timeoutMs: 1000);
+        await accepted.Task.WaitAsync(Token);
+        time.Advance(TimeSpan.FromSeconds(1));
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.True(result.DeadlineExceeded);
+        Assert.Equal("timeout", Assert.Single(result.Sources).Preview.Code);
+        await peer;
+        Assert.False(listener.Pending());
+    }
+
     private static HttpReadPreview Probe(SharedConnections? shared = null, IOutboundConnector? connector = null, IHttpCredentialResolver? credentials = null, TimeProvider? time = null) =>
         new(shared ?? new(), connector ?? Connector(), credentials ?? new CredentialResolver(), new JsonInputDecoderFactory(), time ?? TimeProvider.System);
     private static HttpInputSettings Settings(TcpListener listener) => new()

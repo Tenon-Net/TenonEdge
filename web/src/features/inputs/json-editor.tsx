@@ -1,3 +1,5 @@
+import { HttpPreviewPanel } from './http-preview-panel'
+import { inputRequest } from './model'
 import { SampleEditor } from './sample-editor'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
@@ -7,10 +9,12 @@ const fieldClass =
     'mt-1 w-full rounded border bg-background p-2 disabled:opacity-60'
 export function JsonSourceEditor({
     form,
+    deviceId,
     patch,
     readOnly,
 }: {
     form: InputForm
+    deviceId: number
     patch: (value: Partial<InputForm>) => void
     readOnly: boolean
 }) {
@@ -204,6 +208,23 @@ export function JsonSourceEditor({
                     </p>
                     <SampleEditor
                         fields={form.fields}
+                        capture={
+                            form.kind === 'http'
+                                ? (accept) => (
+                                      <HttpPreviewPanel
+                                          deviceId={deviceId}
+                                          version={form.version}
+                                          inputId={form.id}
+                                          source={() =>
+                                              inputRequest(form, [], 'offset')
+                                                  .http!
+                                          }
+                                          onSample={accept}
+                                          blocked={readOnly}
+                                      />
+                                  )
+                                : undefined
+                        }
                         append={(fields) =>
                             patch({ fields: [...form.fields, ...fields] })
                         }

@@ -296,11 +296,19 @@ public sealed class RequestSecurityProcessTests(ITestOutputHelper output)
         return client.SendAsync(request, cancellationToken);
     }
 
+    [Fact]
+    public void HttpCookieValueContainingSecureIsNotASecureAttribute()
+    {
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add(HeaderNames.SetCookie, $"{SessionAuthentication.HttpCookieName}=opaqueSecureValue; path=/; httponly; samesite=strict");
+        Assert.Equal("opaqueSecureValue", AssertHttpSessionCookie(response));
+    }
+
     private static string AssertHttpSessionCookie(HttpResponseMessage response)
     {
         var header = Assert.Single(response.Headers.GetValues(HeaderNames.SetCookie));
         Assert.StartsWith($"{SessionAuthentication.HttpCookieName}=", header, StringComparison.Ordinal);
-        Assert.DoesNotContain("secure", header, StringComparison.OrdinalIgnoreCase);
+        Assert.False(SetCookieHeaderValue.Parse(header).Secure);
         return CookieValue(header);
     }
 
@@ -308,9 +316,10 @@ public sealed class RequestSecurityProcessTests(ITestOutputHelper output)
     {
         var header = Assert.Single(response.Headers.GetValues(HeaderNames.SetCookie));
         Assert.StartsWith($"{SessionAuthentication.HttpsCookieName}=", header, StringComparison.Ordinal);
-        Assert.Contains("secure", header, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("path=/", header, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("domain=", header, StringComparison.OrdinalIgnoreCase);
+        var cookie = SetCookieHeaderValue.Parse(header);
+        Assert.True(cookie.Secure);
+        Assert.Equal("/", cookie.Path.Value);
+        Assert.False(cookie.Domain.HasValue);
         return CookieValue(header);
     }
 

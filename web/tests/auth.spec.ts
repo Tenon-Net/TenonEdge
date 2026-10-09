@@ -2382,3 +2382,191 @@ test('Modbus device preview reads real groups, preserves 64-bit text and adopts 
         }
     }
 })
+
+test('HTTP live sample preserves exact numbers, requires explicit inference and rejects redacted or truncated samples', async ({
+    page,
+}) => {
+    const requests: string[] = []
+    let payload = '{"value":9223372036854775807,"extra":42}'
+    const peer = createServer((request, response) => {
+        requests.push(request.url ?? '')
+        response.writeHead(200, { 'Content-Type': 'application/json' })
+        response.end(payload)
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string')
+        throw new Error('fixture-address')
+    let restore: (() => Promise<void>) | undefined
+    try {
+        await openPointEditor(page)
+        const session = await (
+            await page.request.get('/api/edge-admin/v1/auth/session')
+        ).json()
+        const headers = { 'X-CSRF-Token': session.csrfToken }
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        const allowed = await page.request.put(policyUrl, {
+            headers,
+            data: {
+                ...policy,
+                expectedVersion: policy.version,
+                version: undefined,
+                localPorts: [...policy.localPorts, address.port],
+            },
+        })
+        expect(allowed.status()).toBe(200)
+        const allowedVersion = (await allowed.json()).version
+        restore = async () => {
+            expect(
+                (
+                    await page.request.put(policyUrl, {
+                        headers,
+                        data: {
+                            expectedVersion: allowedVersion,
+                            networks: policy.networks,
+                            localPorts: policy.localPorts,
+                        },
+                    })
+                ).status(),
+            ).toBe(200)
+        }
+        const version = (
+            await (
+                await page.request.get('/api/edge-admin/v1/connections')
+            ).json()
+        ).version
+        const connectionResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: version,
+                    key: 'http-sample',
+                    name: 'HTTP 采样连接',
+                    kind: 'http',
+                    http: { baseAddress: `http://127.0.0.1:${address.port}/` },
+                },
+            },
+        )
+        expect(connectionResponse.status()).toBe(200)
+        const connection = await connectionResponse.json()
+        const deviceResponse = await page.request.post(
+            '/api/edge-admin/v1/devices',
+            {
+                headers,
+                data: {
+                    expectedVersion: connection.version,
+                    key: 'http-sample',
+                    name: 'HTTP 采样设备',
+                    kind: 'http',
+                    connectionId: connection.connection.id,
+                },
+            },
+        )
+        expect(deviceResponse.status()).toBe(200)
+        const device = await deviceResponse.json()
+        const inputUrl = `/api/edge-admin/v1/devices/${device.device.id}/inputs`
+        const inputResponse = await page.request.post(inputUrl, {
+            headers,
+            data: {
+                expectedVersion: device.version,
+                key: 'values',
+                name: 'HTTP 采样来源',
+                http: {
+                    path: 'values',
+                    periodMs: 5000,
+                    fields: [{ key: 'value', path: '/value', type: 'integer' }],
+                },
+            },
+        })
+        expect(inputResponse.status()).toBe(200)
+        const before = await (await page.request.get(inputUrl)).json()
+        await page.goto(`/devices/${device.device.id}/inputs`)
+        const whole = page.getByRole('region', {
+            name: '整台 HTTP 设备实时采样',
+            exact: true,
+        })
+        await whole
+            .getByRole('button', { name: '采样一次', exact: true })
+            .click()
+        await expect(whole.getByRole('status')).toContainText('1 / 1')
+        await expect(whole).toContainText('9223372036854775807')
+        await expect(whole).toContainText('超过 JavaScript 安全整数范围')
+        await page
+            .getByRole('button', { name: /HTTP 采样来源 \(values\)/ })
+            .click()
+        const panel = page.getByRole('region', {
+            name: '当前 HTTP 来源实时采样',
+            exact: true,
+        })
+        await page
+            .getByLabel('HTTP 路径与非秘密查询参数', { exact: true })
+            .fill('unsaved')
+        await panel
+            .getByRole('button', { name: '采样一次', exact: true })
+            .click()
+        await expect(panel.getByRole('status')).toContainText('1 / 1')
+        expect(requests).toEqual(['/values', '/unsaved'])
+        expect(await (await page.request.get(inputUrl)).json()).toEqual(before)
+        const use = panel.getByRole('button', {
+            name: '用作字段推断样本',
+            exact: true,
+        })
+        await page
+            .getByLabel('HTTP 路径与非秘密查询参数', { exact: true })
+            .fill('changed')
+        await expect(use).toBeDisabled()
+        await page
+            .getByLabel('HTTP 路径与非秘密查询参数', { exact: true })
+            .fill('unsaved')
+        await use.click()
+        await expect(
+            page.getByRole('textbox', { name: '临时 JSON 样本', exact: true }),
+        ).toHaveValue(payload)
+        await page
+            .getByRole('button', { name: '解析样本字段', exact: true })
+            .click()
+        await page.getByLabel('选择样本字段 /extra', { exact: true }).check()
+        await page
+            .getByRole('button', { name: '添加选中字段', exact: true })
+            .click()
+        expect(await (await page.request.get(inputUrl)).json()).toEqual(before)
+        await page
+            .getByRole('button', { name: '保存来源草稿', exact: true })
+            .click()
+        await expect(panel).toHaveCount(0)
+        const after = await (await page.request.get(inputUrl)).json()
+        expect(after.inputs[0].http.path).toBe('unsaved')
+        expect(after.inputs[0].http.fields).toContainEqual(
+            expect.objectContaining({ path: '/extra', type: 'number' }),
+        )
+        await page
+            .getByRole('button', { name: /HTTP 采样来源 \(values\)/ })
+            .click()
+        for (const body of [
+            '{"password":"fixture-private","value":42}',
+            JSON.stringify({ value: '中'.repeat(40000) }),
+        ]) {
+            payload = body
+            await panel
+                .getByRole('button', { name: '采样一次', exact: true })
+                .click()
+            await expect(panel.getByRole('status')).toContainText('1 / 1')
+            await expect(use).toBeDisabled()
+            await expect(panel).toContainText('结果已脱敏或截断')
+            await expect(panel).not.toContainText('fixture-private')
+        }
+        expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({})
+        expect(await page.evaluate(() => ({ ...sessionStorage }))).toEqual({})
+    } finally {
+        try {
+            await restore?.()
+        } finally {
+            peer.closeAllConnections()
+            await new Promise<void>((resolve, reject) =>
+                peer.close((error) => (error ? reject(error) : resolve())),
+            )
+        }
+    }
+})

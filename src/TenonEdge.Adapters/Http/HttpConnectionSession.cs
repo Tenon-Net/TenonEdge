@@ -103,7 +103,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     }
 
     internal async Task<JsonReadPreviewResult> ReadPreviewAsync(HttpInputSettings settings, IHttpCredentialResolver credentials,
-        IJsonInputDecoder? decoder, ClockSyncState clockState, TimeProvider time, CancellationToken cancellationToken)
+        IJsonInputDecoder? decoder, ClockSyncState clockState, TimeProvider time, int maximumDisplayBytes, CancellationToken cancellationToken)
     {
         var (message, credential) = CreateInputRequest(settings, credentials);
         using var request = message;
@@ -111,7 +111,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         try
         {
             using var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
-            return JsonReadPreview.Render(document.RootElement, decoder, credential, clockState, time.GetUtcNow(), (int)response.StatusCode, cancellationToken);
+            return JsonReadPreview.Render(document.RootElement, decoder, credential, clockState, time.GetUtcNow(), (int)response.StatusCode, cancellationToken, maximumDisplayBytes);
         }
         catch (HttpInputResponseException exception)
         {

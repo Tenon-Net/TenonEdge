@@ -319,6 +319,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/preview/http": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 使用已保存设备连接显式采样 HTTP 来源，不保存、应用或入发送队列
+         * @description Source 为未保存来源；否则按 InputId 或全部启用来源读取。整次共用 30 秒/64 KiB 显示容量，各来源仍受连接超时限制。截断或脱敏正文不可用于样本推断。
+         */
+        post: operations["previewHttpDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -777,6 +797,21 @@ export interface components {
             retainExisting: boolean;
             expectedDraftVersion?: null | string;
         };
+        HttpDevicePreviewResult: {
+            /** Format: int32 */
+            totalSources: number | string;
+            truncated: boolean;
+            deadlineExceeded: boolean;
+            /** Format: double */
+            elapsedMs: number | string;
+            sources: components["schemas"]["HttpSourcePreviewResult"][];
+        };
+        HttpReadPreviewRequest: {
+            expectedVersion: string;
+            /** Format: int64 */
+            inputId?: null | number | string;
+            source?: null | components["schemas"]["HttpSourceDraft"];
+        };
         HttpsCertificateInfo: {
             sha256Fingerprint: string;
             /** Format: date-time */
@@ -794,6 +829,10 @@ export interface components {
                 [key: string]: string;
             };
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
+        };
+        HttpSourcePreviewResult: {
+            key: string;
+            preview: components["schemas"]["JsonReadPreviewResult"];
         };
         HttpTestCredential: {
             kind: components["schemas"]["HttpCredentialKind"];
@@ -878,6 +917,34 @@ export interface components {
             dataRejected: number | string;
             /** Format: int64 */
             invalidUpstreamTimes: number | string;
+        };
+        JsonPreviewField: {
+            key: string;
+            type: null | string;
+            text: null | string;
+            quality: string;
+            reason: null | string;
+            unsafeJavaScriptInteger: boolean;
+        };
+        JsonReadPreviewResult: {
+            success: boolean;
+            code: string;
+            /** Format: int32 */
+            statusCode: null | number | string;
+            rawJson: null | string;
+            /** Format: int32 */
+            rawBytes: number | string;
+            rawTruncated: boolean;
+            fieldsTruncated: boolean;
+            redacted: boolean;
+            /** Format: date-time */
+            receivedAt: null | string;
+            /** Format: date-time */
+            collectedAt: null | string;
+            timeSource: null | components["schemas"]["TimeSource"];
+            invalidUpstreamTime: boolean;
+            fields: components["schemas"]["JsonPreviewField"][];
+            canUseAsSample?: boolean;
         };
         JsonSourceField: {
             key: string;
@@ -1308,6 +1375,8 @@ export interface components {
             runtimeStartBlockers: components["schemas"]["RuntimeStartBlocker"][];
             clockSyncState: components["schemas"]["ClockSyncState"];
         };
+        /** @enum {unknown} */
+        TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced" | null;
         /** @enum {unknown} */
         UpstreamTimeFormat: "rfc3339" | "unixSeconds" | "unixMilliseconds" | null;
         /** @enum {unknown} */
@@ -2052,6 +2121,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModbusDevicePreviewResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    previewHttpDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HttpReadPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HttpDevicePreviewResult"];
                 };
             };
             /** @description Bad Request */

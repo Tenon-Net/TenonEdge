@@ -26,7 +26,7 @@ internal static class JsonReadPreview
         { "password", "passwd", "pwd", "secret", "clientsecret", "token", "accesstoken", "refreshtoken", "apikey", "authorization", "cookie", "setcookie" };
 
     internal static JsonReadPreviewResult Render(JsonElement root, IJsonInputDecoder? decoder, HttpCredential? credential,
-        ClockSyncState clockState, DateTimeOffset receivedAt, int? statusCode, CancellationToken cancellationToken)
+        ClockSyncState clockState, DateTimeOffset receivedAt, int? statusCode, CancellationToken cancellationToken, int maximumDisplayBytes = MaximumDisplayBytes)
     {
         var raw = root.GetRawText();
         var rawBytes = Encoding.UTF8.GetByteCount(raw);
@@ -34,7 +34,7 @@ internal static class JsonReadPreview
         if (ContainsSensitive(root, secrets, cancellationToken))
         { return new(false, "payload.redacted", statusCode, null, rawBytes, false, false, true, receivedAt, null, null, false, []); }
         var decoded = decoder?.Decode(root, receivedAt, clockState, cancellationToken);
-        var rawDisplay = Limit(raw, 32 * 1024);
+        var rawDisplay = Limit(raw, maximumDisplayBytes / 2);
         var fields = new List<JsonPreviewField>();
         var bytes = 1024 + JsonSerializer.SerializeToUtf8Bytes(rawDisplay, Json).Length;
         var truncated = false;
@@ -50,7 +50,7 @@ internal static class JsonReadPreview
                     value?.ToString(), value is null ? "bad" : "good", reason,
                     value?.Type == FieldType.Integer && value.TryGetExactNumber(out var number) && (number > 9007199254740991m || number < -9007199254740991m));
                 var size = JsonSerializer.SerializeToUtf8Bytes(field, Json).Length + 1;
-                if (bytes + size > MaximumDisplayBytes)
+                if (bytes + size > maximumDisplayBytes)
                 { truncated = true; break; }
                 fields.Add(field);
                 bytes += size;

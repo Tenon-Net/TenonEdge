@@ -2426,6 +2426,29 @@ Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test Te
 
 剩余：HTTP 采样 API 与网页、整台 HTTP 设备多来源编排、样本推断衔接，MQTT 实时抓取，以及证书表单和图编译/应用；不是外部平台或实物验证。失败/超限/非 JSON 正文当前不提供部分内容展示，不声称已覆盖所有调试子场景。
 
+### 2.120 T3-07 HTTP 来源/设备采样 API、网页与显式样本推断（2026-10-10）
+
+接续 §2.119，按功能 §4.1、BE 事务/资源归属规范与 FE-AT 真数据约束接入 HTTP 采样。没有增加协议依赖或产品 Node 服务；浏览器测试 HTTP 服务只作本机软件夹具。
+
+- `POST /devices/{deviceId}/preview/http` 使用 Configurator/Administrator、本地会话/CSRF、1 MiB 请求体限制，复用全局 4 / 每会话 2 的预览额度。短事务核对 expectedVersion、设备/连接类型、InputId 归属并生成纯快照，联网不持有配置事务；连接与凭证来自已保存配置，不允许任意前端覆盖目标。
+- Source 可提供未保存来源；否则按 InputId 或全部启用来源采样。连接请求头与来源非秘密请求头按既有规则合并，字段只传 key/path/type 给正式解码器，不将显示名称等元数据误当字段配置。不保存草稿、不应用、不进入发送队列。
+- `RunSourcesAsync` 在首次联网前校验全部来源与共同连接身份，外层租约保留同一物理 HTTP 会话，按来源顺序通过原串行执行器 GET。整次默认 30 秒、64 KiB 序列化显示预算；来源使用剩余容量与 min(连接超时, 剩余期限)，容量/期限不足时停止，保留已有结果并标明总数、截断与到期。
+- 网页支持整台设备与当前未保存来源采样，显示有界原始 JSON、字段类型/原文值/质量和状态码。业务数值不转浏览器 Number；超出安全整数范围明确提示。结果只在组件内存，不进入查询缓存、草稿或浏览器存储，离开页面取消在途请求。
+- 只有完整、未脱敏且来源未发生编辑变化的结果可显式“用作字段推断样本”。采用后仍须执行既有解析、选择、添加和保存步骤；采样及推断本身均不改库。手工样本与采样样本共用保持原始数字文本的解析器；字段默认推断为 number，沿用既有规则，不悄悄改成 integer。
+- 从实际 Development Host 导出 OpenAPI 并重新生成 `web/src/api/schema.d.ts`，更新权限/操作清单，没有手写替代接口类型。
+
+验证经过与失败处理：初次构建发现新增内部签名的 CancellationToken 参数顺序不符合 CA1068，修正后 Release 构建 0 警告/错误。最初 HTTP 定向回归 **25 通过 / 1 失败**：多来源夹具误用同一设备内重复字段 key，正式草稿校验正确拒绝；改夹具第二来源字段 key 后继续。最终 HTTP 定向 **27 项通过，0 失败/跳过**（`/tmp/tenonedge-http-api-final-targeted.log`），覆盖真实 GET/原文 int64、角色/匿名/CSRF、过期版本/错误归属/非法路径/秘密请求头、共享额度、草稿不变、多来源单物理连接、总期限/总显示容量、后续非法来源在首个网络请求前拒绝、已保存 Bearer 在线使用与回显隐藏。
+
+首轮完整后端 **1071 单元通过，集成 997 通过 / 1 失败**（`/tmp/tenonedge-http-api-full.log`）：既有代理安全测试对完整 Cookie 文本搜索 `secure`，随机会话值包含该子串时误报。增加固定 `opaqueSecureValue` 用例，先确认红灯（`/tmp/tenonedge-cookie-attribute-red.log`），再用 `SetCookieHeaderValue` 解析 Secure/Path/Domain 属性；只修测试断言，不改产品 Cookie/代理逻辑。
+
+最终完整后端：Linux x64、SDK 10.0.401 / .NET 10.0.12、Release，`dotnet test --no-restore -c Release --blame-hang-timeout 5m --blame-hang-dump-type none --logger trx --results-directory /tmp/tenonedge-http-api-full-final` **1071 单元 + 1000 集成 = 2071 项通过，0 失败/跳过**（`/tmp/tenonedge-http-api-full-final.log`）。测试仍运行时的报告核对因集成报告尚未生成而拒绝通过；完成后重新执行 `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-http-api-full-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests`，门禁通过。`dotnet format --no-restore --verify-no-changes` 最终通过（`/tmp/tenonedge-http-api-format-verified.log`），未将早期格式检查失败计作通过。
+
+前端：Node 22.23.2 / npm 11.21.0 / Chromium 156.0.8078.4，实际命令均通过 `npx --yes npm@11.21.0`。`npm run build`（含 tsc）、lint、format:check 通过。`npm test -- --reporter=default --reporter=json --outputFile=reports/unit.json` **119 Vitest 通过**（`/tmp/tenonedge-http-ui-unit.log`）。浏览器首轮 **18 通过 / 1 失败**：样本采用成功后，标签文本匹配受 textarea 的 DOM 文本影响；改为既有测试使用的 textbox 可访问角色定位，不修改产品行为或精度断言。最终 `TENONEDGE_TEST_URL=http://192.168.0.88:18082 PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json npm run test:e2e -- --reporter=list,json` **19 Playwright 通过，0 失败/跳过**（58.2 秒，`/tmp/tenonedge-http-ui-browser2.log`；首轮 `/tmp/tenonedge-http-ui-browser.log`）。`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 非零/无跳过门禁通过。
+
+新增浏览器场景以真实 Host GET 本机 HTTP 夹具验证整台/当前来源、未保存路径、精确 `9223372036854775807`、采样/推断不改草稿、显式保存才改变字段与路径、来源变化禁用旧结果、敏感键及大正文禁用样本采用、local/sessionStorage 为空。结束恢复出站策略并关闭夹具连接。`git diff --check` 通过。
+
+边界与剩余：本节是软件/本机网络与浏览器验证，不是外部 HTTP 平台或实物测试；失败/非 JSON 正文仍不展示。MQTT 实时抓取、证书表单与部分安全场景、T3-05 图编译及 T3-06 应用/回滚仍未完成，尚不能通过网页独立配置并启动采集路线，不宣称 T3 或持续目标完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

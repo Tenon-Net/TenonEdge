@@ -1,4 +1,15 @@
 export const inputStrings = {
+    httpPreview: {
+        sourceTitle: '当前 HTTP 来源实时采样',
+        deviceTitle: '整台 HTTP 设备实时采样',
+        notice: '使用已保存连接和凭证执行 GET；当前来源可使用未保存路径。仅临时展示，不保存、应用或入队。',
+        completed: '已返回 {{count}} / {{total}} 个来源',
+        run: '采样一次',
+        clear: '清除采样结果',
+        partial: '达到整次显示容量或时间限制，结果可能不完整。',
+        unusable: '结果已脱敏或截断，不可用于样本推断。',
+        use: '用作字段推断样本',
+    },
     preview: {
         groupTitle: '当前采集组真实读取',
         deviceTitle: '整台设备真实读取',

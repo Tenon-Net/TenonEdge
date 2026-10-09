@@ -1,3 +1,4 @@
+import { HttpPreviewPanel } from './http-preview-panel'
 import { ModbusPreviewPanel } from './modbus-preview-panel'
 import { PointCsvPanel } from './csv-panel'
 import { JsonSourceEditor } from './json-editor'
@@ -246,6 +247,14 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                     blocked={mutation.isPending}
                 />
             )}
+            {canEdit && coherent && device?.kind === 'http' && (
+                <HttpPreviewPanel
+                    key={`http:${query.data!.version}`}
+                    deviceId={deviceId}
+                    version={query.data!.version}
+                    blocked={mutation.isPending}
+                />
+            )}
             {form && (
                 <section className="space-y-4 rounded border p-4">
                     <form
@@ -449,6 +458,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                         />
                     ) : (
                         <JsonSourceEditor
+                            deviceId={deviceId}
                             key={generation}
                             form={form}
                             patch={patch}

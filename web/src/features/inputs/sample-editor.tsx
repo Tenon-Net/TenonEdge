@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
 import type { JsonField } from './model'
@@ -12,9 +12,11 @@ import {
 export function SampleEditor({
     fields,
     append,
+    capture,
 }: {
     fields: JsonField[]
     append: (fields: JsonField[]) => void
+    capture?: (accept: (text: string) => void) => ReactNode
 }) {
     const { t } = useTranslation()
     // Intentionally not in query cache, draft DTO, browser storage or logging.
@@ -42,6 +44,12 @@ export function SampleEditor({
             className="space-y-3 rounded border p-3"
             aria-label={t('inputs.sample.title')}
         >
+            {capture?.((text) => {
+                setSample(text)
+                setCandidates([])
+                setSelected(new Set())
+                setError('')
+            })}
             <label className="block">
                 {t('inputs.sample.text')}
                 <textarea
