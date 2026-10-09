@@ -1923,6 +1923,18 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 首轮全量单元通过，集成编译失败：将测试超时移出异常捕获后，xUnit Record.ExceptionAsync 返回 ValueTask，须先 AsTask 再 WaitAsync；已修正（`/tmp/tenonedge-modbus-client-full.log`）。首轮格式检查发现 if 换行，限定文件修正后校验通过。最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-client-repeat' --results-directory /tmp/tenonedge-modbus-client-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`，**901 单元 + 740 集成 = 1641 项通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-client-full-repeat.log`。四个 C# 文件限定格式校验（`/tmp/tenonedge-modbus-client-format2.log`）与 `git diff --check` 通过，Linux x64 / SDK 10.0.401。
 - 边界：传输已通过实际 NModbus 和统一出站连接器测试，但尚未注册 input.modbus。下一步为计划配置、共享会话、请求间隔、RTU 超时静默整合、UnitId 调度/快速失败/离线退避及消息生成；不得据此声称 T2-02 或 T2 完成。RTU 重用前仍须由会话执行 §2.72 的静默隔离，取消/坏 MBAP/事务耗尽需换连接。
 
+### 2.90 T2-02 Modbus 共享会话与连接级故障恢复（2026-10-09）
+
+- 新增内部 ModbusConnectionSettings / ModbusConnectionSession，将 §2.89 只读传输、专用执行器、连接健康事实及 RTU 静默隔离接到既有 SharedConnections 租约。构造不联网，参数及启用 UnitId 验证完成后才启动工作线程，避免无效构造泄漏线程；未增加运行时注册或第二套共享连接管理器。
+- 连接总期限与读取期限分开；请求间隔使用单调时钟。排队、等待间隔和执行器未准入时的取消不关闭健康流；实际读取取消只关闭捕获的连接代，并等待真实 I/O 退出。连接器在取消后才返回的流也会释放。最后租约等待实际读取退出后才释放连接标识，期间不能建立第二实例。
+- 每个实际请求返回 Outcome / WasRequested，退避期间不发送、不伪造从站超时。单从站超时保留 TCP 连接；所有启用从站最近实际请求均超时或连接错误才触发 1、2、4…最高 60 秒连接重试退避，成功恢复初始延迟。协议异常码、CRC 错误不是超时。RTU 单从站超时执行固定静默窗口；无字节可复用，有迟到字节则立即换连接而非额外退避。
+- 新增设置/连接期限单元测试与真实回环 TCP/RTU 会话测试：同一物理连接的两个租约/UnitId、健康兄弟从站、全部超时后的无请求退避及恢复、连接错误指数退避和成功复位、协议异常/CRC、RTU 迟到隔离、读取取消后新连接、间隔取消、排队取消与最后释放期间拒绝第二实例。假时钟只控制间隔/退避/连接期限；协议超时使用真实 NetworkStream 与本机模拟从站，未声称实物验证。
+- 聚焦命令：`dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~ModbusConnectionSettingsTests` 首轮 12 项通过（`/tmp/tenonedge-modbus-settings-target.log`）；随后补充 2 项取消后返回流释放测试，纳入最终全量。`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusConnectionSessionTests` 10 项通过（`/tmp/tenonedge-modbus-session-target2.log`）。
+- 环境 Linux x64 / SDK 10.0.401；`dotnet restore TenonEdge.sln --locked-mode` 通过（`/tmp/tenonedge-modbus-session-restore.log`）。四个新增 C# 文件执行限定 `dotnet format TenonEdge.sln --no-restore --include ...`，再用 `--verify-no-changes` 检查；日志 `/tmp/tenonedge-modbus-session-format-verify.log`。
+- 最终代码首轮全量 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-session-final' --results-directory /tmp/tenonedge-modbus-session-final --blame-hang-timeout 5m --blame-hang-dump-type none`：915 单元通过，集成 749 通过 / 1 失败 / 0 跳过。失败为既有 `NModbusLeavesAFollowingTcpFrameForTheNextRequest` 的第一次正常读取（第 96 行）超时，尚未到重复帧断言；日志 `/tmp/tenonedge-modbus-session-final.log`，TRX 保留原失败。与 §2.70 已记录的 300ms 探针偶发超时类似，但本批未确定根因、未调整探针期限，不能声称修复。新增会话与设置测试在该轮全部通过。
+- 上述探针单例复跑通过（`dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter FullyQualifiedName~NModbusLeavesAFollowingTcpFrameForTheNextRequest`，`/tmp/tenonedge-modbus-session-probe-repeat.log`）。相同最终代码完整复跑：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-session-repeat' --results-directory /tmp/tenonedge-modbus-session-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`，**915 单元 + 750 集成 = 1665 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-session-repeat.log`）。限定格式验证与 `git diff --check` 通过；复跑成功不撤销上一条偶发失败记录。
+- 边界：本节仅覆盖 AT-02/08/13、V-05 的连接会话子场景。尚未实现 Modbus 输入计划解析/工厂、UnitId 采集周期调度与快速失败、整周期失败离线退避、overrun、EdgeMessage 生成和宿主真实采集链路；不能标记 T2-02 或 T2 完成，尚无网页。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
