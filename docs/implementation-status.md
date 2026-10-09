@@ -2628,6 +2628,20 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 环境沿用 §2.131；后端未改、未重跑其 2208 项基线。当前证据是配置表单/持久化，不证明计算结果或外部发送；上游字段选择、无输出样本预览、应用/回滚和节点运行状态仍待后续。未更新常驻调试实例、未推送。
 
+### 2.133 T3-05 未保存图的有界上游字段分析接口（2026-10-10）
+
+接续 §2.132，新增 `POST /routes/fields` 及保精度客户端方法，为字段下拉提供真实来源描述与逐阶段传播，不在浏览器猜测来源类型。**本批完成后端分析和客户端传输，尚未把结果绑定到映射/组装表单下拉**，亦不代表样本执行。
+
+- 请求携带 expectedVersion、当前 graph、nodeId、可选 afterKey/search 和 limit（1—100）。图仍按自有格式/1 MiB 校验；先取选中节点的祖先子图，映射/输出节点只分析其输入，不要求本节点规则和下游输出已配完。输入节点分析自身来源。局部分析不能替代全部启用路线的全局路径/配置编译。
+- 输入节点使用内部仅用于拓扑计数的终点；映射/输出选中节点同样只作为字段分析终点，不创建假连接或可执行输出配置。相关祖先的环、方向、引用、同输入多来源 schema 不一致及资源上限仍由既有有界拓扑编译器拒绝，不能通过裁剪隐藏经过所选节点的环。
+- 全局编译与局部分析共享 `RouteFieldPropagation`，在每条真实上游检查字段存在性并按连续映射生成新描述，保持两处语义一致。分叉后不同映射输出取相同 key/type 的交集；单位不一致时不任选一个单位，返回 null 及 UnitsDiffer 提示。被排除字段诊断最多 100 个并显式标记截断，字段列表按 ordinal key 游标分页，可按 key 不区分大小写搜索。
+- 复用同版本短事务快照及 SQL 16 MiB 正文预算；只加载祖先实际引用的来源/设备/连接，不因其他路线未完成而失败。返回字段描述/诊断，不返回样本或配置正文、不调用 Build/网络/队列、不分配 revision。采用配置人员/管理员 + CSRF，复用全局 4/会话 2 准入。
+- OpenAPI 从临时 Development Host 重新导出，只有 `/routes/fields` 新路径，既有路径未变（`/tmp/tenonedge-route-fields-openapi.log`）。客户端 `fields()` 使用当前未保存图的保精度 serializer，支持取消，不改调用者版本或表单；一项客户端测试核对原始大整数/小数正文、CSRF 与无回写。
+
+验证中初次构建触发 CA1068（CancellationToken 参数位置），改为末参数；随后 operationId 清单未把新名称放到排序首位，契约测试如实失败，排序修正后完整回归通过。格式核查发现 System/SqlSugar using 顺序，调整后复验通过。新增后端 7 项单元、3 项角色集成场景，覆盖自身来源、未完成选中节点/下游不阻断上游描述、逐阶段传播缺字段、祖先环、扇入缺失/类型/单位差异、诊断截断、搜索/分页、版本冲突和无草稿/运行指针变更；响应确认没有原始样本数值。
+
+`dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-fields-regression --blame-hang-timeout 5m --blame-hang-dump-type none` **1165 单元 + 1053 集成 = 2218 通过，0 失败/跳过**（`/tmp/tenonedge-route-fields-regression.log`），`verify-test-results.py` 按两个程序集核对通过；`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-fields-format-verify-final.log`）。web/ 的 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 通过，Vitest **199 通过，0 失败/跳过**（`/tmp/tenonedge-route-fields-web-final.log`）。环境沿用 §2.132，本批未重跑浏览器、未更新常驻实例或推送；字段选择页面、无输出样本预览与应用/回滚继续实施。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

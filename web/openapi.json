@@ -1097,6 +1097,97 @@
         }
       }
     },
+    "/api/edge-admin/v1/routes/fields": {
+      "post": {
+        "tags": [
+          "Routes"
+        ],
+        "summary": "分析未保存图中所选节点的上游字段，不保存、不联网或入队，不代替全图编译",
+        "operationId": "analyzeRouteFields",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouteFieldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteFieldPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
       "post": {
         "tags": [
@@ -4242,8 +4333,7 @@
           "boolean",
           "integer",
           "number",
-          "string",
-          null
+          "string"
         ]
       },
       "FirstSetupInfo": {
@@ -5210,6 +5300,28 @@
             ]
           },
           "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MappedFieldSchema": {
+        "required": [
+          "key",
+          "type",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FieldType"
+          },
+          "unit": {
             "type": [
               "null",
               "string"
@@ -6687,6 +6799,120 @@
             "format": "int64"
           }
         }
+      },
+      "RouteFieldPage": {
+        "required": [
+          "version",
+          "nodeId",
+          "analyzed",
+          "fields",
+          "nextAfterKey",
+          "commonCount",
+          "upstreamCount",
+          "unitsDiffer",
+          "excludedFields",
+          "differencesTruncated",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "analyzed": {
+            "type": "boolean"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MappedFieldSchema"
+            }
+          },
+          "nextAfterKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "commonCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "upstreamCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "unitsDiffer": {
+            "type": "boolean"
+          },
+          "excludedFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "differencesTruncated": {
+            "type": "boolean"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTopologyIssue"
+            }
+          }
+        }
+      },
+      "RouteFieldRequest": {
+        "required": [
+          "expectedVersion",
+          "graph",
+          "nodeId"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/RouteGraph"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "afterKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "search": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "limit": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 100
+          }
+        },
+        "additionalProperties": false
       },
       "RouteGraph": {
         "required": [

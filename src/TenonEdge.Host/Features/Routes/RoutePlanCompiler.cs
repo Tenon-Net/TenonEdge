@@ -78,7 +78,7 @@ internal static class RoutePlanCompiler
         foreach (var route in routes)
         {
             var nodes = normalizedGraphs[route.Key].Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
-            var mappings = new Dictionary<string, FieldMapping>(StringComparer.Ordinal);
+            var propagation = new RouteFieldPropagation(nodes);
             var checkedSchemas = new HashSet<(string Node, string Upstream)>();
             // 同一图节点链的不同来源共用目标定义，但每条来源消息仍独立投递，不做 join。
             foreach (var group in pathsByRoute[route.Key].GroupBy(path => string.Join('/', path.Nodes), StringComparer.Ordinal))
@@ -90,23 +90,7 @@ internal static class RoutePlanCompiler
                 var stages = chain.Skip(1).SkipLast(1).Select(id => nodes[id].Config.GetProperty("rules")).ToArray();
                 foreach (var path in group)
                 {
-                    var fields = sources[path.SourceId].Source.Fields;
-                    var upstream = "source/" + path.SourceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                    foreach (var id in path.Nodes.Skip(1).SkipLast(1))
-                    {
-                        token.ThrowIfCancellationRequested();
-                        if (!mappings.TryGetValue(id, out var mapping))
-                        {
-                            try
-                            { mapping = FieldMappingConfiguration.Parse(nodes[id].Config.GetProperty("rules")) ?? throw new ArgumentException("映射为空。"); }
-                            catch (Exception error) when (ConfigurationError(error)) { throw Error("mapping.configuration", route.Key, id, path.SourceId); }
-                            mappings.Add(id, mapping);
-                        }
-                        if (checkedSchemas.Add((id, upstream)))
-                        { RequireFields(mapping.ReferencedFields, fields, route.Key, id, path.SourceId); }
-                        fields = mapping.Schema;
-                        upstream = "map/" + id;
-                    }
+                    var (upstream, fields) = propagation.Propagate(path, sources[path.SourceId].Source.Fields, token);
                     if (checkedSchemas.Add((output.Id, upstream)))
                     { ValidateOutputFields(output, fields, route.Key, path.SourceId); }
                     compiled.Add(new(path, outputId, fields));

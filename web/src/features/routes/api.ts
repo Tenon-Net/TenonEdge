@@ -135,6 +135,36 @@ export function createRouteApi(api: ReturnType<typeof createGatewayClient>) {
             if (!data) throw new Error('route-response')
             return data
         },
+        async fields(
+            form: RouteForm,
+            nodeId: string,
+            options: {
+                afterKey?: string
+                search?: string
+                signal?: AbortSignal
+            } = {},
+        ) {
+            encodeGraph(form.document)
+            const body = {
+                expectedVersion: form.version,
+                graph: graphRequest(form.document),
+                nodeId,
+                afterKey: options.afterKey ?? null,
+                search: options.search ?? null,
+                limit: 100,
+            }
+            const serialized = writeRouteJson(body)
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/routes/fields',
+                {
+                    body,
+                    bodySerializer: () => serialized,
+                    signal: options.signal,
+                },
+            )
+            if (!data) throw new Error('route-response')
+            return data
+        },
         async compile(version: string) {
             const { data } = await api.POST(
                 '/api/edge-admin/v1/routes/compile',

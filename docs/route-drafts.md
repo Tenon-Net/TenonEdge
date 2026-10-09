@@ -13,6 +13,7 @@ T3-05 当前实现边界：路线可在后端保存、读取、复制、删除�
 | GET | `/routes/{routeId}` | `{ version, route }`；含完整图 |
 | POST | `/routes` | 新建，返回 `{ version, route }` |
 | PUT | `/routes/{routeId}` | 更新，key 不可变；启停也是草稿修改 |
+| POST | `/routes/fields` | `{ expectedVersion, graph, nodeId, afterKey?, search?, limit? }`，分析当前未保存图所选节点的上游描述；返回分页共同字段及有界差异/错误，不保存、不执行样本 |
 | POST | `/routes/compile` | `{ expectedVersion }`，静态编译该版本全部启用路线；返回计数、内容哈希或结构化错误，不分配 revision |
 | POST | `/routes/{routeId}/copy` | 请求 `{ expectedVersion, key, name }`；新 ID/key，图及引用独立保存，默认停用 |
 | DELETE | `/routes/{routeId}?expectedVersion=...` | 删除草稿及引用索引，返回 `{ version }`；不撤回旧投递 |
@@ -73,3 +74,9 @@ JSON 常量按原文精度存储，不经 double 中转。映射的数值常量�
 - 快照涉及的图与配置正文先在 SQL 中按 UTF-8 字节总量限制为 16 MiB；生成的运行配置按单元逐步累计保守 16 MiB 预算，再经现有运行快照解析器校验。路径数合法不代表可以无限复制巨大规则配置。这是编译资源边界，不是 CLR 堆或性能承诺。
 - 不连接目标、不构造/启动运行单元、不冻结配置版本、不解密凭证、不提交发送记录。MQTT 配置中只携带是否要求凭证的标志，既有凭证记录即使失效也不降级为匿名配置。凭证可用性、目标访问策略、静默/提交/激活仍须走后续应用流程。
 - `output.tenon` 目前返回 `output.unavailable`，不以通用 HTTP/MQTT 代替平台适配。平台同名字段 type/unit 一致性和同步仍随 T4 的正式适配执行。
+
+## 上游字段分析边界
+
+字段分析用于填写映射与自定义组装，不要求当前选中节点或下游配置已经可运行。输入节点检查本节点各来源；其他节点沿祖先路径复用来源描述、拓扑校验与连续映射，所选节点自身规则不参与。只提供各上游共同存在且类型一致的字段；单位不同时返回空单位并提示，不推断换算。分页最多 100 字段，afterKey 按 ordinal 顺序，search 匹配字段 key；excludedFields 最多 100 条，超出用 differencesTruncated 明示。响应中的 commonCount 是未按 search 过滤的共同字段总数，upstreamCount 是去除重复来源/末映射后的字段集合数量，不是投递路径数。
+
+角色、CSRF、准入沿用静态编译。版本冲突 409，图/来源/映射语义错误返回 analyzed:false 与 issues，成功也只说明所选局部的字段可分析；下游、其他路线、全局路径累计与输出准备仍须完整编译及应用流程。字段描述不包含样本值。本批接口/客户端已验证，表单下拉接入仍待 §2.133 后续。

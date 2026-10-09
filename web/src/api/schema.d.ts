@@ -333,6 +333,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 分析未保存图中所选节点的上游字段，不保存、不联网或入队，不代替全图编译 */
+        post: operations["analyzeRouteFields"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -849,7 +866,7 @@ export interface components {
             version: string;
         };
         /** @enum {unknown} */
-        FieldType: "boolean" | "integer" | "number" | "string" | null;
+        FieldType: "boolean" | "integer" | "number" | "string";
         FirstSetupInfo: {
             /** Format: date-time */
             completedAt: string;
@@ -1065,6 +1082,11 @@ export interface components {
         LoginRequest: {
             accountName: null | string;
             password: null | string;
+        };
+        MappedFieldSchema: {
+            key: string;
+            type: components["schemas"]["FieldType"];
+            unit: null | string;
         };
         /** @enum {unknown} */
         ModbusAddressNotation: "offset" | "manual";
@@ -1421,6 +1443,33 @@ export interface components {
             updatedBy: null | string;
             /** Format: int64 */
             updatedAt: number | string;
+        };
+        RouteFieldPage: {
+            version: string;
+            nodeId: string;
+            analyzed: boolean;
+            fields: components["schemas"]["MappedFieldSchema"][];
+            nextAfterKey: null | string;
+            /** Format: int32 */
+            commonCount: number | string;
+            /** Format: int32 */
+            upstreamCount: number | string;
+            unitsDiffer: boolean;
+            excludedFields: string[];
+            differencesTruncated: boolean;
+            issues: components["schemas"]["RouteTopologyIssue"][];
+        };
+        RouteFieldRequest: {
+            expectedVersion: string;
+            graph: components["schemas"]["RouteGraph"];
+            nodeId: string;
+            afterKey?: null | string;
+            search?: null | string;
+            /**
+             * Format: int32
+             * @default 100
+             */
+            limit: number | string;
         };
         RouteGraph: {
             /** Format: int32 */
@@ -2455,6 +2504,84 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    analyzeRouteFields: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteFieldRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteFieldPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

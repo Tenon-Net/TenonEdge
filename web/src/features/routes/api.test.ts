@@ -188,4 +188,36 @@ describe('route API lossless transport', () => {
             expect.stringContaining('/apply'),
         )
     })
+    it('analyzes the current unsaved graph without rounding constants or updating its version', async () => {
+        let body = ''
+        const f = fixture(async (input) => {
+            const request = new Request(input)
+            expect(new URL(request.url).pathname).toBe(
+                '/api/edge-admin/v1/routes/fields',
+            )
+            expect(request.headers.get('X-CSRF-Token')).toBe('csrf')
+            body = await request.text()
+            return Response.json({
+                version: 'v1',
+                nodeId: 'out',
+                analyzed: true,
+                fields: [],
+                excludedFields: [],
+                differencesTruncated: false,
+                unitsDiffer: false,
+                nextAfterKey: null,
+                commonCount: 0,
+                upstreamCount: 1,
+                issues: [],
+            })
+        })
+        const form = decodeRouteResponse(response())
+        const original = JSON.stringify(form)
+        const result = await f.api.fields(form, 'out', { search: 'v' })
+        expect(result.analyzed).toBe(true)
+        expect(body).toContain('"constant":9223372036854775807')
+        expect(body).toContain('"constant":0.1234567890123456789012345678')
+        expect(body).toContain('"search":"v"')
+        expect(JSON.stringify(form)).toBe(original)
+    })
 })

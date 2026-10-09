@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SqlSugar;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
@@ -11,16 +12,30 @@ namespace TenonEdge.Host.Features.Routes;
 internal sealed partial class RouteDraftStore
 {
     // 所有读取均在同一草稿事务内；只带出脱离数据库的对象，随后才做拓扑/字段编译。
-    internal RouteCompilationSnapshot ReadCompilation(string expectedVersion, CancellationToken token) => database.InTransaction(client =>
+    internal RouteCompilationSnapshot ReadCompilation(string expectedVersion, CancellationToken token) => ReadSnapshot(expectedVersion, null, token);
+
+    internal RouteCompilationSnapshot ReadGraphCompilation(string expectedVersion, RouteGraph graph, CancellationToken token) =>
+        ReadSnapshot(expectedVersion, RouteGraphFormat.Normalize(graph), token);
+
+    private RouteCompilationSnapshot ReadSnapshot(string expectedVersion, RouteGraph? graph, CancellationToken token) => database.InTransaction(client =>
     {
         if (string.IsNullOrEmpty(expectedVersion) || expectedVersion.Length > 64)
         { throw new ArgumentException("须提供草稿版本。"); }
         ConfigurationDraft.CheckVersion(client, expectedVersion);
-        if (client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).Count() > RouteTopologyCompiler.MaximumPaths)
-        { throw new RouteTopologyException(new("paths.totalLimit", "")); }
         long bytes = 0;
-        CheckSize("route_draft", "graph", "enabled = 1", []);
-        var routes = client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
+        RouteDraft[] routes;
+        if (graph is null)
+        {
+            if (client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).Count() > RouteTopologyCompiler.MaximumPaths)
+            { throw new RouteTopologyException(new("paths.totalLimit", "")); }
+            CheckSize("route_draft", "graph", "enabled = 1", []);
+            routes = client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
+        }
+        else
+        {
+            bytes = JsonSerializer.SerializeToUtf8Bytes(graph, RouteGraphFormat.Json).Length;
+            routes = [new(0, "field-analysis", "Field analysis", null, true, graph, null, 0)];
+        }
         var sourceIds = new HashSet<long>();
         var connectionIds = new HashSet<long>();
         foreach (var route in routes)
