@@ -1,3 +1,4 @@
+import { MappingEditor } from '../routes/mapping-editor'
 import { OutputEditor } from '../routes/output-editor'
 import { ReferencePicker } from '../routes/reference-picker'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -74,11 +75,14 @@ function CanvasWorkspace({
     >({})
     const dragging = useRef(false)
     const [error, setError] = useState('')
-    const [pendingOwner, setPendingOwner] = useState<'json' | 'output' | null>(
-        null,
-    )
+    const [pendingOwner, setPendingOwner] = useState<
+        'json' | 'output' | 'mapping' | null
+    >(null)
     const pendingConfig = pendingOwner !== null
-    const pending = (value: boolean, owner: 'json' | 'output' = 'json') => {
+    const pending = (
+        value: boolean,
+        owner: 'json' | 'output' | 'mapping' = 'json',
+    ) => {
         setPendingOwner(value ? owner : null)
         onPendingChange?.(value)
     }
@@ -506,6 +510,26 @@ function CanvasWorkspace({
                                 }
                             />
                         )}
+                    {persisted &&
+                        selected.length === 1 &&
+                        selected[0].kind === 'transform.map' && (
+                            <MappingEditor
+                                key={`mapping:${selected[0].id}:${selected[0].configText}`}
+                                configText={selected[0].configText}
+                                disabled={readOnly || pendingOwner === 'json'}
+                                dirty={(value) => pending(value, 'mapping')}
+                                accept={(text) =>
+                                    attempt(
+                                        () =>
+                                            state.configure(
+                                                selected[0].id,
+                                                text,
+                                            ),
+                                        true,
+                                    )
+                                }
+                            />
+                        )}
                     {persisted && selected.length === 1 && (
                         <form
                             key={`json:${selected[0].id}:${selected[0].configText}`}
@@ -539,7 +563,9 @@ function CanvasWorkspace({
                                     rows={12}
                                     defaultValue={selected[0].configText}
                                     disabled={
-                                        readOnly || pendingOwner === 'output'
+                                        readOnly ||
+                                        (pendingOwner !== null &&
+                                            pendingOwner !== 'json')
                                     }
                                     onChange={() => pending(true)}
                                 />
@@ -552,7 +578,11 @@ function CanvasWorkspace({
                             )}
                             <Button
                                 type="submit"
-                                disabled={readOnly || pendingOwner === 'output'}
+                                disabled={
+                                    readOnly ||
+                                    (pendingOwner !== null &&
+                                        pendingOwner !== 'json')
+                                }
                             >
                                 {t('routes.configAccept')}
                             </Button>

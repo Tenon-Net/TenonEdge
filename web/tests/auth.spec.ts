@@ -3269,3 +3269,149 @@ test('switching output nodes keeps exactly one property form', async ({
     await expect(forms).toHaveCount(1)
     await expect(page.getByLabel('节点名称', { exact: true })).toHaveCount(1)
 })
+
+test('mapping rule table preserves numeric constants and parameters through save, discard and undo', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1700, height: 1100 })
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '路线草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建路线', exact: true }).click()
+    await page
+        .getByLabel('路线标识', { exact: true })
+        .fill('mapping-form-route')
+    await page.getByLabel('路线名称', { exact: true }).fill('规则表路线')
+    await page.getByRole('button', { name: '字段映射', exact: true }).click()
+    const form = page.getByRole('form', { name: '字段映射规则表', exact: true })
+    await form
+        .getByRole('button', { name: '添加映射规则', exact: true })
+        .click()
+    await form.getByLabel('目标字段 1', { exact: true }).fill('power')
+    await form
+        .getByRole('combobox', { name: '目标类型 1', exact: true })
+        .selectOption('integer')
+    await form
+        .getByRole('combobox', { name: '映射取值方式 1', exact: true })
+        .selectOption('constant')
+    await form
+        .getByLabel('来源字段 / Pointer / 固定值 1', { exact: true })
+        .fill('9223372036854775807')
+    await form
+        .getByLabel('比例 1', { exact: true })
+        .fill('0.1234567890123456789012345678')
+    await form.getByLabel('偏移 1', { exact: true }).fill('-0')
+    await form.getByLabel('单位 1', { exact: true }).fill('kW')
+    await expect(
+        page.getByRole('button', { name: '保存路线草稿', exact: true }),
+    ).toBeDisabled()
+    await form
+        .getByRole('button', { name: '确认映射规则', exact: true })
+        .click()
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await page.locator('.react-flow__node').first().click()
+    await expect(form.getByLabel('目标字段 1', { exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await page.locator('.react-flow__node').first().click()
+    await expect(
+        form.getByLabel('来源字段 / Pointer / 固定值 1', { exact: true }),
+    ).toHaveValue('9223372036854775807')
+    const created = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'POST' &&
+            response.url().endsWith('/api/edge-admin/v1/routes'),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const response = await created
+    expect(response.status()).toBe(200)
+    expect(response.request().postData()).toContain(
+        '"constant":9223372036854775807',
+    )
+    expect(response.request().postData()).toContain(
+        '"scale":0.1234567890123456789012345678',
+    )
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    await page.reload()
+    await page
+        .getByRole('button', { name: '打开 规则表路线', exact: true })
+        .click()
+    await page.locator('.react-flow__node').first().click()
+    await expect(
+        form.getByLabel('来源字段 / Pointer / 固定值 1', { exact: true }),
+    ).toHaveValue('9223372036854775807')
+    await expect(form.getByLabel('比例 1', { exact: true })).toHaveValue(
+        '0.1234567890123456789012345678',
+    )
+    await form.getByLabel('比例 1', { exact: true }).fill('not-a-number')
+    await form
+        .getByRole('button', { name: '确认映射规则', exact: true })
+        .click()
+    await expect(
+        page.getByRole('button', { name: '保存路线草稿', exact: true }),
+    ).toBeDisabled()
+    await expect(form.getByLabel('比例 1', { exact: true })).toHaveValue(
+        'not-a-number',
+    )
+    await form
+        .getByRole('button', { name: '放弃映射规则修改', exact: true })
+        .click()
+    await expect(form.getByLabel('比例 1', { exact: true })).toHaveValue(
+        '0.1234567890123456789012345678',
+    )
+})
+
+test('mapping rule table pages 1000 saved rules without rendering all rows at once', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '路线草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建路线', exact: true }).click()
+    await page
+        .getByLabel('路线标识', { exact: true })
+        .fill('mapping-paged-route')
+    await page.getByLabel('路线名称', { exact: true }).fill('千条映射规则')
+    await page.getByRole('button', { name: '字段映射', exact: true }).click()
+    const rules = Array.from({ length: 1000 }, (_, i) => ({
+        target: `field_${i}`,
+        type: 'number',
+        sourceField: 'v',
+    }))
+    await page
+        .getByLabel('节点配置 JSON（临时编辑入口）', { exact: true })
+        .fill(JSON.stringify({ rules }))
+    await page
+        .getByRole('button', { name: '确认节点配置', exact: true })
+        .click()
+    const form = page.getByRole('form', { name: '字段映射规则表', exact: true })
+    await expect(form.locator('tbody tr')).toHaveCount(50)
+    await expect(
+        form.getByRole('button', { name: '添加映射规则', exact: true }),
+    ).toBeDisabled()
+    for (let pageIndex = 1; pageIndex < 20; pageIndex++)
+        await form.getByRole('button', { name: '下一页', exact: true }).click()
+    await expect(form.locator('tbody tr')).toHaveCount(50)
+    await form.getByLabel('目标字段 1000', { exact: true }).fill('last_edited')
+    await form
+        .getByRole('button', { name: '确认映射规则', exact: true })
+        .click()
+    const created = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'POST' &&
+            response.url().endsWith('/api/edge-admin/v1/routes'),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const response = await created
+    expect(response.status()).toBe(200)
+    const saved = (await response.json()).route.graph.nodes[0].config.rules
+    expect(saved).toHaveLength(1000)
+    expect(saved[0].target).toBe('field_0')
+    expect(saved[999].target).toBe('last_edited')
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+})

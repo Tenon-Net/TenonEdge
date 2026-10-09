@@ -2614,6 +2614,20 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 真实临时 Host + Chromium 156 执行 `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'output forms|route drafts|route reference|canvas|real setup|switching output nodes'` **7 通过**（`/tmp/tenonedge-output-form-browser-verified.log`）：新增 HTTP 参数/头/成功判断/自定义大整数的真实保存和重开、无效确认保留/放弃、MQTT 默认值和 QoS 0 保存、模式风险提示及单属性表单回归。环境沿用 §2.130。后端未改、未重跑其 2208 项基线；浏览器只做管理草稿往返，不代表外部 HTTP/MQTT 投递或完整 T3 已完成。未更新常驻调试实例、未推送。
 
+### 2.132 T3-05 保精度映射规则表与有界分页编辑（2026-10-10）
+
+接续 §2.131，映射节点已有规则表：目标字段、来源字段/JSON Pointer/固定值三选一、四种目标类型、单位、必填、比例、偏移及小数位。**来源字段目前仍手工填写，上游字段描述下拉及差异提示尚未接入**，未把规则表当作完整映射验收或样本执行。
+
+- 每页 50 行，总量最多 1000；切页只改变可见窗口，不截断未显示规则。规则状态在页面 Zustand 中，确认后整体加入图的撤销/重做历史。未确认编辑同 JSON/输出表单互斥，阻止路线保存/图切换，允许明确放弃。
+- 数值固定值、比例和偏移使用 JSON 原始数值 token，小数位按整数字面量处理；不经浮点数中转。固定值中的数字字符串和 null 独立保留。支持空规则和未完成字段保存为草稿；语义、范围与上游字段匹配仍由服务器保存/编译检查，不执行表达式或脚本。
+- 对不认识的规则形状、歧义多来源、未知目标类型拒绝转换为表单并提示核对 JSON，不静默丢弃属性；非法数值文本确认失败时保留编辑。映射面板使用独立 `mapping:` key，与 §2.131 的其他面板保持命名隔离。
+
+新增 8 项单元场景涵盖精确 int64/高精度比例、负零、来源/Pointer/数字字符串/null 区别、空/未完成草稿、歧义/未知规则拒绝、数量/数值语法与失败不修改输入。web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check`、`run build` 通过；Vitest **198 通过，0 失败/跳过**（`/tmp/tenonedge-mapping-form-unit.log`；构建 `/tmp/tenonedge-mapping-form-build.log`）。
+
+真实临时 Host + Chromium 156：`TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'` **9 通过**（`/tmp/tenonedge-mapping-form-browser-verified.log`）。新增真实规则编辑/确认/撤销/重做、精确数值保存重读、非法比例保留/放弃，以及 1000 条规则只渲染当前 50 行、切到第 20 页修改第 1000 条后完整保存且首条不变。初次规则浏览器用例错误地假定撤销/重做保留选中节点，实际既有编辑器会清空选择，导致找不到属性表单；修正用例为重选节点后断言，并明确检查空规则与恢复后的内容（`/tmp/tenonedge-mapping-form-browser.log` 记录原失败），未修改产品选择语义迎合用例。
+
+环境沿用 §2.131；后端未改、未重跑其 2208 项基线。当前证据是配置表单/持久化，不证明计算结果或外部发送；上游字段选择、无输出样本预览、应用/回滚和节点运行状态仍待后续。未更新常驻调试实例、未推送。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

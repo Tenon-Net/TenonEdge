@@ -1,6 +1,32 @@
 export const routeStrings = {
     title: '路线草稿',
     references: '来源 / 输出连接',
+    mapping: {
+        title: '字段映射规则表',
+        unsupported:
+            '此规则形状不受表单支持，请在 JSON 入口核对；未自动丢弃配置。',
+        notice: '每页最多 50 行，共最多 1000 条规则；确认后还须保存路线。来源字段暂手工填写，上游字段下拉与差异提示仍在接入；未校验为可执行。',
+        scalarHelp:
+            '固定值填写 JSON 标量；字符串须带双引号。比例/偏移保留数字原文，小数位须非负整数；留空表示不配置。类型和数值范围由编译器最终检查。',
+        target: '目标字段',
+        source: '映射取值方式',
+        value: '来源字段 / Pointer / 固定值',
+        type: '目标类型',
+        unit: '单位',
+        required: '映射必填',
+        scale: '比例',
+        offset: '偏移',
+        decimalPlaces: '保留小数位',
+        field: '来源字段',
+        path: 'JSON Pointer',
+        constant: '固定值',
+        chooseType: '待选类型',
+        remove: '删除规则',
+        add: '添加映射规则',
+        accept: '确认映射规则',
+        discard: '放弃映射规则修改',
+        page: '第 {{page}} 页 · 共 {{count}} 条规则',
+    },
     outputUnsupported:
         '此配置含表单暂不支持的形状，请在 JSON 入口核对；未自动转换或丢弃配置。',
     output: {
@@ -78,11 +104,11 @@ export const routeStrings = {
     dirty: '有未保存的路线修改',
     canvas: '路线画布',
     canvasNotice:
-        '编辑后须点击“保存路线草稿”。节点来源、连接与规则尚采用临时配置编辑入口；保存成功不代表可运行。',
+        '编辑后须点击“保存路线草稿”。来源/连接、映射规则和通用输出可用属性表单；保存成功不代表可运行。',
     config: '节点配置 JSON（临时编辑入口）',
     configAccept: '确认节点配置',
     configNotice:
-        '保留数字原文精度。不要填写密码、令牌或脚本；只能使用路线草稿文档规定的配置字段。专用属性表单仍在实施。',
+        '保留数字原文精度。不要填写密码、令牌或脚本；只能使用路线草稿文档规定的配置字段。此入口用于核对原始配置，不替代后端编译。',
     configPending: '节点配置尚未确认；请先确认或放弃，再切换节点或保存路线。',
     configDiscard: '放弃节点配置修改',
     configError: '配置 JSON、图大小或格式无效，未改变本地草稿。',
