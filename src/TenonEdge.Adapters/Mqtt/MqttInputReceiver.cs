@@ -89,8 +89,8 @@ internal sealed class MqttInputReceiver
         foreach (var (filter, qos) in desired)
         {
             token.ThrowIfCancellationRequested();
-            if (_installed.TryGetValue(filter, out var previous) && previous.Confirmed && previous.Qos == qos)
-            { continue; }
+            // SessionPresent 仅证明会话对象存在；Broker 回滚可能丢失已在本机确认的订阅。
+            // 每次新建连接都重订当前集合；MQTT 3.1.1 的 retained 可能再次投递，由绑定策略处理。
             // 先保存意图：网络成功后进程中断也不会留下无法识别、无法退订的孤立 Filter。
             Remember(new(filter, qos, false));
             var result = await client.SubscribeAsync(new MqttClientSubscribeOptionsBuilder()

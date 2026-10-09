@@ -58,7 +58,7 @@ public sealed class MqttHostInputTests(MosquittoBrokerFixture fixture) : IClassF
             await MqttProbe.SubscribeAsync(peer, topic + "/out", Token);
             await peer.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(topic + "/in").WithPayload("{\"v\":7}")
                 .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(), Token);
-            // 完整释放并重建产品 Host：同一数据目录和 Broker 持久会话不能触发重复订阅/保留回放。
+            // 完整释放并重建产品 Host：即使 Broker 持久会话存在也重订；默认忽略每次回放的保留消息。
             for (var restart = 0; restart < 2; restart++)
             {
                 await using var host = new FixedDataDirectoryApplicationFactory(data.Path, new Dictionary<string, string>
@@ -73,18 +73,18 @@ public sealed class MqttHostInputTests(MosquittoBrokerFixture fixture) : IClassF
                 Assert.Equal(8L * 1024 * 1024, runtime.InFlight.BufferCapacity);
                 Assert.Equal(64L * 1024 * 1024, runtime.InFlight.Status.CapacityBytes);
                 var cache = host.Services.GetRequiredService<DeliveryCache>();
-                await OutputPipelineTests.UntilAsync(() => cache.GetPersistentCounters().GetValueOrDefault("connection/1/mqtt/retainedIgnored") == 1);
+                await OutputPipelineTests.UntilAsync(() => cache.GetPersistentCounters().GetValueOrDefault("connection/1/mqtt/retainedIgnored") == 1 + restart);
                 await MqttProbe.PublishAsync(peer, topic + "/in", "{\"v\":9223372036854775807}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, Token);
                 var forwarded = await received.NextAsync(Token);
                 using var payload = JsonDocument.Parse(forwarded.ApplicationMessage.ConvertPayloadToString());
                 Assert.Equal(long.MaxValue, payload.RootElement.GetProperty("values").GetProperty("value").GetInt64());
                 await OutputPipelineTests.UntilAsync(() => cache.GetStatus().DeletedRecords == 1 &&
-                    cache.GetPersistentCounters().GetValueOrDefault("connection/1/mqtt/acknowledged") == 2 + restart);
-                Assert.Equal(1, cache.GetPersistentCounters()["connection/1/mqtt/subscribed"]);
+                    cache.GetPersistentCounters().GetValueOrDefault("connection/1/mqtt/acknowledged") == 2 * (restart + 1));
+                Assert.Equal(1 + restart, cache.GetPersistentCounters()["connection/1/mqtt/subscribed"]);
                 using var admin = await host.CreateLoggedInClientAsync("admin", Token);
                 var status = await admin.GetJsonAsync("/api/edge-admin/v1/runtime/status", Token);
                 Assert.Contains("input.mqtt", status.GetRawText(), StringComparison.Ordinal);
-                Assert.Equal(1, status.GetProperty("persistentCounters").GetProperty("connection/1/mqtt/retainedIgnored").GetInt64());
+                Assert.Equal(1 + restart, status.GetProperty("persistentCounters").GetProperty("connection/1/mqtt/retainedIgnored").GetInt64());
                 Assert.DoesNotContain(MosquittoBroker.Password, status.GetRawText(), StringComparison.Ordinal);
             }
         }

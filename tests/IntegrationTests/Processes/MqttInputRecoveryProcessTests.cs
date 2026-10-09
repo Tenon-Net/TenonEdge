@@ -118,10 +118,10 @@ public sealed class MqttInputRecoveryProcessTests(MosquittoBrokerFixture fixture
                 Assert.Equal(84, await NextValueAsync(received));
                 await PublishAsync(peer, topic, 126); // 实时 barrier 排在恢复消息之后，不能被 retained=7 或旧样本=1 取代。
                 Assert.Equal(126, await NextValueAsync(received));
-                var expectedAcks = killBeforeCommit ? 5 : 4;
+                var expectedAcks = killBeforeCommit ? 6 : 5;
                 await OutputPipelineTests.UntilAsync(() => Pending(data.Path) == 0 && Counter(data.Path, "acknowledged") == expectedAcks);
-                Assert.Equal(1, Counter(data.Path, "subscribed"));
-                Assert.Equal(1, Counter(data.Path, "retainedIgnored"));
+                Assert.Equal(2, Counter(data.Path, "subscribed"));
+                Assert.Equal(2, Counter(data.Path, "retainedIgnored"));
                 Assert.Equal(0, Counter(data.Path, "sessionLost"));
                 await StopAsync(restarted);
                 Assert.DoesNotContain(MosquittoBroker.Password, restarted.Output, StringComparison.Ordinal);

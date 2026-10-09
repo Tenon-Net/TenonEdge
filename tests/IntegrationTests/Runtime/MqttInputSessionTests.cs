@@ -473,7 +473,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Fact]
-    public async Task ReopenedJournalSkipsUnchangedRetainedFilterAndUnsubscribesRemovedFilter()
+    public async Task ReopenedJournalResubscribesUnchangedRetainedFilterAndUnsubscribesRemovedFilter()
     {
         var broker = fixture.Require();
         var settings = Settings(broker);
@@ -523,12 +523,12 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
                 await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), receiver);
                 Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
                 Assert.True(receiver.LastSessionPresent);
-                Assert.Single(reports, reason => reason == "subscribed");
+                Assert.Equal(2, reports.Count(reason => reason == "subscribed"));
                 Assert.Single(reports, reason => reason == "unsubscribed");
                 await MqttProbe.PublishAsync(publisher, topic + "/remove", "removed"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
                 await MqttProbe.PublishAsync(publisher, topic + "/keep", "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
                 await barrier.Task.WaitAsync(deadline.Token);
-                Assert.Equal("barrier", Assert.Single(received)); // 未变订阅没有再次回放 retained。
+                Assert.Equal("retained,barrier", string.Join(',', received)); // 显式处理 retained 的绑定接受重订回放。
                 Assert.DoesNotContain("unmatched", reports); // 已退订，不再收到删除主题的实时消息。
                 Assert.DoesNotContain(journal.Read(identity), item => item.Filter == topic + "/remove");
                 Assert.All(journal.Read(identity), item => Assert.True(item.Confirmed));
@@ -814,7 +814,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         var persisted = persistence && (!forceKill || checkpoint);
         Assert.Equal(persisted, restored.LastSessionPresent);
         Assert.Equal(persisted ? 0 : 1, reports.Count(reason => reason == "sessionLost"));
-        Assert.Equal(persisted ? 0 : 1, reports.Count(reason => reason == "subscribed"));
+        Assert.Single(reports, reason => reason == "subscribed");
         var (after, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
         using (after)
         { await MqttProbe.PublishAsync(after, topic, "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
@@ -825,10 +825,9 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Fact]
-    [Trait("Category", "KnownBrokerLimitation")]
-    public async Task BrokerCanRestoreSessionPresentWithoutALaterLocallyConfirmedSubscription()
+    public async Task ReconnectRestoresSubscriptionMissingFromBrokerCheckpointDespiteSessionPresent()
     {
-        // V-09 风险刻画，不是输入可靠性验收通过：MQTT 3.1.1 没有查询 Broker 订阅清单的接口。
+        // Broker 回滚保留会话但丢失较晚订阅；重连必须重新订阅，不能信任本地 SUBACK 日志。
         Assert.SkipWhen(MosquittoBroker.UnavailableReason is not null, MosquittoBroker.UnavailableReason ?? string.Empty);
         await using var broker = await MosquittoBroker.StartAsync(Token, persistence: true, stablePorts: true);
         var settings = Settings(broker);
@@ -876,16 +875,16 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         await using var current = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
         Assert.Equal(OutputSendStatus.Ack, (await current.MaintainAsync(deadline.Token)).Status);
         Assert.True(restored.LastSessionPresent);
-        Assert.DoesNotContain("subscribed", reports);
+        Assert.Equal(2, reports.Count(reason => reason == "subscribed"));
         Assert.DoesNotContain("sessionLost", reports);
         var (after, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), deadline.Token);
         using (after)
         {
-            await MqttProbe.PublishAsync(after, topic + "/later", "lost"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
+            await MqttProbe.PublishAsync(after, topic + "/later", "recovered"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
             await MqttProbe.PublishAsync(after, topic, "barrier"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
         }
         await barrier.Task.WaitAsync(deadline.Token);
-        Assert.Equal("barrier", Assert.Single(values));
+        Assert.Equal("recovered,barrier", string.Join(',', values));
         Assert.Equal(2, journal.Read(identity).Count); // 本地的确认日志不能证明 Broker 检查点包含同样的订阅。
     }
 
@@ -933,7 +932,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             await using var session = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
             Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
             Assert.True(restored.LastSessionPresent);
-            Assert.DoesNotContain("subscribed", reports);
+            Assert.Single(reports, reason => reason == "subscribed");
             await drained.Task.WaitAsync(deadline.Token);
             await MqttProbe.PublishAsync(publisher, topic, [255], MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token);
             await barrier.Task.WaitAsync(deadline.Token);
@@ -1085,7 +1084,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         await using var gateway = new MqttSession(settings, identity.ClientId, new Credentials(), TimeProvider.System, new CountingConnector(), restored);
         Assert.Equal(OutputSendStatus.Ack, (await gateway.MaintainAsync(operation.Token)).Status);
         Assert.True(restored.LastSessionPresent);
-        Assert.DoesNotContain("subscribed", reports);
+        Assert.Single(reports, reason => reason == "subscribed");
         Assert.DoesNotContain("sessionLost", reports);
         var received = new List<string>();
         while (true)

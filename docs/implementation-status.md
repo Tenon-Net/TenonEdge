@@ -1903,6 +1903,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量命令：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=acl-offline' --results-directory /tmp/tenonedge-acl-offline --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 716 集成 = 1604 项测试断言通过，0 失败、0 跳过**；仍含 §2.77 已知缺口刻画。日志 `/tmp/tenonedge-acl-offline-full.log`，TRX Counters 已核对。限定修改文件的格式校验和 `git diff --check` 通过；环境同 §2.84，无新包/镜像。
 - 边界：未验证已经发出但尚未 PUBACK 的在途消息撤权、设备账号读权限全矩阵、密码吊销、会话过期或 Broker 真实断电；不改变 §2.77 订阅回滚缺口，不代表 T2-07 整体退出。选型与协议策略仍待维护者确认。
 
+### 2.88 T2 协议决策确认与 MQTT 每次建连重订（2026-10-09）
+
+- 维护者回复“都按推荐，继续”：确认 NModbus 3.0.83、Modbus TCP UnitId 0–255 / RTU over TCP 1–247；确认 MQTT 每次建立连接都重订当前需要主题，接受 ProcessRetained=true 时可能重复处理保留消息。总设计 §2.3/6.1/6.2 与功能需求已对齐；其他待定事项不据此视为获批。
+- MqttInputReceiver 不再按本地 Confirmed 日志跳过当前主题。仍保留写订阅意图→SUBACK→本地确认与退订事务边界，SessionPresent=false 的会话丢失事件、QoS 1 按序确认、默认忽略 retained 均不变；连接健康维护而未重建时不会重复订阅。
+- 将 §2.77 的已知缺口刻画改为必须恢复丢失订阅的回归测试：保存含 A 的 Broker 检查点，新增 B 并验证成功与本地确认，强杀回滚，SessionPresent=true 时要求重订 A/B，并实收 B 的消息。修复前确定性失败（期望 2 次订阅、实际 0），日志 `/tmp/tenonedge-resubscribe-red.log`。不再将“确认复现漏收”作为测试通过条件。
+- 相关保留消息、进程重启和持久计数断言按已确认规则调整：显式处理 retained 会再次接收；默认忽略仍不生成投递，但忽略/确认计数增加。旧章节 §2.59—2.87 中“不重订”和“缺口未修复”描述保留为历史证据，以本节为当前策略。
+- 聚焦 MQTT 会话/Host/真实进程重建：42 项通过，日志 `/tmp/tenonedge-resubscribe-green.log`。全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=resubscribe' --results-directory /tmp/tenonedge-resubscribe --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 716 集成 = 1604 项通过，0 失败、0 跳过**，日志 `/tmp/tenonedge-resubscribe-full.log`，TRX Counters 已核对。原 KnownBrokerLimitation 测试现已转换为恢复断言，不再按“复现缺陷”计通过。四项 C# 文件限定格式校验与 `git diff --check` 通过，环境同 §2.84。
+- 边界：此修复恢复当前需要的订阅，不恢复 Broker 已丢失消息，也不保证识别 Broker 回滚复活、且本地已删除日志的历史订阅；后者仍可能额外积存，输入按当前绑定匹配并计数后确认。Modbus 正式适配、T2 完整退出和 T3 网页仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -1931,7 +1940,7 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 | FS-10 | 伪造转发头；经 HTTP 创建 API 令牌 | 部分通过（本地）：伪造的转发头不改变协议判定、来源地址与限流 | §2.8 | 经 HTTP 创建令牌被拒：T3-09 |
 | V-02 | 前端构建环境：工具版本与 Node.js 要求 | 资料核查完成（2026-09-30） | §2.13 | 锁定依赖与 CI 构建：T3 |
 | V-04 | MQTTnet：3.1.1、持久会话、手动确认、发布超时、持续发布时的断线检测、TLS | T0 最小原型完成（本地，真实 Mosquitto 2.1.2）：与发布有关的结论已得出——QoS 1 的发布超时与断线检测、QoS 0 输出用 PINGREQ 发现断线（审查后补充）、TLS 证书校验 | §2.11，§4.8 C3、C12 | 保留消息、QoS 0 输入的内存、会话恢复与完整背压：T2-03 |
-| V-05 | NModbus 与 FluentModbus 的比较 | 比较完成（本地；用例在 CI 中执行）：关键差异有可复现结果；审查发现两个用例的结果取决于时序（一个可能挂死，一个随机失败），已修正并在审查者复现问题的条件下复验；选型建议 NModbus，待维护者认可 | §2.12，§4.8 C2、C11，§4.9 | 全部类型与字节序、AT-02：T2-02 |
+| V-05 | NModbus 与 FluentModbus 的比较 | 比较完成（本地；用例在 CI 中执行）：关键差异有可复现结果；审查发现两个用例的结果取决于时序（一个可能挂死，一个随机失败），已修正并在审查者复现问题的条件下复验；选型 NModbus 3.0.83 已于 2026-10-09 确认 | §2.12，§4.8 C2、C11，§4.9 | 全部类型与字节序、AT-02：T2-02 |
 | V-09 | 附带 Broker 的版本、许可与配置项 | 资料核查（2026-09-30）；2.1.2 已在 T0-11 实际运行 | §2.11、§2.13 | 实测：T2-07；部署文档：T5-04 |
 | V-10 | 点表粘贴与大表格 | 资料核查（同 S-09、S-10） | §2.13 | 原型：T3 |
 | V-12 | JSON 数值的序列化 | 通过（本地） | §2.10 | — |
@@ -2596,7 +2605,7 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
     - Host 声明 `RuntimeIdentifiers` 为 linux-x64，使平台资产进入锁文件，CI 以 locked mode 还原后发布；
     - “未预装 .NET 的干净 Linux”使用 `mcr.microsoft.com/dotnet/runtime-deps:10.0`：官方为自包含应用提供的基础镜像，只含 ICU、OpenSSL 等原生依赖，没有 .NET。标签会随补丁更新，验证脚本与 CI 按 digest 固定，换用新 digest 时一并更新本文的记录；
     - 不为此改用 InvariantGlobalization，ICU 由系统提供，与以后的产品镜像一致；产品镜像的基础镜像在 T5-04 选定并登记许可。
-49. Modbus 选型（T0-12）：建议采用 NModbus 3.0.83（理由见 §2.12），待维护者认可；认可之前 T2-02 不定稿适配器。若改选 FluentModbus，须先解决 §2.12 中三项无法在库外补救的缺陷。
+49. Modbus 选型（T0-12）：采用 NModbus 3.0.83（理由见 §2.12），维护者于 2026-10-09 回复“都按推荐，继续”确认；允许 T2-02 正式适配，TCP UnitId 0–255、RTU over TCP 1–247。若改选 FluentModbus，须先解决 §2.12 中三项无法在库外补救的缺陷。
 50. 低版本 SQLite 的验证夹具（T0-13）：从 nuget.org 下载 SQLitePCLRaw.lib.e_sqlite3 2.1.11，核对包的 SHA-512 与 nuget.org 登记一致后，只把其中的原生库换入发布物的临时副本，验证“实际加载低版本时运行时不启动”；它不进入仓库或发布物。
 51. 运行单元的业务标识（T0-C 审查后修正）：总设计中 inputKey 只在设备内唯一，路线以 deviceKey/inputKey 引用数据来源（§10.2、§10.5）。标识原先只允许一段，两台设备上同名的数据来源会在运行计划中被判为重复；改为允许以 / 分隔的最多 4 段，每段沿用总设计 §6.5 的标识规则。T1-01 由 Host 编译运行计划时按此生成标识。
 52. CI 不上传测试发布物（T0-C 审查后修正）：仓库公开，上传的制品任何登录用户都能下载，等同于对外分发；而发布物含许可待核查的 SqlSugarCoreNoDrive（D-09），也没有附带许可声明，按总设计 §17.3 在处理之前不得分发。CI 只在作业中生成并验证发布物，上传验证证据与发布物的 SHA-256 清单。将来需要发布测试构建时，须先处理许可并取得维护者同意。
@@ -2683,7 +2692,7 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
    - 修改密码时的哈希核对（§6 决定 36）没有单独的测试：目前能改密码的路径都经过同一队列，无法在测试中构造并发修改；T3-09 增加管理员重置密码时补测。
 10. T0-C 验收：维护者 2026-10-01 验收，并授权本地提交；推送未获授权。T0-13 要求的“实际 CI 报告”须推送并在 GitHub Actions 运行后才有（§4.4）。
 11. 进入 T1：维护者 2026-10-01 确认 D-07，并授权 T1 第一批（T1-01—T1-03）；总设计 §22、功能需求 §6.3 与开发准备 §1、§4、§7 中 D-07 的“待确认”标注已随 T1 第一批更新。D-05 已于 2026-10-08 确认，规则及本次落地见 §2.17。
-12. Modbus 选型（§2.12、§6 决定 49）：建议 NModbus 3.0.83，待维护者认可；认可之前 T2-02 不定稿适配器。
+12. Modbus 选型已于 2026-10-09 确认 NModbus 3.0.83，UnitId 范围及 MQTT 重订决策见 §2.88；正式适配及完整验收仍须执行。
 13. T1-01：宿主因后台服务异常停止时进程退出码为 0，须改为非零并与启动保护一起测试（§6 决定 45）。进展：已改为退出码 6，有单元测试；产品中没有令后台服务故障的途径，进程级未验证（§6 决定 62）。启动保护本身已用真实进程验证（§2.14）。
 14. 适配层要求：MQTT 见 §2.11（T1-04、T2-03；QoS 0 输出须定期发送带超时的 PINGREQ，§6 决定 53），Modbus 见 §2.12（T2-02）。
 15. T5-04、T5-07：产品镜像去掉 `ASPNETCORE_HTTP_PORTS`；选定并登记基础镜像的许可；发行包附带 .NET 运行时与 ASP.NET Core 运行时的第三方声明（`docs/reference-notes.md` §1.3）；在产品镜像中确认 V-07。
