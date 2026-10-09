@@ -127,11 +127,11 @@ internal sealed partial class HttpsCertificateStore(
         return names.Build();
     }
 
-    private static List<IPAddress> LocalUnicastAddresses()
+    internal static List<IPAddress> LocalUnicastAddresses(Func<NetworkInterface[]>? enumerate = null)
     {
         try
         {
-            return NetworkInterface.GetAllNetworkInterfaces()
+            return (enumerate ?? NetworkInterface.GetAllNetworkInterfaces)()
                 .Where(networkInterface => networkInterface.OperationalStatus == OperationalStatus.Up
                     && networkInterface.NetworkInterfaceType != NetworkInterfaceType.Loopback)
                 .SelectMany(networkInterface => networkInterface.GetIPProperties().UnicastAddresses)
@@ -144,6 +144,13 @@ internal sealed partial class HttpsCertificateStore(
         }
         catch (NetworkInformationException)
         {
+            return [];
+        }
+        catch (ArgumentException exception) when (exception.ParamName == "address")
+        {
+            // LinuxNetworkInterface can fail while decoding an OS-provided address.
+            // Local IP SANs are best-effort, like NetworkInformationException above;
+            // localhost, host name and loopback SANs remain in the certificate.
             return [];
         }
     }
