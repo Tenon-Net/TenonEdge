@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
+using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Runtime.Mapping;
 
@@ -135,11 +136,42 @@ internal sealed class RuntimePlanDocument
                 mqttClients[client] = settings.ConnectionId;
             }
         }
+        ValidateModbus(plan, httpConnections.Keys.Concat(mqttConnections.Keys).ToHashSet());
         try
         { MqttFeedbackGuard.Validate(plan.Units); }
         catch (ArgumentException)
         { throw new RuntimePlanDocumentException("MQTT 输入与输出存在已知反馈闭环，请调整发布主题或订阅过滤器。"); }
         return new RuntimePlanDocument(plan.Units, Serialize(plan.Units));
+    }
+
+    private static void ValidateModbus(RuntimePlan plan, HashSet<long> otherConnections)
+    {
+        var connections = new Dictionary<long, string>();
+        var devices = new Dictionary<string, (long Connection, byte Unit)>(StringComparer.Ordinal);
+        var keys = new HashSet<(string Device, string Point)>();
+        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind == "input.modbus"))
+        {
+            var settings = ModbusInputSettings.Parse(unit.Configuration);
+            var identity = settings.ConnectionIdentity();
+            if (otherConnections.Contains(settings.ConnectionId) ||
+                connections.TryGetValue(settings.ConnectionId, out var previous) && previous != identity)
+            { throw new RuntimePlanDocumentException("同一连接的协议与 Modbus 物理参数必须一致。"); }
+            connections[settings.ConnectionId] = identity;
+            var parts = unit.Id.Key.Split('/');
+            if (parts.Length != 2)
+            { throw new RuntimePlanDocumentException("Modbus 输入标识必须为 deviceKey/inputKey。"); }
+            var device = (settings.ConnectionId, settings.UnitId!.Value);
+            if (devices.TryGetValue(parts[0], out var priorDevice) && priorDevice != device)
+            { throw new RuntimePlanDocumentException("同一 Modbus 设备必须使用相同连接与 UnitId。"); }
+            devices[parts[0]] = device;
+            foreach (var point in settings.Points)
+            {
+                if (!keys.Add((parts[0], point.Key)))
+                { throw new RuntimePlanDocumentException("同一 Modbus 设备的点位 key 不可跨组重复。"); }
+            }
+        }
+        if (connections.Count > 256 || connections.Count + otherConnections.Count > 500)
+        { throw new RuntimePlanDocumentException("连接数量超过上限：全部 500 个、Modbus 256 个。"); }
     }
 
     private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index)
@@ -181,6 +213,8 @@ internal sealed class RuntimePlanDocument
                 var settings = MqttInputSettings.Parse(configuration);
                 new JsonInputDecoderFactory().Build(settings.Fields, settings.UpstreamTime);
             }
+            if (kind.GetString() == "input.modbus")
+            { ModbusInputSettings.Parse(configuration); }
             if (kind.GetString() == "input.http")
             {
                 var settings = HttpInputSettings.Parse(configuration);

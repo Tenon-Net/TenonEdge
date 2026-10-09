@@ -67,7 +67,8 @@ public sealed class MqttHostInputTests(MosquittoBrokerFixture fixture) : IClassF
                     ["TenonEdge:Outbound:LocalPorts:0"] = broker.Port.ToString(CultureInfo.InvariantCulture),
                 });
                 using var started = host.CreateClient();
-                Assert.Single(host.Services.GetServices<IRuntimePlanAdapterProvider>());
+                Assert.Single(host.Services.GetServices<IRuntimePlanAdapterProvider>().OfType<TenonEdge.Adapters.Mqtt.MqttPlanAdapterProvider>());
+                Assert.Single(host.Services.GetServices<IRuntimePlanAdapterProvider>().OfType<TenonEdge.Adapters.Modbus.ModbusPlanAdapterProvider>());
                 Assert.DoesNotContain(host.Services.GetServices<IOutputAdapterFactory>(), factory => factory.Kind == "output.mqtt");
                 var runtime = host.Services.GetRequiredService<TenonEdge.Runtime.Lifecycle.RuntimeHost>();
                 Assert.Equal(8L * 1024 * 1024, runtime.InFlight.BufferCapacity);

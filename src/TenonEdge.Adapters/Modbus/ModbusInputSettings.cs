@@ -41,6 +41,8 @@ public sealed record ModbusInputSettings
         }
     };
 
+    public string ConnectionIdentity() => Connection.Identity;
+
     public static ModbusInputSettings Parse(JsonElement configuration)
     {
         var settings = configuration.Deserialize<ModbusInputSettings>(Options) ?? throw new ArgumentException("Modbus 输入配置不能为空。");

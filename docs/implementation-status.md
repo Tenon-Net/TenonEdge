@@ -1967,6 +1967,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-factory' --results-directory /tmp/tenonedge-modbus-factory-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**962 单元 + 769 集成 = 1731 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-factory-full.log`）。Linux x64 / SDK 10.0.401。五个本批 C# 文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-factory-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-factory-restore.log`）与 `git diff --check` 通过；未新增依赖。
 - 尚未在 Host 注册 provider 或开放 Modbus 种子校验；下一步接入 Host、跨协议连接冲突/全计划约束及真实输出链路。当前多组错误聚合、不同周期/多逻辑设备同 UnitId、长周期预算/压力、资源上限及真实离线恢复还须补齐完整验收，不能标记 T2-02 或 T2 完成。
 
+### 2.94 T2-02 Modbus Host 注册、种子校验与真实 HTTP 输出链路（2026-10-09）
+
+- Host 将 ModbusPlanAdapterProvider 注册为进程级无状态提供者，与 MQTT 提供者并存；每次 Prepare 仍产生独立工厂，复用同一个 SharedConnections/OutboundConnector/TimeProvider，不改变 Program.cs 或创建第二套 RuntimeHost。
+- RuntimePlanDocument 在种子冻结前严格解析 input.modbus；校验跨组物理连接参数、设备连接/UnitId、设备内点位 key，拒绝 MQTT/HTTP/Modbus 混用连接编号，限制全部连接 500 / Modbus 256。外部未知属性和非法配置仍返回固定安全说明，不把原始配置或异常链写入诊断。合法不同 UnitId 与不同组可共用连接，按连接而不是按组计数。
+- 新增 14 项单元测试：合法共享、5 类物理参数冲突、设备身份/点位冲突、跨协议冲突、256 边界、无效标识及秘密不回显。跨协议负例先单独解析另一协议的配置成功，再验证组合冲突，避免以无效 HTTP 字段配置制造假阳性。
+- 新增 2 项产品 Host 集成测试：TCP UnitId 255 与 RTU UnitId 1；真实回环 Modbus 从站，首次设置后重启加载种子，完整采集—消息—SQLite 发送缓存—正式 HTTP POST—独立接收端 204 确认。独立已知值 `0x1000100110021003` 在最终 JSON 中仍为精确 uint64，标准信封的来源编号、设备与网关时间来源正确，确认后 DeletedRecords 增加，认证管理 status API 的采集完成计数增加。同一物理会话没有重复连接；未声称硬件实测。
+- 聚焦命令 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~ModbusHostTests|FullyQualifiedName~ModbusPlanDocumentTests'`：14 单元 + 2 集成通过（`/tmp/tenonedge-modbus-host-target2.log`）。首轮集成编译被 CA1861 拦下，固定输入引用数组提取为 static readonly（`/tmp/tenonedge-modbus-host-target.log`）；核对 StandardEnvelope 后不再假设输出含内部 receivedAt 字段，时间相等的内部语义由 §2.92 已有测试覆盖。
+- 首轮全量：976 单元通过，集成 769 通过 / 2 失败 / 0 跳过（`/tmp/tenonedge-modbus-host-full.log`）。均为注册新协议后既有夹具假设过时：RuntimeCoordinator 的“未注册模块”用例原先拿 input.modbus 作占位，改为明确未注册的 input.unregistered，保留构建失败后 effective 不变与 notEffective 快照断言；MQTT Host 用例原先断言提供者总共 1 个，改为分别断言 MQTT、Modbus 提供者各 1 个，保留凭证、重启、保留消息及无独立 MQTT 输出工厂等原断言。不通过删除用例或放宽业务结果掩盖失败。
+- 最终全量复跑：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-host-repeat' --results-directory /tmp/tenonedge-modbus-host-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 771 集成 = 1747 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-host-repeat.log`）。Linux x64 / SDK 10.0.401。七个本批 C# 文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-host-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-host-restore.log`）与 `git diff --check` 通过；无新增依赖。
+- 新增 `docs/modbus-integration.md` 与 README 入口，说明实际种子格式、手工接入前提、地址/类型/出站策略、精度和诊断，以及运行中的周期边界；人工地址/点位不是客户配置。尚无网页；多组不同周期、同 UnitId 多逻辑设备、设备恢复、压力/资源及实物验收仍待后续，不标记 T2 完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

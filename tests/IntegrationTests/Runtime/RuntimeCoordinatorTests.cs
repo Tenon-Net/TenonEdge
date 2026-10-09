@@ -22,7 +22,7 @@ public sealed class RuntimeCoordinatorTests
 {
     private const string MeterA = """{"kind":"input.simulator","key":"meter-001/simulated","configuration":{"periodMs":1000,"seed":42}}""";
     private const string MeterB = """{"kind":"input.simulator","key":"meter-001/simulated","configuration":{"periodMs":2000,"seed":42}}""";
-    private const string MissingModule = """{"kind":"input.modbus","key":"meter-002/registers","configuration":{}}""";
+    private const string MissingModule = """{"kind":"input.unregistered","key":"meter-002/registers","configuration":{}}""";
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
     private const string SimulatorUnit = "input.simulator/meter-001/simulated";
@@ -115,7 +115,7 @@ public sealed class RuntimeCoordinatorTests
 
         var rejected = state.Snapshot(2);
         Assert.Equal(RuntimeSnapshotStates.NotEffective, rejected.State);
-        Assert.Contains("没有注册单元种类 input.modbus", rejected.NotEffectiveReason, StringComparison.Ordinal);
+        Assert.Contains("没有注册单元种类 input.unregistered", rejected.NotEffectiveReason, StringComparison.Ordinal);
         Assert.Equal((1L, (long?)null, (long?)null), (state.Pointers().Effective!.Value, state.Pointers().Previous, state.Pointers().Pending));
         Assert.Single(state.Events(RuntimeEventTypes.VersionNotEffective));
 

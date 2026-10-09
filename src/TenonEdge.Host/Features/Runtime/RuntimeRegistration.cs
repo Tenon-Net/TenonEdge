@@ -1,5 +1,6 @@
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
+using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Adapters.Simulator;
 using TenonEdge.Host.Features.Connections;
@@ -55,6 +56,7 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>(), provider.GetRequiredService<OutboundPolicyStore>().Read));
         services.AddSingleton<IOutboundConnector, OutboundConnector>();
         services.AddSingleton<ISharedConnections, SharedConnections>();
+        services.AddSingleton<IRuntimePlanAdapterProvider, ModbusPlanAdapterProvider>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
         services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>
         {
