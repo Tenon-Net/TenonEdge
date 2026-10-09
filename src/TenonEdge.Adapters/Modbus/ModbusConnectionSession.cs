@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Modbus;
 
@@ -40,6 +41,51 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
         _connector = connector;
         _time = time;
         _executor = new ModbusRequestExecutor();
+    }
+
+    // 调用者必须持有共享串行租约；只建立传输，不发送 Modbus 报文。
+    internal async Task<ModbusConnectionTestResult> TestConnectionAsync(CancellationToken token)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        token.ThrowIfCancellationRequested();
+        var started = _time.GetTimestamp();
+        var trace = new ConnectionTestTrace(_time, false);
+        if (_client is not null && !_client.NeedsNewConnection)
+        { return Result("connection.reused", true, true); }
+        if (_retryStarted is { } failedAt && _time.GetElapsedTime(failedAt) < _retryDelay)
+        { return Result("connection.backoff", false); }
+        if (_client?.NeedsNewConnection == true)
+        { Reset(backoff: false); }
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(_settings.ConnectTimeoutMs), _time);
+        using var connect = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
+        try
+        {
+            _stream = await new ObservedTestConnector(_connector, trace).ConnectAsync(_settings.Host, _settings.Port, connect.Token);
+            connect.Token.ThrowIfCancellationRequested();
+            _client = new ModbusReadClient(_stream, _settings.Format, _time);
+            _health.ConnectionReplaced();
+            _retryStarted = null;
+            return Result("success", true);
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { Reset(backoff: false); return Result("timeout", false); }
+        catch (Exception exception) when (exception is IOException or SocketException)
+        {
+            Reset(backoff: false);
+            var code = exception is OutboundAccessDeniedException ? "outbound.denied" : SocketError(exception) switch
+            {
+                System.Net.Sockets.SocketError.HostNotFound or System.Net.Sockets.SocketError.NoData or System.Net.Sockets.SocketError.TryAgain => "dns.failed",
+                System.Net.Sockets.SocketError.ConnectionRefused => "connection.refused",
+                System.Net.Sockets.SocketError.TimedOut => "timeout",
+                _ => "connection.failed"
+            };
+            return Result(code, false);
+        }
+        catch
+        { Reset(backoff: false); throw; }
+
+        ModbusConnectionTestResult Result(string code, bool success, bool reused = false) =>
+            new(success, code, _time.GetElapsedTime(started).TotalMilliseconds, trace.FinishModbus(code, success, reused));
     }
 
     internal async Task<ModbusReadResult> ReadAsync(byte unit, byte function, ushort address, ushort count, CancellationToken token)

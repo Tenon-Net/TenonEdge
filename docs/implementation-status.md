@@ -2350,6 +2350,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 完整回归：Linux x64、SDK 10.0.401 / .NET 10.0.12、Release；`dotnet build TenonEdge.sln -c Release --no-restore`、`dotnet test TenonEdge.sln -c Release --no-build --no-restore`（TRX：`artifacts/test-results/t3-http-test/`）及 TRX 非零/无跳过门禁通过，**1071 单元 + 934 集成 = 2005 项通过，0 失败/跳过**；`dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过。日志：`/tmp/tenonedge-http-test-final-build.log`、`/tmp/tenonedge-http-test-full.log`、`/tmp/tenonedge-http-test-final-format.log`。前端 Node 22.23.2 / npm 11.21.0，`test` **119 项通过**、`test:e2e` **16 项通过**，typecheck/lint/format:check 与非零/无跳过报告门禁均通过；报告 `web/reports/unit.json`、`web/reports/browser.json`，日志 `/tmp/tenonedge-http-test-web-unit.log`、`/tmp/tenonedge-http-test-web-full.log`。剩余：Modbus 连接测试/读取预览、实时抓取、信任及客户端证书表单仍待实现；TLS 吊销/离线状态等 §2.113 未验证项未借本轮改称通过。HTTP 并不自动验证业务响应规则或平台绑定。T3-05 图编译、T3-06 应用/回滚仍未完成，完整网页配置目标未达成。
 
+### 2.115 T3-04 Modbus 连接测试：共享会话内核子场景（2026-10-10）
+
+接续 §2.114，按功能 §2.4 只测到 TCP 建连，不发送 Modbus 读取/写入或探测报文；不是设备读取预览交付。回读参考总索引及 NModbus 笔记，仅借连接所有权/串行化约束，没有复制源码。
+
+- `ModbusConnectionSession.TestConnectionAsync` 由同一个共享串行租约调用；新建传输使用正式出站连接器和连接超时。TCP / RTU over TCP 均可在随后正式读取中复用该流。
+- 已有流返回 `connection.reused`，连接阶段标为 `reused`、没有新建连耗时；只表明借用现有流，**不证明远端此刻仍存活或从站可读**。TLS、认证、协议阶段明确跳过。
+- 运行时连接退避中不绕过重连期限；等待租约时取消不关闭健康流。建连超时返回 timeout，调用者取消向上传播；地址解析、拒绝连接与出站拒绝单独分类。
+- 本次仅实现并验证内部会话能力，没有注册 API 或新增网页按钮。后续 API 须处理测试先于运行时取得会话时的启用 UnitId 集合初始化，不能用占位 UnitId 污染正式采集的健康统计；准入额度与包含排队的总期限由 API/编排层补齐。设备真实读取、结果解码与网页仍未交付。
+
+Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~Modbus|FullyQualifiedName~ConnectionTestTrace|FullyQualifiedName~HttpConnectionTest|FullyQualifiedName~MqttConnectionTest' --logger trx --results-directory artifacts/test-results/t3-modbus-test-session`，**207 单元 + 154 集成 = 361 项通过，0 失败/跳过**；TRX 非零/无跳过门禁通过，日志 `/tmp/tenonedge-modbus-test-regression.log`。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-modbus-test-format-verify.log`），`git diff --check` 通过。本子项未重跑完整后端/前端套件，完整基线仍见 §2.114。首次会话定向测试 16 项通过，0 失败/跳过（`/tmp/tenonedge-modbus-test-session.log`）；此前一次构建被 CA1861 拒绝，调整测试常量集合写法后通过，不将失败尝试计作通过。真实网络子场景使用本机模拟从站，DNS/拒绝连接分类为注入错误测试，超时使用可控时钟；不宣称实物兼容。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -54,6 +54,34 @@ internal sealed class ConnectionTestTrace(TimeProvider time, bool tls)
     internal ConnectionTestStep[] FinishHttp(string code, int? statusCode, bool credentialUsed) => Finish(code, statusCode is not null,
         statusCode is 401 or 403 ? "failed" : credentialUsed ? "unknown" : "skipped", "http.response", code != "connection.busy");
 
+    internal ConnectionTestStep[] FinishModbus(string code, bool connected, bool reused = false)
+    {
+        lock (_lock)
+        {
+            if (!_finished)
+            {
+                Complete(connected ? "success" : "failed", code);
+                if (reused)
+                {
+                    _steps["address"] = new("address", "skipped");
+                    _steps["connection"] = new("connection", "reused", Code: code);
+                }
+                else if (_steps["connection"].Status == "notReached" && _current is null && code != "connection.backoff")
+                {
+                    if (_steps["address"].Status == "notReached")
+                    { _steps["address"] = new("address", "unknown"); }
+                    // 解析已明确失败时，不能声称还尝试过 TCP 建连。
+                    if (_steps["address"].Status != "failed")
+                    { _steps["connection"] = new("connection", connected ? "success" : "failed", Code: code); }
+                }
+                _steps["authentication"] = new("authentication", "skipped");
+                _steps["protocol"] = new("protocol", "skipped");
+                _finished = true;
+            }
+            return [_steps["address"], _steps["connection"], _steps["tls"], _steps["authentication"], _steps["protocol"]];
+        }
+    }
+
     private ConnectionTestStep[] Finish(string code, bool protocolSucceeded, string authenticationStatus, string timingGroup, bool attempted = true)
     {
         lock (_lock)

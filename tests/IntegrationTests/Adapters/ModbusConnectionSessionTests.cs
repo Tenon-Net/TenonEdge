@@ -168,6 +168,154 @@ public sealed class ModbusConnectionSessionTests
         Assert.Equal(4, slave.ConnectionCount);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConnectionTestDoesNotReadAndRuntimeReusesSamePhysicalStream(bool rtu)
+    {
+        await using var slave = ModbusTestSlave.Start(rtu ? ModbusFraming.RtuOverTcp : ModbusFraming.Tcp);
+        var settings = Settings(slave, rtu);
+        var shared = new SharedConnections();
+        await using var runtime = shared.Acquire(1, "modbus", settings.Identity,
+            () => new ModbusConnectionSession(settings, [1, 2], Connector(), TimeProvider.System));
+        await using var preview = shared.Acquire<ModbusConnectionSession>(1, "modbus", settings.Identity,
+            () => throw new InvalidOperationException("Must borrow runtime session"));
+        var connected = await preview.ExecuteAsync((session, token) => session.TestConnectionAsync(token), Token);
+        Assert.True(connected.Success);
+        Assert.Equal("success", connected.Code);
+        Assert.Equal(["success", "success", "skipped", "skipped", "skipped"], connected.Steps.Select(step => step.Status));
+        Assert.Equal(0, slave.RequestCount);
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(runtime, 2)).Outcome);
+        var reused = await preview.ExecuteAsync((session, token) => session.TestConnectionAsync(token), Token);
+        Assert.Equal("connection.reused", reused.Code);
+        Assert.Equal("reused", reused.Steps[1].Status);
+        Assert.Null(reused.Steps[1].ElapsedMs);
+        Assert.Equal(1, slave.RequestCount);
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(runtime, 1)).Outcome);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task ConnectionTestQueuesBehindRuntimeAndQueuedCancellationPreservesStream()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var settings = Settings(slave);
+        var shared = new SharedConnections();
+        await using var lease = shared.Acquire(1, "modbus", settings.Identity,
+            () => new ModbusConnectionSession(settings, [1], Connector(), TimeProvider.System));
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(lease, 1)).Outcome);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var holding = lease.ExecuteAsync(async (_, token) =>
+        {
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            return true;
+        }, Token);
+        await entered.Task.WaitAsync(Token);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        var queued = lease.ExecuteAsync((session, token) => session.TestConnectionAsync(token), stop.Token);
+        try
+        {
+            Assert.False(queued.IsCompleted);
+            await stop.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
+        }
+        finally { release.TrySetResult(); }
+        await holding;
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(lease, 1)).Outcome);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task ConnectionTestDoesNotBypassRuntimeReconnectBackoff()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, _ => new SlaveReply { CloseConnection = true });
+        await using var session = new ModbusConnectionSession(Settings(slave), [1], Connector(), new FakeTimeProvider());
+        Assert.Equal(ModbusRequestOutcome.ConnectionError, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
+        var result = await session.TestConnectionAsync(Token);
+        Assert.False(result.Success);
+        Assert.Equal("connection.backoff", result.Code);
+        Assert.Equal("notReached", result.Steps[0].Status);
+        Assert.Equal("notReached", result.Steps[1].Status);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task ConnectionTestReportsRealPolicyDenialWithoutProtocolAttempt()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        await using var session = new ModbusConnectionSession(Settings(slave), [1], new OutboundConnector(new DeniedPolicy()), TimeProvider.System);
+        var result = await session.TestConnectionAsync(Token);
+        Assert.False(result.Success);
+        Assert.Equal("outbound.denied", result.Code);
+        Assert.Equal("skipped", result.Steps[4].Status);
+        Assert.Equal(0, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task ConnectionTestDeadlineAndCallerCancellationAreDistinct()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var time = new FakeTimeProvider();
+        var connector = new WaitingConnector();
+        await using var session = new ModbusConnectionSession(Settings(slave), [1], connector, time);
+        var pending = session.TestConnectionAsync(Token);
+        await connector.Entered.Task.WaitAsync(Token);
+        time.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal("timeout", (await pending.WaitAsync(TimeSpan.FromSeconds(5), Token)).Code);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        var cancelled = session.TestConnectionAsync(stop.Token);
+        await stop.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        Assert.Equal(0, slave.ConnectionCount);
+    }
+
+    [Theory]
+    [InlineData(System.Net.Sockets.SocketError.HostNotFound, "dns.failed", "failed", "notReached")]
+    [InlineData(System.Net.Sockets.SocketError.ConnectionRefused, "connection.refused", "success", "failed")]
+    public async Task ConnectionTestClassifiesTransportFailures(System.Net.Sockets.SocketError error,
+        string code, string addressStatus, string connectionStatus)
+    {
+        var settings = new ModbusConnectionSettings { ConnectionId = 1, Host = "example.test" };
+        await using var session = new ModbusConnectionSession(settings, [1], new FailingConnector(error), TimeProvider.System);
+        var result = await session.TestConnectionAsync(Token);
+        Assert.False(result.Success);
+        Assert.Equal(code, result.Code);
+        Assert.Equal(addressStatus, result.Steps[0].Status);
+        Assert.Equal(connectionStatus, result.Steps[1].Status);
+        Assert.Equal("skipped", result.Steps[4].Status);
+    }
+
+    private sealed class FailingConnector(System.Net.Sockets.SocketError error) : IOutboundConnector
+    {
+        public ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Diagnostic overload expected");
+        public ValueTask<Stream> ConnectAsync(string host, int port, Action<OutboundConnectionStage> progress, CancellationToken cancellationToken)
+        {
+            progress(OutboundConnectionStage.Resolving);
+            if (error != System.Net.Sockets.SocketError.HostNotFound)
+            { progress(OutboundConnectionStage.Connecting); }
+            throw new System.Net.Sockets.SocketException((int)error);
+        }
+    }
+
+    private sealed class DeniedPolicy : IOutboundAddressPolicy
+    {
+        public bool IsAllowed(IPAddress address, int port) => false;
+    }
+
+    private sealed class WaitingConnector : IOutboundConnector
+    {
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken)
+        {
+            Entered.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
     private static Task<ModbusReadResult> Read(IConnectionLease<ModbusConnectionSession> lease, byte unit) =>
         lease.ExecuteAsync((session, token) => session.ReadAsync(unit, 3, 0, 1, token), Token);
 
