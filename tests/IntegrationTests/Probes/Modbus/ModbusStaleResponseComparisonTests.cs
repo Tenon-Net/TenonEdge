@@ -14,6 +14,9 @@ namespace TenonEdge.IntegrationTests.Probes.Modbus;
 /// </list>
 /// 用例中的寄存器值为 0x1000 加地址，读到哪个地址的值一目了然。
 /// </summary>
+// 此类同步库调用与进程内异步从站共同使用线程池；300 ms 的协议观察窗口
+// 不应同时承担其他集成测试的调度压力。只隔离本类，不改变断言、超时或其他测试并行性。
+[Collection("Timing-sensitive Modbus comparison")]
 [Trait("Category", "ModbusProbe")]
 public sealed class ModbusStaleResponseComparisonTests(ITestOutputHelper output)
 {
@@ -196,3 +199,6 @@ public sealed class ModbusStaleResponseComparisonTests(ITestOutputHelper output)
 
     private static string Format(ushort[] registers) => string.Join(", ", registers.Select(register => $"0x{register:X4}"));
 }
+
+[CollectionDefinition("Timing-sensitive Modbus comparison", DisableParallelization = true)]
+public sealed class ModbusComparisonTimingScope;
