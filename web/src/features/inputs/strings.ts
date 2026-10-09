@@ -1,4 +1,20 @@
 export const inputStrings = {
+    csv: {
+        title: '设备点表 CSV',
+        template: '下载 CSV 模板',
+        export: '导出设备点表',
+        import: '导入点表到草稿',
+        file: '点表 CSV 文件',
+        encoding: 'CSV 文件编码',
+        mode: 'CSV 导入模式',
+        incremental: '增量：只新增，已有 key 跳过',
+        overwrite: '覆盖：更新同 key，保留文件外点位',
+        help: '范围为当前设备全部已保存采集组。inputKey 必须对应已有采集组；覆盖时可将同 key 点位移至指定组。5 MiB / 10000 行，有错误整批不写。addressNotation 为 offset 或 manual（手册编号须保留前导零）。导出 UTF-8 BOM；名称/单位的公式或前导空白用单引号保护，原有单引号加倍，导入会还原。保存不应用配置。',
+        blocked: '请先保存或关闭来源编辑，并刷新到一致的草稿版本后操作 CSV。',
+        size: '请选择不超过 5 MiB 的 CSV 文件。',
+        imported:
+            '点表已写入草稿：新增 {{added}}，更新 {{updated}}，跳过 {{skipped}}；尚未应用。',
+    },
     sample: {
         title: '样本字段推断',
         text: '临时 JSON 样本',

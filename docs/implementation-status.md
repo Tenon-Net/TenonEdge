@@ -2261,6 +2261,27 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：最大点表设备一次复制 20 份的资源/延迟性能未实测；本批仅证明上述软件功能。T3-04 CSV、实时抓取/连接测试及证书信任表单仍待完成；T3-05 图编译/预览、T3-06 应用/回滚未完成。尚不能从网页独立启动完整采集路线，总目标保持进行中。未推送、未发版、无实物验证。
 
+
+### 2.110 T3-04 设备点表 CSV 导入导出（2026-10-10）
+
+按总设计 §6.1/§8.4、功能 §3.3/3.7 实现所选设备的真实草稿 CSV；详细列定义、手册编号和电子表格文本转义见 [点表 CSV](point-csv.md)。沿用 §2.109 的参考笔记取舍，不复制第三方源码，不新增 NuGet/npm 包。
+
+- `GET/POST /devices/{deviceId}/points/csv` 接到现有管理根分组。GET 导出或提供模板（UTF-8 BOM/CRLF，显式地址写法）；POST 使用全局草稿版本、Configurator/CSRF、类型化模式/编码及 base64 原始字节。网页不先解码 GBK；服务端注册 CodePagesEncodingProvider，UTF-8/GBK 均用严格错误回退。
+- 文件最多 5 MiB、10000 数据记录，单元格最多 4096 字符；JSON base64 请求体最多 8 MiB。支持引号、转义双引号、引号内换行、CRLF/LF、调整列顺序；拒绝未知/缺失/重复列和文件内重复点位 key。错误含物理起始行号，不回显文件内容。单点复用正式 Modbus 定义校验，不放宽停用点的地址/类型/字节序约束。
+- CSV 描述设备内已有采集组（inputKey）的点位，不自动创建来源或修改周期。覆盖为按设备 key upsert、保留文件外点位，可将同 key 移到另一个已有组；增量只新增，已有 key 跳过但仍检查文件语法/字段/组引用。按 key 字典合并，避免每更新一行就线性扫描整个采集组；先计算最终结果，再检查每组 10000 点限制；整批更新来源行、版本与审计共用一次事务。任何行、组或审计失败均无部分提交；所有行跳过仍推进版本并记一次审计。
+- 导出按设备写法显示零基偏移或完整手册编号；导入后均保存协议偏移，功能码与手册前缀须一致。name/unit 对公式起始字符、前导空白/控制/BOM 及单引号做可逆文本保护；原配置值不变。文件编辑时须保留地址/业务 key 的文本属性，避免电子表格自动转为数字或日期。
+- 网页提供真实模板/文件下载、编码/模式选择和文件上传、行号错误、增改跳过计数；来源编辑打开时须先保存/关闭，不拿未保存点表冒充导出结果。失败保留文件，成功刷新全局版本相关查询；文件异步读取后检查会话代次，不把旧账号的文件发给新会话。按总设计 §10.3，只读用户不能导出/下载模板或导入；网页不展示 CSV 操作。保存不应用、不读取设备。
+
+验证（软件子场景）：
+
+1. 定向 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~PointCsv|FullyQualifiedName~OpenApiDocument|FullyQualifiedName~ManagementApiAccess'` **21 单元 + 15 集成通过**（`/tmp/tenonedge-csv-targeted3.log`）；此后增加边界与网卡异常回归；最终 `dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger 'trx;LogFilePrefix=t3-point-csv-merge' --results-directory artifacts/test-results/t3-point-csv-merge --blame-hang-timeout 5m --blame-hang-dump-type none` **1059 单元 + 887 集成 = 1946 项通过，0 失败/跳过**（`/tmp/tenonedge-csv-merge-tests.log`），两程序集非零 TRX 门禁通过。Release 构建 0 警告/错误；`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 退出 0。覆盖引号/换行与物理行号、两种地址写法/四功能码、元数据可逆文本保护、GBK、非法定义、10000 行/5 MiB，以及版本并发、角色/CSRF、重启保存、组间移动/增量跳过、审计回滚；新增最终组边界用例包含完整 10000 点导出后覆盖再导入，不等于最大规模性能认证。
+2. 前端 `npm run test -- --reporter=default --reporter=json --outputFile=reports/unit.json` **119 项通过**（`/tmp/tenonedge-csv-web-unit.log`）；新增用例核对 BOM/GBK 字节不经 JS 字符解码、base64 分块与 5 MiB 边界。真实 Development Host 导出 OpenAPI/类型（`/tmp/tenonedge-csv-api.log`）。
+3. 浏览器独立 CSV 场景通过（`/tmp/tenonedge-csv-browser-boundaries.log`）：下载模板与真实带 BOM 点表、保留 00001/40001、重新导入导出文件、逐行错误整批不改且保留文件、增量/覆盖/跨组迁移、GBK 中文、刷新后导出和运行版本不变；实际 HTTP 同时验证 5 MiB+1 文件返回 400、超过 8 MiB 请求体返回 413，版本不变。最终全量 **14 项通过**（`/tmp/tenonedge-csv-merge-browser.log`、`web/reports/browser.json`），包含新增上传边界；`npm run build`、typecheck/lint/format:check 和 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 均通过。已核看 `device-csv.png` 的中文字段、导入计数与采集组数量。
+4. 初次构建的 params 目标类型推断与代码分析规则已按实际编译器修正；定向 API 契约清单中 import operationId 排序漏调曾失败一次，已保持完整清单并修正顺序，无删除断言。提交前权限复核发现最初只保护导入；按 §10.3 的“导出同样需要权限”统一保护整个 CSV 分组，并补正只读导出/模板 403 用例及文档，不因点表不含凭证就允许只读导出。
+5. 中间全量 **1057 单元通过、886 集成通过、1 集成失败**（`/tmp/tenonedge-csv-full.log`、`artifacts/test-results/t3-point-csv/`）：证书生成调用 `LinuxNetworkInterface.GetLinuxNetworkInterfaces()` 时，BCL 抛出 `ArgumentException`，参数 `address`，启动失败。不是 CSV 校验失败，也没有证据证明由何种网卡变化触发。补入与既有 NetworkInformationException 一致的可选 IP SAN 回退，仅捕获该明确地址异常；仍保留 localhost/主机名/回环 SAN，不改变远端 TLS 校验。注入异常单测验证回退及不吞掉其他参数/程序异常。无法枚举时证书不含可选本地非回环 IP；真实 OS 异常触发机制未复现。失败 TRX 保留，最终回归单独记录。
+
+剩余：没有最大规模 CSV 导入的硬件性能验收、人工 Excel/GBK 编辑器兼容性或真实设备验证。T3-04 实时抓取、连接测试与证书信任表单仍待完成；T3-05 图编译/预览与 T3-06 应用/回滚未完成，因此仍不能仅通过网页启动完整采集路线。总目标保持进行中，未推送、未发版。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

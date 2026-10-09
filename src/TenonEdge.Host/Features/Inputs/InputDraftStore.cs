@@ -13,7 +13,7 @@ using TenonEdge.Host.Storage.Ids;
 
 namespace TenonEdge.Host.Features.Inputs;
 
-internal sealed class InputDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
+internal sealed partial class InputDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {

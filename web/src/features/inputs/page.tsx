@@ -1,3 +1,4 @@
+import { PointCsvPanel } from './csv-panel'
 import { JsonSourceEditor } from './json-editor'
 import { useState } from 'react'
 import { useStore } from 'zustand'
@@ -209,6 +210,14 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
             <p className="text-xs text-muted-foreground">
                 {t('inputs.version', { version: query.data?.version ?? '—' })}
             </p>
+            {canEdit && device?.kind === 'modbus' && query.data && (
+                <PointCsvPanel
+                    deviceId={deviceId}
+                    version={query.data.version}
+                    blocked={!coherent || form !== null || mutation.isPending}
+                    canEdit={canEdit}
+                />
+            )}
             {!query.data?.inputs.length && <p>{t('inputs.empty')}</p>}
             <div className="flex flex-wrap gap-2">
                 {query.data?.inputs.map((input) => (

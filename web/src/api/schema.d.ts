@@ -453,6 +453,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/points/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 导出所选设备的草稿点表或模板，UTF-8 BOM，文件标注地址写法 */
+        get: operations["exportDevicePointCsv"];
+        put?: never;
+        /** 按 key 覆盖或增量导入设备点表；有错误整批不写，不应用配置 */
+        post: operations["importDevicePointCsv"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -888,6 +906,26 @@ export interface components {
             manuallyPaused: boolean;
             resumeVersion: null | string;
         };
+        /** @enum {unknown} */
+        PointCsvEncoding: "utf8" | "gbk" | null;
+        PointCsvImportRequest: {
+            expectedVersion: string;
+            mode: null | components["schemas"]["PointCsvMode"];
+            encoding: null | components["schemas"]["PointCsvEncoding"];
+            /** Format: byte */
+            content: string;
+        };
+        PointCsvImportResult: {
+            version: string;
+            /** Format: int32 */
+            added: number | string;
+            /** Format: int32 */
+            updated: number | string;
+            /** Format: int32 */
+            skipped: number | string;
+        };
+        /** @enum {unknown} */
+        PointCsvMode: "overwrite" | "incremental" | null;
         ProblemDetails: {
             type?: null | string;
             title?: null | string;
@@ -2658,6 +2696,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    exportDevicePointCsv: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+                template?: boolean;
+            };
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    importDevicePointCsv: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PointCsvImportRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PointCsvImportResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
             /** @description Unauthorized */

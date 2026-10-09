@@ -1628,3 +1628,218 @@ test('device copy atomically persists disabled copies with independent sources a
         ).coordinator.activeRevision,
     ).toBeNull()
 })
+
+test('device CSV downloads BOM templates, imports GBK, reports row errors and atomically merges real points', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const headers = { 'X-CSRF-Token': session.csrfToken }
+    const version = (
+        await (await page.request.get('/api/edge-admin/v1/devices')).json()
+    ).version
+    const connectionResponse = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers,
+            data: {
+                expectedVersion: version,
+                key: 'csv-plc',
+                name: 'CSV PLC',
+                kind: 'modbus',
+                modbus: { host: '10.20.30.78' },
+            },
+        },
+    )
+    expect(connectionResponse.status()).toBe(200)
+    const connection = await connectionResponse.json()
+    const deviceResponse = await page.request.post(
+        '/api/edge-admin/v1/devices',
+        {
+            headers,
+            data: {
+                expectedVersion: connection.version,
+                key: 'csv-device',
+                name: 'CSV 设备',
+                kind: 'modbus',
+                connectionId: connection.connection.id,
+                unitId: 1,
+                addressNotation: 'manual',
+            },
+        },
+    )
+    expect(deviceResponse.status()).toBe(200)
+    const device = await deviceResponse.json()
+    const inputUrl = `/api/edge-admin/v1/devices/${device.device.id}/inputs`
+    const fastResponse = await page.request.post(inputUrl, {
+        headers,
+        data: {
+            expectedVersion: device.version,
+            key: 'fast',
+            name: 'Fast',
+            modbus: {
+                periodMs: 1000,
+                points: [
+                    {
+                        key: 'p',
+                        name: '=1+1',
+                        functionCode: 3,
+                        address: 0,
+                        type: 'uint16',
+                    },
+                    { key: 'coil', functionCode: 1, address: 0, type: 'bool' },
+                ],
+            },
+        },
+    })
+    expect(fastResponse.status()).toBe(200)
+    const fast = await fastResponse.json()
+    const slowResponse = await page.request.post(inputUrl, {
+        headers,
+        data: {
+            expectedVersion: fast.version,
+            key: 'slow',
+            name: 'Slow',
+            modbus: { periodMs: 2000, points: [] },
+        },
+    })
+    expect(slowResponse.status()).toBe(200)
+    await page.goto(`/devices/${device.device.id}/inputs`)
+    const panel = page.getByRole('region', {
+        name: '设备点表 CSV',
+        exact: true,
+    })
+    const file = panel.getByLabel('点表 CSV 文件', { exact: true })
+    async function download(name: string) {
+        const pending = page.waitForEvent('download')
+        await panel.getByRole('button', { name, exact: true }).click()
+        const result = await pending
+        const { readFile } = await import('node:fs/promises')
+        const bytes = await readFile((await result.path())!)
+        expect([...bytes.subarray(0, 3)]).toEqual([239, 187, 191])
+        return bytes
+    }
+    await download('下载 CSV 模板')
+    const exported = await download('导出设备点表')
+    expect(exported.toString('utf8')).toContain('"00001"')
+    expect(exported.toString('utf8')).toContain('"40001"')
+    expect(exported.toString('utf8')).toContain('"\'=1+1"')
+    async function upload(bytes: Buffer, expectedStatus: number) {
+        await file.setInputFiles({
+            name: 'points.csv',
+            mimeType: 'text/csv',
+            buffer: bytes,
+        })
+        const pending = page.waitForResponse(
+            (r) =>
+                r.url().endsWith('/points/csv') &&
+                r.request().method() === 'POST',
+        )
+        await panel
+            .getByRole('button', { name: '导入点表到草稿', exact: true })
+            .click()
+        expect((await pending).status()).toBe(expectedStatus)
+    }
+    await upload(exported, 200)
+    await expect(panel.getByRole('status')).toContainText(
+        '新增 0，更新 0，跳过 2',
+    )
+    const header =
+        'inputKey,key,name,functionCode,address,addressNotation,type,bit,byteOrder,unit,enabled\n'
+    const current = await (await page.request.get(inputUrl)).json()
+    const csvUrl = `/api/edge-admin/v1/devices/${device.device.id}/points/csv`
+    const tooLarge = await page.request.post(csvUrl, {
+        headers,
+        data: {
+            expectedVersion: current.version,
+            mode: 'incremental',
+            encoding: 'utf8',
+            content: Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64'),
+        },
+    })
+    expect(tooLarge.status()).toBe(400)
+    const overBody = await page.request.post(csvUrl, {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        data: JSON.stringify({ content: 'x'.repeat(8 * 1024 * 1024) }),
+    })
+    expect(overBody.status()).toBe(413)
+    expect((await (await page.request.get(inputUrl)).json()).version).toBe(
+        current.version,
+    )
+
+    await upload(
+        Buffer.from(
+            header +
+                'slow,p,changed,3,40011,manual,uint16,,,V,false\nfast,new,bad,3,70000,offset,uint16,,,V,true\n',
+        ),
+        400,
+    )
+    await expect(panel.getByRole('alert')).toContainText('csv[3]')
+    expect(
+        await file.evaluate((node: HTMLInputElement) => node.files?.length),
+    ).toBe(1)
+    expect((await (await page.request.get(inputUrl)).json()).version).toBe(
+        current.version,
+    )
+    const valid = Buffer.from(
+        header +
+            'slow,p,changed,3,40011,manual,uint16,,,V,false\nfast,new,new,3,7,offset,uint16,,,V,true\n',
+    )
+    await upload(valid, 200)
+    await expect(panel.getByRole('status')).toContainText(
+        '新增 1，更新 0，跳过 1',
+    )
+    await panel
+        .getByRole('combobox', { name: 'CSV 导入模式', exact: true })
+        .selectOption('overwrite')
+    await upload(valid, 200)
+    await expect(panel.getByRole('status')).toContainText(
+        '新增 0，更新 2，跳过 0',
+    )
+    await panel
+        .getByRole('combobox', { name: 'CSV 文件编码', exact: true })
+        .selectOption('gbk')
+    const gbk = Buffer.concat([
+        Buffer.from(header + 'fast,gbk,'),
+        Buffer.from('cec2b6c8', 'hex'),
+        Buffer.from(',3,20,offset,uint16,,,V,true\n'),
+    ])
+    await upload(gbk, 200)
+    await expect(panel.getByRole('status')).toContainText(
+        '新增 1，更新 0，跳过 0',
+    )
+    const saved = await (await page.request.get(inputUrl)).json()
+    const fastPoints = saved.inputs.find(
+        (input: { key: string }) => input.key === 'fast',
+    ).modbus.points
+    const slowPoints = saved.inputs.find(
+        (input: { key: string }) => input.key === 'slow',
+    ).modbus.points
+    expect(
+        fastPoints.map((point: { key: string }) => point.key).sort(),
+    ).toEqual(['coil', 'gbk', 'new'])
+    expect(
+        fastPoints.find((point: { key: string }) => point.key === 'gbk').name,
+    ).toBe('温度')
+    expect(slowPoints[0]).toMatchObject({
+        key: 'p',
+        address: 10,
+        enabled: false,
+    })
+    await expect(file).toHaveValue('')
+    await page.screenshot({
+        path: 'test-results/device-csv.png',
+        fullPage: true,
+    })
+    await page.reload()
+    expect((await download('导出设备点表')).toString('utf8')).toContain('温度')
+    expect(
+        (
+            await (
+                await page.request.get('/api/edge-admin/v1/runtime/status')
+            ).json()
+        ).coordinator.activeRevision,
+    ).toBeNull()
+})
