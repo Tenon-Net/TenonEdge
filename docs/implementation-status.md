@@ -2282,6 +2282,18 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：没有最大规模 CSV 导入的硬件性能验收、人工 Excel/GBK 编辑器兼容性或真实设备验证。T3-04 实时抓取、连接测试与证书信任表单仍待完成；T3-05 图编译/预览与 T3-06 应用/回滚未完成，因此仍不能仅通过网页启动完整采集路线。总目标保持进行中，未推送、未发版。
 
+### 2.111 T3-04 真实测试的并发准入前置（2026-10-10）
+
+本地检查点已整理：`c9492ed` 为 §2.110 中的证书地址枚举容错，`36e6bff` 为点表 CSV；均未推送。继续连接测试前，先按总设计 §8.7 实现 `PreviewOperationBudget`：默认全局 4 个、每会话 2 个，原子即时准入，超限返回空租约而不排队。释放幂等且线程安全，最后一个操作结束即移除会话分区；不持有请求、数据库事务或原始样本。允许显式构造上限，尚未提供管理参数 API。
+
+- 宿主未来须传入已认证会话标识，不允许客户端任意指定分区；所有真实预览/连接测试/测试发送须共用一个宿主级实例。
+- 额度由实际 I/O 与清理过程持有，不能因 HTTP 等待取消就提前释放。单测用仍待清理的操作验证这一点，不宣称已验证真实协议取消。
+- 定向命令 `dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-restore --filter FullyQualifiedName~PreviewOperationBudgetTests`：**5 项通过，0 失败/跳过**，日志 `/tmp/tenonedge-preview-budget-tests.log`。覆盖双重限额、会话隔离与轮换、并发竞争/重复释放、取消等待和非法参数。
+
+追加验证：`dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-build --no-restore --logger 'trx;LogFilePrefix=t3-preview-budget' --results-directory artifacts/test-results/t3-preview-budget` **1064 单元测试通过，0 失败/跳过**（`/tmp/tenonedge-preview-budget-full.log`）。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 退出 0（`/tmp/tenonedge-preview-budget-format.log`）。本子项没有重跑集成或浏览器套件，不能将 §2.110 的运行次数计作本节新证据。
+
+本节仅为 T3-04 的运行时准入基础：尚未接入 DI 或管理端点，不能算作网页连接测试已可用；实际出站、分阶段耗时/错误、凭证/TLS、运行连接所有权以及端到端限额验证继续实施。未修改现有运行时网络行为，未做真实设备验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
