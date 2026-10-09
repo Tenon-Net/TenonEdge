@@ -45,6 +45,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getOutboundPolicy",
         "getOutputControl",
         "getReadiness",
+        "getRouteCatalog",
         "getRouteDraft",
         "getRouteDrafts",
         "getRuntimeStatus",

@@ -316,6 +316,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页读取同版本的来源或输出连接摘要，不返回配置、点表、样本或凭证 */
+        get: operations["getRouteCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -1326,6 +1343,23 @@ export interface components {
             status?: null | number | string;
             detail?: null | string;
             instance?: null | string;
+        };
+        RouteCatalogItem: {
+            /** Format: int64 */
+            id?: number | string;
+            key?: string;
+            name?: string;
+            enabled?: boolean;
+            /** Format: int64 */
+            deviceId?: null | number | string;
+            deviceKey?: null | string;
+            deviceName?: null | string;
+        };
+        RouteCatalogPage: {
+            version: string;
+            items: components["schemas"]["RouteCatalogItem"][];
+            /** Format: int64 */
+            nextAfterId: null | number | string;
         };
         RouteCompileRequest: {
             expectedVersion: string;
@@ -2379,6 +2413,48 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRouteCatalog: {
+        parameters: {
+            query: {
+                kind: string;
+                afterId?: number | string;
+                limit?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteCatalogPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

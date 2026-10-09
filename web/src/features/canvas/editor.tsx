@@ -1,3 +1,4 @@
+import { ReferencePicker } from '../routes/reference-picker'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useStore } from 'zustand'
 import { useTranslation } from 'react-i18next'
@@ -462,6 +463,23 @@ function CanvasWorkspace({
                     ) : (
                         <p>{t('canvas.selectOne')}</p>
                     )}
+                    {persisted &&
+                        selected.length === 1 &&
+                        (selected[0].kind.startsWith('input.') ||
+                            ['output.http', 'output.mqtt'].includes(
+                                selected[0].kind,
+                            )) && (
+                            <ReferencePicker
+                                key={selected[0].id}
+                                node={selected[0]}
+                                disabled={readOnly || pendingConfig}
+                                change={(text) =>
+                                    attempt(() =>
+                                        state.configure(selected[0].id, text),
+                                    )
+                                }
+                            />
+                        )}
                     {persisted && selected.length === 1 && (
                         <form
                             key={`${selected[0].id}:${selected[0].configText}`}

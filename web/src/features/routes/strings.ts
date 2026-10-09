@@ -1,5 +1,15 @@
 export const routeStrings = {
     title: '路线草稿',
+    references: '来源 / 输出连接',
+    catalogNotice:
+        '目录版本 {{version}}，仅摘要；刷新目录不替换路线编辑版本。选择后仍须保存并编译，不能据此判定在线。',
+    catalogRefresh: '刷新选择目录',
+    catalogSearch: '筛选本页名称或标识',
+    catalogDisabled: '（已停用）',
+    catalogPrevious: '上一页',
+    catalogNext: '下一页',
+    catalogSelected: '已选 {{count}} 个引用（含不在当前页的引用）',
+    catalogRemove: '移除引用',
     notice: '保存、复制、删除和启停仅修改草稿，不改变运行配置、不启动采集或发送。应用与回滚尚未开放。',
     new: '新建路线',
     open: '打开',

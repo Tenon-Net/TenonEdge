@@ -3001,3 +3001,117 @@ test('route drafts persist exact configuration, preserve conflicted edits and ne
         runtimeBefore.coordinator.activeRevision,
     )
 })
+
+test('route reference selectors read real metadata and preserve constants when binding an output', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1700, height: 1100 })
+    await openPointEditor(page)
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const headers = { 'X-CSRF-Token': session.csrfToken }
+    let version = (
+        await (await page.request.get('/api/edge-admin/v1/routes')).json()
+    ).version
+    const deviceResponse = await page.request.post(
+        '/api/edge-admin/v1/devices',
+        {
+            headers,
+            data: {
+                expectedVersion: version,
+                key: 'picker-sim',
+                name: '选择器模拟设备',
+                kind: 'simulator',
+            },
+        },
+    )
+    expect(deviceResponse.status()).toBe(200)
+    const device = await deviceResponse.json()
+    const sourceResponse = await page.request.post(
+        `/api/edge-admin/v1/devices/${device.device.id}/inputs`,
+        {
+            headers,
+            data: {
+                expectedVersion: device.version,
+                key: 'picker-source',
+                name: '选择器来源',
+                simulator: { template: 'meter' },
+            },
+        },
+    )
+    expect(sourceResponse.status()).toBe(200)
+    const source = await sourceResponse.json()
+    const connectionResponse = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers,
+            data: {
+                expectedVersion: source.version,
+                key: 'picker-http',
+                name: '选择器 HTTP',
+                kind: 'http',
+                http: { baseAddress: 'http://localhost/' },
+            },
+        },
+    )
+    expect(connectionResponse.status()).toBe(200)
+    version = (await connectionResponse.json()).version
+    await page.getByRole('link', { name: '路线草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建路线', exact: true }).click()
+    await page.getByLabel('路线标识', { exact: true }).fill('picker-route')
+    await page.getByLabel('路线名称', { exact: true }).fill('引用选择路线')
+    await page.getByRole('button', { name: '模拟器输入', exact: true }).click()
+    await page
+        .getByLabel('选择器模拟设备 / 选择器来源 (picker-source)', {
+            exact: true,
+        })
+        .check()
+    const inputConfig = page.getByLabel('节点配置 JSON（临时编辑入口）', {
+        exact: true,
+    })
+    await expect(inputConfig).toHaveValue(`{"sourceIds":[${source.input.id}]}`)
+    await page.getByRole('button', { name: 'HTTP 输出', exact: true }).click()
+    await inputConfig.fill(
+        '{"connectionId":null,"payload":{"mode":"custom","fields":[{"target":"value","constant":9223372036854775807}]}}',
+    )
+    await page
+        .getByRole('button', { name: '确认节点配置', exact: true })
+        .click()
+    await page.getByLabel('选择器 HTTP (picker-http)', { exact: true }).check()
+    await expect(inputConfig).toHaveValue(/"constant":9223372036854775807/)
+    const savedResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'POST' &&
+            response.url().endsWith('/api/edge-admin/v1/routes'),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const saved = await savedResponse
+    expect(saved.status()).toBe(200)
+    expect(saved.request().postData()).toContain(
+        `"sourceIds":[${source.input.id}]`,
+    )
+    expect(saved.request().postData()).toContain(
+        '"constant":9223372036854775807',
+    )
+    expect(saved.request().postData()).toContain(
+        `"expectedVersion":"${version}"`,
+    )
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    await page.locator('.react-flow__node').last().click()
+    await page.route('**/api/edge-admin/v1/routes/catalog?**', (route) =>
+        route.fulfill({
+            status: 500,
+            json: { title: 'catalog fixture failure' },
+        }),
+    )
+    await page
+        .getByRole('button', { name: '刷新选择目录', exact: true })
+        .click()
+    await expect(inputConfig).toHaveValue(/"constant":9223372036854775807/)
+    await page.unroute('**/api/edge-admin/v1/routes/catalog?**')
+})

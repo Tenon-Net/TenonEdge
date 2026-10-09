@@ -2586,6 +2586,19 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 首次浏览器用例因误要求服务端规范化后的配置字符串与输入完全相同而失败（服务端合法补充 path/headers 等 null 字段，数值未改变；`/tmp/tenonedge-route-page-browser.log`）；改为核对规范化配置、精确数字 token、实际 PUT 正文后重跑通过，不改变产品以迎合原错误断言。本批未验证只读账号的浏览器操作、启用完整图的浏览器编译/执行、设备/外部输出或完整 T3；后端代码未改，不把前批后端测试数量算作本批执行。常驻调试实例未更新，未推送。
 
+### 2.130 T3-05 有界引用目录与真实来源/输出连接选择（2026-10-10）
+
+接续 §2.129，画布输入节点不再必须手填来源编号；HTTP/MQTT 输出也可选择真实连接。字段映射、输出参数/报文专用编辑和样本预览仍未完成，不据此宣称整条路线可用性验收。
+
+- `GET /routes/catalog?kind=...&afterId=...&limit=...` 在同一配置库短事务中读取全局版本与摘要；支持四种 input 和 HTTP/MQTT output，按 ID 游标分页，每页 1—100 项，多取一项判断下一页。Tenon 输出未提供目录，仍按 T4 待实现处理。
+- SQL 只投影 ID/key/name、设备归属及有效启用标志，不向 Host 物化整份点表、来源配置、模拟样本或凭证。来源启用标志同时考虑设备和连接；目录不是在线探测或编译结果。SQL 表/字段固定，参数为经校验的 kind/游标/条数。没有新表/迁移、运行时或网络副作用。
+- 画布选择器支持按本页名称/标识筛选、分页和手动刷新；输入多选，输出单选。已停用项不可新选，已选项可移除；不在当前页/已失效引用保留并可按编号移除，不因刷新或查询失败清空。每页显示其自身版本，不合并成伪同版本目录；刷新不悄悄改变路线编辑所持版本。
+- 修改引用只改 sourceIds/connectionId，其他配置通过保精度读写保留；已选来源最多 500，拒绝重复/不安全整数和错误形状。未确认原始 JSON 时选择器不可改动，失败保持既有图。部分参数仍用临时 JSON 编辑，不把选择器当作完整属性表单。
+
+新增目录集成 9 个子场景：匿名拒绝、三角色可读、只返回摘要、分页/协议筛选/版本变化、设备停用及非法参数。夹具向来源 JSON 添加 2 MB 非类型化字段，仍可读摘要，证明没有走整份来源反序列化。初次测试构建出现内部 UserRole 暴露于公共测试签名和可空游标警告，分别改为字符串 InlineData 与已断言后的安全取值后重跑；并未跳过用例。定向目录/API 契约测试 **17 通过**（`/tmp/tenonedge-route-catalog-tests-verified.log`，TRX `/tmp/tenonedge-route-catalog-tests`）。后端完整回归 `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-catalog-regression --blame-hang-timeout 5m --blame-hang-dump-type none` **1158 单元 + 1050 集成 = 2208 通过，0 失败/跳过**（`/tmp/tenonedge-route-catalog-regression.log`），`verify-test-results.py` 按两个程序集核对通过。`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-catalog-format-verify.log`）；前端 `run format:check` 通过（`/tmp/tenonedge-route-picker-format.log`）。
+
+从临时 Development 宿主重新导出 OpenAPI（`node /tmp/tenonedge-export-draft-api.mjs`，`/tmp/tenonedge-route-catalog-openapi.log`）。web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run build` 通过；Vitest **178 通过，0 失败/跳过**（新增 7 项引用编辑/边界用例，`/tmp/tenonedge-route-picker-unit.log`）。真实临时 Host + Chromium 156：`TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route drafts|route reference|canvas|real setup'` **5 通过**（`/tmp/tenonedge-route-picker-browser.log`），新增真实模拟来源/HTTP 连接目录选择及保存、输出连接绑定不改变 int64 常量、目录 500 不改变编辑。环境仍为 Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2/npm 11.21.0；未更新常驻调试实例、未推送，未验证真实设备或外部输出。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

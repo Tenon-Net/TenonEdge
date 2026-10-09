@@ -1,6 +1,6 @@
 # 路线草稿 API 与图格式
 
-T3-05 当前实现边界：路线可在后端保存、读取、复制、删除，并显式静态编译为运行计划；保存不编译、不启动采集、不更改运行版本、不入发送队列。`/routes` 页面已接入列表、元数据、画布保存/复制/删除及静态编译；节点配置暂采用保精度 JSON 编辑入口，专用属性表单、样本预览与应用/回滚仍在实施。静态编译成功不等于凭证准备、运行激活或外部设备验证成功。验证证据见 [实施状态 §2.125/126](implementation-status.md)。
+T3-05 当前实现边界：路线可在后端保存、读取、复制、删除，并显式静态编译为运行计划；保存不编译、不启动采集、不更改运行版本、不入发送队列。`/routes` 页面已接入列表、元数据、画布保存/复制/删除及静态编译；来源与 HTTP/MQTT 输出连接已提供分页选择，其他节点参数暂采用保精度 JSON 编辑入口；完整专用属性表单、样本预览与应用/回滚仍在实施。静态编译成功不等于凭证准备、运行激活或外部设备验证成功。验证证据见 [实施状态 §2.125/126](implementation-status.md)。
 
 ## API
 
@@ -9,6 +9,7 @@ T3-05 当前实现边界：路线可在后端保存、读取、复制、删除�
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | GET | `/routes` | `{ version, routes }`；仅摘要（id/key/name/description/enabled/nodeCount/updatedBy/updatedAt），不是运行状态或“编译有效”声明 |
+| GET | `/routes/catalog?kind=input.simulator&afterId=0&limit=100` | 同版本的来源/输出连接摘要，kind 支持 input.modbus/mqtt/http/simulator、output.mqtt/http；最多 100 项，nextAfterId 为空表示末页；不含点表、样本或凭证 |
 | GET | `/routes/{routeId}` | `{ version, route }`；含完整图 |
 | POST | `/routes` | 新建，返回 `{ version, route }` |
 | PUT | `/routes/{routeId}` | 更新，key 不可变；启停也是草稿修改 |
@@ -37,7 +38,7 @@ POST/PUT 请求示例（未选择来源和输出连接，**可以保存但不能
 }
 ```
 
-这是本网关的图定义与独立布局，不保存 React Flow 的内部 node/edge 对象。前端原有本地画布原型的 `definition.nodes[].kind` / `layout.positions` **不能原样提交**，后续接入须显式转换。
+这是本网关的图定义与独立布局，不保存 React Flow 的内部 node/edge 对象。前端编辑状态的 `definition.nodes[].kind` / `layout.positions` **不能原样提交**，已通过 `canvas/codec.ts` 显式转换。
 
 ## 配置形状
 
