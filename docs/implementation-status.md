@@ -2222,6 +2222,25 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：当前只有手工字段描述，粘贴样本字段推断与实时抓取尚未实现；设备复制、CSV、连接测试、客户端证书/信任表单仍待完成。JSON 字段表 1000 行浏览器性能尚未验证。草稿路线/平台映射的引用清单和保护须继续接入；凭证边界见 §2.104。T3-05 图编译/样本预览与 T3-06 应用/回滚未完成，因此四类来源草稿可保存仍不等于网页已经能启动完整采集路线。总目标保持未完成，未推送、未发版、无实物验证。
 
+
+### 2.108 T3-04 粘贴样本字段推断（2026-10-10）
+
+在 §2.107 的真实 MQTT/HTTP 来源表单中加入临时样本推断，按功能 §3.4/3.7、设计 §6.4 实现；复核本机参考笔记的数据原文/类型边界，只借鉴模式，无源码移植、无新增依赖/服务/API。
+
+- 粘贴 JSON 后列出叶子字段、固定下标 JSON Pointer、推测类型和样本值；正确转义对象键中的 `~` 和 `/`。数字一律默认 `number`，添加后可在已有字段表中改为 `integer`；布尔、字符串固定类型。null 列出但不猜类型，提示手工定义；空对象/数组无叶子。
+- 用户勾选后只追加字段描述，自动建议符合业务 key 规则且不与当前字段重名的 key，不覆盖已有描述；后端仍做整个设备范围内的唯一性检查。按完整样本拒绝同名对象成员（含转义等价名称），不沿用 JSON.parse 丢弃前一个成员的行为，避免与运行时 JSON Pointer 的歧义拒绝冲突。
+- 样本仅在组件内存；不进入 Zustand 草稿、Query 缓存、请求、localStorage/sessionStorage、日志或配置库。添加、清除、关闭、重新载入或切换来源后清空；保存请求仅包含既有字段 DTO。模拟来源的主动固定配置不变。
+- 浏览器通过原生 JSON.parse reviver 的 `context.source` 保留数字字面量，显示 64 位整数、长小数、负零及指数原文，不用 JS number 重新输出。旧浏览器不具备该能力时明确拒绝数值样本并提示升级/手工定义，不默默舍入。当前 Chromium 实测；其他浏览器未实测。
+- 有界：UTF-8 1 MiB、64 层、1000 叶子/最终字段、4096 字符定位。超限或非法 JSON 不生成部分描述、不清除已有字段；长样本值显示截断至 256 字符，原文解析仍完整。界面明确这是粘贴样本，不伪装成实时抓取。
+
+验证：
+
+1. 环境沿 §2.107。本批只变更前端及说明，后端代码/Schema 未变；1894 项后端回归证据沿 §2.107，不记为本批重跑。
+2. 前端 `npm run test -- --reporter=default --reporter=json --outputFile=reports/unit.json` 新增叶子/转义/数组/根值、数字原文、非法与上限、选择描述不含值、重复 key/原型键、旧引擎拒绝用例；最终 **117 项通过，0 失败/跳过**（`web/reports/unit.json`）；typecheck、lint（0 警告）、format:check 通过。
+3. 浏览器在真实 MQTT 和 HTTP 来源表单粘贴带私有标记的样本，检查原文大整数、null 不可勾选、只选一项并修改类型、非法及重复成员不破坏已有字段；真实保存/重载后描述保持，监听所有页面请求没有样本标记，两种浏览器存储为空，未消费样本在重新载入时清空。最终 `npm run build` 通过（`/tmp/tenonedge-sample-build-verified.log`）；`PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://192.168.0.88:18082 npm run test:e2e -- --reporter=list,json` **12 项通过**（`/tmp/tenonedge-sample-browser-verified.log`、`web/reports/browser.json`）。`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 非零/无跳过门禁通过。已核看 `sample-fields-mqtt.png` 的表单、候选值与选择状态；截图是人工样本，不是设备数据。
+
+剩余：实时 MQTT/HTTP 抓取及超时/权限/连接复用仍待 T3-04/07；设备复制、CSV、连接测试、客户端证书/信任管理未完成。1000 行 JSON 字段编辑性能未实测；不把单测数量边界当作性能验收。T3-05 图编译/预览、T3-06 应用/回滚仍未完成，总目标保持进行中。未推送、未发版、无实物验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

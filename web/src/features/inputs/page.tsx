@@ -380,6 +380,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                         />
                     ) : (
                         <JsonSourceEditor
+                            key={generation}
                             form={form}
                             patch={patch}
                             readOnly={!canEdit || mutation.isPending}

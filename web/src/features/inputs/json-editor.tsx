@@ -1,3 +1,4 @@
+import { SampleEditor } from './sample-editor'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
 import type { InputForm, JsonField, TimeFormat } from './model'
@@ -201,6 +202,12 @@ export function JsonSourceEditor({
                     <p className="text-sm text-muted-foreground">
                         {t('inputs.timeHelp')}
                     </p>
+                    <SampleEditor
+                        fields={form.fields}
+                        append={(fields) =>
+                            patch({ fields: [...form.fields, ...fields] })
+                        }
+                    />
                     <Button
                         type="button"
                         variant="outline"

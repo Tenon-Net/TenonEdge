@@ -1,4 +1,27 @@
 export const inputStrings = {
+    sample: {
+        title: '样本字段推断',
+        text: '临时 JSON 样本',
+        help: '仅在当前页面内存解析，不发送或保存样本。最多 1 MiB、64 层、1000 个叶子字段；数组使用固定下标。数字默认按数值处理，可在添加后改为整数。null 无法推断类型，请手工定义。添加后清除样本。',
+        infer: '解析样本字段',
+        clear: '清除临时样本',
+        add: '添加选中字段',
+        select: '选择样本字段 {{path}}',
+        null: '无法推断（null）',
+        columns: {
+            select: '选择',
+            path: 'JSON 定位',
+            type: '推测类型',
+            value: '样本值（长值截断）',
+        },
+        errors: {
+            json: '样本不是有效 JSON；没有修改已有字段。',
+            duplicate: '样本包含同名对象成员，无法唯一定位；请先消除重复字段。',
+            limit: '样本、深度、定位或字段数量超限；请缩小样本或减少所选字段。',
+            browser:
+                '当前浏览器不支持保留 JSON 数字原文，请升级浏览器或手工定义字段。',
+        },
+    },
     newGeneric: '新建数据来源',
     topic: 'MQTT Topic',
     qos: '订阅 QoS',
@@ -45,7 +68,7 @@ export const inputStrings = {
         connectionError: '模拟连接错误比例',
     },
     title: '数据来源与点位',
-    notice: '来源与点表保存在设备所属的全局草稿，保存不会读取设备或应用配置。支持 Modbus、MQTT、HTTP 与模拟来源；实时抓取和样本字段推断尚未接入。',
+    notice: '来源与点表保存在设备所属的全局草稿，保存不会读取设备或应用配置。支持 Modbus、MQTT、HTTP 与模拟来源；支持粘贴样本推断字段；实时抓取尚未接入。',
     device: '所属设备：{{name}}（{{key}}）',
     new: '新建采集组',
     refresh: '刷新来源与设备',

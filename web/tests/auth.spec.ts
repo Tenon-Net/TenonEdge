@@ -1188,6 +1188,15 @@ test('MQTT, HTTP and simulator sources save real typed fields without captured s
         await page.request.get('/api/edge-admin/v1/auth/session')
     ).json()
     const headers = { 'X-CSRF-Token': session.csrfToken }
+    const sampleMarker = 'transient-private-sample-9173'
+    const leakedRequests: string[] = []
+    page.on('request', (request) => {
+        if (
+            request.url().includes(sampleMarker) ||
+            request.postData()?.includes(sampleMarker)
+        )
+            leakedRequests.push(request.url())
+    })
     for (const kind of ['mqtt', 'http', 'simulator'] as const) {
         let version = (
             await (await page.request.get('/api/edge-admin/v1/devices')).json()
@@ -1249,15 +1258,72 @@ test('MQTT, HTTP and simulator sources save real typed fields without captured s
                 .fill('{"count":9007199254740993,"healthy":true}')
             await page.getByLabel('模拟缺字段比例', { exact: true }).fill('0.1')
         } else {
+            const sample = page.getByRole('textbox', {
+                name: '临时 JSON 样本',
+                exact: true,
+            })
+            await sample.fill(
+                '{"values":[9007199254740993],"private":"' +
+                    sampleMarker +
+                    '","empty":null}',
+            )
             await page
-                .getByRole('button', { name: '添加 JSON 字段', exact: true })
+                .getByRole('button', { name: '解析样本字段', exact: true })
+                .click()
+            await expect(
+                page.getByRole('cell', {
+                    name: '9007199254740993',
+                    exact: true,
+                }),
+            ).toBeVisible()
+            await expect(
+                page.getByLabel('选择样本字段 /empty', { exact: true }),
+            ).toBeDisabled()
+            await page
+                .getByLabel('选择样本字段 /values/0', { exact: true })
+                .check()
+            await page.screenshot({
+                path: 'test-results/sample-fields-' + kind + '.png',
+                fullPage: true,
+            })
+            await page
+                .getByRole('button', { name: '添加选中字段', exact: true })
+                .click()
+            await expect(sample).toHaveValue('')
+            await expect(
+                page.getByLabel('JSON 字段 1 path', { exact: true }),
+            ).toHaveValue('/values/0')
+            await expect(
+                page.getByLabel('JSON 字段 1 type', { exact: true }),
+            ).toHaveValue('number')
+            await sample.fill('{"count":1,"count":2}')
+            await page
+                .getByRole('button', { name: '解析样本字段', exact: true })
+                .click()
+            await expect(
+                page.getByText(
+                    '样本包含同名对象成员，无法唯一定位；请先消除重复字段。',
+                    { exact: true },
+                ),
+            ).toBeVisible()
+            await sample.fill('{bad')
+            await page
+                .getByRole('button', { name: '解析样本字段', exact: true })
+                .click()
+            await expect(
+                page.getByText('样本不是有效 JSON；没有修改已有字段。', {
+                    exact: true,
+                }),
+            ).toBeVisible()
+            await expect(
+                page.getByLabel('JSON 字段 1 path', { exact: true }),
+            ).toHaveValue('/values/0')
+            await page
+                .getByRole('button', { name: '清除临时样本', exact: true })
                 .click()
             await page
                 .getByLabel('JSON 字段 1 key', { exact: true })
                 .fill('count')
-            await page
-                .getByLabel('JSON 字段 1 path', { exact: true })
-                .fill('/values/0')
             await page
                 .getByRole('combobox', {
                     name: 'JSON 字段 1 type',
@@ -1321,6 +1387,7 @@ test('MQTT, HTTP and simulator sources save real typed fields without captured s
         const saved = (await (await page.request.get(endpoint)).json())
             .inputs[0]
         expect(saved.kind).toBe(kind)
+        expect(JSON.stringify(saved)).not.toContain(sampleMarker)
         if (kind === 'simulator') {
             expect(saved.simulator.sampleJson).toBe(
                 '{"count":9007199254740993,"healthy":true}',
@@ -1359,6 +1426,31 @@ test('MQTT, HTTP and simulator sources save real typed fields without captured s
             await expect(
                 page.getByLabel('JSON 字段 1 key', { exact: true }),
             ).toHaveValue('count')
+        if (kind !== 'simulator') {
+            await expect(
+                page.getByRole('textbox', {
+                    name: '临时 JSON 样本',
+                    exact: true,
+                }),
+            ).toHaveValue('')
+            // Reloading a source also clears an unconsumed sample, not just appended candidates.
+            await page
+                .getByRole('textbox', { name: '临时 JSON 样本', exact: true })
+                .fill(sampleMarker)
+            await page
+                .getByRole('button', { name: '重新载入来源', exact: true })
+                .click()
+            await expect(
+                page.getByRole('textbox', {
+                    name: '临时 JSON 样本',
+                    exact: true,
+                }),
+            ).toHaveValue('')
+        }
+        expect(leakedRequests).toEqual([])
+        expect(
+            await page.evaluate(() => ({ ...localStorage, ...sessionStorage })),
+        ).toEqual({})
         await page.screenshot({
             path: 'test-results/source-' + kind + '.png',
             fullPage: true,
