@@ -63,6 +63,13 @@ export function Workspace() {
                         {t('canvas.title')}
                     </Link>
                     <Link
+                        to="/routes"
+                        className="rounded-md px-3 py-2 text-sm hover:bg-accent"
+                        activeProps={{ className: 'bg-accent font-medium' }}
+                    >
+                        {t('routes.title')}
+                    </Link>
+                    <Link
                         to="/connections"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}

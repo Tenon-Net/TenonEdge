@@ -49,9 +49,20 @@ function GatewayNode({ data, selected }: NodeProps<CanvasNode>) {
     )
 }
 const nodeTypes = { gateway: GatewayNode }
-function CanvasWorkspace() {
+type CanvasProps = {
+    editor?: ReturnType<typeof createGraphEditor>
+    readOnly?: boolean
+    persisted?: boolean
+    onPendingChange?: (pending: boolean) => void
+}
+function CanvasWorkspace({
+    editor,
+    readOnly = false,
+    persisted = false,
+    onPendingChange,
+}: CanvasProps) {
     const { t } = useTranslation()
-    const [store] = useState(createGraphEditor)
+    const [store] = useState(() => editor ?? createGraphEditor())
     const state = useStore(store)
     const { document: doc } = state
     const flow = useReactFlow<CanvasNode>()
@@ -61,6 +72,11 @@ function CanvasWorkspace() {
     >({})
     const dragging = useRef(false)
     const [error, setError] = useState('')
+    const [pendingConfig, setPendingConfig] = useState(false)
+    const pending = (value: boolean) => {
+        setPendingConfig(value)
+        onPendingChange?.(value)
+    }
     const selected = doc.definition.nodes.filter((n) =>
         state.selectedNodes.includes(n.id),
     )
@@ -86,13 +102,19 @@ function CanvasWorkspace() {
             })),
         [doc, state.selectedEdges],
     )
-    const attempt = (action: () => void) => {
+    const attempt = (action: () => void, accepting = false) => {
+        if (readOnly || (pendingConfig && !accepting)) return false
         try {
             action()
             setError('')
+            return true
         } catch (failure) {
-            if (!(failure instanceof GraphEditError)) throw failure
-            setError(t(`canvas.errors.${failure.code}`))
+            setError(
+                failure instanceof GraphEditError
+                    ? t(`canvas.errors.${failure.code}`)
+                    : t('routes.configError'),
+            )
+            return false
         }
     }
     const add = (kind: NodeKind, position: Position) =>
@@ -123,18 +145,19 @@ function CanvasWorkspace() {
                 if (change.selected) selected.add(change.id)
                 else selected.delete(change.id)
             }
-        if (items.some((change) => change.type === 'select'))
+        if (!pendingConfig && items.some((change) => change.type === 'select'))
             current.select([...selected], current.selectedEdges)
         const moved: Record<string, Position> = {}
         for (const change of items)
             if (change.type === 'position' && change.position)
                 moved[change.id] = { ...change.position }
-        if (!Object.keys(moved).length) return
+        if (readOnly || pendingConfig || !Object.keys(moved).length) return
         if (dragging.current)
             setTransient((previous) => ({ ...previous, ...moved }))
         else state.move(moved)
     }
     const stopMove = (_event: unknown, moved: CanvasNode[]) => {
+        if (readOnly || pendingConfig) return
         state.move(
             Object.fromEntries(moved.map((n) => [n.id, { ...n.position }])),
         )
@@ -142,6 +165,7 @@ function CanvasWorkspace() {
         setTransient({})
     }
     const keyboard = (event: KeyboardEvent) => {
+        if (readOnly || pendingConfig) return
         if (
             (event.target as HTMLElement).closest(
                 'input,textarea,select,[contenteditable="true"]',
@@ -165,22 +189,24 @@ function CanvasWorkspace() {
     const dangling = topologyHints(doc)
     return (
         <section className="space-y-3" onKeyDown={keyboard}>
-            <h1 className="text-2xl font-semibold">{t('canvas.title')}</h1>
+            <h1 className="text-2xl font-semibold">
+                {t(persisted ? 'routes.canvas' : 'canvas.title')}
+            </h1>
             <p className="text-sm text-muted-foreground">
-                {t('canvas.notice')}
+                {t(persisted ? 'routes.canvasNotice' : 'canvas.notice')}
             </p>
             <p className="text-sm">{t('canvas.help')}</p>
             <div className="flex flex-wrap gap-2">
                 <Button
                     variant="outline"
-                    disabled={!state.past.length}
+                    disabled={readOnly || pendingConfig || !state.past.length}
                     onClick={state.undo}
                 >
                     {t('canvas.undo')}
                 </Button>
                 <Button
                     variant="outline"
-                    disabled={!state.future.length}
+                    disabled={readOnly || pendingConfig || !state.future.length}
                     onClick={state.redo}
                 >
                     {t('canvas.redo')}
@@ -194,14 +220,18 @@ function CanvasWorkspace() {
                 </Button>
                 <Button
                     variant="outline"
-                    disabled={!state.clipboard}
+                    disabled={readOnly || pendingConfig || !state.clipboard}
                     onClick={() => attempt(state.paste)}
                 >
                     {t('canvas.paste')}
                 </Button>
                 <Button
                     variant="outline"
-                    disabled={!selected.length && !state.selectedEdges.length}
+                    disabled={
+                        readOnly ||
+                        pendingConfig ||
+                        (!selected.length && !state.selectedEdges.length)
+                    }
                     onClick={state.remove}
                 >
                     {t('canvas.remove')}
@@ -233,7 +263,8 @@ function CanvasWorkspace() {
                                         <button
                                             key={kind}
                                             type="button"
-                                            draggable
+                                            draggable={!readOnly}
+                                            disabled={readOnly}
                                             className="block w-full rounded border p-2 text-left text-sm"
                                             onDragStart={(event) => {
                                                 event.dataTransfer.setData(
@@ -291,6 +322,8 @@ function CanvasWorkspace() {
                     }}
                 >
                     <ReactFlow<CanvasNode>
+                        nodesDraggable={!readOnly && !pendingConfig}
+                        nodesConnectable={!readOnly && !pendingConfig}
                         nodes={nodes}
                         edges={edges}
                         nodeTypes={nodeTypes}
@@ -378,10 +411,15 @@ function CanvasWorkspace() {
                     <h2 className="font-medium">{t('canvas.properties')}</h2>
                     {selected.length === 1 ? (
                         <form
-                            key={`${selected[0].id}:${selected[0].name}`}
+                            key={
+                                persisted
+                                    ? selected[0].id
+                                    : `${selected[0].id}:${selected[0].name}`
+                            }
                             className="space-y-3"
                             onSubmit={(event) => {
                                 event.preventDefault()
+                                if (readOnly || pendingConfig) return
                                 state.rename(
                                     selected[0].id,
                                     String(
@@ -397,17 +435,90 @@ function CanvasWorkspace() {
                                 <input
                                     className="mt-2 w-full rounded border p-2"
                                     name="name"
-                                    defaultValue={selected[0].name}
-                                    maxLength={120}
+                                    defaultValue={
+                                        persisted ? undefined : selected[0].name
+                                    }
+                                    value={
+                                        persisted ? selected[0].name : undefined
+                                    }
+                                    onChange={
+                                        persisted
+                                            ? (event) =>
+                                                  state.rename(
+                                                      selected[0].id,
+                                                      event.target.value,
+                                                  )
+                                            : undefined
+                                    }
+                                    maxLength={64}
+                                    disabled={readOnly}
                                 />
                             </label>
-                            <Button type="submit">
+                            <Button type="submit" disabled={readOnly}>
                                 {t('canvas.applyName')}
                             </Button>
                             <p className="text-sm">{t('canvas.unbound')}</p>
                         </form>
                     ) : (
                         <p>{t('canvas.selectOne')}</p>
+                    )}
+                    {persisted && selected.length === 1 && (
+                        <form
+                            key={`${selected[0].id}:${selected[0].configText}`}
+                            onSubmit={(event) => {
+                                event.preventDefault()
+                                const text = String(
+                                    new FormData(event.currentTarget).get(
+                                        'config',
+                                    ),
+                                )
+                                if (
+                                    attempt(
+                                        () =>
+                                            state.configure(
+                                                selected[0].id,
+                                                text,
+                                            ),
+                                        true,
+                                    )
+                                )
+                                    pending(false)
+                            }}
+                            className="space-y-2"
+                        >
+                            <label className="block">
+                                {t('routes.config')}
+                                <textarea
+                                    name="config"
+                                    aria-label={t('routes.config')}
+                                    className="w-full rounded border p-2 font-mono text-xs"
+                                    rows={12}
+                                    defaultValue={selected[0].configText}
+                                    disabled={readOnly}
+                                    onChange={() => pending(true)}
+                                />
+                            </label>
+                            <p className="text-xs">
+                                {t('routes.configNotice')}
+                            </p>
+                            {pendingConfig && (
+                                <p role="status">{t('routes.configPending')}</p>
+                            )}
+                            <Button type="submit" disabled={readOnly}>
+                                {t('routes.configAccept')}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={readOnly || !pendingConfig}
+                                onClick={(event) => {
+                                    event.currentTarget.form?.reset()
+                                    pending(false)
+                                }}
+                            >
+                                {t('routes.configDiscard')}
+                            </Button>
+                        </form>
                     )}
                 </aside>
             </div>
@@ -448,10 +559,10 @@ function CanvasWorkspace() {
         </section>
     )
 }
-export function CanvasEditor() {
+export function CanvasEditor(props: CanvasProps) {
     return (
         <ReactFlowProvider>
-            <CanvasWorkspace />
+            <CanvasWorkspace {...props} />
         </ReactFlowProvider>
     )
 }

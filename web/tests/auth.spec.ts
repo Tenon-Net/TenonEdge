@@ -2829,3 +2829,175 @@ test('MQTT capture marks retained data, preserves exact values, adopts samples e
         }
     }
 })
+
+test('route drafts persist exact configuration, preserve conflicted edits and never apply', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1700, height: 1100 })
+    await openPointEditor(page)
+    const runtimeBefore = await (
+        await page.request.get('/api/edge-admin/v1/runtime/status')
+    ).json()
+    await page.getByRole('link', { name: '路线草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建路线', exact: true }).click()
+    await page
+        .getByLabel('路线标识', { exact: true })
+        .fill('browser-route-exact')
+    await page.getByLabel('路线名称', { exact: true }).fill('浏览器精度路线')
+    await page.getByRole('button', { name: 'HTTP 输出', exact: true }).click()
+    const config =
+        '{"connectionId":null,"payload":{"mode":"custom","fields":[{"target":"large","constant":9223372036854775807},{"target":"decimal","constant":0.1234567890123456789012345678}]}}'
+    const configInput = page.getByLabel('节点配置 JSON（临时编辑入口）', {
+        exact: true,
+    })
+    await configInput.fill(config)
+    await expect(
+        page.getByRole('button', { name: '保存路线草稿', exact: true }),
+    ).toBeDisabled()
+    await page
+        .getByRole('button', { name: '确认节点配置', exact: true })
+        .click()
+    const created = page.waitForResponse(
+        (response) =>
+            response.url().endsWith('/api/edge-admin/v1/routes') &&
+            response.request().method() === 'POST',
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const response = await created
+    expect(response.status()).toBe(200)
+    const raw = await response.text()
+    expect(raw).toContain('9223372036854775807')
+    expect(raw).toContain('0.1234567890123456789012345678')
+    let saved = JSON.parse(raw)
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    await page.reload()
+    await page
+        .getByRole('button', { name: '打开 浏览器精度路线', exact: true })
+        .click()
+    await page.locator('.react-flow__node').first().click()
+    await expect(configInput).toHaveValue(/"constant":9223372036854775807/)
+    await expect(configInput).toHaveValue(
+        /"constant":0\.1234567890123456789012345678/,
+    )
+    const normalizedConfig = await configInput.inputValue()
+    // An invalid unconfirmed edit cannot accidentally save an older configuration.
+    await configInput.fill('{')
+    await page
+        .getByRole('button', { name: '确认节点配置', exact: true })
+        .click()
+    await expect(
+        page.getByRole('button', { name: '保存路线草稿', exact: true }),
+    ).toBeDisabled()
+    await expect(configInput).toHaveValue('{')
+    await page
+        .getByRole('button', { name: '放弃节点配置修改', exact: true })
+        .click()
+    await expect(configInput).toHaveValue(normalizedConfig)
+    await page
+        .getByLabel('路线说明', { exact: true })
+        .fill('read/write precision')
+    const updated = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'PUT' &&
+            response.url().endsWith(`/routes/${saved.route.id}`),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const updateResponse = await updated
+    expect(updateResponse.status()).toBe(200)
+    expect(updateResponse.request().postData()).toContain(
+        '"constant":9223372036854775807',
+    )
+    expect(updateResponse.request().postData()).toContain(
+        '"constant":0.1234567890123456789012345678',
+    )
+    saved = JSON.parse(await updateResponse.text())
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    // A second writer changes the global version. No UI overwrite/retry is allowed.
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const external = await page.request.post(
+        `/api/edge-admin/v1/routes/${saved.route.id}/copy`,
+        {
+            headers: { 'X-CSRF-Token': session.csrfToken },
+            data: {
+                expectedVersion: saved.version,
+                key: 'browser-route-external',
+                name: '外部副本',
+            },
+        },
+    )
+    expect(external.status()).toBe(200)
+    await page.getByLabel('路线名称', { exact: true }).fill('保留冲突编辑')
+    const conflict = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'PUT' &&
+            response.url().endsWith(`/routes/${saved.route.id}`),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    expect((await conflict).status()).toBe(409)
+    await expect(page.getByLabel('路线名称', { exact: true })).toHaveValue(
+        '保留冲突编辑',
+    )
+    await page.route('**/api/edge-admin/v1/routes', (route) =>
+        route.fulfill({
+            status: 500,
+            json: { title: 'fixture query failure' },
+        }),
+    )
+    await page.getByRole('button', { name: '重新查询', exact: true }).click()
+    await expect(page.getByLabel('路线名称', { exact: true })).toHaveValue(
+        '保留冲突编辑',
+    )
+    await page.unroute('**/api/edge-admin/v1/routes')
+    await page.getByRole('button', { name: '重新查询', exact: true }).click()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page
+        .getByRole('button', { name: '打开 浏览器精度路线', exact: true })
+        .click()
+    await expect(page.getByLabel('路线名称', { exact: true })).toHaveValue(
+        '浏览器精度路线',
+    )
+    await page
+        .getByLabel('副本标识', { exact: true })
+        .fill('browser-route-copy')
+    await page.getByLabel('副本名称', { exact: true }).fill('页面副本')
+    await page
+        .getByRole('button', { name: '复制已保存路线', exact: true })
+        .click()
+    await expect(
+        page.getByText('已创建停用的独立副本，未应用。', { exact: true }),
+    ).toBeVisible()
+    await expect(
+        page.getByLabel('参与静态编译（草稿启用）', { exact: true }),
+    ).not.toBeChecked()
+    await page
+        .getByRole('button', { name: '静态编译已保存的启用路线', exact: true })
+        .click()
+    await expect(page.getByText(/静态编译通过：版本/)).toBeVisible()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page
+        .getByRole('button', { name: '删除路线草稿', exact: true })
+        .click()
+    await expect(
+        page.getByText('路线草稿已删除；旧运行配置及投递未撤回。', {
+            exact: true,
+        }),
+    ).toBeVisible()
+    const runtimeAfter = await (
+        await page.request.get('/api/edge-admin/v1/runtime/status')
+    ).json()
+    expect(runtimeAfter.coordinator.activeRevision).toBe(
+        runtimeBefore.coordinator.activeRevision,
+    )
+})

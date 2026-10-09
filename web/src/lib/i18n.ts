@@ -1,3 +1,4 @@
+import { routeStrings } from '../features/routes/strings'
 import { inputStrings } from '../features/inputs/strings'
 import { deviceStrings } from '../features/devices/strings'
 import {
@@ -15,6 +16,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                routes: routeStrings,
                 devices: deviceStrings,
                 inputs: inputStrings,
                 points: pointStrings,
