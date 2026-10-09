@@ -34,7 +34,7 @@ internal sealed partial class RouteDraftStore
         else
         {
             bytes = JsonSerializer.SerializeToUtf8Bytes(graph, RouteGraphFormat.Json).Length;
-            routes = [new(0, "field-analysis", "Field analysis", null, true, graph, null, 0)];
+            routes = [new(0, "draft-graph", "Draft graph", null, true, graph, null, 0)];
         }
         var sourceIds = new HashSet<long>();
         var connectionIds = new HashSet<long>();

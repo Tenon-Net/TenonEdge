@@ -15,7 +15,8 @@ internal sealed class RoutePreviewDisplay
     private readonly RouteSamplePreviewResult _basis;
     private readonly List<PathState> _paths = [];
     private RoutePreviewStage? _source;
-    private int _remaining = MaximumBytes;
+    // Reserve 1 KiB for the API version/status/diagnostic envelope.
+    private int _remaining = MaximumBytes - 1024;
     private int _succeeded;
     private bool _truncated;
 

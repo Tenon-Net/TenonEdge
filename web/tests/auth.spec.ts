@@ -3750,3 +3750,65 @@ test('upstream fields fan-in excludes missing or mismatched types and reports in
     await expect(panel.locator('datalist option')).toHaveCount(0)
     await expect(panel.locator('li')).toContainText(['map:'])
 })
+
+test('route manual preview API uses real Kestrel, exact text and the request body limit without applying', async ({
+    page,
+}) => {
+    const { headers, saved } = await openFieldAnalysisRoute(
+        page,
+        'preview-api-browser',
+    )
+    const connectionResponse = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers,
+            data: {
+                expectedVersion: saved.version,
+                key: 'preview-api-http',
+                name: 'Preview HTTP',
+                kind: 'http',
+                http: { baseAddress: 'http://localhost/' },
+            },
+        },
+    )
+    expect(connectionResponse.status()).toBe(200)
+    const connection = await connectionResponse.json()
+    const graph = saved.route.graph
+    graph.nodes.find(
+        (node: { id: string }) => node.id === 'out',
+    ).config.connectionId = connection.connection.id
+    const request = {
+        expectedVersion: connection.version,
+        graph,
+        sourceId: graph.nodes.find((node: { id: string }) => node.id === 'in')
+            .config.sourceIds[0],
+        sampleJson: '{"f000":9223372036854775807}',
+    }
+    const preview = await page.request.post(
+        '/api/edge-admin/v1/routes/preview',
+        { headers, data: request },
+    )
+    expect(preview.status()).toBe(200)
+    expect((await preview.body()).byteLength).toBeLessThanOrEqual(65536)
+    const result = await preview.json()
+    expect(result.previewed).toBe(true)
+    expect(result.result.succeededPaths).toBe(1)
+    expect(result.result.paths[0].output.body).toBe(
+        '{"result":9223372036854775807}',
+    )
+    const oversized = await page.request.post(
+        '/api/edge-admin/v1/routes/preview',
+        {
+            headers,
+            data: { ...request, sampleJson: 'x'.repeat(1024 * 1024) },
+        },
+    )
+    expect(oversized.status()).toBe(413)
+    const drafts = await (
+        await page.request.get('/api/edge-admin/v1/routes')
+    ).json()
+    expect(drafts.version).toBe(connection.version)
+    await expect(
+        page.getByLabel('来源字段 / Pointer / 固定值 1', { exact: true }),
+    ).toHaveValue('f000')
+})

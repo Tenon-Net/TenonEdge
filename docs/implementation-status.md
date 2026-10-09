@@ -2676,6 +2676,27 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 验证：Linux x64 / SDK 10.0.401；`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-preview-core-format-verify.log`）。`dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-preview-core-regression --blame-hang-timeout 5m --blame-hang-dump-type none`：**1178 单元 + 1053 集成 = 2231 通过，0 失败/跳过**（`/tmp/tenonedge-preview-core-regression.log`）；`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-preview-core-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对两个程序集通过（`/tmp/tenonedge-preview-core-trx-verify.log`）。本批未改前端/公开 API，未重跑浏览器，未更新常驻实例、发版或推送。下一子项是接入带权限、CSRF、版本、请求体/并发/超时限制的预览端点与样本解码，再完成画布入口和三种样本来源；T3-06 应用/回滚仍在其后。
 
+### 2.136 T3-05 手工 JSON 样本预览 API 与保精度客户端（2026-10-10）
+
+接续 §2.135，开放 `POST /routes/preview`，将纯核心接入真实草稿快照、来源解码及管理 API。对应功能 §4.2 的“手工粘贴 JSON”后端子场景和 AT-07/29/30 的权限、边界、精度子场景；**画布尚无预览表单，最近消息与现场采样尚未桥接，不将本批记为三种样本来源或完整网页预览通过。**
+
+- 请求为 `{ expectedVersion, graph, sourceId, sampleJson }`。按同版本快照取当前图引用实体，明确来源编号，样本不得覆盖设备/输入身份。MQTT/HTTP 复用正式 JSON 字段/时间解码并保留 RawJson，支持映射 Pointer；模拟/Modbus 接受已解码字段对象，保留 Modbus uint64 数字/十进制字符串的全范围，但不仿真寄存器位宽/字节序/故障。与正式非 JSON 输入一样，不凭手工 JSON 为模拟/Modbus 创造 RawJson。
+- 样本最多 64 KiB UTF-8 / 深度 64，请求整体 1 MiB。配置人员/管理员、本地会话、CSRF、全局 4/会话 2 的共享准入及 30 秒截止时间；错误或超时退出后释放额度。图问题返回 previewed:false 与节点问题；路径执行后的 previewed:true 不保证全部路径成功，须核对 succeededPaths 和逐路径问题。请求无效 400，版本冲突 409，Kestrel 请求体超限 413，准入 429，截止时间 504。
+- 执行核心为外层版本/状态响应预留 1 KiB，总响应仍不超过 64 KiB；错误、精确字段值与输出 body 的文本传输不经 JS number。显示截断与正式报文 256 KiB 上限区分，截断文本不用于测试发送。共享的单图快照标签改为 draft-graph，不假装是已保存路线 key。
+- 不读取凭证明文、不启动来源、不连接输出、不写路线/有效版本/发送缓存。集成测试使用禁止调用的 IOutboundConnector 探针（调用数为 0）及本机目标监听器（无待接连接），并核对草稿版本、路线列表、有效/前一/待提交指针与队列已提交数不变。
+- OpenAPI 从临时真实 Development Host 导出，仅新增 `/routes/preview`，既有路径定义未变（`/tmp/tenonedge-preview-api-openapi.log`）。新增 `createRouteApi().preview()`，图常量与 sampleJson 均保精度，支持请求取消，不回写编辑版本；当前还未由画布 UI 调用。
+
+新增 6 项单元场景覆盖两种 JSON 协议的正式 Pointer/类型/上游时间与无效时间回退、uint64 两种手工表示、模拟来源不虚构 RawJson、重复字段歧义、大小/深度/非法 Unicode/身份/取消；新增 9 项集成场景覆盖三角色、匿名/CSRF/版本/外来源/坏样本、两级配额、连续截止时间注入与额度释放、路径错误隔离和包括外层信封的显示预算。新增客户端单元用例和真实 Kestrel 浏览器 API 用例，后者不是预览表单点击验收。
+
+验证过程中：首次单元编译因公开测试方法参数使用内部 DeviceKind 而失败，改为字符串枚举参数；TestServer 不实现 Kestrel 请求体上限，超大样本得到显式样本校验 400 而不是 413，保留该边界并用真实 Kestrel 另测 413；深度限制抛出 JsonException 的派生异常，测试从精确类型改为允许派生类型。非法 Unicode 解码异常转换为受控校验响应，不让手工样本触发 500。最终：
+
+- Linux x64 / SDK 10.0.401 / Node 22.23.2 / npm 11.21.0 / Headless Chromium 156.0.8078.4。
+- `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-preview-api-regression --blame-hang-timeout 5m --blame-hang-dump-type none`：**1184 单元 + 1062 集成 = 2246 通过，0 失败/跳过**（`/tmp/tenonedge-preview-api-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-preview-api-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-preview-api-trx-verify.log`）。
+- `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-preview-api-format-verify.log`）。web/ 的 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check`、`run build` 通过；`run test -- --reporter=json --outputFile=reports/unit.json` **200 通过，0 失败/跳过**（`/tmp/tenonedge-preview-api-web.log`、`/tmp/tenonedge-preview-api-web-build.log`）。
+- `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route manual preview API|upstream fields|mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'`：**13 通过，0 失败/跳过**，含真实 POST 手工预览、大整数输出文本、1 MiB 413 和未改草稿（`/tmp/tenonedge-preview-api-browser-final.log`，43.3 秒）。
+
+临时 Host/数据已清理；未更新常驻调试实例、推送或发布。下一步接画布手工样本预览，再补最近消息与显式现场采样，保留 T3-06 应用/回滚的前置与独立验证要求。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

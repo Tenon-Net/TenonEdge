@@ -220,4 +220,31 @@ describe('route API lossless transport', () => {
         expect(body).toContain('"search":"v"')
         expect(JSON.stringify(form)).toBe(original)
     })
+    it('previews raw sample text and exact graph constants without updating the editing version', async () => {
+        const sampleJson = '{"value":9223372036854775807}'
+        let body = ''
+        const f = fixture(async (input) => {
+            const request = new Request(input)
+            expect(new URL(request.url).pathname).toBe(
+                '/api/edge-admin/v1/routes/preview',
+            )
+            expect(request.headers.get('X-CSRF-Token')).toBe('csrf')
+            body = await request.text()
+            return Response.json({
+                version: 'v1',
+                previewed: true,
+                invalidUpstreamTime: false,
+                result: { paths: [{ output: { body: sampleJson } }] },
+                issues: [],
+            })
+        })
+        const form = decodeRouteResponse(response())
+        const original = JSON.stringify(form)
+        const result = await f.api.preview(form, 123, sampleJson)
+        expect(body).toContain('"constant":9223372036854775807')
+        expect(body).toContain('"constant":0.1234567890123456789012345678')
+        expect(JSON.parse(body).sampleJson).toBe(sampleJson)
+        expect(result.result?.paths[0].output?.body).toBe(sampleJson)
+        expect(JSON.stringify(form)).toBe(original)
+    })
 })

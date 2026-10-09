@@ -350,6 +350,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 使用手工 JSON 样本预览未保存路线，不连接输入/输出、不保存、不入队
+         * @description MQTT/HTTP 按来源的 JSON 定位与时间解码；Modbus/模拟来源接受已解码字段对象，不做寄存器或字节序仿真。样本最多 64 KiB，整个响应最多 64 KiB，截断结果仅供显示。
+         */
+        post: operations["previewRouteSample"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -865,6 +885,11 @@ export interface components {
         DraftVersion: {
             version: string;
         };
+        FieldMappingIssue: {
+            field: string;
+            reason: null | components["schemas"]["QualityCode"];
+            required: boolean;
+        };
         /** @enum {unknown} */
         FieldType: "boolean" | "integer" | "number" | "string";
         FirstSetupInfo: {
@@ -1366,6 +1391,8 @@ export interface components {
             detail?: null | string;
             instance?: null | string;
         };
+        /** @enum {unknown} */
+        QualityCode: "readTimeout" | "deviceException" | "readError" | "overflow" | "nonFinite" | "conversionFailed" | null;
         RouteCatalogItem: {
             /** Format: int64 */
             id?: number | string;
@@ -1500,6 +1527,75 @@ export interface components {
             x: number | string;
             /** Format: double */
             y: number | string;
+        };
+        RoutePreviewField: {
+            key: string;
+            type: string;
+            unit: null | string;
+            text: null | string;
+            quality: string;
+            reason: null | components["schemas"]["QualityCode"];
+        };
+        RoutePreviewOutput: {
+            nodeId: string;
+            kind: string;
+            /** Format: uuid */
+            deliveryId: string;
+            address: string;
+            /** Format: int32 */
+            qos: null | number | string;
+            headers: {
+                [key: string]: string;
+            };
+            body: string;
+            /** Format: int32 */
+            bodyBytes: number | string;
+            truncated: boolean;
+        };
+        RoutePreviewPath: {
+            nodes: string[];
+            succeeded: boolean;
+            stages: components["schemas"]["RoutePreviewStage"][];
+            output: null | components["schemas"]["RoutePreviewOutput"];
+            issues: components["schemas"]["RouteTopologyIssue"][];
+        };
+        RoutePreviewRequest: {
+            expectedVersion: string;
+            graph: components["schemas"]["RouteGraph"];
+            /** Format: int64 */
+            sourceId: number | string;
+            sampleJson: string;
+        };
+        RoutePreviewResponse: {
+            version: string;
+            previewed: boolean;
+            invalidUpstreamTime: boolean;
+            result: null | components["schemas"]["RouteSamplePreviewResult"];
+            issues: components["schemas"]["RouteTopologyIssue"][];
+        };
+        RoutePreviewStage: {
+            nodeId: string;
+            succeeded: boolean;
+            fields: components["schemas"]["RoutePreviewField"][];
+            issues: components["schemas"]["FieldMappingIssue"][];
+            truncated: boolean;
+        };
+        RouteSamplePreviewResult: {
+            version: string;
+            /** Format: int64 */
+            sourceId: number | string;
+            /** Format: uuid */
+            sourceMessageId: string;
+            /** Format: date-time */
+            collectedAt: string;
+            timeSource: components["schemas"]["TimeSource"];
+            /** Format: int32 */
+            totalPaths: number | string;
+            /** Format: int32 */
+            succeededPaths: number | string;
+            truncated: boolean;
+            source: null | components["schemas"]["RoutePreviewStage"];
+            paths: components["schemas"]["RoutePreviewPath"][];
         };
         RouteTopologyIssue: {
             code: string;
@@ -1670,7 +1766,7 @@ export interface components {
             clockSyncState: components["schemas"]["ClockSyncState"];
         };
         /** @enum {unknown} */
-        TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced" | null;
+        TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced";
         /** @enum {unknown} */
         UpstreamTimeFormat: "rfc3339" | "unixSeconds" | "unixMilliseconds" | null;
         /** @enum {unknown} */
@@ -2582,6 +2678,93 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    previewRouteSample: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutePreviewResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };

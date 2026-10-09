@@ -1,6 +1,6 @@
 # 路线草稿 API 与图格式
 
-T3-05 当前实现边界：路线可在后端保存、读取、复制、删除，并显式静态编译为运行计划；保存不编译、不启动采集、不更改运行版本、不入发送队列。`/routes` 页面已接入列表、元数据、画布保存/复制/删除及静态编译；来源与 HTTP/MQTT 输出连接已提供分页选择，通用输出参数和报文组装已有专用表单；映射规则也有保精度分页表，但上游字段目前须手填；上游字段选择、样本预览与应用/回滚仍在实施。静态编译成功不等于凭证准备、运行激活或外部设备验证成功。验证证据见 [实施状态 §2.125/126](implementation-status.md)。
+T3-05 当前实现边界：路线可在后端保存、读取、复制、删除，并显式静态编译为运行计划；保存不编译、不启动采集、不更改运行版本、不入发送队列。`/routes` 页面已接入列表、元数据、画布保存/复制/删除及静态编译；来源与 HTTP/MQTT 输出连接已提供分页选择，通用输出参数和报文组装已有专用表单；映射规则也有保精度分页表，上游字段已有真实分析和分页建议。手工样本预览 API 已接通，画布预览入口、最近消息/现场采样接入与应用/回滚仍在实施。静态编译成功不等于凭证准备、运行激活或外部设备验证成功。验证证据见 [实施状态 §2.125—§2.136](implementation-status.md)。
 
 ## API
 
@@ -14,6 +14,7 @@ T3-05 当前实现边界：路线可在后端保存、读取、复制、删除�
 | POST | `/routes` | 新建，返回 `{ version, route }` |
 | PUT | `/routes/{routeId}` | 更新，key 不可变；启停也是草稿修改 |
 | POST | `/routes/fields` | `{ expectedVersion, graph, nodeId, afterKey?, search?, limit? }`，分析当前未保存图所选节点的上游描述；返回分页共同字段及有界差异/错误，不保存、不执行样本 |
+| POST | `/routes/preview` | `{ expectedVersion, graph, sourceId, sampleJson }`，以所选来源解码手工 JSON 并逐路径预览；不采集、不发送、不保存、不入队 |
 | POST | `/routes/compile` | `{ expectedVersion }`，静态编译该版本全部启用路线；返回计数、内容哈希或结构化错误，不分配 revision |
 | POST | `/routes/{routeId}/copy` | 请求 `{ expectedVersion, key, name }`；新 ID/key，图及引用独立保存，默认停用 |
 | DELETE | `/routes/{routeId}?expectedVersion=...` | 删除草稿及引用索引，返回 `{ version }`；不撤回旧投递 |
@@ -82,3 +83,17 @@ JSON 常量按原文精度存储，不经 double 中转。映射的数值常量�
 角色、CSRF、准入沿用静态编译。版本冲突 409，图/来源/映射语义错误返回 analyzed:false 与 issues，成功也只说明所选局部的字段可分析；下游、其他路线、全局路径累计与输出准备仍须完整编译及应用流程。字段描述不包含样本值。接口/客户端验证见实施状态 §2.133；画布分析面板与表单字段建议见 §2.134。
 
 在当前节点点击“分析 / 返回第一页”，可按字段键搜索和翻页；映射 field 模式与输出自定义 field 模式的输入框提供原生 datalist 建议，仍允许手工输入，当前值不在本页也不被替换。仅保留当前分析的一页结果，不把图存入查询缓存。图文档、所选节点或编辑版本变化后取消旧请求，并同步隐藏旧结果；再次分析仍使用原编辑版本，409 不自动刷新版本或覆盖本地修改。未确认的属性表单先确认或放弃，再发起新分析。该功能只提供描述，不是样本预览，也不证明下游可执行。
+
+
+## 手工样本预览 API
+
+`POST /routes/preview` 使用当前未保存 graph 与原编辑 expectedVersion，sourceId 须引用该图里的真实来源。样本作为 **sampleJson 字符串** 传入，不先经过 JavaScript 数字解析；整个请求最多 1 MiB，样本自身最多 64 KiB UTF-8、深度 64。角色/CSRF 和全局 4、会话 2 的准入与字段分析一致；操作含 30 秒截止时间。
+
+- MQTT/HTTP：粘贴协议原始 JSON，按已保存来源的 Pointer、固定类型与上游时间规则使用正式解码器。允许保留原始 JSON 供映射的显式 Pointer 使用；未选择的字段不会自动变成输出值。上游时间无效时按正式规则回退接收时间，响应 `invalidUpstreamTime: true`，不改变运行时计数。
+- 模拟/Modbus：粘贴已解码字段对象，如 `{"value":9223372036854775807}`，按来源描述的字段类型读取。Modbus uint64 点位可使用完整 uint64 数字或十进制数字字符串。这里不仿真寄存器位宽、字节序、通信故障或模拟器故障比例；这不是现场读取验证。与正式 Modbus/模拟消息相同，不凭手工 JSON 创造 RawJson，因此仅支持 JSON 协议原始正文的 Pointer 规则不会在该预览里假装可用。
+- 来源身份、schema 与连接元数据来自同版本草稿快照，样本不能改写 deviceKey/inputKey 或输出地址。手工样本不持久化、不复制到运行时、无凭证解析/网络/队列操作。
+- 成功进入路径计算返回 `{ version, previewed:true, invalidUpstreamTime, result, issues:[] }`。**previewed 不等于所有路径成功**：检查 result.totalPaths/succeededPaths、各路径 succeeded/issues。result.source 和各路径 stages 提供字段 type/unit/text/quality/reason，text 是精确值文本；输出 body 是正式组装的 JSON 文本，不是供 JavaScript 隐式转成数字的对象。输出含节点、Topic/相对路径、QoS、非秘密请求头和临时 deliveryId；它不是持久化投递号。
+- 图/来源拓扑错误返回 `previewed:false`、result:null 与结构化 issues；routeKey 是本次局部图的内部标签，不是已保存路线 key。样本/图格式错误 400，陈旧版本 409，Kestrel 请求体超限 413，并发超限 429，截止时间 504。客户端不可通过重取版本静默重试覆盖本地编辑。
+- 整个响应最多 64 KiB（执行核心为外层响应预留 1 KiB）；result.truncated、各阶段/输出 truncated 明示显示截断，output.bodyBytes 是完整正式报文字节数。显示截断不停止其他路径计算，但后续显示细节可能被省略；正式报文仍受 256 KiB 上限，超限路径失败。截断文本不是完整 JSON，不得用于测试发送。
+
+当前已提供 API、OpenAPI 客户端和真实 Host 验证；尚无画布预览表单。最近消息、现场显式采样仍须分别接入，不能将粘贴样本当作设备能力验证；成功预览也不替代全局路线编译、凭证准备、目标访问校验或应用。

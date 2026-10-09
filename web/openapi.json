@@ -1188,6 +1188,108 @@
         }
       }
     },
+    "/api/edge-admin/v1/routes/preview": {
+      "post": {
+        "tags": [
+          "Routes"
+        ],
+        "summary": "使用手工 JSON 样本预览未保存路线，不连接输入/输出、不保存、不入队",
+        "description": "MQTT/HTTP 按来源的 JSON 定位与时间解码；Modbus/模拟来源接受已解码字段对象，不做寄存器或字节序仿真。样本最多 64 KiB，整个响应最多 64 KiB，截断结果仅供显示。",
+        "operationId": "previewRouteSample",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutePreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
       "post": {
         "tags": [
@@ -4328,6 +4430,32 @@
           }
         }
       },
+      "FieldMappingIssue": {
+        "required": [
+          "field",
+          "reason",
+          "required"
+        ],
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QualityCode"
+              }
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      },
       "FieldType": {
         "enum": [
           "boolean",
@@ -6459,6 +6587,17 @@
           }
         }
       },
+      "QualityCode": {
+        "enum": [
+          "readTimeout",
+          "deviceException",
+          "readError",
+          "overflow",
+          "nonFinite",
+          "conversionFailed",
+          null
+        ]
+      },
       "RouteCatalogItem": {
         "type": "object",
         "properties": {
@@ -7038,6 +7177,324 @@
           }
         },
         "additionalProperties": false
+      },
+      "RoutePreviewField": {
+        "required": [
+          "key",
+          "type",
+          "unit",
+          "text",
+          "quality",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quality": {
+            "type": "string"
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/QualityCode"
+              }
+            ]
+          }
+        }
+      },
+      "RoutePreviewOutput": {
+        "required": [
+          "nodeId",
+          "kind",
+          "deliveryId",
+          "address",
+          "qos",
+          "headers",
+          "body",
+          "bodyBytes",
+          "truncated"
+        ],
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "deliveryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "address": {
+            "type": "string"
+          },
+          "qos": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "body": {
+            "type": "string"
+          },
+          "bodyBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoutePreviewPath": {
+        "required": [
+          "nodes",
+          "succeeded",
+          "stages",
+          "output",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "succeeded": {
+            "type": "boolean"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutePreviewStage"
+            }
+          },
+          "output": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RoutePreviewOutput"
+              }
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTopologyIssue"
+            }
+          }
+        }
+      },
+      "RoutePreviewRequest": {
+        "required": [
+          "expectedVersion",
+          "graph",
+          "sourceId",
+          "sampleJson"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/RouteGraph"
+          },
+          "sourceId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "sampleJson": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RoutePreviewResponse": {
+        "required": [
+          "version",
+          "previewed",
+          "invalidUpstreamTime",
+          "result",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "previewed": {
+            "type": "boolean"
+          },
+          "invalidUpstreamTime": {
+            "type": "boolean"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RouteSamplePreviewResult"
+              }
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTopologyIssue"
+            }
+          }
+        }
+      },
+      "RoutePreviewStage": {
+        "required": [
+          "nodeId",
+          "succeeded",
+          "fields",
+          "issues",
+          "truncated"
+        ],
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string"
+          },
+          "succeeded": {
+            "type": "boolean"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutePreviewField"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldMappingIssue"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RouteSamplePreviewResult": {
+        "required": [
+          "version",
+          "sourceId",
+          "sourceMessageId",
+          "collectedAt",
+          "timeSource",
+          "totalPaths",
+          "succeededPaths",
+          "truncated",
+          "source",
+          "paths"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "sourceId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "sourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "collectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timeSource": {
+            "$ref": "#/components/schemas/TimeSource"
+          },
+          "totalPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "succeededPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RoutePreviewStage"
+              }
+            ]
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutePreviewPath"
+            }
+          }
+        }
       },
       "RouteTopologyIssue": {
         "required": [
@@ -7750,8 +8207,7 @@
           "device",
           "upstream",
           "gateway",
-          "gateway-unsynced",
-          null
+          "gateway-unsynced"
         ]
       },
       "UpstreamTimeFormat": {
