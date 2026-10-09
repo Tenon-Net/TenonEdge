@@ -2599,6 +2599,21 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 从临时 Development 宿主重新导出 OpenAPI（`node /tmp/tenonedge-export-draft-api.mjs`，`/tmp/tenonedge-route-catalog-openapi.log`）。web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run build` 通过；Vitest **178 通过，0 失败/跳过**（新增 7 项引用编辑/边界用例，`/tmp/tenonedge-route-picker-unit.log`）。真实临时 Host + Chromium 156：`TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route drafts|route reference|canvas|real setup'` **5 通过**（`/tmp/tenonedge-route-picker-browser.log`），新增真实模拟来源/HTTP 连接目录选择及保存、输出连接绑定不改变 int64 常量、目录 500 不改变编辑。环境仍为 Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2/npm 11.21.0；未更新常驻调试实例、未推送，未验证真实设备或外部输出。
 
+### 2.131 T3-05 通用输出参数与报文组装表单（2026-10-10）
+
+接续 §2.130，在现有画布属性面板增加 MQTT/HTTP 输出专用表单，不再要求这些参数全部手写 JSON。字段映射表、上游字段选择、样本预览和应用/回滚仍未完成。
+
+- MQTT 支持 Topic 与 QoS 0/1，默认 `tenonedge/{deviceKey}/data` / QoS 1；HTTP 支持相对路径、非秘密头表和可选 JSON Pointer + 标量等值成功判定。提醒认证使用连接凭证及默认 Idempotency-Key；实际秘密头/路径安全校验仍由服务器执行。
+- 报文格式支持标准信封（默认）、只发数值与自定义字段组装。只发数值显示丢失采集时间/质量和补传风险提示。自定义字段支持目标、来源字段/三个白名单占位符/固定 JSON 标量三选一及必填标志；不解释脚本或字符串模板。切换模式在确认时清除不适用的组装字段。
+- 表单采用本地 Zustand 编辑状态，数值固定值与成功判定值使用原始 JSON token，保留数字/字符串、负零及高精度小数的区别，不经 JS number 往返。变更其他输出参数保留连接引用；已保存的未知/歧义形状提示回到 JSON 核对，不静默丢弃字段。请求头 100 项、组装字段 1000 项上限；重复大小写请求头和非标量/非有限常量拒绝确认并保留输入。
+- 表单未确认时禁止保存路线、改引用或切换/修改图；允许继续编辑、确认或明确放弃。JSON 与输出表单采用不同的未确认编辑归属，不会把正在编辑的表单自己禁用，也不会让两个入口相互覆盖。确认后修改进入图的既有撤销/重做历史；没有发出外部输出。
+
+新增 12 项单元场景：默认值、HTTP/MQTT 参数、保精度/常量类型、三种取值方式、清除可选判断/模式字段、非法标量与歧义结构、重复头及数量上限。web/ 的 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check`、`run build` 通过；Vitest **190 通过，0 失败/跳过**（`/tmp/tenonedge-output-form-unit-final.log`；构建 `/tmp/tenonedge-output-form-build-final.log`）。
+
+浏览器过程中保留并处理两类失败：第一次用 getByLabel 的精确文本定位带选项的 select 超时，改用实际可访问角色 combobox 定位；随后原始场景确实出现 HTTP→MQTT 切换后的重复属性表单。最小真实浏览器用例确认只有一个选中节点、却有两个输出表单（`/tmp/tenonedge-output-form-switch-red.log`）；初始带 ^ 的筛选未匹配到用例，不计为通过。根因为同一属性面板内名称/引用与输出/JSON 的兄弟 React key 分别重复，现按 name/references/output/json 分别命名，未使用放宽定位或隐藏旧 DOM 掩盖错误。最小用例与完整原场景均重新通过。
+
+真实临时 Host + Chromium 156 执行 `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'output forms|route drafts|route reference|canvas|real setup|switching output nodes'` **7 通过**（`/tmp/tenonedge-output-form-browser-verified.log`）：新增 HTTP 参数/头/成功判断/自定义大整数的真实保存和重开、无效确认保留/放弃、MQTT 默认值和 QoS 0 保存、模式风险提示及单属性表单回归。环境沿用 §2.130。后端未改、未重跑其 2208 项基线；浏览器只做管理草稿往返，不代表外部 HTTP/MQTT 投递或完整 T3 已完成。未更新常驻调试实例、未推送。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

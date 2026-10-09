@@ -3115,3 +3115,157 @@ test('route reference selectors read real metadata and preserve constants when b
     await expect(inputConfig).toHaveValue(/"constant":9223372036854775807/)
     await page.unroute('**/api/edge-admin/v1/routes/catalog?**')
 })
+
+test('output forms edit HTTP and MQTT settings and preserve numeric custom payloads through real saves', async ({
+    page,
+}) => {
+    await page.setViewportSize({ width: 1700, height: 1100 })
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '路线草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建路线', exact: true }).click()
+    await page.getByLabel('路线标识', { exact: true }).fill('output-form-route')
+    await page.getByLabel('路线名称', { exact: true }).fill('输出表单路线')
+    await page.getByRole('button', { name: 'HTTP 输出', exact: true }).click()
+    const form = page.getByRole('form', { name: '输出参数', exact: true })
+    await form.getByLabel('输出相对路径', { exact: true }).fill('/ingest')
+    await expect(
+        page.getByRole('button', { name: '保存路线草稿', exact: true }),
+    ).toBeDisabled()
+    await expect(
+        page.getByLabel('节点配置 JSON（临时编辑入口）', { exact: true }),
+    ).toBeDisabled()
+    await form
+        .getByRole('combobox', { name: '输出报文格式', exact: true })
+        .selectOption('values')
+    await expect(
+        page.getByText(
+            '只发数值不包含采集时间和质量；断网补传可能被下游当作当前数据。',
+            { exact: true },
+        ),
+    ).toBeVisible()
+    await form
+        .getByRole('combobox', { name: '输出报文格式', exact: true })
+        .selectOption('custom')
+    await form.getByRole('button', { name: '添加请求头', exact: true }).click()
+    await form.getByLabel('请求头名称 1', { exact: true }).fill('X-Meter')
+    await form.getByLabel('请求头值 1', { exact: true }).fill('fixture')
+    await form
+        .getByLabel('成功判定 JSON Pointer（可选）', { exact: true })
+        .fill('/accepted')
+    await form
+        .getByLabel('成功判定值（JSON 标量）', { exact: true })
+        .fill('true')
+    await form
+        .getByRole('button', { name: '添加组装字段', exact: true })
+        .click()
+    const field = form.getByRole('group', { name: '组装字段 1', exact: true })
+    await field.getByLabel('目标字段名', { exact: true }).fill('large')
+    await field
+        .getByRole('combobox', { name: '取值方式', exact: true })
+        .selectOption('constant')
+    await field
+        .getByLabel('字段取值', { exact: true })
+        .fill('9223372036854775807')
+    await form
+        .getByRole('button', { name: '确认输出参数', exact: true })
+        .click()
+    const created = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'POST' &&
+            response.url().endsWith('/api/edge-admin/v1/routes'),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const response = await created
+    expect(response.status()).toBe(200)
+    expect(response.request().postData()).toContain(
+        '"constant":9223372036854775807',
+    )
+    const routeId = (await response.json()).route.id
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    await page.reload()
+    await page
+        .getByRole('button', { name: '打开 输出表单路线', exact: true })
+        .click()
+    await page.locator('.react-flow__node').first().click()
+    await expect(form.getByLabel('输出相对路径', { exact: true })).toHaveValue(
+        '/ingest',
+    )
+    await expect(field.getByLabel('字段取值', { exact: true })).toHaveValue(
+        '9223372036854775807',
+    )
+    // Failed confirmation preserves input; discard restores the last accepted exact value.
+    await field.getByLabel('字段取值', { exact: true }).fill('{"not":"scalar"}')
+    await form
+        .getByRole('button', { name: '确认输出参数', exact: true })
+        .click()
+    await expect(
+        page.getByRole('button', { name: '保存路线草稿', exact: true }),
+    ).toBeDisabled()
+    await expect(field.getByLabel('字段取值', { exact: true })).toHaveValue(
+        '{"not":"scalar"}',
+    )
+    await form
+        .getByRole('button', { name: '放弃输出参数修改', exact: true })
+        .click()
+    await expect(field.getByLabel('字段取值', { exact: true })).toHaveValue(
+        '9223372036854775807',
+    )
+    await page.getByRole('button', { name: 'MQTT 输出', exact: true }).click()
+    await expect(form.getByLabel('发布 Topic', { exact: true })).toHaveValue(
+        'tenonedge/{deviceKey}/data',
+    )
+    await form
+        .getByLabel('发布 Topic', { exact: true })
+        .fill('fixture/{deviceKey}')
+    await form
+        .getByRole('combobox', { name: '发布 QoS', exact: true })
+        .selectOption('0')
+    await form
+        .getByRole('button', { name: '确认输出参数', exact: true })
+        .click()
+    const updated = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'PUT' &&
+            response.url().endsWith(`/routes/${routeId}`),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    const update = await updated
+    expect(update.status()).toBe(200)
+    expect(update.request().postData()).toContain(
+        '"constant":9223372036854775807',
+    )
+    const saved = await update.json()
+    expect(saved.route.graph.nodes[1].config).toMatchObject({
+        topic: 'fixture/{deviceKey}',
+        qos: 0,
+        payload: { mode: 'envelope' },
+    })
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+})
+
+test('switching output nodes keeps exactly one property form', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '路线草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建路线', exact: true }).click()
+    await page.getByRole('button', { name: 'HTTP 输出', exact: true }).click()
+    const forms = page.getByRole('form', { name: '输出参数', exact: true })
+    await expect(forms).toHaveCount(1)
+    await forms.getByLabel('输出相对路径', { exact: true }).fill('/fixture')
+    await forms
+        .getByRole('button', { name: '确认输出参数', exact: true })
+        .click()
+    await page.getByRole('button', { name: 'MQTT 输出', exact: true }).click()
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(1)
+    await expect(forms).toHaveCount(1)
+    await expect(page.getByLabel('节点名称', { exact: true })).toHaveCount(1)
+})

@@ -1,3 +1,4 @@
+import { OutputEditor } from '../routes/output-editor'
 import { ReferencePicker } from '../routes/reference-picker'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useStore } from 'zustand'
@@ -73,9 +74,12 @@ function CanvasWorkspace({
     >({})
     const dragging = useRef(false)
     const [error, setError] = useState('')
-    const [pendingConfig, setPendingConfig] = useState(false)
-    const pending = (value: boolean) => {
-        setPendingConfig(value)
+    const [pendingOwner, setPendingOwner] = useState<'json' | 'output' | null>(
+        null,
+    )
+    const pendingConfig = pendingOwner !== null
+    const pending = (value: boolean, owner: 'json' | 'output' = 'json') => {
+        setPendingOwner(value ? owner : null)
         onPendingChange?.(value)
     }
     const selected = doc.definition.nodes.filter((n) =>
@@ -414,8 +418,8 @@ function CanvasWorkspace({
                         <form
                             key={
                                 persisted
-                                    ? selected[0].id
-                                    : `${selected[0].id}:${selected[0].name}`
+                                    ? `name:${selected[0].id}`
+                                    : `name:${selected[0].id}:${selected[0].name}`
                             }
                             className="space-y-3"
                             onSubmit={(event) => {
@@ -470,7 +474,7 @@ function CanvasWorkspace({
                                 selected[0].kind,
                             )) && (
                             <ReferencePicker
-                                key={selected[0].id}
+                                key={`references:${selected[0].id}`}
                                 node={selected[0]}
                                 disabled={readOnly || pendingConfig}
                                 change={(text) =>
@@ -480,9 +484,31 @@ function CanvasWorkspace({
                                 }
                             />
                         )}
+                    {persisted &&
+                        selected.length === 1 &&
+                        (selected[0].kind === 'output.http' ||
+                            selected[0].kind === 'output.mqtt') && (
+                            <OutputEditor
+                                key={`output:${selected[0].id}:${selected[0].configText}`}
+                                kind={selected[0].kind}
+                                configText={selected[0].configText}
+                                disabled={readOnly || pendingOwner === 'json'}
+                                dirty={(value) => pending(value, 'output')}
+                                accept={(text) =>
+                                    attempt(
+                                        () =>
+                                            state.configure(
+                                                selected[0].id,
+                                                text,
+                                            ),
+                                        true,
+                                    )
+                                }
+                            />
+                        )}
                     {persisted && selected.length === 1 && (
                         <form
-                            key={`${selected[0].id}:${selected[0].configText}`}
+                            key={`json:${selected[0].id}:${selected[0].configText}`}
                             onSubmit={(event) => {
                                 event.preventDefault()
                                 const text = String(
@@ -512,7 +538,9 @@ function CanvasWorkspace({
                                     className="w-full rounded border p-2 font-mono text-xs"
                                     rows={12}
                                     defaultValue={selected[0].configText}
-                                    disabled={readOnly}
+                                    disabled={
+                                        readOnly || pendingOwner === 'output'
+                                    }
                                     onChange={() => pending(true)}
                                 />
                             </label>
@@ -522,13 +550,16 @@ function CanvasWorkspace({
                             {pendingConfig && (
                                 <p role="status">{t('routes.configPending')}</p>
                             )}
-                            <Button type="submit" disabled={readOnly}>
+                            <Button
+                                type="submit"
+                                disabled={readOnly || pendingOwner === 'output'}
+                            >
                                 {t('routes.configAccept')}
                             </Button>
                             <Button
                                 type="button"
                                 variant="outline"
-                                disabled={readOnly || !pendingConfig}
+                                disabled={readOnly || pendingOwner !== 'json'}
                                 onClick={(event) => {
                                     event.currentTarget.form?.reset()
                                     pending(false)

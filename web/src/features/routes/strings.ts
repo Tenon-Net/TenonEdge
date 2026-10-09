@@ -1,6 +1,44 @@
 export const routeStrings = {
     title: '路线草稿',
     references: '来源 / 输出连接',
+    outputUnsupported:
+        '此配置含表单暂不支持的形状，请在 JSON 入口核对；未自动转换或丢弃配置。',
+    output: {
+        title: '输出参数',
+        topic: '发布 Topic',
+        qos: '发布 QoS',
+        path: '输出相对路径',
+        headerName: '请求头名称',
+        headerValue: '请求头值',
+        addHeader: '添加请求头',
+        removeHeader: '删除请求头',
+        headersNotice:
+            '仅填写非秘密请求头；认证使用连接凭证。默认发送 Idempotency-Key，不在这里填写令牌或密码。',
+        successPath: '成功判定 JSON Pointer（可选）',
+        successValue: '成功判定值（JSON 标量）',
+        successNotice:
+            '默认 HTTP 2xx；填写 Pointer 后还须与指定标量相等。留空取消附加判断。',
+        mode: '输出报文格式',
+        envelope: '标准信封（默认）',
+        values: '只发数值',
+        custom: '自定义字段组装',
+        valuesWarning:
+            '只发数值不包含采集时间和质量；断网补传可能被下游当作当前数据。',
+        fieldNumber: '组装字段 {{index}}',
+        target: '目标字段名',
+        source: '取值方式',
+        field: '来源字段',
+        placeholder: '白名单占位符',
+        constant: '固定值',
+        value: '字段取值',
+        required: '必填',
+        scalarHelp:
+            '填写 JSON 标量：数字、true/false、null，或带双引号的字符串。数字原文保精度，不填写对象、数组或脚本。',
+        addField: '添加组装字段',
+        removeField: '删除组装字段',
+        accept: '确认输出参数',
+        discard: '放弃输出参数修改',
+    },
     catalogNotice:
         '目录版本 {{version}}，仅摘要；刷新目录不替换路线编辑版本。选择后仍须保存并编译，不能据此判定在线。',
     catalogRefresh: '刷新选择目录',
