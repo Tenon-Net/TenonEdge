@@ -62,6 +62,52 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
         });
     }
 
+    public DeviceDraftCopyResult Copy(long sourceId, DeviceDraftCopyRequest request, string? account, string? sourceIp)
+    {
+        if (request.Count is < 1 or > 20 || string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 64)
+        { throw new ArgumentException("复制数量须为 1—20，且须提供草稿版本。"); }
+        return database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
+            var source = Read(client, sourceId) ?? throw new DraftWriteException("device.notFound");
+            var inputs = InputDraftStore.ReadForDevice(client, sourceId);
+            var copies = new List<DeviceDraft>(request.Count);
+            for (var index = 0; index < request.Count; index++)
+            {
+                long id;
+                string key;
+                do
+                {
+                    id = ids.NextId();
+                    key = CopyKey(source.Key, id);
+                } while (client.Queryable<DeviceDraftRecord>().Any(row => row.BusinessKey == key) || HasRetainedReference(client, key));
+                // The connection is shared, not cloned. Source/point enablement is preserved;
+                // disabling the copied device prevents accidental duplicate acquisition.
+                var copy = source with { Id = id, Key = key, Enabled = false };
+                client.Insertable(new DeviceDraftRecord
+                {
+                    Id = id,
+                    BusinessKey = key,
+                    ConnectionId = copy.ConnectionId,
+                    Content = JsonSerializer.Serialize(copy, Json),
+                }).ExecuteCommand();
+                InputDraftStore.CopyToDevice(client, inputs, id, ids);
+                copies.Add(copy);
+            }
+            var version = ConfigurationDraft.Advance(client, time);
+            audit.Append(client, new AuditEntry("device.draftCopied", AuditResults.Success, account, sourceIp,
+                sourceId.ToString(CultureInfo.InvariantCulture),
+                JsonSerializer.Serialize(new { copies = copies.Select(copy => new { copy.Id, copy.Key }), previousVersion = request.ExpectedVersion, version })));
+            return new DeviceDraftCopyResult(version, copies.ToArray());
+        });
+    }
+
+    internal static string CopyKey(string sourceKey, long id)
+    {
+        var suffix = "_copy_" + id.ToString(CultureInfo.InvariantCulture);
+        return sourceKey[..Math.Min(sourceKey.Length, 64 - suffix.Length)] + suffix;
+    }
+
     public DraftVersion Delete(long id, string expectedVersion, string? account, string? sourceIp) => database.InTransaction(client =>
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);

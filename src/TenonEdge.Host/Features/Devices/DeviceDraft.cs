@@ -15,6 +15,10 @@ internal sealed record DeviceDraftRequest(string ExpectedVersion, string Key, st
 
 internal sealed record DeviceDraft(long Id, string Key, string Name, DeviceKind Kind, string? Group,
     long? ConnectionId, int? UnitId, ModbusAddressNotation AddressNotation, bool Enabled);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record DeviceDraftCopyRequest(string ExpectedVersion, int Count);
+internal sealed record DeviceDraftCopyResult(string Version, DeviceDraft[] Devices);
+
 internal sealed record DeviceDraftList(string Version, DeviceDraft[] Devices);
 internal sealed record DeviceDraftResult(string Version, DeviceDraft Device);
 

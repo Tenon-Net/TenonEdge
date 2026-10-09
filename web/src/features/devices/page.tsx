@@ -49,6 +49,7 @@ export function DevicesPage() {
     const [group, setGroup] = useState('')
     const [enabled, setEnabled] = useState('')
     const [notice, setNotice] = useState('')
+    const [copyCount, setCopyCount] = useState(1)
     const dirty = form !== null && JSON.stringify(form) !== original
     useBlocker({
         disabled: !dirty,
@@ -60,9 +61,18 @@ export function DevicesPage() {
         mutationFn: async (
             action:
                 | { type: 'save'; form: DeviceForm }
-                | { type: 'delete'; device: Device; version: string },
+                | { type: 'delete'; device: Device; version: string }
+                | { type: 'copy'; id: number; version: string; count: number },
         ) => {
-            if (action.type === 'delete') {
+            if (action.type === 'copy') {
+                await api.POST('/api/edge-admin/v1/devices/{deviceId}/copy', {
+                    params: { path: { deviceId: action.id } },
+                    body: {
+                        expectedVersion: action.version,
+                        count: action.count,
+                    },
+                })
+            } else if (action.type === 'delete') {
                 await api.DELETE('/api/edge-admin/v1/devices/{deviceId}', {
                     params: {
                         path: { deviceId: Number(action.device.id) },
@@ -83,7 +93,15 @@ export function DevicesPage() {
         },
         onSuccess: async (type) => {
             open(null)
-            setNotice(t(type === 'save' ? 'devices.saved' : 'devices.deleted'))
+            setNotice(
+                t(
+                    type === 'save'
+                        ? 'devices.saved'
+                        : type === 'copy'
+                          ? 'devices.copied'
+                          : 'devices.deleted',
+                ),
+            )
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey }),
                 queryClient.invalidateQueries({
@@ -397,6 +415,56 @@ export function DevicesPage() {
                                 {t('devices.enabled')}
                             </label>
                         </fieldset>
+                        {canEdit && form.id !== undefined && (
+                            <fieldset
+                                disabled={busy || dirty || !coherent}
+                                className="space-y-2 rounded border p-3"
+                            >
+                                <p className="text-sm text-muted-foreground">
+                                    {t('devices.copyHelp')}
+                                </p>
+                                <div className="flex items-end gap-3">
+                                    <label>
+                                        {t('devices.copyCount')}
+                                        <select
+                                            className={fieldClass}
+                                            value={copyCount}
+                                            onChange={(e) =>
+                                                setCopyCount(
+                                                    Number(e.target.value),
+                                                )
+                                            }
+                                        >
+                                            {Array.from(
+                                                { length: 20 },
+                                                (_, index) => index + 1,
+                                            ).map((count) => (
+                                                <option
+                                                    key={count}
+                                                    value={count}
+                                                >
+                                                    {count}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() =>
+                                            mutation.mutate({
+                                                type: 'copy',
+                                                id: form.id!,
+                                                version: form.expectedVersion,
+                                                count: copyCount,
+                                            })
+                                        }
+                                    >
+                                        {t('devices.copy')}
+                                    </Button>
+                                </div>
+                            </fieldset>
+                        )}
                         <div className="flex flex-wrap gap-2">
                             {canEdit && (
                                 <Button type="submit" disabled={busy}>

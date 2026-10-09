@@ -2241,6 +2241,26 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：实时 MQTT/HTTP 抓取及超时/权限/连接复用仍待 T3-04/07；设备复制、CSV、连接测试、客户端证书/信任管理未完成。1000 行 JSON 字段编辑性能未实测；不把单测数量边界当作性能验收。T3-05 图编译/预览、T3-06 应用/回滚仍未完成，总目标保持进行中。未推送、未发版、无实物验证。
 
+
+### 2.109 T3-04 设备与来源批量复制（2026-10-10）
+
+按功能 §3.2/3.7、总设计 §5 和 §8.1 的 20 份限制扩展既有草稿；复核本机 iotgateway 笔记的保存即热应用反例，不沿用其行为、不复制源码。
+
+- 新增分组 Minimal API `POST /devices/{deviceId}/copy`，使用 Configurator 策略、既有 Cookie/CSRF、明确 ExpectedVersion 和 1—20 份数量。缺设备 404、过期版本 409、非法数量 400；不自动重试过期批次。
+- 同一个配置库事务内读取设备/所有来源，分配新的设备和来源 ID，复制四种协议的参数及点位/字段；更新一次全局草稿版本并写一条批次审计。任意副本插入失败或审计失败均回滚全部副本和版本，不写半个批次；无需新表或迁移。
+- 副本默认设备停用；来源和点位原有启停标记、名称、分组、UnitId、地址写法、协议参数原样复制。显示名称保持原值，由新 key 区分副本。连接仅保留引用，不复制连接或凭证；独立来源行可分别编辑/删除，原设备不受影响。
+- key 由原 key 的有界前缀加 `_copy_` 与雪花 ID 生成，最长 64 且符合业务 key 规则；实际检查草稿与 effective/previous/pending 保留快照的引用，冲突时重新分配。复制不编译/应用，不改变运行指针、不连接设备。
+- 设备网页提供 1—20 份选择和复制按钮。有未保存设备修改时禁止复制并提示先保存/重新载入；过期版本保留当前表单/份数，刷新后须明确重新载入。副本重载后显示停用，提示启用前核对 UnitId、Topic/路径和共享连接。
+
+验证：
+
+1. 环境沿 §2.107。定向 `dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~DeviceDraftCopy|FullyQualifiedName~DeviceCopyKey|FullyQualifiedName~OpenApiDocument'` **3 单元 + 20 集成通过**（`/tmp/tenonedge-copy-targeted4.log`）。包括四协议重建 Host 后保留副本、独立来源行/删除隔离、20 份与并发过期拒绝、空设备、角色/匿名/CSRF、非法数量/缺设备、第二副本和审计注入失败的整批回滚，以及 64 字符 key/草稿与三种保留快照冲突。
+2. `dotnet format TenonEdge.sln --no-restore --verify-no-changes`、Release 构建（0 警告/错误）通过；`dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger 'trx;LogFilePrefix=t3-device-copy-verified' --results-directory artifacts/test-results/t3-device-copy-verified --blame-hang-timeout 5m --blame-hang-dump-type none` **1034 单元 + 879 集成 = 1913 项通过，0 失败/跳过**（`/tmp/tenonedge-copy-full-verified.log`）。`verify-test-results.py` 两程序集非零门禁通过。OpenAPI 与 TypeScript 类型由真实 Development Host 导出（`/tmp/tenonedge-copy-api.log`），新增 operationId/路由访问清单明确记录受保护的复制端点。
+3. 浏览器实际构造 Modbus 设备和停用的 uint32 点位，验证脏表单禁用复制、版本冲突保留份数、复制两份并读取真实独立来源/参数、刷新后停用、运行版本仍为空。独立场景 **1 项通过**（`/tmp/tenonedge-copy-browser-targeted.log`），已核看 `device-copy.png`；最终 `PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://192.168.0.88:18082 npm run test:e2e -- --reporter=list,json` **13 项通过**（`/tmp/tenonedge-copy-browser-verified.log`、`web/reports/browser.json`）；前端 `npm run test -- --reporter=default --reporter=json --outputFile=reports/unit.json` **117 项通过**（`/tmp/tenonedge-copy-web-test-verified.log`、`web/reports/unit.json`）。`npm run build`、typecheck/lint/format:check、`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 全部通过。
+4. 中间失败如实保留：新增 operationId 起初未放在契约清单排序位置；完整回归发现 Production/Development 端点保护清单漏增，导致 **1034 单元通过、877 集成通过、2 集成失败**（`artifacts/test-results/t3-device-copy/`、`/tmp/tenonedge-copy-full.log`），已按实际新端点与 Configurator 策略补齐，不放宽原断言。新增测试漏写 if 花括号被构建规范拦截，已修正。浏览器初轮误给 uint16 夹具填多寄存器字节序，真实 API 正确返回 400；改用需要该字节序的 uint32 夹具。随后精确 label 定位失败，可访问树存在正确 combobox，改按角色定位后独立场景通过；未更改产品验证或放宽超时。
+
+剩余：最大点表设备一次复制 20 份的资源/延迟性能未实测；本批仅证明上述软件功能。T3-04 CSV、实时抓取/连接测试及证书信任表单仍待完成；T3-05 图编译/预览、T3-06 应用/回滚未完成。尚不能从网页独立启动完整采集路线，总目标保持进行中。未推送、未发版、无实物验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

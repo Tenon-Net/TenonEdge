@@ -1464,3 +1464,167 @@ test('MQTT, HTTP and simulator sources save real typed fields without captured s
         ).toBeNull()
     }
 })
+
+test('device copy atomically persists disabled copies with independent sources and keeps stale edits', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const headers = { 'X-CSRF-Token': session.csrfToken }
+    let version = (
+        await (await page.request.get('/api/edge-admin/v1/devices')).json()
+    ).version
+    const connectionResponse = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers,
+            data: {
+                expectedVersion: version,
+                key: 'copy-connection',
+                name: 'Copy PLC',
+                kind: 'modbus',
+                modbus: { host: '10.20.30.77' },
+            },
+        },
+    )
+    expect(connectionResponse.status()).toBe(200)
+    const connection = await connectionResponse.json()
+    const deviceResponse = await page.request.post(
+        '/api/edge-admin/v1/devices',
+        {
+            headers,
+            data: {
+                expectedVersion: connection.version,
+                key: 'copy-original',
+                name: '复制测试设备',
+                kind: 'modbus',
+                connectionId: connection.connection.id,
+                unitId: 3,
+                group: '复制测试',
+            },
+        },
+    )
+    expect(deviceResponse.status()).toBe(200)
+    const device = await deviceResponse.json()
+    const sourceResponse = await page.request.post(
+        `/api/edge-admin/v1/devices/${device.device.id}/inputs`,
+        {
+            headers,
+            data: {
+                expectedVersion: device.version,
+                key: 'fast',
+                name: '快速采集',
+                modbus: {
+                    periodMs: 1000,
+                    points: [
+                        {
+                            key: 'temperature',
+                            address: 0,
+                            functionCode: 3,
+                            type: 'uint32',
+                            byteOrder: 'ABCD',
+                            enabled: false,
+                        },
+                    ],
+                },
+            },
+        },
+    )
+    expect(sourceResponse.status()).toBe(200)
+    const source = await sourceResponse.json()
+    version = source.version
+    await page.goto('/devices')
+    await page
+        .getByRole('button', { name: /复制测试设备 copy-original/ })
+        .click()
+    await page.getByLabel('设备名称', { exact: true }).fill('未保存名称')
+    await expect(
+        page.getByRole('button', { name: '复制设备到草稿', exact: true }),
+    ).toBeDisabled()
+    await page.getByLabel('设备名称', { exact: true }).fill('复制测试设备')
+    await page
+        .getByRole('combobox', { name: '复制份数', exact: true })
+        .selectOption('2')
+    // A different draft mutation makes the open copy form stale.
+    const unrelated = await page.request.post('/api/edge-admin/v1/devices', {
+        headers,
+        data: {
+            expectedVersion: version,
+            key: 'copy-unrelated',
+            name: 'Other',
+            kind: 'simulator',
+        },
+    })
+    expect(unrelated.status()).toBe(200)
+    const unrelatedVersion = (await unrelated.json()).version
+    const stale = page.waitForResponse(
+        (r) => r.url().endsWith('/copy') && r.request().method() === 'POST',
+    )
+    await page
+        .getByRole('button', { name: '复制设备到草稿', exact: true })
+        .click()
+    expect((await stale).status()).toBe(409)
+    await expect(page.getByLabel('设备名称', { exact: true })).toHaveValue(
+        '复制测试设备',
+    )
+    await expect(
+        page.getByRole('combobox', { name: '复制份数', exact: true }),
+    ).toHaveValue('2')
+    await page
+        .getByRole('button', { name: '刷新设备与连接', exact: true })
+        .click()
+    await expect(
+        page.getByText('全局草稿版本：' + unrelatedVersion, { exact: true }),
+    ).toBeVisible()
+    await page
+        .getByRole('button', { name: '重新载入设备', exact: true })
+        .click()
+    const copiedResponse = page.waitForResponse(
+        (r) => r.url().endsWith('/copy') && r.request().method() === 'POST',
+    )
+    await page
+        .getByRole('button', { name: '复制设备到草稿', exact: true })
+        .click()
+    const copied = await copiedResponse
+    expect(copied.status()).toBe(200)
+    const result = await copied.json()
+    expect(result.devices).toHaveLength(2)
+    await expect(page.getByRole('status')).toHaveText(
+        '设备及来源已复制到草稿，副本默认停用；运行配置未改变。',
+    )
+    for (const copy of result.devices) {
+        expect(copy.enabled).toBe(false)
+        expect(copy.key).toMatch(/^copy-original_copy_[0-9]+$/)
+        expect(copy.connectionId).toBe(device.device.connectionId)
+        expect(copy.unitId).toBe(3)
+        const inputs = await (
+            await page.request.get(
+                `/api/edge-admin/v1/devices/${copy.id}/inputs`,
+            )
+        ).json()
+        expect(inputs.inputs).toHaveLength(1)
+        expect(inputs.inputs[0].id).not.toBe(source.input.id)
+        expect(inputs.inputs[0].modbus.points).toEqual(
+            source.input.modbus.points,
+        )
+    }
+    expect(result.devices[0].id).not.toBe(result.devices[1].id)
+    await page.reload()
+    await page
+        .getByRole('button', { name: new RegExp(result.devices[0].key) })
+        .click()
+    await expect(page.getByLabel('草稿启用', { exact: true })).not.toBeChecked()
+    await page.screenshot({
+        path: 'test-results/device-copy.png',
+        fullPage: true,
+    })
+    expect(
+        (
+            await (
+                await page.request.get('/api/edge-admin/v1/runtime/status')
+            ).json()
+        ).coordinator.activeRevision,
+    ).toBeNull()
+})

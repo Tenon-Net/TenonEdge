@@ -82,6 +82,22 @@ internal sealed class InputDraftStore(ConfigDatabase database, SnowflakeIdGenera
     internal static InputDraft[] ReadForDevice(SqlSugarClient client, long deviceId) =>
         client.Queryable<InputDraftRecord>().Where(row => row.DeviceId == deviceId).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
 
+    // Caller owns the device-copy transaction, version and single batch audit.
+    internal static void CopyToDevice(SqlSugarClient client, InputDraft[] sources, long deviceId, SnowflakeIdGenerator ids)
+    {
+        foreach (var source in sources)
+        {
+            var input = source with { Id = ids.NextId(), DeviceId = deviceId };
+            client.Insertable(new InputDraftRecord
+            {
+                Id = input.Id,
+                DeviceId = deviceId,
+                BusinessKey = input.Key,
+                Content = JsonSerializer.Serialize(input, Json),
+            }).ExecuteCommand();
+        }
+    }
+
     internal static void ValidateDeviceChange(SqlSugarClient client, DeviceDraft device, ConnectionDraft? replacement = null)
     {
         foreach (var input in ReadForDevice(client, device.Id))

@@ -400,6 +400,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 原子复制设备及来源点位，副本默认停用，最多 20 份 */
+        post: operations["copyDeviceDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/inputs": {
         parameters: {
             query?: never;
@@ -549,6 +566,15 @@ export interface components {
             unitId: null | number | string;
             addressNotation: components["schemas"]["ModbusAddressNotation"];
             enabled: boolean;
+        };
+        DeviceDraftCopyRequest: {
+            expectedVersion: string;
+            /** Format: int32 */
+            count: number | string;
+        };
+        DeviceDraftCopyResult: {
+            version: string;
+            devices: components["schemas"]["DeviceDraft"][];
         };
         DeviceDraftList: {
             version: string;
@@ -2380,6 +2406,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    copyDeviceDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceDraftCopyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceDraftCopyResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
             };
             /** @description Unauthorized */

@@ -19,6 +19,9 @@ internal static class DeviceDraftEndpoints
         group.MapPut("/{deviceId:long}", (long deviceId, DeviceDraftRequest request, DeviceDraftStore store, HttpContext context) => Write(deviceId, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("updateDeviceDraft")
             .WithSummary("更新设备草稿，key 不可修改").ProducesProblem(409).ProducesProblem(404).ProducesProblem(403);
+        group.MapPost("/{deviceId:long}/copy", Copy).RequireAuthorization(AuthorizationPolicies.Configurator)
+            .WithName("copyDeviceDraft").WithSummary("原子复制设备及来源点位，副本默认停用，最多 20 份")
+            .ProducesProblem(409).ProducesProblem(404).ProducesProblem(403);
         group.MapDelete("/{deviceId:long}", Delete).RequireAuthorization(AuthorizationPolicies.Configurator)
             .WithName("deleteDeviceDraft").WithSummary("删除未被引用的设备草稿")
             .ProducesProblem(409).ProducesProblem(404).ProducesProblem(403);
@@ -32,6 +35,15 @@ internal static class DeviceDraftEndpoints
         { return TypedResults.Ok(store.Write(id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
         catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["device"] = ["设备参数无效，请检查标识、名称、连接类型、UnitId 及地址写法。"] }); }
         catch (FormatException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["device"] = ["设备参数格式无效。"] }); }
+        catch (DraftWriteException exception) { return Failure(exception); }
+    }
+
+    private static Results<Ok<DeviceDraftCopyResult>, ValidationProblem, ProblemHttpResult> Copy(long deviceId,
+        DeviceDraftCopyRequest request, DeviceDraftStore store, HttpContext context)
+    {
+        try
+        { return TypedResults.Ok(store.Copy(deviceId, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["copy"] = ["复制数量须为 1—20，且须提供草稿版本。"] }); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }
 
