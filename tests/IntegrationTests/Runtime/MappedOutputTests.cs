@@ -289,6 +289,99 @@ public sealed class MappedOutputTests
         Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
     }
 
+    [Fact]
+    public async Task SequentialMappingStagesFreezeOnlyTheFinalResultAndKeepOtherPathsIndependent()
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, outputs: [Factory()]);
+        RuntimeUnitPlan Chain(int id, string stages) => new(RuntimeUnitId.Create("output.http", $"chain-{id}"),
+            JsonSerializer.SerializeToElement(new
+            {
+                connectionId = id,
+                baseAddress = "http://localhost/",
+                inputs = Inputs,
+                mappingStages = JsonSerializer.Deserialize<JsonElement>(stages),
+            }));
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(),
+            Chain(1, """[[{"target":"scaled","type":"integer","sourceField":"value","scale":2}],[{"target":"final","type":"integer","sourceField":"scaled","offset":1}]]"""),
+            Chain(2, """[[{"target":"must","type":"integer","sourceField":"missing","required":true}],[{"target":"wrong","type":"integer","constant":9}]]"""),
+            Output(3, """[{"target":"original","type":"integer","sourceField":"value"}]""")));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 2);
+        await runtime.StopAsync(Token);
+        using var first = JsonDocument.Parse(Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10)).Payload);
+        Assert.Equal(85, first.RootElement.GetProperty("values").GetProperty("final").GetInt64());
+        Assert.Single(first.RootElement.GetProperty("values").EnumerateObject());
+        Assert.Empty(runtime.Deliveries.ReadPending(2, 0, 10));
+        using var third = JsonDocument.Parse(Assert.Single(runtime.Deliveries.ReadPending(3, 0, 10)).Payload);
+        Assert.Equal(42, third.RootElement.GetProperty("values").GetProperty("original").GetInt64());
+        Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["path/meter/sim/2/requiredFieldFailures"]);
+        Assert.Equal(1, input.Started);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
+    [Fact]
+    public async Task FortyEightStagesReuseWorkingBudgetAndDoNotCreateIntermediateDeliveries()
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, outputs: [Factory()]);
+        var rules = JsonSerializer.Deserialize<JsonElement>("""[{"target":"value","type":"integer","sourceField":"value","offset":1}]""");
+        var output = new RuntimeUnitPlan(RuntimeUnitId.Create("output.http", "chain"), JsonSerializer.SerializeToElement(new
+        {
+            connectionId = 1,
+            baseAddress = "http://localhost/",
+            inputs = Inputs,
+            mappingStages = Enumerable.Repeat(rules, 48).ToArray(),
+        }));
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(OutputPipelineTests.Input(), output));
+        Assert.Empty(plan.Failures);
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 1);
+        await runtime.StopAsync(Token);
+        using var json = JsonDocument.Parse(Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10)).Payload);
+        Assert.Equal(90, json.RootElement.GetProperty("values").GetProperty("value").GetInt64());
+        Assert.Equal(1, input.Started);
+        Assert.InRange(runtime.InFlight.Status.PeakReservedBytes, 12L * 1024 * 1024, 64L * 1024 * 1024);
+        Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+    }
+
+    [Theory]
+    [InlineData("output.http")]
+    [InlineData("output.mqtt")]
+    public void MappingStagesAreValidatedBeforeFreezeAndConflictWithLegacyMapping(string kind)
+    {
+        var configuration = new Dictionary<string, object?>
+        {
+            ["connectionId"] = 1,
+            ["inputs"] = Inputs,
+            ["mappingStages"] = JsonSerializer.Deserialize<JsonElement>("""[[{"target":"n","type":"integer","constant":1}]]"""),
+        };
+        if (kind == "output.http")
+        { configuration["baseAddress"] = "http://localhost/"; }
+        else
+        { configuration["host"] = "localhost"; configuration["topic"] = "test"; }
+        byte[] Document() => JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schemaVersion = 1,
+            units = new object[]
+            {
+                new { kind = "input.simulator", key = "meter/sim", configuration = new { intervalMs = 1000 } },
+                new { kind, key = "out", configuration },
+            },
+        });
+        Assert.NotNull(RuntimePlanDocument.Parse(Document()));
+        configuration["mapping"] = null;
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(Document()));
+        configuration.Remove("mapping");
+        configuration["mappingStages"] = JsonSerializer.Deserialize<JsonElement>("""[[{"target":"n","type":"integer","constant":1}],null]""");
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(Document()));
+    }
+
     private sealed class NoMqttCredentials : ICredentialResolver
     {
         public MqttCredentialIdentity? DescribeMqtt(long connectionId) => null;

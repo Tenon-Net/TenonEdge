@@ -206,8 +206,8 @@ internal sealed class RuntimePlanDocument
                 HttpOutputSettings.Parse(configuration);
             }
 
-            if (kind.GetString() is "output.http" or "output.mqtt" && configuration.TryGetProperty("mapping", out var mapping))
-            { FieldMappingConfiguration.Parse(mapping); }
+            if (kind.GetString() is "output.http" or "output.mqtt")
+            { FieldMappingConfiguration.ParsePipeline(configuration); }
             if (kind.GetString() == "input.mqtt")
             {
                 var settings = MqttInputSettings.Parse(configuration);

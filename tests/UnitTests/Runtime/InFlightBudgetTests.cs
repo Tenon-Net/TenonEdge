@@ -113,13 +113,28 @@ public sealed class InFlightBudgetTests
         Assert.False(channel.Reader.TryRead(out _));
     }
 
+    [Theory]
+    [InlineData(8)]
+    [InlineData(12)]
+    public void MappingWorkspaceIsChargedBeforeAcceptingAnInputAndReleasedAfterConsumption(int mebibytes)
+    {
+        var message = Message();
+        var workspace = mebibytes * 1024L * 1024;
+        var budget = new InFlightBudget(64L * 1024 * 1024);
+        var channel = new BudgetedInputChannel(1, budget) { MappingWorkingReservationBytes = workspace };
+        Assert.True(channel.Writer.TryWrite(message));
+        Assert.Equal(message.BudgetBytes + workspace, budget.Status.ReservedBytes);
+        Assert.True(channel.Reader.TryRead(out _));
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
     [Fact]
     public async Task ConservativeTwoPhaseUpperBoundReservesCapacityAndChecksActualResult()
     {
         var message = Message();
         var budget = new InFlightBudget(64L * 1024 * 1024);
         var channel = new BudgetedInputChannel(1, budget)
-        { ReserveSerializationWorkspace = true, HasFieldMapping = true, OutputReservationBytes = 16L * 1024 * 1024 };
+        { ReserveSerializationWorkspace = true, MappingWorkingReservationBytes = 8L * 1024 * 1024, OutputReservationBytes = 16L * 1024 * 1024 };
         await ((InputMessageWriter)channel.Writer).ProduceAsync(48L * 1024 * 1024, 20L * 1024 * 1024, _ =>
         {
             Assert.Equal(budget.Capacity, budget.Status.ReservedBytes);

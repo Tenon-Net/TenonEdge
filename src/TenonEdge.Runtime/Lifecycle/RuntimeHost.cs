@@ -175,7 +175,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new PlanValidationException("未注册输出模块。");
                 }
 
-                var mapping = unit.Configuration.TryGetProperty("mapping", out var rules) ? FieldMappingConfiguration.Parse(rules) : null;
+                var mapping = FieldMappingConfiguration.ParsePipeline(unit.Configuration);
                 var target = factory.Build(unit);
                 if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
                 { throw new PlanValidationException("输出格式化预算无效或超过全局在途预算。"); }
@@ -298,7 +298,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 channel.ReserveSerializationWorkspace = paths > 0;
                 channel.MinimumSerializationReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
                     .Select(output => output.Target.MinimumSerializationReservationBytes).DefaultIfEmpty().Max();
-                channel.HasFieldMapping = prepared.Outputs.Any(output => output.Mapping is not null && output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
+                channel.MappingWorkingReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                    .Select(output => output.Mapping?.WorkingReservationBytes ?? 0).DefaultIfEmpty().Max();
             }
 
             foreach (var unit in prepared.Units)

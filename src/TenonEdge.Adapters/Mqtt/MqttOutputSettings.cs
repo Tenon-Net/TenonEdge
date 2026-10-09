@@ -19,6 +19,8 @@ public sealed record MqttOutputSettings : MqttConnectionSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Mapping { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement MappingStages { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Payload { get; init; }
     public string[] Inputs { get; init; } = [];
 

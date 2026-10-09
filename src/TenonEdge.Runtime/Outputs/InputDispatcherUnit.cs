@@ -19,7 +19,7 @@ internal sealed class InputDispatcherState
 internal sealed class InputDispatcherUnit(
     RuntimeUnitId inputId, ChannelReader<EdgeMessage> input, IReadOnlyList<IOutputTarget> targets,
     InputDispatcherState state, long revision, DeliveryCache deliveries,
-    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMapping>? mappings = null) : IRuntimeUnit
+    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null) : IRuntimeUnit
 {
     public RuntimeUnitId Id { get; } = RuntimeUnitId.Create("delivery.dispatcher", inputId.Key);
 
@@ -56,8 +56,8 @@ internal sealed class InputDispatcherUnit(
                         if (mappings?.TryGetValue(target.Id, out var mapping) == true)
                         {
                             var mapped = mapping.Apply(source);
-                            CountPath(target, "mappingInvalidFields", mapped.Issues.Count(issue => issue.Reason is not null));
-                            CountPath(target, "mappingMissingFields", mapped.Issues.Count(issue => issue.Reason is null));
+                            CountPath(target, "mappingInvalidFields", mapped.InvalidFields);
+                            CountPath(target, "mappingMissingFields", mapped.MissingFields);
                             if (mapped.Message is null)
                             {
                                 CountPath(target, "requiredFieldFailures");

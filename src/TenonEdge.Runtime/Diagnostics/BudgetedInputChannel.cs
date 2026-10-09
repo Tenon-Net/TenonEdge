@@ -23,7 +23,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     internal long OutputReservationBytes { get; set; }
     internal bool ReserveSerializationWorkspace { get; set; }
     internal long MinimumSerializationReservationBytes { get; set; }
-    internal bool HasFieldMapping { get; set; }
+    internal long MappingWorkingReservationBytes { get; set; }
 
     public BudgetedInputChannel(int capacity, InFlightBudget budget)
     {
@@ -42,8 +42,8 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     internal ChannelReader<EdgeMessage> HoldingReader => _inner.Reader;
     private long Charge(long sourceBytes) => checked(sourceBytes + OutputReservationBytes
         + (UsesDurableHandoff ? 1024 : 0) // 回执、异步等待与索引项的保守固定预约。
-        + (HasFieldMapping ? FieldMapping.WorkingReservationBytes : 0)
-        + (ReserveSerializationWorkspace ? Math.Max(MinimumSerializationReservationBytes, StandardEnvelope.SerializationReservationBytes(HasFieldMapping ? FieldMapping.MaximumResultBytes : sourceBytes)) : 0));
+        + MappingWorkingReservationBytes
+        + (ReserveSerializationWorkspace ? Math.Max(MinimumSerializationReservationBytes, StandardEnvelope.SerializationReservationBytes(MappingWorkingReservationBytes > 0 ? FieldMapping.MaximumResultBytes : sourceBytes)) : 0));
     internal long Charge(EdgeMessage message) => Charge(message.BudgetBytes);
     internal bool HasHandoff(EdgeMessage message) => _handoffs.ContainsKey(message);
     internal void Release(EdgeMessage message, InputHandoffStatus status = InputHandoffStatus.Stopped)

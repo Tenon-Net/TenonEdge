@@ -2499,6 +2499,21 @@ API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release 
 
 剩余：保存图格式/草稿 API、真实来源目录快照、映射配置和逐节点字段传播、输出引用/格式/平台一致性、RuntimePlan 生成、无输出 I/O/无入队的样本预览、画布接线及 T3-06 应用/回滚仍未完成。现有分发器每目标仅支持一次映射，后续须实现连续映射语义，不能静默丢弃中间映射。此次纯函数软件验证不代表外部设备、网页执行路线或完整 AT-07/13/29 验收。
 
+### 2.124 T3-05 连续映射的运行计划与分发语义（2026-10-10）
+
+接续 §2.123，补齐图路径可能包含多个映射节点而旧分发器仅执行一次映射的缺口。仍未完成保存图格式、图到 RuntimePlan 的完整编译或网页应用。
+
+- 新增 `FieldMappingPipeline`：顺序执行 1—48 个映射阶段（50 节点上限扣除输入/输出），下一阶段读取上一阶段字段/质量；保留源消息身份、时间与原始 JSON，JSON 定位仍指原始报文。每次调用无历史值缓存，分支间不修改共享来源。
+- 任一阶段必填失败即终止本路径，后续常量不能把失败变回成功；记录失败阶段索引及各已执行阶段的无效/缺失字段次数。只有最终成功消息交给输出生成冻结投递，不为中间阶段入队。质量按既有每节点规则继续传播，不引入脚本或跨消息状态。
+- 运行输出配置新增 `mappingStages: [[规则], [规则], …]`；已有 `mapping` 保持单阶段语义，同时声明二者则拒绝。空/空值阶段、未知规则与超过 48 阶段不能静默忽略。HTTP/MQTT 设置显式接受该非秘密字段，冻结前 `RuntimePlanDocument` 和 RuntimeHost 准备阶段共用解析器；RuntimePlan 顶层版本与契约未改。
+- 各路径、各阶段串行复用工作区，不保存所有中间报文。复核发现多阶段须保留上一阶段结果，因此预算由单阶段 8 MiB 调整为多阶段固定 12 MiB（额外一份最多 4 MiB 中间结果），不随 48 阶段线性增长；同一输入按各路径最大工作区预约，不逐路径累加映射工作区。原始输入和最终冻结投递仍分别计入原有预算。此为保守准入账本，不是 CLR 全堆测量。
+
+新增单元覆盖连续重命名/换算、身份与时间、质量/必填短路、原始 JSON 的精确 int64、跨调用不残留、序列化与运行时 48/49 边界、配置冲突及工作区准入/释放。集成使用真实 RuntimeHost 与 SQLite：42 经两阶段变成 85 并仅入队最终字段；失败路径不投递，另一分支仍为 42；48 次 offset 得到 90、只采集一次、只生成一条记录、预算归零；HTTP/MQTT 冻结前接受合法链并拒绝冲突/空阶段。集成连接器拒绝网络，本批不冒充外部 HTTP/Broker 收到报文。
+
+初轮定向测试有 4 个新用例失败，原因是测试把 `deviceKey/inputKey` 放进 EdgeMessage 的单段 `inputId`；改正测试身份后定向 `dotnet test --no-restore -c Release --filter 'FullyQualifiedName~FieldMapping|FullyQualifiedName~MappedOutputTests' --logger trx --results-directory /tmp/tenonedge-mapping-chain-targeted-final` **30 单元 + 23 集成通过，0 失败/跳过**（`/tmp/tenonedge-mapping-chain-targeted-final.log`）；此定向结果早于额外 4 MiB 预算修正，最终回归另记。未删除失败行为断言。
+
+最终 Linux x64、SDK 10.0.401、Release，`dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-mapping-chain-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none`：**1120 单元 + 1024 集成 = 2144 项通过，0 失败/跳过**（`/tmp/tenonedge-mapping-chain-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-mapping-chain-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过；`dotnet format --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-mapping-chain-budget-format-verify.log`）；`git diff --cached --check` 通过。前端未改，本批未重跑浏览器；图草稿、字段传播/引用检查、图编译与无输出预览、T3-06 应用/回滚仍待后续，不能据本节标记完整 T3-05/AT 验收通过。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

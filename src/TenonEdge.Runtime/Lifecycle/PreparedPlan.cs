@@ -89,4 +89,4 @@ internal sealed record PreparedUnit(
     Channel<EdgeMessage>? Channel,
     InputReadStatus? Reads);
 
-internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Mapping.FieldMapping? Mapping);
+internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Mapping.FieldMappingPipeline? Mapping);

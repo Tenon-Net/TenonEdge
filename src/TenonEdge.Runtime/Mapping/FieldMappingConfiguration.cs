@@ -35,6 +35,24 @@ public static class FieldMappingConfiguration
         }));
     }
 
+    /// <summary>运行输出配置：旧 mapping 为单阶段；mappingStages 为按路径顺序排列的规则数组，不能同时声明。</summary>
+    public static FieldMappingPipeline? ParsePipeline(JsonElement configuration)
+    {
+        var hasSingle = configuration.TryGetProperty("mapping", out var single);
+        var hasStages = configuration.TryGetProperty("mappingStages", out var stages);
+        if (hasSingle && hasStages)
+        { throw new ArgumentException("mapping 与 mappingStages 不能同时声明。"); }
+        if (!hasStages)
+        {
+            var mapping = hasSingle ? Parse(single) : null;
+            return mapping is null ? null : new FieldMappingPipeline([mapping]);
+        }
+        if (stages.ValueKind != JsonValueKind.Array || stages.GetArrayLength() is < 1 or > FieldMappingPipeline.MaximumStages)
+        { throw new ArgumentException("mappingStages 须包含 1—48 个映射阶段。"); }
+        return new FieldMappingPipeline(stages.EnumerateArray().Select(stage =>
+            Parse(stage) ?? throw new ArgumentException("映射阶段不能为空。")));
+    }
+
     private sealed record Rule(string Target, FieldType? Type, string? SourceField = null, string? SourcePath = null,
         JsonElement Constant = default, string? Unit = null, bool Required = false, decimal? Scale = null, decimal? Offset = null, int? DecimalPlaces = null);
 }
