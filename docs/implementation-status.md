@@ -1997,6 +1997,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-fanout-final' --results-directory /tmp/tenonedge-modbus-fanout-final --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 775 集成 = 1751 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-fanout-final.log`）。Linux x64 / SDK 10.0.401。单文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include tests/IntegrationTests/Runtime/ModbusHostTests.cs`（`/tmp/tenonedge-modbus-fanout-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-fanout-restore.log`）与 `git diff --check` 通过，无新增依赖；没有为已能通过的链路增加不必要产品分支。
 - 聚焦 `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusHostTests`，含已有两帧格式场景共 4 项通过（`/tmp/tenonedge-modbus-fanout-target3.log`）。本节是 GW-13 / AT-06/29 软件链路与故障路径证据，不是设备兼容或长期资源验收；故障目标为真实 TCP 故障注入，不是实物网络断线声明。RSS、规模和剩余协议回归仍继续。
 
+### 2.97 T2-08 Modbus 连接上限、阻塞停止与一分钟资源观测（2026-10-09）
+
+- 新增 Linux 专用、禁止与其他集成测试并行的 ModbusResourceTests（其他系统明确 skip，不算通过）。通过正式计划提供者、输入运行单元、SharedConnections、OutboundConnector、NModbus 和 BudgetedInputChannel，连接回环模拟从站；不是单独构造无 I/O 的线程计数探针。
+- 最大连接场景：256 个不同连接编号、256 个运行输入，准备阶段无网络/工作线程；激活后实际 256 TCP 连接与 256 次读取、工作线程恰好增加 256。正常响应与全部不应答分别连续启动/停止 3 轮，复用同一共享连接管理器和连接编号，证实旧条目已释放、没有累加第二代工作线程。正常分支逐条核对已知寄存器；不应答分支读取期限 30 秒，实际请求已到达后立即停止，**取消任务与全部运行任务一起受 5 秒停止期限约束**，不等到读取自然超时。每轮工作线程回到基线、输入预算归零；不应答时峰值/在途占用 2359296 字节。
+- 聚焦实测（`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~MaximumConnectionPlanReadsAndStops --logger 'trx;LogFileName=resources.trx' --results-directory /tmp/tenonedge-modbus-resources-stop`）：2 项通过。正常三轮停止 21/5/3ms，不应答三轮停止 42/29/17ms；两类每轮均 256→0 个 Modbus 工作线程，预算归零。TRX 中保留 processThreads/RSS/fdCount/预算的逐轮原始输出（`/tmp/tenonedge-modbus-resources-stop/resources.trx`），不是理论估算。
+- 连续轮询场景：真实系统时间，32 连接 × 64 连续点位、1 秒周期，61 次采样，共 **1952 次请求 / 124928 个解码字段 / 60055ms**。每轮校验所有消息字段数、首末已知寄存器值、设备身份、质量、工作线程数与预算范围；结束只有 32 个累计连接，不持续重连，停止后线程回基线且预算归零。聚焦两项（当时最大连接场景尚未拆为正常/沉默两参数）通过，日志 `/tmp/tenonedge-modbus-resources-soak.log`、TRX `/tmp/tenonedge-modbus-resources-soak/resources.trx`。
+- 资源观测边界：上述独立运行的一分钟场景 RSS 约 99.83MB→113.07MB，停止后约 112.91MB；输入预算峰值 1695744 字节。256 连接聚焦场景采样 RSS 最大 126713856 字节。**这些是测试进程 + 模拟从站 + CLR 的观测值，不是产品 Host 单独 RSS，不是 64MiB 进程内存上限或整机容量承诺。** fdCount/CLR 线程没有完全回到冷启动基线（如沉默场景 115→122 个 FD），本批仅报告观测，没有据此声称全进程资源完全无增长。没有强制 GC 美化读数；一分钟测试不等于小时/天级长期稳定或 TLS/MQTT 全规模压力。
+- 首轮编译被 CA1711 拦下（测试组标记类型不应以 Collection 结尾），改名 ModbusResourceTestGroup 后通过（`/tmp/tenonedge-modbus-resources-target.log`、`/tmp/tenonedge-modbus-resources-target2.log`）。产品实现无需额外分支或改变上限。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-resources' --results-directory /tmp/tenonedge-modbus-resources-full --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 778 集成 = 1754 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-resources-full.log`）。Linux x64 / SDK 10.0.401，集成套件约 2 分 3 秒。单文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include tests/IntegrationTests/Runtime/ModbusResourceTests.cs`（`/tmp/tenonedge-modbus-resources-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-resources-restore.log`）与 `git diff --check` 通过；无新增依赖。
+- 证据覆盖 AT-08/13、V-05 与 T2-08 的连接数、线程所有权、真实阻塞取消及短时连续采集子场景；物理设备、全产品长期 RSS、完整 T2 退出复核与网页仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
