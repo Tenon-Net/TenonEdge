@@ -2378,6 +2378,20 @@ Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test Te
 
 剩余：设备页真实读取/字节序预览、实时抓取、证书表单，以及 T3-05 图编译和 T3-06 应用/回滚尚未完成；本机从站软件验证不代表实物兼容验收。
 
+### 2.117 T3-07 Modbus 真实读取预览内核（2026-10-10）
+
+按功能 §4.1、总设计 §5/§8.7/§10.1，在既有连接测试之后实现一次读取内核，不增加周期采集器或输出发送。API、设备页入口与点选字节序写草稿将在后续接入，本节不是网页预览完整验收。
+
+- `ModbusReadPreview` 使用正式点表验证、连续块规划和解码器；每块经同编号/配置身份的共享串行租约执行，不另开并行连接。TCP UnitId 0—255、RTU over TCP 1—247；只允许 01/02/03/04。
+- `ReadPreviewAsync` 与正式采集共用读取/取消/RTU 静默隔离代码，但预览草稿 UnitId 不加入正式采集成员，超时/成功不计作正式轮询健康样本。物理连接损坏仍关闭并退避；新物理连接仍清除旧代次的连接健康状态。预览期间实际请求间隔与读超时保持正式参数。
+- 返回按块关联的采集时间、功能码、偏移/数量、是否请求、异常码及失败原因；点位包含零基偏移、1 基寄存器号、6 位完整手册编号、原始寄存器十六进制、寄存器取位二进制及解析值。32/64 位同时解码 ABCD/CDAB/BADC/DCBA；值按原文字符串附类型返回，超过 JavaScript 安全整数范围明确标记，NaN/Infinity 显示 nonFinite 而不是伪造值。
+- 总期限默认 30 秒、校验范围 100 毫秒—60 秒，包含共享队列等待。到期保留本次已完成块，未完成块没有值；调用者取消向上传播，等待真实 I/O 退出后才释放租约。设备异常可继续其他块；一次超时/断连后不重复请求同组后续块，返回未执行的失败条目。
+- 显示结果按逐行/逐块实际 UTF-8 JSON 字节计量，保留包装开销，最多 64 KiB；满后停止后续联网并标注 Truncated 和总点数。点表仍按正式上限校验（最多 10000 点），不会把截断结果当作完整路线样本。未登记 API 前，不绕过宿主既有并发额度；宿主准入及整台设备编排仍待接入。
+
+定向 `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusReadPreviewTests` **12 项通过，0 失败/跳过**（`/tmp/tenonedge-modbus-read-targeted2.log`）。真实本机 TCP/RTU 从站覆盖原始字、四种顺序、64 位精度、bit、coil、异常码 02、未知草稿 UnitId 与运行时共用连接且不改变成员、1 万点响应预算、非有限值、取消退出；可控时钟覆盖正在读取及排队期限。首轮 9 通过/1 失败（`/tmp/tenonedge-modbus-read-targeted.log`）：RTU 夹具错误地给会话使用未推进的 FakeTimeProvider，静默隔离不能到期，最终触发外层 30 秒期限；仅改该真实网络夹具为 System 时钟后通过，未改产品期限或断言。协议回归：Linux x64、SDK 10.0.401 / .NET 10.0.12，`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~Modbus' --logger trx --results-directory artifacts/test-results/t3-modbus-read-preview` **200 单元 + 138 集成 = 338 项通过，0 失败/跳过**，TRX 非零/无跳过门禁通过（`/tmp/tenonedge-modbus-read-regression.log`）。本内核子项未重跑完整前后端套件，完整基线仍见 §2.116。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 与 `git diff --check` 通过（`/tmp/tenonedge-modbus-read-format-verify.log`）。
+
+未验证：实物设备兼容；没有设备页或 API 的预览验收。整台设备多组汇总、连接层详细失败原因、网页采样结果与字节序回写仍需后续交付，图编译/应用目标仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

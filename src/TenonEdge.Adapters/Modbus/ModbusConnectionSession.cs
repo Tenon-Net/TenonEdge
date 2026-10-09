@@ -104,13 +104,25 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
             new(success, code, _time.GetElapsedTime(started).TotalMilliseconds, trace.FinishModbus(code, success, reused));
     }
 
-    internal async Task<ModbusReadResult> ReadAsync(byte unit, byte function, ushort address, ushort count, CancellationToken token)
+    internal Task<ModbusReadResult> ReadAsync(byte unit, byte function, ushort address, ushort count, CancellationToken token) =>
+        ReadCoreAsync(unit, function, address, count, false, token);
+
+    // 预览允许读取尚未启用的草稿 UnitId，但不得扩充运行时健康成员或记一次轮询失败。
+    internal Task<ModbusReadResult> ReadPreviewAsync(byte unit, byte function, ushort address, ushort count, CancellationToken token) =>
+        ReadCoreAsync(unit, function, address, count, true, token);
+
+    private async Task<ModbusReadResult> ReadCoreAsync(byte unit, byte function, ushort address, ushort count, bool preview, CancellationToken token)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         token.ThrowIfCancellationRequested();
-        if (_units is null || _health is null)
-        { throw new InvalidOperationException("读取前须绑定运行时从站集合。"); }
-        if (!_units.Contains(unit))
+        if (!preview)
+        {
+            if (_units is null || _health is null)
+            { throw new InvalidOperationException("读取前须绑定运行时从站集合。"); }
+            if (!_units.Contains(unit))
+            { throw new ArgumentOutOfRangeException(nameof(unit)); }
+        }
+        if (_settings.Format == ModbusFrameFormat.RtuOverTcp && unit is < 1 or > 247)
         { throw new ArgumentOutOfRangeException(nameof(unit)); }
         if (function is < 1 or > 4 || count == 0 || count > (function <= 2 ? 2000 : 125) || (int)address + count > 65536)
         { throw new ArgumentException("Modbus 读取块范围无效。"); }
@@ -136,7 +148,7 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
                 _stream = await _connector.ConnectAsync(_settings.Host, _settings.Port, connect.Token);
                 connect.Token.ThrowIfCancellationRequested();
                 _client = new ModbusReadClient(_stream, _settings.Format, _time);
-                _health.ConnectionReplaced();
+                _health?.ConnectionReplaced();
                 _retryStarted = null;
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
@@ -178,7 +190,7 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
 
         if (result.Outcome == ModbusRequestOutcome.Success)
         { _reconnectSeconds = 1; }
-        if (_health.Record(unit, result.Outcome))
+        if (preview ? result.Outcome == ModbusRequestOutcome.ConnectionError : _health!.Record(unit, result.Outcome))
         { Reset(backoff: true); }
         else if (result.Outcome == ModbusRequestOutcome.Timeout && _settings.Format == ModbusFrameFormat.RtuOverTcp)
         {
