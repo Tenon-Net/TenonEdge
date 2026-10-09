@@ -1935,6 +1935,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 上述探针单例复跑通过（`dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter FullyQualifiedName~NModbusLeavesAFollowingTcpFrameForTheNextRequest`，`/tmp/tenonedge-modbus-session-probe-repeat.log`）。相同最终代码完整复跑：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-session-repeat' --results-directory /tmp/tenonedge-modbus-session-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`，**915 单元 + 750 集成 = 1665 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-session-repeat.log`）。限定格式验证与 `git diff --check` 通过；复跑成功不撤销上一条偶发失败记录。
 - 边界：本节仅覆盖 AT-02/08/13、V-05 的连接会话子场景。尚未实现 Modbus 输入计划解析/工厂、UnitId 采集周期调度与快速失败、整周期失败离线退避、overrun、EdgeMessage 生成和宿主真实采集链路；不能标记 T2-02 或 T2 完成，尚无网页。
 
+### 2.91 T2-02 Modbus 单周期快速失败与设备退避组件（2026-10-09）
+
+- 新增 ModbusCycleReader：消费既有读取规划的块，经共享租约逐块串行准入；第一个超时或连接错误后，该次 UnitId 周期剩余块直接产生失败结果，WasRequested=false，不再次发送或记录连接健康事实。设备异常帧/CRC 等一般读取错误不冒充超时；部分成功保留本次成功块及各失败块的原因，不缓存上周期数据。
+- 调度调用者传入本周期剩余时间，期限包含租约排队、请求间隔及网络读取。截止后等待实际 I/O 退出，返回一个 Overrun 标志和空结果，不把已完成的前半周期当作完整采样输出；停止取消仍向上传播，不转换成 overrun。已过期周期不联网，完整块表先校验再执行，非法后续块不会造成半次采集。
+- 新增 ModbusDevicePollingState：实际完成的整周期全部失败累计至 3 次判离线（计数在阈值饱和）；任意成功读取清除连续失败/退避。设备退避与连接重连退避分开，初始采用正常周期的两倍、限制为 1—60 秒，后续失败翻倍至 60 秒；调用者仍须遵守正常周期，长周期不会被改为更频繁读取。overrun、未准入及连接退避导致的全未请求周期不作为设备离线或恢复证据。该状态由未来设备调度器按连接 + UnitId 共享，不能每采集组各建一份。
+- 10 项状态单元测试：按周期而非按块累计、部分成功恢复、指数退避/上限/恢复后复位、无请求/overrun 不误判、协议错误计入实际整周期失败、设备隔离与初始间隔。命令 `dotnet test tests/UnitTests -c Release --no-restore --filter FullyQualifiedName~ModbusDevicePollingStateTests`，通过（`/tmp/tenonedge-modbus-cycle-unit.log`）。
+- 回环 TCP/RTU 真实 NModbus 测试：一个沉默 UnitId 只发一个请求即快速失败，其余 UnitId 的三个块正常且共享同连接；设备异常后继续读取；周期截止丢弃此前成功块并等待阻塞读取退出，下一周期重新连接；停止取消、租约排队截止不影响当前操作；三次真实失败后仅沉默设备退避并在恢复后复位；过期周期与无效后续块不联网。首轮集成编译被 CA1861 拦下（`/tmp/tenonedge-modbus-cycle-target.log`），改为序列文本断言后聚焦 7 项通过（`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusCycleReaderTests`，`/tmp/tenonedge-modbus-cycle-target2.log`）；后补 2 项边界测试纳入最终全量。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-cycle' --results-directory /tmp/tenonedge-modbus-cycle-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**925 单元 + 759 集成 = 1684 项通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-cycle-full.log`。环境 Linux x64 / SDK 10.0.401。
+- 限定新增四个 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...` 通过（`/tmp/tenonedge-modbus-cycle-format-verify.log`）；`dotnet restore TenonEdge.sln --locked-mode` 与 `git diff --check` 通过（还原日志 `/tmp/tenonedge-modbus-cycle-restore.log`），未增加依赖或更改锁文件。
+- 范围仅为 AT-02/08/13、V-05 的单周期执行和退避组件；并非已注册 input.modbus。常驻固定周期循环、多采集组同 UnitId 协调、消息生成/预算预约、诊断计数/离线事件以及宿主端到端链路仍须后续接入。本节不声称 overrun 已出现在管理 API，不声称 T2 或实物验证完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
