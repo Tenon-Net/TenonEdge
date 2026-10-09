@@ -2294,6 +2294,23 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 本节仅为 T3-04 的运行时准入基础：尚未接入 DI 或管理端点，不能算作网页连接测试已可用；实际出站、分阶段耗时/错误、凭证/TLS、运行连接所有权以及端到端限额验证继续实施。未修改现有运行时网络行为，未做真实设备验证。
 
+### 2.112 T3-04 MQTT 真实连接测试 API 与网页（2026-10-10）
+
+在 §2.111 的准入基础上接入真实 MQTT 连接测试，不将该子项算作全部连接测试或 T3-04 验收完成。参考 MQTTnet 笔记的 StreamProvider、CONNACK 和 TLS 边界；复用已安装库及自有有界通道，不复制第三方源码。
+
+- `POST /connections/test/mqtt` 仅 Configurator/Administrator，要求本地会话与 CSRF；32 KiB 请求体。会话额度按服务端认证票据中的 CSRF 随机值的 SHA-256 分区，不接受请求传入分区；共用宿主单例 `PreviewOperationBudget`，全局 4、每会话 2，超限 429、不排队。租约覆盖真实客户端释放，不在 HTTP 取消等待时另行放开。
+- 接收未保存的 MQTT 参数和显式认证选择：匿名、临时用户名/密码、已存凭证。已存凭证只按规范化接收方取一次快照，接收方不匹配/缺失/无法解密返回 409，绝不降级匿名；不要求保存草稿，不跨网络等待持有数据库事务。请求的 ToString 不包含秘密，响应只返回固定分类代码、CONNACK 数值和总耗时。
+- 测试使用 MQTT 3.1.1、随机独立 ClientId、CleanSession，忽略正式 ClientId，不订阅、不发布、不创建发送记录；复用正式 `IOutboundConnector` 与 MQTTnet 默认 TLS 校验。上层设置总超时，返回前释放客户端。接收通道在分配正文前仅接受长度 2 的 CONNACK，意外 PUBLISH/其他控制报文立即断开，避免引入无界接收队列。
+- 网页 MQTT 编辑器下新增显式测试区域，只对编辑角色显示；允许 key/名称未填时测试非秘密连接参数。临时秘密仅保留组件内存，不进入 Query mutation variables/持久存储；测试结束清空密码，组件卸载中止请求。显示该次测试目标和结果，不自动保存/应用；成功仅说明建立连接，不说明 Topic ACL 可读写。
+
+定向后端 API/适配器/端点契约 **23 项通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-test-api3.log`）；其后补充真实不受信任 TLS 和 3 个传输错误分类用例。第一轮全量 1064 单元 + 906 集成通过，TRX 门禁通过，但格式核对发现对象初始化换行和 using 排序未规范（`/tmp/tenonedge-mqtt-probe-format.log`）；已只格式化本次文件，继续最终回归。真实 Mosquitto 验证成功、错误/匿名凭证拒绝、独立 ClientId；TCP 软件夹具验证静默超时、取消关闭、意外 PUBLISH 拒绝。API 验证角色/CSRF、真实出站拒绝、已存接收方绑定、临时认证、全局/会话限额与草稿不变。最初测试方法公开了内部 UserRole 参数，编译失败；已改为字符串输入转换，不改生产可见性（`/tmp/tenonedge-mqtt-test-api.log` 保留）。
+
+最终后端：`dotnet build TenonEdge.sln -c Release --no-restore` 0 警告/错误；`dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger 'trx;LogFilePrefix=t3-mqtt-test-final' --results-directory artifacts/test-results/t3-mqtt-test-final --blame-hang-timeout 5m --blame-hang-dump-type none` **1064 单元 + 906 集成 = 1970 项通过，0 失败/跳过**（`/tmp/tenonedge-mqtt-test-final-full.log`），两程序集 TRX 门禁通过；`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 退出 0（`/tmp/tenonedge-mqtt-test-final-format.log`）。包括真实 Broker 旧 ClientId 持续 PING 及重新连接后的持久会话仍在。最后补齐 403/409/413/429 OpenAPI 响应元数据后，`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-restore --filter 'FullyQualifiedName~MqttConnectionTest|FullyQualifiedName~OpenApiDocument|FullyQualifiedName~ManagementApiAccess'` **27 项通过**（`/tmp/tenonedge-mqtt-test-contract-final.log`），重新导出 API/类型成功（`/tmp/tenonedge-mqtt-test-api-export-final.log`）。
+
+浏览器独立场景 **1 项通过**（`/tmp/tenonedge-mqtt-test-browser.log`）：真实 Host 按当前策略拒绝回环目标，未保存表单无需 key/名称即可测试；密码清空，草稿版本/内容和浏览器持久存储不变。已查看 `mqtt-connection-test.png`，结果与目标可读、临时密码为空。前端最终全量 **119 Vitest + 15 Playwright 通过**（`/tmp/tenonedge-mqtt-test-web-unit.log`、`/tmp/tenonedge-mqtt-test-web-final.log`），构建、typecheck/lint/format:check 和报告非零/零跳过门禁均通过。真实 Broker 证据来自后端测试，不把浏览器的策略拒绝冒充成功接入。OpenAPI/类型从实际 Development Host 导出（`/tmp/tenonedge-mqtt-test-api-export.log`）。
+
+剩余：目前只返回总耗时，功能 §2.4 的 DNS/TCP/TLS/认证/协议逐阶段耗时尚未实现；证书失败当前统一分类，尚未分不受信任/过期/主机名。网页信任/客户端证书、HTTP/Modbus 测试、实时抓取仍待继续；既有运行时凭证轮换隔离问题仍按 §2.104 跟踪。不是全功能连接测试验收，不是实物/现场网络兼容性验证。图编译与应用/回滚仍未完成，目标保持进行中。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

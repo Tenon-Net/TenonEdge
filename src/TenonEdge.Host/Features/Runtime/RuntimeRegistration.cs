@@ -56,6 +56,8 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>(), provider.GetRequiredService<OutboundPolicyStore>().Read));
         services.AddSingleton<IOutboundConnector, OutboundConnector>();
         services.AddSingleton<ISharedConnections, SharedConnections>();
+        services.AddSingleton<PreviewOperationBudget>();
+        services.AddSingleton<MqttConnectionTest>();
         services.AddSingleton<IRuntimePlanAdapterProvider, ModbusPlanAdapterProvider>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
         services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>

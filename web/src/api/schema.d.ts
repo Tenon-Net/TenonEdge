@@ -239,6 +239,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/test/mqtt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 测试未保存的 MQTT 参数到 CONNACK；独立 ClientId，不保存、不订阅、不发布
+         * @description 认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回总耗时和脱敏分类，尚不提供逐阶段耗时。
+         */
+        post: operations["testMqttConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -851,6 +871,22 @@ export interface components {
              */
             pingIntervalMs: number | string;
         };
+        MqttConnectionTestRequest: {
+            connection: components["schemas"]["MqttConnectionDraft"];
+            authentication?: components["schemas"]["MqttTestAuthentication"];
+            /** Format: int64 */
+            credentialConnectionId?: null | number | string;
+            username?: null | string;
+            password?: null | string;
+        };
+        MqttConnectionTestResult: {
+            success: boolean;
+            code: string;
+            /** Format: int32 */
+            connAckCode: null | number | string;
+            /** Format: double */
+            elapsedMs: number | string;
+        };
         MqttCredentialMetadata: {
             /** Format: int64 */
             connectionId: number | string;
@@ -882,6 +918,11 @@ export interface components {
             processRetained: boolean;
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
         };
+        /**
+         * @default none
+         * @enum {unknown}
+         */
+        MqttTestAuthentication: "none" | "stored" | "provided";
         OutboundNetworkGrant: {
             cidr: string;
             /** Format: int32 */
@@ -1571,6 +1612,84 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    testMqttConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MqttConnectionTestRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MqttConnectionTestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

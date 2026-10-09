@@ -653,6 +653,98 @@
         }
       }
     },
+    "/api/edge-admin/v1/connections/test/mqtt": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "测试未保存的 MQTT 参数到 CONNACK；独立 ClientId，不保存、不订阅、不发布",
+        "description": "认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回总耗时和脱敏分类，尚不提供逐阶段耗时。",
+        "operationId": "testMqttConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MqttConnectionTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MqttConnectionTestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
       "get": {
         "tags": [
@@ -3813,6 +3905,76 @@
         },
         "additionalProperties": false
       },
+      "MqttConnectionTestRequest": {
+        "required": [
+          "connection"
+        ],
+        "type": "object",
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/MqttConnectionDraft"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/MqttTestAuthentication"
+          },
+          "credentialConnectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "username": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MqttConnectionTestResult": {
+        "required": [
+          "success",
+          "code",
+          "connAckCode",
+          "elapsedMs"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "connAckCode": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "elapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "MqttCredentialMetadata": {
         "required": [
           "connectionId",
@@ -3932,6 +4094,14 @@
           }
         },
         "additionalProperties": false
+      },
+      "MqttTestAuthentication": {
+        "enum": [
+          "none",
+          "stored",
+          "provided"
+        ],
+        "default": "none"
       },
       "OutboundNetworkGrant": {
         "required": [
@@ -4884,13 +5054,13 @@
       "name": "System"
     },
     {
+      "name": "Connections"
+    },
+    {
       "name": "Credentials"
     },
     {
       "name": "Deliveries"
-    },
-    {
-      "name": "Connections"
     },
     {
       "name": "Devices"

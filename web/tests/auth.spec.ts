@@ -1843,3 +1843,51 @@ test('device CSV downloads BOM templates, imports GBK, reports row errors and at
         ).coordinator.activeRevision,
     ).toBeNull()
 })
+
+test('MQTT test uses unsaved parameters, reports real policy denial and does not save secrets or drafts', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    const before = await (
+        await page.request.get('/api/edge-admin/v1/connections')
+    ).json()
+    await page.getByRole('button', { name: '新建连接', exact: true }).click()
+    await page
+        .getByRole('combobox', { name: '协议类型', exact: true })
+        .selectOption('mqtt')
+    // Key/name intentionally empty: testing must not require saving the draft.
+    await page.getByLabel('主机或 IP', { exact: true }).fill('127.0.0.1')
+    const panel = page.getByRole('region', {
+        name: 'MQTT 真实连接测试',
+        exact: true,
+    })
+    await panel
+        .getByRole('combobox', { name: '测试认证' })
+        .selectOption('provided')
+    await panel
+        .getByLabel('临时用户名', { exact: true })
+        .fill('transient-browser-user')
+    await panel
+        .getByLabel('临时密码', { exact: true })
+        .fill('Transient-fixture-8294')
+    const response = page.waitForResponse((item) =>
+        item.url().endsWith('/connections/test/mqtt'),
+    )
+    await panel
+        .getByRole('button', { name: '测试 MQTT 连接', exact: true })
+        .click()
+    expect((await response).status()).toBe(200)
+    await expect(panel.getByRole('status')).toContainText('被出站规则拦截')
+    await expect(panel.getByRole('status')).toContainText('127.0.0.1:1883')
+    await expect(panel.getByLabel('临时密码', { exact: true })).toHaveValue('')
+    expect(
+        await (await page.request.get('/api/edge-admin/v1/connections')).json(),
+    ).toEqual(before)
+    expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({})
+    expect(await page.evaluate(() => ({ ...sessionStorage }))).toEqual({})
+    await page.screenshot({
+        path: 'test-results/mqtt-connection-test.png',
+        fullPage: true,
+    })
+})

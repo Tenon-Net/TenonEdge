@@ -1,4 +1,5 @@
 import { CredentialPanel } from './credential-panel'
+import { MqttTestPanel } from './mqtt-test-panel'
 import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
@@ -590,6 +591,9 @@ export function ConnectionsPage() {
                         )}
                     </div>
                 </form>
+            )}
+            {form?.kind === 'mqtt' && canEdit && (
+                <MqttTestPanel key={form.id ?? 'new'} form={form} />
             )}
             {form?.id !== undefined &&
                 form.kind !== 'modbus' &&
