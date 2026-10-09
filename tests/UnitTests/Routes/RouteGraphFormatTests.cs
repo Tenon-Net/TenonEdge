@@ -40,6 +40,8 @@ public sealed class RouteGraphFormatTests
     [InlineData("output.http", "{\"payload\":{\"mode\":\"custom\",\"fields\":[{\"script\":\"no\"}]}}")]
     [InlineData("output.http", "{\"headers\":{\"Cookie\":\"secret\"}}")]
     [InlineData("output.http", "{\"headers\":{\"proxy-authorization\":\"secret\"}}")]
+    [InlineData("output.http", "{\"path\":\"events?access_token=secret\"}")]
+    [InlineData("output.http", "{\"path\":\"http://user:secret@localhost/\"}")]
     [InlineData("input.script", "{}")]
     [InlineData("input.simulator", "{\"sourceIds\":[0]}")]
     [InlineData("output.tenon", "{\"connectionId\":9007199254740992}")]

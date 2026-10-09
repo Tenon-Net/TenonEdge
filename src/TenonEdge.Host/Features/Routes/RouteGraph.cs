@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.WebUtilities;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Host.Features.Connections;
 
@@ -108,6 +109,13 @@ internal static class RouteGraphFormat
                 Text(http.SuccessPath, 1024);
                 Scalar(http.SuccessValue);
                 Payload(http.Payload);
+                if (http.Path is { } path)
+                {
+                    var query = path.IndexOf('?');
+                    if (query >= 0 && QueryHelpers.ParseQuery(path[query..]).Keys.Any(ConnectionDraftValidation.IsSecretName) ||
+                        Uri.TryCreate(path, UriKind.Absolute, out var absolute) && absolute.UserInfo.Length > 0)
+                    { throw new ArgumentException("秘密地址或查询参数须改用连接凭证。"); }
+                }
                 if (http.Headers is { } headers)
                 {
                     if (headers.Count > 100)

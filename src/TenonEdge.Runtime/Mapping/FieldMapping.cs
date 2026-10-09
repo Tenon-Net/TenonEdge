@@ -19,6 +19,7 @@ public sealed class FieldMapping
     public const long WorkingReservationBytes = 8 * 1024 * 1024;
     private readonly ImmutableArray<CompiledRule> _rules;
     public ImmutableArray<MappedFieldSchema> Schema { get; }
+    public ImmutableArray<string> ReferencedFields { get; }
 
     public FieldMapping(IEnumerable<FieldMappingRule> rules)
     {
@@ -40,6 +41,7 @@ public sealed class FieldMapping
         }
         _rules = compiled.ToImmutable();
         Schema = schema.ToImmutable();
+        ReferencedFields = _rules.Select(rule => rule.Rule.SourceField).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToImmutableArray();
     }
 
     public FieldMappingResult Apply(EdgeMessage source, JsonElement payload = default)

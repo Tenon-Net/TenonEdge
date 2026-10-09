@@ -10,7 +10,7 @@ using TenonEdge.Host.Storage.Ids;
 namespace TenonEdge.Host.Features.Routes;
 
 /// <summary>图草稿、引用索引、全局版本与审计原子保存；不持有运行时，也不执行图。</summary>
-internal sealed class RouteDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
+internal sealed partial class RouteDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
 {
     public RouteDraftList Read() => database.InTransaction(client => new RouteDraftList(ConfigurationDraft.ReadVersion(client),
         client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(row =>
@@ -105,9 +105,12 @@ internal sealed class RouteDraftStore(ConfigDatabase database, SnowflakeIdGenera
     private static RouteDraft ReadRoute(SqlSugarClient client, long id)
     {
         var row = client.Queryable<RouteDraftRecord>().InSingle(id) ?? throw new DraftWriteException("route.notFound");
-        return new(row.Id, row.BusinessKey, row.Name, row.Description, row.Enabled,
-            JsonSerializer.Deserialize<RouteGraph>(row.Graph, RouteGraphFormat.Json) ?? throw new InvalidOperationException("路线草稿损坏。"), row.UpdatedBy, row.UpdatedAt);
+        return Decode(row);
     }
+
+    private static RouteDraft Decode(RouteDraftRecord row) => new(row.Id, row.BusinessKey, row.Name, row.Description, row.Enabled,
+            JsonSerializer.Deserialize<RouteGraph>(row.Graph, RouteGraphFormat.Json) ?? throw new InvalidOperationException("路线草稿损坏。"), row.UpdatedBy, row.UpdatedAt);
+
     private static void Unique(SqlSugarClient client, string key, long id)
     {
         if (client.Queryable<RouteDraftRecord>().Any(row => row.BusinessKey == key && row.Id != id))

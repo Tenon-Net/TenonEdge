@@ -299,6 +299,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/compile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 静态编译全部启用路线，不联网、不冻结版本、不启动或入队 */
+        post: operations["compileRouteDrafts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -1310,6 +1327,21 @@ export interface components {
             detail?: null | string;
             instance?: null | string;
         };
+        RouteCompileRequest: {
+            expectedVersion: string;
+        };
+        RouteCompileResult: {
+            version: string;
+            compiled: boolean;
+            /** Format: int32 */
+            sources: number | string;
+            /** Format: int32 */
+            paths: number | string;
+            /** Format: int32 */
+            units: number | string;
+            contentHash: null | string;
+            issues: components["schemas"]["RouteTopologyIssue"][];
+        };
         RouteDraft: {
             /** Format: int64 */
             id: number | string;
@@ -1385,6 +1417,16 @@ export interface components {
             x: number | string;
             /** Format: double */
             y: number | string;
+        };
+        RouteTopologyIssue: {
+            code: string;
+            routeKey: string;
+            nodeId?: null | string;
+            /** Format: int64 */
+            sourceId?: null | number | string;
+            /** Format: int32 */
+            edgeIndex?: null | number | string;
+            fieldKey?: null | string;
         };
         /** @enum {unknown} */
         RuntimeCoordinatorState: "starting" | "blocked" | "idle" | "active" | "runFailed" | "stopping" | "stopped";
@@ -2210,6 +2252,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModbusConnectionTestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    compileRouteDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteCompileRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteCompileResult"];
                 };
             };
             /** @description Bad Request */

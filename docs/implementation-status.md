@@ -2530,6 +2530,28 @@ API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release 
 
 剩余：将此图格式转换到纯拓扑快照、从同一草稿读取真实来源目录、映射逐节点字段传播/引用与输出检查、RuntimePlan 生成、无输出 I/O 的路线预览、画布保精度配置绑定，以及 T3-06 应用/回滚。上述完成之前，草稿成功保存不能表示采集路线已经可运行。
 
+### 2.126 T3-05 已保存图静态编译为 RuntimePlan（2026-10-10）
+
+接续 §2.125，新增 `POST /routes/compile` 及同一草稿版本的配置快照读取，将持久化图真正连接到 §2.123 的有界拓扑和 §2.124 的连续映射。接口与结果边界见 [路线草稿说明](route-drafts.md#静态编译)。仍不标记整个 T3-05 或 T3-06 完成。
+
+- 同一事务核对 expectedVersion、读取启用路线及实际引用的来源/设备/连接，仅读取 MQTT 凭证记录的存在性，不读取或解密秘密。快照先用 SQL 的 UTF-8 BLOB 长度求和检查 16 MiB 上限，再物化正文；事务外才编译。未引用/停用草稿不会变成运行单元，后续编辑不会改变已读快照，旧版本请求返回冲突。
+- Modbus、MQTT、HTTP、模拟来源分别转换到既有适配器配置与真实字段描述；HTTP 合并连接/来源非秘密头，MQTT 保留认证要求及上游时间，模拟样本保留精确 int64。配置序列化排除适配器的 BaseUri/Endpoint/Recipient 等计算属性，严格解析器确认生成的不是伪造接口。修正纯拓扑阶段错误地把 Modbus 来源也限制为 1000 字段的实现，按正式点表上限支持 10,000 个启用字段（用例实测 1001），其余来源仍按既有上限。
+- 按图有界计数/展开之后逐节点传播字段；映射引用和自定义组装引用须在每条上游成立，缺失时给出路线、节点、来源和字段。JSON Pointer 语法由现有映射编译器校验，不冒充实际样本存在性验证。连续映射保留阶段顺序，最终配置使用 mappingStages。
+- 同一来源全局仅生成一次输入；同一节点链不同来源共享输出定义，菱形的不同链仍生成独立输出定义。输出标识为 routeKey/完整节点链 SHA-256；布局、显示名与节点/连线排列变化不改变内容哈希。按路线建立路径索引，避免每条路线重复扫描全局路径；字段校验按节点/上游缓存，仍逐上游核对，不把某条路径通过冒充全部通过。
+- 输出检查连接存在/类型/启用、固定 Topic/路径、非秘密请求头、自定义格式及字段，再复用 RuntimePlanDocument 的共享参数/ClientId/MQTT 反馈闭环校验。规则展开逐单元累计保守 16 MiB 预算，不先复制无限量规则再检查。TenonIoT 输出明确报告未提供，不回退成通用协议；平台字段合并和同步仍待 T4。
+- API 返回版本、计数、哈希或结构化 issues，不返回含配置正文的伪预览、不分配 revision、不冻结、不构造运行单元、不联网/入队。角色/CSRF 与全局 4、每会话 2 的诊断准入复用现有机制。静态成功不代表凭证可解密、访问策略允许、设备在线或应用已完成。
+- 补上图草稿 HTTP 路径中的秘密查询参数及 URL 用户信息拒绝，避免把原连接/来源的凭证边界绕到输出图；新增单元反例，未改凭证模型。
+
+定向单元 `dotnet test tests/UnitTests --no-restore -c Release --filter 'FullyQualifiedName~RoutePlanCompilerTests|FullyQualifiedName~RouteGraphFormatTests' --logger trx --results-directory /tmp/tenonedge-route-compile-unit` **34 通过**（`/tmp/tenonedge-route-compile-unit.log`；后续再补 4 个 MQTT/精度/跨路线复用场景进入完整回归）。定向集成 `dotnet test tests/IntegrationTests --no-restore -c Release --filter 'FullyQualifiedName~RouteCompileTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~ManagementApiAccessTests' --logger trx --results-directory /tmp/tenonedge-route-compile-integration` **15 通过，0 失败/跳过**（`/tmp/tenonedge-route-compile-integration.log`）。
+
+用例覆盖多来源/菱形去重边界、顺序映射的字段移除、扇入每个上游、自定义字段大小写、失效引用/停用/错误协议、四种输入、认证标志、MQTT 反馈、布局无关哈希、超过 16 MiB 的展开提前拒绝、取消、角色/CSRF/版本、草稿快照隔离，以及先做 SQL 大小检查再处理被夹具置为 17 MB 非 JSON 的来源。真实 RuntimeHost + SQLite 用例把“已保存图编译结果”交给正式模拟输入和 HTTP 输出：一条源消息的两条重合路径分别冻结 84 与 126、sourceMessageId 相同、在途预算归零；构建前/准备后连接尝试均为零，激活后的发送使用拒绝连接器保持记录待发，不冒充外部服务器收到数据。编译 API 本身确认无运行指针和发送记录变化。
+
+补充验证中的失败如实保留：首次格式核查未覆盖目录内的新文件，改为显式文件列表格式化后再核查；新增跨路线测试触发 xUnit2031，改用 Assert.Single 的过滤重载后定向 16 个编译器用例通过（`/tmp/tenonedge-route-compile-unit-final.log`）。一次完整回归的 Broker 夹具因 Docker 无法绑定本机端口 34095 而未启动，集成 1040 通过/1 失败（`/tmp/tenonedge-route-compile-regression-final.log`）；复核时该端口已无监听、夹具容器已清理，不改产品、不跳过用例，重新执行完整回归。最终完整回归 `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-compile-regression-verified --blame-hang-timeout 5m --blame-hang-dump-type none` **1158 单元 + 1041 集成 = 2199 通过，0 失败/跳过**（`/tmp/tenonedge-route-compile-regression-verified.log`）；`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-route-compile-regression-verified --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过。
+
+环境为 Linux x64、.NET SDK 10.0.401 / runtime 10.0.12、Node 22.23.2、npm 11.21.0。完整 `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-compile-format-verify-final.log`）；从临时 Development 宿主重新导出 OpenAPI 并生成类型（`node /tmp/tenonedge-export-draft-api.mjs`，日志 `/tmp/tenonedge-route-compile-openapi.log`），仅新增 `/routes/compile` 路径，既有路径未变。前端在 web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 通过，Vitest **128 通过，0 失败/跳过**（`web/reports/unit.json`）。本批未重跑浏览器、未更新调试实例。
+
+完整无输出样本预览、画布属性/引用与保精度读取、应用/回滚仍待后续；本节不是浏览器执行路线、外部设备、凭证准备或完整 T3 验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

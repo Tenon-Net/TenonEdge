@@ -132,7 +132,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         return false;
     }
 
-    private static InputDraft Decode(InputDraftRecord row)
+    internal static InputDraft Decode(InputDraftRecord row)
     {
         var input = JsonSerializer.Deserialize<InputDraft>(row.Content, Json) ?? throw new JsonException("来源草稿为空。");
         if (input.Id != row.Id || input.DeviceId != row.DeviceId || input.Key != row.BusinessKey)

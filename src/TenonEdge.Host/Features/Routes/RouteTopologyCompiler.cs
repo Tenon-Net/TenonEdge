@@ -150,7 +150,7 @@ internal static class RouteTopologyCompiler
                     { Reject("sources.totalLimit", route.Key, node.Id, id); }
                     if (!identities.TryAdd(source.UnitId.Key, id))
                     { Reject("source.identityDuplicate", route.Key, node.Id, id); }
-                    if (source.Fields.IsDefaultOrEmpty || source.Fields.Length > 1000)
+                    if (source.Fields.IsDefaultOrEmpty || source.Fields.Length > (source.UnitId.Kind == "input.modbus" ? 10000 : 1000))
                     { Reject("source.fields", route.Key, node.Id, id); }
                     fields = new Dictionary<string, FieldType>(StringComparer.Ordinal);
                     foreach (var field in source.Fields)

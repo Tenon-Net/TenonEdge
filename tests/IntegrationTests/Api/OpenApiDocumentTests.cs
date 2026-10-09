@@ -23,6 +23,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "changePassword",
         "clearHttpCredential",
         "clearMqttCredential",
+        "compileRouteDrafts",
         "completeSetup",
         "copyDeviceDraft",
         "copyRouteDraft",

@@ -107,7 +107,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
     internal static ConnectionDraft? Read(SqlSugarClient client, long id) =>
         client.Queryable<ConnectionDraftRecord>().InSingle(id) is { } row ? Decode(row) : null;
 
-    private static ConnectionDraft Decode(ConnectionDraftRecord row)
+    internal static ConnectionDraft Decode(ConnectionDraftRecord row)
     {
         var draft = JsonSerializer.Deserialize<ConnectionDraft>(row.Content, Json) ?? throw new JsonException("连接草稿为空。");
         if (draft.Id != row.Id || draft.Key != row.BusinessKey)

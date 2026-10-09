@@ -160,7 +160,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
     internal static DeviceDraft? Read(SqlSugarClient client, long id) =>
         client.Queryable<DeviceDraftRecord>().InSingle(id) is { } row ? Decode(row) : null;
 
-    private static DeviceDraft Decode(DeviceDraftRecord row)
+    internal static DeviceDraft Decode(DeviceDraftRecord row)
     {
         var device = JsonSerializer.Deserialize<DeviceDraft>(row.Content, Json) ?? throw new JsonException("设备草稿为空。");
         if (device.Id != row.Id || device.Key != row.BusinessKey || device.ConnectionId != row.ConnectionId)
