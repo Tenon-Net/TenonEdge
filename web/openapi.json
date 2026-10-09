@@ -929,6 +929,120 @@
         }
       }
     },
+    "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
+      "post": {
+        "tags": [
+          "Inputs"
+        ],
+        "summary": "显式读取 Modbus 草稿点表一次，不保存、不应用或入发送队列",
+        "description": "Source 提供未保存点表；否则按 InputId 读取一组，省略 InputId 读取全部启用组。连接与 UnitId 取该版本的已存设备草稿；共享总期限 30 秒与 64 KiB 显示容量。截断或未完成组不能当作完整样本。",
+        "operationId": "previewModbusDevice",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModbusReadPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModbusDevicePreviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
       "get": {
         "tags": [
@@ -4148,6 +4262,46 @@
           }
         }
       },
+      "ModbusDevicePreviewResult": {
+        "required": [
+          "totalGroups",
+          "truncated",
+          "deadlineExceeded",
+          "elapsedMs",
+          "groups"
+        ],
+        "type": "object",
+        "properties": {
+          "totalGroups": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "deadlineExceeded": {
+            "type": "boolean"
+          },
+          "elapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModbusPreviewGroupResult"
+            }
+          }
+        }
+      },
       "ModbusFrameFormat": {
         "enum": [
           "tcp",
@@ -4213,6 +4367,298 @@
           }
         },
         "additionalProperties": false
+      },
+      "ModbusPreviewBlock": {
+        "required": [
+          "functionCode",
+          "offset",
+          "count",
+          "outcome",
+          "requested",
+          "exceptionCode",
+          "readAt"
+        ],
+        "type": "object",
+        "properties": {
+          "functionCode": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "uint8"
+          },
+          "offset": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "requested": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "exceptionCode": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "uint8"
+          },
+          "readAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ModbusPreviewGroupResult": {
+        "required": [
+          "key",
+          "preview"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/ModbusReadPreviewResult"
+          }
+        }
+      },
+      "ModbusPreviewOrder": {
+        "required": [
+          "byteOrder",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "byteOrder": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ModbusPreviewValue"
+          }
+        }
+      },
+      "ModbusPreviewPoint": {
+        "required": [
+          "key",
+          "block",
+          "functionCode",
+          "offset",
+          "registerNumber",
+          "manualReference",
+          "rawHex",
+          "binary",
+          "value",
+          "orders"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "block": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "functionCode": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "uint8"
+          },
+          "offset": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "registerNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "manualReference": {
+            "type": "string"
+          },
+          "rawHex": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "binary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "value": {
+            "$ref": "#/components/schemas/ModbusPreviewValue"
+          },
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModbusPreviewOrder"
+            }
+          }
+        }
+      },
+      "ModbusPreviewValue": {
+        "required": [
+          "type",
+          "text",
+          "quality",
+          "reason",
+          "unsafeJavaScriptInteger"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quality": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unsafeJavaScriptInteger": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ModbusReadPreviewRequest": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "inputId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModbusSourceDraft"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModbusReadPreviewResult": {
+        "required": [
+          "unitId",
+          "totalPoints",
+          "truncated",
+          "deadlineExceeded",
+          "elapsedMs",
+          "blocks",
+          "points"
+        ],
+        "type": "object",
+        "properties": {
+          "unitId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "uint8"
+          },
+          "totalPoints": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "deadlineExceeded": {
+            "type": "boolean"
+          },
+          "elapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModbusPreviewBlock"
+            }
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModbusPreviewPoint"
+            }
+          }
+        }
       },
       "ModbusSourceDraft": {
         "required": [
@@ -5438,6 +5884,9 @@
       "name": "Connections"
     },
     {
+      "name": "Inputs"
+    },
+    {
       "name": "Credentials"
     },
     {
@@ -5445,9 +5894,6 @@
     },
     {
       "name": "Devices"
-    },
-    {
-      "name": "Inputs"
     }
   ]
 }

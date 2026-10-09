@@ -1,4 +1,52 @@
 export const inputStrings = {
+    preview: {
+        groupTitle: '当前采集组真实读取',
+        deviceTitle: '整台设备真实读取',
+        groupNotice:
+            '按已保存设备的连接与 UnitId，读取当前未保存点表中的启用点位一次，不应用、不发送或保存结果。总期限 30 秒，显示最多 64 KiB。已有采集组可采用字节序并保存整个当前采集组草稿；新建组请先保存。',
+        deviceNotice:
+            '读取已保存设备的全部启用采集组，不包含尚未保存的点表编辑；不合并不同组，整次操作共用连接、30 秒期限及 64 KiB 显示容量，不应用或入发送队列。',
+        run: '读取一次',
+        running: '正在读取…',
+        completed: '已返回 {{count}} / {{total}} 个采集组',
+        partial:
+            '结果已截断或到期，部分点位/采集组未读取，不能作为完整样本。请缩小点表或选择单个组。',
+        table: '{{key}} 读取结果',
+        columns: {
+            key: '点位 key',
+            address: '功能码 · 偏移 / 寄存器号 / 手册编号',
+            raw: '原始寄存器（HEX）/ 位',
+            value: '解析值与类型',
+            quality: '质量与原因',
+            time: '读取时间',
+            orders: '四种字节序对照',
+        },
+        precision:
+            '超过 JavaScript 安全整数范围，按原文显示；下游可映射为字符串。',
+        apply: '{{key}} 采用 {{order}} 并保存当前组草稿',
+        notRequested: '未发送请求',
+        exception: 'Modbus 异常码',
+        unknownException: '设备异常',
+        exceptions: {
+            1: '非法功能',
+            2: '非法地址',
+            3: '非法数据值',
+            4: '设备故障',
+            5: '确认/处理中',
+            6: '设备忙',
+            10: '网关路径不可用',
+            11: '目标未响应',
+        },
+        reasons: {
+            readTimeout: '读取超时',
+            connectionError: '连接失败或正在退避',
+            readError: '读取或响应校验失败',
+            deviceException: '设备返回异常',
+            deadline: '本次读取总期限已到',
+            nonFinite: '非有限数值',
+        },
+    },
+
     csv: {
         title: '设备点表 CSV',
         template: '下载 CSV 模板',

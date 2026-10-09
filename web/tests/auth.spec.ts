@@ -2161,3 +2161,224 @@ test('Modbus unsaved TCP and RTU connection tests send no protocol bytes and pre
         }
     }
 })
+
+test('Modbus device preview reads real groups, preserves 64-bit text and adopts byte order into draft only', async ({
+    page,
+}) => {
+    const sockets = new Set<Socket>()
+    let connections = 0
+    let requests = 0
+    const peer = createTcpServer((socket) => {
+        connections++
+        sockets.add(socket)
+        let pending = Buffer.alloc(0)
+        socket.on('close', () => sockets.delete(socket))
+        socket.on('error', () => {})
+        socket.on('data', (chunk) => {
+            pending = Buffer.concat([pending, chunk])
+            while (pending.length >= 12) {
+                const request = pending.subarray(0, 12)
+                pending = pending.subarray(12)
+                requests++
+                const count = request.readUInt16BE(10)
+                const address = request.readUInt16BE(8)
+                if (request[7] !== 3 || count > 125)
+                    throw new Error('unexpected-modbus-read')
+                const reply = Buffer.alloc(9 + count * 2)
+                request.copy(reply, 0, 0, 4)
+                reply.writeUInt16BE(3 + count * 2, 4)
+                reply[6] = request[6]
+                reply[7] = 3
+                reply[8] = count * 2
+                for (let index = 0; index < count; index++)
+                    reply.writeUInt16BE(0x1000 + address + index, 9 + index * 2)
+                socket.write(reply)
+            }
+        })
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string')
+        throw new Error('fixture-address')
+    let restore: (() => Promise<void>) | undefined
+    try {
+        await openPointEditor(page)
+        const session = await (
+            await page.request.get('/api/edge-admin/v1/auth/session')
+        ).json()
+        const headers = { 'X-CSRF-Token': session.csrfToken }
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        const allowed = await page.request.put(policyUrl, {
+            headers,
+            data: {
+                networks: policy.networks,
+                expectedVersion: policy.version,
+                localPorts: [...policy.localPorts, address.port],
+            },
+        })
+        expect(allowed.status()).toBe(200)
+        const allowedVersion = (await allowed.json()).version
+        restore = async () => {
+            const response = await page.request.put(policyUrl, {
+                headers,
+                data: {
+                    expectedVersion: allowedVersion,
+                    localPorts: policy.localPorts,
+                    networks: policy.networks,
+                },
+            })
+            expect(response.status()).toBe(200)
+        }
+        const version = (
+            await (
+                await page.request.get('/api/edge-admin/v1/connections')
+            ).json()
+        ).version
+        const connectionResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: version,
+                    key: 'preview-plc',
+                    name: '预览 PLC',
+                    kind: 'modbus',
+                    modbus: { host: '127.0.0.1', port: address.port },
+                },
+            },
+        )
+        expect(connectionResponse.status()).toBe(200)
+        const connection = await connectionResponse.json()
+        const deviceResponse = await page.request.post(
+            '/api/edge-admin/v1/devices',
+            {
+                headers,
+                data: {
+                    expectedVersion: connection.version,
+                    key: 'preview-device',
+                    name: '真实读取设备',
+                    kind: 'modbus',
+                    connectionId: connection.connection.id,
+                    unitId: 1,
+                },
+            },
+        )
+        expect(deviceResponse.status()).toBe(200)
+        const device = await deviceResponse.json()
+        const inputUrl = `/api/edge-admin/v1/devices/${device.device.id}/inputs`
+        const firstResponse = await page.request.post(inputUrl, {
+            headers,
+            data: {
+                expectedVersion: device.version,
+                key: 'fast',
+                name: '快速读取',
+                modbus: {
+                    periodMs: 1000,
+                    points: [
+                        {
+                            key: 'large',
+                            functionCode: 3,
+                            address: 0,
+                            type: 'uint64',
+                            byteOrder: 'ABCD',
+                        },
+                    ],
+                },
+            },
+        })
+        expect(firstResponse.status()).toBe(200)
+        const first = await firstResponse.json()
+        const secondResponse = await page.request.post(inputUrl, {
+            headers,
+            data: {
+                expectedVersion: first.version,
+                key: 'slow',
+                name: '慢速读取',
+                modbus: {
+                    periodMs: 2000,
+                    points: [
+                        {
+                            key: 'other',
+                            functionCode: 3,
+                            address: 4,
+                            type: 'uint16',
+                        },
+                    ],
+                },
+            },
+        })
+        expect(secondResponse.status()).toBe(200)
+        const before = await (await page.request.get(inputUrl)).json()
+        await page.goto(`/devices/${device.device.id}/inputs`)
+        const whole = page.getByRole('region', {
+            name: '整台设备真实读取',
+            exact: true,
+        })
+        await whole
+            .getByRole('button', { name: '读取一次', exact: true })
+            .click()
+        await expect(whole.getByRole('status')).toContainText('2 / 2')
+        const exact = 0x1000100110021003n.toString()
+        await expect(
+            whole.getByRole('table', { name: 'fast 读取结果' }),
+        ).toContainText(exact)
+        await expect(whole).toContainText('超过 JavaScript 安全整数范围')
+        expect(requests).toBe(2)
+        expect(connections).toBe(1)
+        expect(await (await page.request.get(inputUrl)).json()).toEqual(before)
+        await page.getByRole('button', { name: /快速读取 \(fast\)/ }).click()
+        const group = page.getByRole('region', {
+            name: '当前采集组真实读取',
+            exact: true,
+        })
+        await group
+            .getByRole('button', { name: '读取一次', exact: true })
+            .click()
+        await expect(group.getByRole('status')).toContainText('1 / 1')
+        await expect(group).toContainText('1000 1001 1002 1003')
+        const adopt = group.getByRole('button', {
+            name: 'large 采用 CDAB 并保存当前组草稿',
+            exact: true,
+        })
+        await page.getByLabel('采集周期（毫秒）', { exact: true }).fill('2000')
+        await expect(adopt).toBeDisabled()
+        await page.getByLabel('采集周期（毫秒）', { exact: true }).fill('1000')
+        await expect(adopt).toBeEnabled()
+        await page.screenshot({
+            path: 'test-results/modbus-read-preview.png',
+            fullPage: true,
+        })
+        await group
+            .getByRole('button', {
+                name: 'large 采用 CDAB 并保存当前组草稿',
+                exact: true,
+            })
+            .click()
+        await expect(group).toHaveCount(0)
+        const after = await (await page.request.get(inputUrl)).json()
+        expect(
+            after.inputs.find((input: { key: string }) => input.key === 'fast')
+                .modbus.points[0].byteOrder,
+        ).toBe('CDAB')
+        expect(
+            after.inputs.find((input: { key: string }) => input.key === 'slow'),
+        ).toEqual(
+            before.inputs.find(
+                (input: { key: string }) => input.key === 'slow',
+            ),
+        )
+        expect(requests).toBe(3)
+        expect(await page.evaluate(() => ({ ...localStorage }))).toEqual({})
+        expect(await page.evaluate(() => ({ ...sessionStorage }))).toEqual({})
+    } finally {
+        try {
+            await restore?.()
+        } finally {
+            for (const socket of sockets) socket.destroy()
+            await new Promise<void>((resolve, reject) =>
+                peer.close((error) => (error ? reject(error) : resolve())),
+            )
+        }
+    }
+})

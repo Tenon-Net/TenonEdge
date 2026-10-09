@@ -196,6 +196,51 @@ public sealed class ModbusReadPreviewTests
         Assert.Equal(1, slave.ConnectionCount);
     }
 
+    [Fact]
+    public async Task MultipleGroupsShareOneDisplayBudgetAndKeepBoundaries()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), TimeProvider.System);
+        var points = Enumerable.Range(0, 100).Select(index => Point("p" + index, index * 6, "uint64", "ABCD")).ToImmutableArray();
+        var result = await preview.RunGroupsAsync(Settings(slave), 1,
+            [new("a", points), new("b", points), new("c", points)], Token);
+        Assert.True(result.Truncated);
+        Assert.Equal(3, result.TotalGroups);
+        Assert.True(JsonSerializer.SerializeToUtf8Bytes(result, Json).Length <= ModbusReadPreview.MaximumDisplayBytes);
+        Assert.True(result.Groups.Length < 3);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task MultipleGroupsShareDeadlineAndPreserveCompletedFirstGroup()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, request => new SlaveReply { Silent = request.Sequence == 2 });
+        var time = new FakeTimeProvider();
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), time);
+        var pending = preview.RunGroupsAsync(Settings(slave) with { ReadTimeoutMs = 30000 }, 1,
+            [new("a", [Point("one", 0)]), new("b", [Point("two", 10)]), new("c", [Point("three", 20)])], Token, timeoutMs: 1000);
+        await slave.WaitForRequestsAsync(2, TimeSpan.FromSeconds(5), Token);
+        time.Advance(TimeSpan.FromSeconds(1));
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.True(result.DeadlineExceeded);
+        Assert.Equal(3, result.TotalGroups);
+        Assert.Equal(2, result.Groups.Length);
+        Assert.Equal("4096", Assert.Single(result.Groups[0].Preview.Points).Value.Text);
+        Assert.Null(Assert.Single(result.Groups[1].Preview.Points).Value.Text);
+        Assert.Equal(2, slave.RequestCount);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task InvalidLaterGroupIsValidatedBeforeFirstNetworkRequest()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var preview = new ModbusReadPreview(new SharedConnections(), new ForbiddenConnector(), TimeProvider.System);
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => preview.RunGroupsAsync(Settings(slave), 1,
+            [new("a", [Point("one", 0)]), new("b", [Point("two", 65535, "uint64", "ABCD")])], Token));
+        Assert.Equal(0, slave.ConnectionCount);
+    }
+
     private static ModbusPointSettings Point(string key, int address, string type = "uint16", string? order = null) =>
         new() { Key = key, FunctionCode = 3, Address = address, Type = type, ByteOrder = order };
     private static ModbusConnectionSettings Settings(ModbusTestSlave slave, bool rtu = false) => new()

@@ -2392,6 +2392,24 @@ Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test Te
 
 未验证：实物设备兼容；没有设备页或 API 的预览验收。整台设备多组汇总、连接层详细失败原因、网页采样结果与字节序回写仍需后续交付，图编译/应用目标仍未完成。
 
+### 2.118 T3-07 Modbus 组/设备读取 API、网页与字节序采用（2026-10-10）
+
+接续 §2.117，按功能 §4.1、BE 的事务/归属规范、FE-AT 的真数据要求接入设备来源页。没有新增 Node 运行服务或协议依赖；浏览器测试里的 TCP 从站仅是测试夹具。
+
+- `POST /devices/{deviceId}/preview/modbus` 使用 Configurator/Administrator、本地会话/CSRF、16 MiB 点表请求体限制及既有全局 4 / 每会话 2 额度。短事务同时检查 expectedVersion、设备类型、InputId 的设备归属及对应连接，再返回纯快照；联网时不持有配置库事务。
+- 请求 Source 提供未保存点表；否则 InputId 选择已保存的一组，省略两者读取全部启用且有启用点位的组。UnitId/连接来自同版本已保存设备，页面明确提示；没有隐式保存或应用。点表校验、空组、越界与过期版本均在读取前拒绝。
+- 多组编排保持组边界（相邻地址也不跨组合并），外围租约保留同一个物理会话；整个请求共用 30 秒期限、64 KiB 显示容量。各组只领取剩余时间/字节预算；内部剩余期限可低至 1 毫秒，不重新领取 30 秒。全部组先校验再联网；后续组到期/容量不足时返回总组数与未完成标记，保留已完成组结果。
+- 页面支持“整台设备真实读取”和“当前采集组真实读取”，后者使用当前未保存点表。展示原始寄存器、三种地址表示、类型附原文值、质量/失败块/异常码含义、时间与四种字节序。超出安全整数范围提示下游可映射字符串，不在浏览器 Number 转换业务值；仅小范围块索引等元数据转换为 Number。
+- 已保存采集组可显式“采用字节序并保存当前组草稿”，复用原草稿版本检查与保存操作，不应用；同时保存当前组其他编辑的行为在按钮/说明中明确。采样后点表发生变化时禁止采用旧样本；新建组先保存再采用。关闭组件取消在途读取，结果只留内存、不进入浏览器存储。
+
+定向集成 **29 项通过，0 失败/跳过**（`/tmp/tenonedge-modbus-preview-api-targeted2.log`）：实际从站线序、角色/匿名/CSRF、过期版本、错误 InputId 归属、非法点表、共用准入额度、未保存点表不改库、整台设备只建一条物理连接/两组不合并，以及多组共用期限与显示预算。首个 solution 过滤运行的 UnitTests 无匹配，不计为通过；有效集成结果为 26 项，新增多组用例后为上述 29 项。
+
+浏览器独立场景 **1 项通过**（`/tmp/tenonedge-modbus-preview-browser.log`，8.9 秒）：真实 Host 按网页请求读取本机 TCP 从站，两组只建立一次连接；网页准确显示 `1152939101356429315` 原文与原始 `1000 1001 1002 1003`，预览后草稿未改变；选择 CDAB 后只有当前组草稿字节序改变，其他组不变，未追加网络读取，浏览器 local/sessionStorage 为空。实际查看 `web/test-results/modbus-read-preview.png`，多组与单组结果表显示正常。出站策略恢复，夹具连接关闭。最初前端构建发现生成 schema 的块索引为 number|string，显式转换小范围索引后构建通过；未转换业务数值。
+
+完整后端：Linux x64、SDK 10.0.401 / .NET 10.0.12、Release，`dotnet build TenonEdge.sln -c Release --no-restore`（0 警告/错误）；`dotnet test TenonEdge.sln -c Release --no-build --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --logger trx --results-directory artifacts/test-results/t3-modbus-preview-api` **1071 单元 + 972 集成 = 2043 项通过，0 失败/跳过**，TRX 门禁通过；`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 通过。日志 `/tmp/tenonedge-modbus-preview-api-build.log`、`/tmp/tenonedge-modbus-preview-api-full.log`、`/tmp/tenonedge-modbus-preview-api-format-verify.log`。
+
+首次前端全量 **119 Vitest + 18 Playwright 通过**；检查时补充无预览结果前不反复序列化万点表、非法编辑用字段错误反馈，并新增浏览器“改变周期后禁止采用旧样本、恢复后才允许采用”断言，最终前端 **119 Vitest + 18 Playwright 通过，0 失败/跳过**（45.1 秒），报告非零/无跳过门禁通过。Node 22.23.2 / npm 11.21.0 / Chromium 156.0.8078.4；`npm run build`（含 tsc）、lint、format:check 通过；实际使用 `npx --yes npm@11.21.0`，浏览器地址 `http://192.168.0.88:18082`。日志 `/tmp/tenonedge-modbus-preview-web-build-final2.log`、`/tmp/tenonedge-modbus-preview-web-unit2.log`、`/tmp/tenonedge-modbus-preview-web-full2.log`；报告 `web/reports/unit.json`、`web/reports/browser.json`。`git diff --check` 通过。剩余：MQTT/HTTP 实时采样、预览连接层更细原因分类、真实设备兼容；T3-05 图编译与 T3-06 应用/回滚仍未完成，不能据本节宣称完整可视化配置目标达到。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -26,17 +26,17 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
 
     public async Task<ModbusReadPreviewResult> RunAsync(ModbusConnectionSettings settings, byte unit,
         ImmutableArray<ModbusPointSettings> points, CancellationToken cancellationToken,
-        int timeoutMs = 30000, int maxRegisters = 125, int maxBits = 2000)
+        int timeoutMs = 30000, int maxRegisters = 125, int maxBits = 2000, int maximumDisplayBytes = MaximumDisplayBytes)
     {
         settings = settings.Validate();
-        if (settings.Format == ModbusFrameFormat.RtuOverTcp && unit is < 1 or > 247 || timeoutMs is < 100 or > 60000)
+        if (settings.Format == ModbusFrameFormat.RtuOverTcp && unit is < 1 or > 247 || timeoutMs is < 1 or > 60000 || maximumDisplayBytes is < 2048 or > MaximumDisplayBytes)
         { throw new ArgumentException("预览 UnitId 或总期限无效。"); }
-        var table = new ModbusPointTable(points, maxRegisters, maxBits);
-        var enabled = points.Where(point => point.Enabled).ToArray();
         cancellationToken.ThrowIfCancellationRequested();
         var started = time.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs), time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        var table = new ModbusPointTable(points, maxRegisters, maxBits);
+        var enabled = points.Where(point => point.Enabled).ToArray();
         IConnectionLease<ModbusConnectionSession> lease;
         try
         { lease = connections.Acquire(settings.ConnectionId, "modbus", settings.Identity, () => new ModbusConnectionSession(settings, null, connector, time)); }
@@ -52,7 +52,7 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
         foreach (var block in table.Blocks)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (bytes >= MaximumDisplayBytes - 2048)
+            if (bytes >= maximumDisplayBytes - 2048)
             { truncated = true; break; }
             ModbusReadResult? result = null;
             DateTimeOffset? readAt = null;
@@ -82,7 +82,7 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
             var report = new ModbusPreviewBlock(block.FunctionCode, block.Start, block.Count, outcome!,
                 result?.WasRequested ?? (outcome == "deadline" ? null : false), result?.ExceptionCode, readAt);
             var blockBytes = JsonSerializer.SerializeToUtf8Bytes(report, Json).Length + 1;
-            if (bytes + blockBytes > MaximumDisplayBytes)
+            if (bytes + blockBytes > maximumDisplayBytes)
             { truncated = true; break; }
             var blockIndex = blocks.Count;
             blocks.Add(report);
@@ -92,7 +92,7 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
                 var point = enabled[member.PointIndex];
                 var row = Render(point, member, blockIndex, result, outcome!);
                 var rowBytes = JsonSerializer.SerializeToUtf8Bytes(row, Json).Length + 1;
-                if (bytes + rowBytes > MaximumDisplayBytes)
+                if (bytes + rowBytes > maximumDisplayBytes)
                 { truncated = true; break; }
                 rows.Add(row);
                 bytes += rowBytes;
@@ -102,6 +102,54 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
         }
         cancellationToken.ThrowIfCancellationRequested();
         return new(unit, enabled.Length, truncated, expired, time.GetElapsedTime(started).TotalMilliseconds, blocks.ToArray(), rows.ToArray());
+    }
+
+    /// <summary>整台设备保持组边界；整个操作只占一个物理会话，共享截止时间与显示预算。</summary>
+    public async Task<ModbusDevicePreviewResult> RunGroupsAsync(ModbusConnectionSettings settings, byte unit,
+        IReadOnlyList<ModbusPreviewGroup> groups, CancellationToken cancellationToken, int timeoutMs = 30000)
+    {
+        settings = settings.Validate();
+        if (groups.Count == 0 || timeoutMs is < 100 or > 60000 ||
+            settings.Format == ModbusFrameFormat.RtuOverTcp && unit is < 1 or > 247)
+        { throw new ArgumentException("预览采集组、UnitId 或期限无效。"); }
+        var started = time.GetTimestamp();
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in groups)
+        {
+            BusinessKeys.Validate(group.Key, nameof(groups));
+            if (!keys.Add(group.Key))
+            { throw new ArgumentException("预览采集组 key 重复。"); }
+            _ = new ModbusPointTable(group.Points);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        IConnectionLease<ModbusConnectionSession> lease;
+        try
+        { lease = connections.Acquire(settings.ConnectionId, "modbus", settings.Identity, () => new ModbusConnectionSession(settings, null, connector, time)); }
+        catch (InvalidOperationException) { throw new ModbusConnectionUnavailableException(); }
+        await using var ownership = lease;
+        var results = new List<ModbusPreviewGroupResult>();
+        var bytes = 1024;
+        var expired = false;
+        var truncated = false;
+        foreach (var group in groups)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var remaining = timeoutMs - time.GetElapsedTime(started).TotalMilliseconds;
+            if (remaining < 1)
+            { expired = true; break; }
+            var capacity = MaximumDisplayBytes - bytes - 1024;
+            if (capacity < 4096)
+            { truncated = true; break; }
+            var result = await RunAsync(settings, unit, group.Points, cancellationToken,
+                timeoutMs: (int)remaining, maximumDisplayBytes: capacity);
+            var entry = new ModbusPreviewGroupResult(group.Key, result);
+            bytes += JsonSerializer.SerializeToUtf8Bytes(entry, Json).Length + 1;
+            results.Add(entry);
+            if (result.DeadlineExceeded || result.Truncated)
+            { expired = result.DeadlineExceeded; truncated = result.Truncated; break; }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(groups.Count, truncated, expired, time.GetElapsedTime(started).TotalMilliseconds, results.ToArray());
     }
 
     private static ModbusPreviewPoint Render(ModbusPointSettings point, ModbusBlockPoint member, int block,
@@ -142,3 +190,8 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
             value.Value.ToString(), "good", null,
             value.Value.Type == FieldType.Integer && value.Value.TryGetExactNumber(out var number) && (number > 9007199254740991m || number < -9007199254740991m));
 }
+
+public sealed record ModbusPreviewGroup(string Key, ImmutableArray<ModbusPointSettings> Points);
+public sealed record ModbusPreviewGroupResult(string Key, ModbusReadPreviewResult Preview);
+public sealed record ModbusDevicePreviewResult(int TotalGroups, bool Truncated, bool DeadlineExceeded,
+    double ElapsedMs, ModbusPreviewGroupResult[] Groups);

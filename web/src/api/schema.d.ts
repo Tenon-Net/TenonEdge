@@ -299,6 +299,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 显式读取 Modbus 草稿点表一次，不保存、不应用或入发送队列
+         * @description Source 提供未保存点表；否则按 InputId 读取一组，省略 InputId 读取全部启用组。连接与 UnitId 取该版本的已存设备草稿；共享总期限 30 秒与 64 KiB 显示容量。截断或未完成组不能当作完整样本。
+         */
+        post: operations["previewModbusDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -913,6 +933,15 @@ export interface components {
             elapsedMs: number | string;
             steps: components["schemas"]["ConnectionTestStep"][];
         };
+        ModbusDevicePreviewResult: {
+            /** Format: int32 */
+            totalGroups: number | string;
+            truncated: boolean;
+            deadlineExceeded: boolean;
+            /** Format: double */
+            elapsedMs: number | string;
+            groups: components["schemas"]["ModbusPreviewGroupResult"][];
+        };
         /**
          * @default tcp
          * @enum {unknown}
@@ -931,6 +960,69 @@ export interface components {
             enabled?: boolean;
             name?: null | string;
             unit?: null | string;
+        };
+        ModbusPreviewBlock: {
+            /** Format: uint8 */
+            functionCode: number | string;
+            /** Format: int32 */
+            offset: number | string;
+            /** Format: int32 */
+            count: number | string;
+            outcome: string;
+            requested: null | boolean;
+            /** Format: uint8 */
+            exceptionCode: null | number | string;
+            /** Format: date-time */
+            readAt: null | string;
+        };
+        ModbusPreviewGroupResult: {
+            key: string;
+            preview: components["schemas"]["ModbusReadPreviewResult"];
+        };
+        ModbusPreviewOrder: {
+            byteOrder: string;
+            value: components["schemas"]["ModbusPreviewValue"];
+        };
+        ModbusPreviewPoint: {
+            key: string;
+            /** Format: int32 */
+            block: number | string;
+            /** Format: uint8 */
+            functionCode: number | string;
+            /** Format: int32 */
+            offset: number | string;
+            /** Format: int32 */
+            registerNumber: number | string;
+            manualReference: string;
+            rawHex: string[];
+            binary: null | string;
+            value: components["schemas"]["ModbusPreviewValue"];
+            orders: components["schemas"]["ModbusPreviewOrder"][];
+        };
+        ModbusPreviewValue: {
+            type: null | string;
+            text: null | string;
+            quality: string;
+            reason: null | string;
+            unsafeJavaScriptInteger: boolean;
+        };
+        ModbusReadPreviewRequest: {
+            expectedVersion: string;
+            /** Format: int64 */
+            inputId?: null | number | string;
+            source?: null | components["schemas"]["ModbusSourceDraft"];
+        };
+        ModbusReadPreviewResult: {
+            /** Format: uint8 */
+            unitId: number | string;
+            /** Format: int32 */
+            totalPoints: number | string;
+            truncated: boolean;
+            deadlineExceeded: boolean;
+            /** Format: double */
+            elapsedMs: number | string;
+            blocks: components["schemas"]["ModbusPreviewBlock"][];
+            points: components["schemas"]["ModbusPreviewPoint"][];
         };
         ModbusSourceDraft: {
             /** Format: int32 */
@@ -1902,6 +1994,95 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    previewModbusDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModbusReadPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModbusDevicePreviewResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,3 +1,4 @@
+import { ModbusPreviewPanel } from './modbus-preview-panel'
 import { PointCsvPanel } from './csv-panel'
 import { JsonSourceEditor } from './json-editor'
 import { useState } from 'react'
@@ -237,6 +238,14 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                     </Button>
                 ))}
             </div>
+            {canEdit && coherent && device?.kind === 'modbus' && (
+                <ModbusPreviewPanel
+                    key={`device:${query.data!.version}`}
+                    deviceId={deviceId}
+                    version={query.data!.version}
+                    blocked={mutation.isPending}
+                />
+            )}
             {form && (
                 <section className="space-y-4 rounded border p-4">
                     <form
@@ -380,6 +389,57 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                             )}
                         </div>
                     </form>
+                    {form.kind === 'modbus' && canEdit && (
+                        <ModbusPreviewPanel
+                            key={`preview:${generation}`}
+                            deviceId={deviceId}
+                            version={form.version}
+                            inputId={form.id}
+                            source={() =>
+                                inputRequest(form, rows, mode).modbus!
+                            }
+                            blocked={mutation.isPending || !coherent}
+                            onOrder={
+                                form.id === undefined
+                                    ? undefined
+                                    : (key, order) => {
+                                          const row = rows.find(
+                                              (point) => point.key === key,
+                                          )
+                                          if (!row) return
+                                          const next = rows.map((point) =>
+                                              point.id === row.id
+                                                  ? {
+                                                        ...point,
+                                                        byteOrder: order,
+                                                    }
+                                                  : point,
+                                          )
+                                          try {
+                                              const body = inputRequest(
+                                                  form,
+                                                  next,
+                                                  mode,
+                                              )
+                                              points
+                                                  .getState()
+                                                  .edit(
+                                                      row.id,
+                                                      'byteOrder',
+                                                      order,
+                                                  )
+                                              mutation.mutate({
+                                                  type: 'save',
+                                                  id: form.id,
+                                                  body,
+                                              })
+                                          } catch {
+                                              setInvalid(true)
+                                          }
+                                      }
+                            }
+                        />
+                    )}
                     {form.kind === 'modbus' ? (
                         <PointEditor
                             key={generation}
