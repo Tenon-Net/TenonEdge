@@ -1,3 +1,4 @@
+import { createPreviewDraft } from './preview-model'
 import { useState } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
@@ -24,6 +25,7 @@ export function RoutesPage() {
         queryFn: ({ signal }) => routes.list(signal),
     })
     const [canvas] = useState(createGraphEditor)
+    const [previewDraft] = useState(createPreviewDraft)
     const document = useStore(canvas, (state) => state.document)
     const [editor] = useState(() =>
         createStore<{ form: RouteForm | null; original: string }>(() => ({
@@ -45,7 +47,8 @@ export function RoutesPage() {
         enableBeforeUnload: dirty,
         shouldBlockFn: () => !window.confirm(t('routes.discard')),
     })
-    function load(next: RouteForm | null) {
+    function load(next: RouteForm | null, keepSample = false) {
+        if (!keepSample) previewDraft.setState({ source: '', sample: '' })
         setPendingConfig(false)
         if (next) canvas.getState().load(next.document)
         editor.setState({
@@ -85,7 +88,7 @@ export function RoutesPage() {
             return { type: action.type, form: null }
         },
         onSuccess: async (result) => {
-            load(result.form)
+            load(result.form, result.type === 'save')
             setNotice(
                 result.type === 'read'
                     ? ''
@@ -259,6 +262,7 @@ export function RoutesPage() {
                         editor={canvas}
                         persisted
                         version={form.version}
+                        previewDraft={previewDraft}
                         onPendingChange={setPendingConfig}
                         readOnly={!canEdit || busy}
                     />

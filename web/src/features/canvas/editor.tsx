@@ -1,3 +1,5 @@
+import { RoutePreview } from '../routes/preview'
+import type { PreviewDraft } from '../routes/preview-model'
 import { FieldAnalysis, useFieldAnalysis } from '../routes/field-analysis'
 import { MappingEditor } from '../routes/mapping-editor'
 import { OutputEditor } from '../routes/output-editor'
@@ -58,6 +60,7 @@ type CanvasProps = {
     readOnly?: boolean
     persisted?: boolean
     version?: string
+    previewDraft?: PreviewDraft
     onPendingChange?: (pending: boolean) => void
 }
 function CanvasWorkspace({
@@ -65,6 +68,7 @@ function CanvasWorkspace({
     readOnly = false,
     persisted = false,
     version,
+    previewDraft,
     onPendingChange,
 }: CanvasProps) {
     const { t } = useTranslation()
@@ -617,6 +621,28 @@ function CanvasWorkspace({
                     )}
                 </aside>
             </div>
+            {persisted && version && (
+                <RoutePreview
+                    document={doc}
+                    version={version}
+                    draft={previewDraft}
+                    disabled={readOnly || pendingConfig}
+                    locate={(id) => {
+                        if (
+                            readOnly ||
+                            pendingConfig ||
+                            !doc.definition.nodes.some((node) => node.id === id)
+                        )
+                            return
+                        state.select([id], [])
+                        void flow.fitView({
+                            nodes: [{ id }],
+                            maxZoom: 1,
+                            duration: 200,
+                        })
+                    }}
+                />
+            )}
             <section
                 className="space-y-2 rounded-md border p-3"
                 aria-label={t('canvas.hints')}

@@ -3812,3 +3812,188 @@ test('route manual preview API uses real Kestrel, exact text and the request bod
         page.getByLabel('来源字段 / Pointer / 固定值 1', { exact: true }),
     ).toHaveValue('f000')
 })
+
+test('route manual preview UI keeps exact values, invalidates edits, preserves sample on save and never persists it', async ({
+    page,
+}) => {
+    const { headers, saved } = await openFieldAnalysisRoute(page, 'preview-ui')
+    const connectionResponse = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers,
+            data: {
+                expectedVersion: saved.version,
+                key: 'preview-ui-http',
+                name: 'Preview HTTP',
+                kind: 'http',
+                http: { baseAddress: 'http://localhost/' },
+            },
+        },
+    )
+    expect(connectionResponse.status()).toBe(200)
+    const connection = await connectionResponse.json()
+    const graph = saved.route.graph
+    graph.nodes.find(
+        (node: { id: string }) => node.id === 'out',
+    ).config.connectionId = connection.connection.id
+    const update = await page.request.put(
+        '/api/edge-admin/v1/routes/' + saved.route.id,
+        {
+            headers,
+            data: {
+                expectedVersion: connection.version,
+                key: saved.route.key,
+                name: saved.route.name,
+                enabled: false,
+                graph,
+            },
+        },
+    )
+    expect(update.status()).toBe(200)
+    await page.reload()
+    await page
+        .getByRole('button', { name: '打开 preview-ui', exact: true })
+        .click()
+    const panel = page.getByRole('region', {
+        name: '手工样本预览',
+        exact: true,
+    })
+    const sourceId = graph.nodes.find(
+        (node: { id: string }) => node.id === 'in',
+    ).config.sourceIds[0]
+    await panel
+        .getByLabel('预览数据来源', { exact: true })
+        .selectOption('input.simulator:' + sourceId)
+    const sample = panel.getByLabel('手工 JSON 样本（不保存）', { exact: true })
+    const run = panel.getByRole('button', {
+        name: '预览当前图（不发送）',
+        exact: true,
+    })
+    const body = panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true })
+    await sample.fill('{"f000":9223372036854775807}')
+    await run.click()
+    await expect(body).toHaveText('{"result":9223372036854775807}')
+    await expect(
+        panel.getByRole('cell', { name: '9223372036854775807', exact: true }),
+    ).toHaveCount(2)
+    await panel
+        .getByRole('button', { name: '定位节点：Map', exact: true })
+        .first()
+        .click()
+    await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue(
+        'Map',
+    )
+    await page
+        .getByLabel('来源字段 / Pointer / 固定值 1', { exact: true })
+        .fill('f001')
+    await expect(run).toBeDisabled()
+    await expect(body).toHaveCount(0)
+    await page
+        .getByRole('button', { name: '确认映射规则', exact: true })
+        .click()
+    await sample.fill('{"f001":9223372036854775807}')
+    await run.click()
+    await expect(body).toHaveText('{"result":9223372036854775807}')
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    await expect(sample).toHaveValue('{"f001":9223372036854775807}')
+    await expect(body).toHaveCount(0)
+    await run.click()
+    await expect(body).toHaveText('{"result":9223372036854775807}')
+    await sample.fill('中'.repeat(22000))
+    await expect(run).toBeDisabled()
+    await expect(body).toHaveCount(0)
+    await page.reload()
+    await page
+        .getByRole('button', { name: '打开 preview-ui', exact: true })
+        .click()
+    await expect(sample).toHaveValue('')
+})
+
+test('route manual preview UI cancels late responses and retains local input on errors', async ({
+    page,
+}) => {
+    await openFieldAnalysisRoute(page, 'preview-cancel')
+    const panel = page.getByRole('region', {
+        name: '手工样本预览',
+        exact: true,
+    })
+    const select = panel.getByLabel('预览数据来源', { exact: true })
+    await select.selectOption({ index: 1 })
+    const sample = panel.getByLabel('手工 JSON 样本（不保存）', { exact: true })
+    const run = panel.getByRole('button', {
+        name: '预览当前图（不发送）',
+        exact: true,
+    })
+    const results = panel.getByLabel('样本预览结果', { exact: true })
+    await sample.fill('{"f000":42}')
+    const endpoint = '**/api/edge-admin/v1/routes/preview'
+    for (const action of ['cancel', 'sample', 'source', 'graph']) {
+        let release!: () => void
+        let observed!: () => void
+        const held = new Promise<void>((resolve) => {
+            release = resolve
+        })
+        const received = new Promise<void>((resolve) => {
+            observed = resolve
+        })
+        await page.route(endpoint, async (route) => {
+            const response = await route.fetch()
+            observed()
+            await held
+            await route.fulfill({ response }).catch(() => {})
+        })
+        await run.click()
+        await received
+        if (action === 'cancel')
+            await panel
+                .getByRole('button', { name: '取消预览', exact: true })
+                .click()
+        if (action === 'sample') await sample.fill('{"f000":43}')
+        if (action === 'source') await select.selectOption('')
+        if (action === 'graph')
+            await page.getByLabel('节点名称', { exact: true }).fill('Local map')
+        release()
+        await expect(results).toHaveCount(0)
+        await expect(
+            panel.getByRole('button', { name: '取消预览', exact: true }),
+        ).toHaveCount(0)
+        await page.unroute(endpoint)
+        await select.selectOption({ index: 1 })
+    }
+    for (const status of [409, 429, 500, 504]) {
+        await page.route(endpoint, (route) =>
+            route.fulfill({ status, json: { title: 'test failure' } }),
+        )
+        await run.click()
+        await expect(panel.getByRole('alert')).toBeVisible()
+        await expect(sample).toHaveValue('{"f000":43}')
+        await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue(
+            'Local map',
+        )
+        await expect(results).toHaveCount(0)
+        await page.unroute(endpoint)
+    }
+    // Real backend path failure: the fixture intentionally has no output connection.
+    await run.click()
+    await expect(results).toBeVisible()
+    await expect(
+        panel.getByRole('region', { name: '预览路径 1', exact: true }),
+    ).toContainText('计算失败')
+    await panel
+        .getByRole('button', { name: '定位节点：Output', exact: true })
+        .first()
+        .click()
+    await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue(
+        'Output',
+    )
+    await panel
+        .getByRole('button', { name: '清空样本和结果', exact: true })
+        .click()
+    await expect(sample).toHaveValue('')
+    await expect(run).toBeDisabled()
+})
