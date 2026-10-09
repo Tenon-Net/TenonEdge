@@ -7,6 +7,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -71,7 +72,8 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         { throw new DraftWriteException("input.notFound"); }
         if (HasRetainedReference(client, device.Key + "/" + row.BusinessKey))
         { throw new DraftWriteException("input.referenced"); }
-        // 路线草稿持久化后在同一事务补入其来源引用检查。
+        if (RouteDraftStore.HasReference(client, "input", id))
+        { throw new DraftWriteException("input.routeReferenced"); }
         client.Deleteable(row).ExecuteCommand();
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("input.draftDeleted", AuditResults.Success, account, sourceIp,

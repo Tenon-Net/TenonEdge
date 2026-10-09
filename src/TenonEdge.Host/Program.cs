@@ -7,6 +7,7 @@ using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Health;
 using TenonEdge.Host.Features.Inputs;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Features.SystemInfo;
 
@@ -48,6 +49,7 @@ app.MapManagementApi()
     .MapHttpConnectionTestEndpoints()
     .MapModbusConnectionTestEndpoints()
     .MapDeviceDraftEndpoints()
+    .MapRouteDraftEndpoints()
     .MapInputDraftEndpoints()
     .MapModbusReadPreviewEndpoints()
     .MapHttpReadPreviewEndpoints()

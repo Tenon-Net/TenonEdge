@@ -7,6 +7,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Inputs;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -112,7 +113,9 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var row = client.Queryable<DeviceDraftRecord>().InSingle(id) ?? throw new DraftWriteException("device.notFound");
-        // 路线及平台映射持久化后须在这里补入同事务引用检查。
+        if (RouteDraftStore.HasDeviceReference(client, id))
+        { throw new DraftWriteException("device.routeReferenced"); }
+        // 平台映射持久化后须在这里补入同事务引用检查。
         if (HasRetainedReference(client, row.BusinessKey))
         { throw new DraftWriteException("device.referenced"); }
         client.Deleteable<InputDraftRecord>().Where(input => input.DeviceId == id).ExecuteCommand();

@@ -2514,6 +2514,22 @@ API 与内核定向 `dotnet test tests/IntegrationTests --no-restore -c Release 
 
 最终 Linux x64、SDK 10.0.401、Release，`dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-mapping-chain-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none`：**1120 单元 + 1024 集成 = 2144 项通过，0 失败/跳过**（`/tmp/tenonedge-mapping-chain-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-mapping-chain-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过；`dotnet format --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-mapping-chain-budget-format-verify.log`）；`git diff --cached --check` 通过。前端未改，本批未重跑浏览器；图草稿、字段传播/引用检查、图编译与无输出预览、T3-06 应用/回滚仍待后续，不能据本节标记完整 T3-05/AT 验收通过。
 
+### 2.125 T3-05 路线草稿格式、持久化 API 与引用保护（2026-10-10）
+
+接续 §2.123/124，把图从仅浏览器原型推进到可持久化的后端草稿。API/图格式与未完成边界见 [路线草稿说明](route-drafts.md)。本批不声称图编译、网页保存/预览或应用链路已经接通。
+
+- 增加 `GET/POST /routes`、`GET/PUT/DELETE /routes/{routeId}`、`POST /routes/{routeId}/copy`。读取走已认证管理组，写入配置人员/管理员及既有 CSRF；列表只取摘要，不把未编译图标为有效或运行中。全局 expectedVersion 乐观并发、不可变唯一 key；复制须显式新 key/name，默认停用。
+- 自有图使用 schemaVersion/nodes(id/type/version/name/config)/edges/layout.nodes，执行参数与布局分开，不存 React Flow 内部对象。配置按节点类型封闭字段解析；图、规则、标量、引用 ID 和布局有资源边界。未选择来源/连接、未完成规则、环、悬空及不存在的引用可保存为草稿；保存不做执行有效性保证。HTTP 秘密头及地址/密码/脚本旁路不允许写进节点配置。数字常量在后端按 JSON 原文精度保存，重启测试保留 `9223372036854775807`；前端保精度编辑仍未实施，不允许据此声称浏览器往返已经安全。
+- config.db schema 15 新增 `route_draft` 与 `route_draft_reference`。路线、引用索引、全局草稿版本、操作人/时间和审计共用短事务；审计失败全部回滚。摘要单独存列，列表不加载全部图正文；复制不复制来源/连接，只复制图及引用。
+- 来源、所属设备与输出连接删除增加同事务引用保护，停用图和停用副本也保护引用；从图移除引用后可再按新版本删除。索引只对路线有级联外键，不对目标设外键，使错误/缺失引用仍可保存后修复。保留运行版本和待发记录的既有保护不变，路线保存/删除不更改 effective/previous/pending 指针。
+- 新路线主键登记进雪花 ID 启动下限清单；引用索引使用既有编号的复合键，不分配新 ID。schema 14→15 的软件迁移测试确认既有设备、全局版本不变，重复迁移不重复建表。更新实际 OpenAPI、生成 TypeScript 类型及完整路由权限/operationId 清单；无新增前端页面或虚假执行状态。
+
+失败与修正：首轮定向 1 个单元失败，暴露 `IsSecretName` 名称启发式不含标准 Authorization（原连接校验还会经过 HTTP 适配器头检查）；图格式补充 Authorization/Proxy-Authorization/Cookie 拦截与大小写测试，未放宽测试。复测图格式 **20 单元 + API/权限/OpenAPI 16 集成通过**（`/tmp/tenonedge-route-draft-targeted-final.log`）。首轮完整回归 **1140 单元通过，集成 1031 通过/2 失败**（`/tmp/tenonedge-route-draft-regression.log`）：遗漏新表 ID 下限登记；另一个 413 用例错误使用不实现 Kestrel 请求体限额的 TestServer，改为真实 Host/Kestrel、实际首次设置与会话/CSRF 后发超过 1 MiB 的请求，仍严格断言 413 与无草稿写入，不修改产品限额来迎合夹具。追加迁移测试后，`dotnet test tests/IntegrationTests --no-restore -c Release --filter 'FullyQualifiedName~RouteDraftTests|FullyQualifiedName~GatewayIdentityTests' --logger trx --results-directory /tmp/tenonedge-route-draft-corrected` **16 通过，0 失败/跳过**（`/tmp/tenonedge-route-draft-corrected.log`）。
+
+最终 Linux x64、SDK 10.0.401、Release，`dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-draft-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none`：**1140 单元 + 1034 集成 = 2174 项通过，0 失败/跳过**（`/tmp/tenonedge-route-draft-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-route-draft-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过；`dotnet format --no-restore --verify-no-changes`（`/tmp/tenonedge-route-draft-format-verify.log`）及 `git diff --cached --check` 通过。前端 Node 22.23.2 / npm 11.21.0，使用 `npx --yes npm@11.21.0` 执行 typecheck、lint、format:check 和 `npm test -- --reporter=default --reporter=json --outputFile=reports/unit.json`，**128 Vitest 通过**；本批未重跑浏览器。真实 Development Host 导出通过 `/tmp/tenonedge-export-draft-api.mjs` 执行（`/tmp/tenonedge-route-draft-openapi.log`），临时进程/目录已清理。本批不包含实物、外部平台或路线画布的浏览器验收。
+
+剩余：将此图格式转换到纯拓扑快照、从同一草稿读取真实来源目录、映射逐节点字段传播/引用与输出检查、RuntimePlan 生成、无输出 I/O 的路线预览、画布保精度配置绑定，以及 T3-06 应用/回滚。上述完成之前，草稿成功保存不能表示采集路线已经可运行。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -219,5 +219,29 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(15, "route_draft", [
+            """
+            CREATE TABLE route_draft (
+                id INTEGER NOT NULL PRIMARY KEY,
+                business_key TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                description TEXT,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                node_count INTEGER NOT NULL,
+                updated_by TEXT,
+                updated_at INTEGER NOT NULL,
+                graph TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE route_draft_reference (
+                route_id INTEGER NOT NULL REFERENCES route_draft(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL CHECK (kind IN ('input', 'connection')),
+                target_id INTEGER NOT NULL,
+                PRIMARY KEY (route_id, kind, target_id)
+            )
+            """,
+            "CREATE INDEX ix_route_draft_reference_target ON route_draft_reference (kind, target_id)",
+        ]),
     ];
 }
