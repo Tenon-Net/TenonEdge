@@ -49,8 +49,8 @@ internal sealed record SlaveReply
 }
 
 /// <summary>
-/// T0-12 的进程内模拟从站（验证代码，不是正式适配器）：监听 127.0.0.1 的随机端口，按所选帧格式处理功能码 03/04 的读取请求，
-/// 一个连接上的请求按到达顺序逐个处理（与串口服务器后的串行总线一致）。寄存器值固定为 0x1000 加地址，便于从结果看出读到的是哪个地址。
+/// T0-12 的进程内模拟从站（验证代码，不是正式适配器）：监听 127.0.0.1 的随机端口，按所选帧格式处理功能码 01/02/03/04 的读取请求，
+/// 一个连接上的请求按到达顺序逐个处理（与串口服务器后的串行总线一致）。位输入按地址偶数为 true、奇数为 false；寄存器值固定为 0x1000 加地址，便于从结果看出读到的是哪个地址。
 /// 每个请求按 <see cref="SlaveReply"/> 注入延迟、不应答、异常应答、较旧事务号、错误从站地址、CRC 错误或关闭连接。
 /// </summary>
 internal sealed class ModbusTestSlave : IAsyncDisposable
@@ -277,6 +277,17 @@ internal sealed class ModbusTestSlave : IAsyncDisposable
         if (reply.ExceptionCode is { } exceptionCode)
         {
             pdu = [(byte)(request.FunctionCode | 0x80), exceptionCode];
+        }
+        else if (request.FunctionCode is 1 or 2)
+        {
+            pdu = new byte[2 + ((request.Quantity + 7) / 8)];
+            pdu[0] = request.FunctionCode;
+            pdu[1] = (byte)(pdu.Length - 2);
+            for (var i = 0; i < request.Quantity; i++)
+            {
+                if ((request.Address + i) % 2 == 0)
+                { pdu[2 + (i / 8)] |= (byte)(1 << (i % 8)); }
+            }
         }
         else
         {

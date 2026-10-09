@@ -8,6 +8,12 @@
         "resolved": "5.2.0.1603",
         "contentHash": "iNuWVo/568aRo2ExEN2qkC4J5b07ckKqt+9Uok2kIbbK7PMBsXvYiKVENPHmOBWFB5ExhlNQb/qQ8M9/IYRTdQ=="
       },
+      "NModbus": {
+        "type": "Direct",
+        "requested": "[3.0.83, )",
+        "resolved": "3.0.83",
+        "contentHash": "DLqEobLC168wE1t4xHyEEFfj/IkX2Kx7w8PaNgaipb/8B7DSHMUlXi/TLJfD8EYS5rN0ENInhyOCC5U0wadtuQ=="
+      },
       "tenonedge.abstractions": {
         "type": "Project"
       }

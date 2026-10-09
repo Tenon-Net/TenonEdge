@@ -28,6 +28,8 @@
 
 | N-08 | MQTTnet | 5.2.0.1603 | nuget.org，Adapters 直接依赖 | MQTT 输出依赖 | MIT（包内 LICENSE；版权 .NET Foundation and Contributors） | 否 | 是 | 版权与 MIT 许可文本 | 已记录，2026-10-08；原验证登记 T-01 |
 
+| N-10 | NModbus | 3.0.83（源码提交 `d96e7707a08cebe7f436087e7d575c930963d91a`） | nuget.org，Adapters 直接依赖 | Modbus 只读适配依赖；使用包 API，未复制参考源码 | MIT（包内 LICENSE.txt；版权 2006 Scott Alexander、2015 Dmitry Turin） | 否 | 是 | 版权与 MIT 许可文本，T5-07 随发行物附带 | 已记录，2026-10-09；维护者确认选型，原 T-02 |
+
 ### 1.2 在还原图中、但资产已排除（不分发）
 
 SqlSugarCoreNoDrive 依赖 SystemCommon 8.5.0，后者带入 SQL Server 驱动栈及其身份认证依赖。下列包以直接引用加 `ExcludeAssets="all"` 排除全部资产（`Directory.Build.targets`；其中 Microsoft.Bcl.AsyncInterfaces 只在 Host 中排除），不进入构建输出和发布物；它们仍在锁文件中，NuGet 漏洞审计照常覆盖。
@@ -98,7 +100,7 @@ S-01 之外，T1-02 的模拟输入使用 SplitMix64 伪随机数算法（Steele
 | 编号 | 组件/项目 | 版本或摘要 | 来源 | 用途 | 许可证/授权依据 | 是否随包分发 | 状态 |
 |---|---|---|---|---|---|---|---|
 | T-01 | MQTTnet | 5.2.0.1603（源码标签 v5.2.0，提交 `14463d1`） | nuget.org | T0-11 验证代码（集成测试） | MIT（包内 LICENSE，版权 .NET Foundation and Contributors） | 否 | 已记录；2026-10-08 正式 MQTT 输出采用，生产分发见 N-08，本行保留原型来源记录 |
-| T-02 | NModbus | 3.0.83（源码标签 v3.0.83，提交 `d96e770`） | nuget.org | T0-12 比较 | MIT（包内 LICENSE.txt，版权 2006 Scott Alexander、2015 Dmitry Turin） | 否 | 已记录；若选定（T2-02）移入第 1.1 节 |
+| T-02 | NModbus | 3.0.83（源码标签 v3.0.83，提交 `d96e770`） | nuget.org | T0-12 比较 | MIT（包内 LICENSE.txt，版权 2006 Scott Alexander、2015 Dmitry Turin） | 否 | 已于 2026-10-09 确认选型并转为正式依赖 N-10，比较测试仍保留 |
 | T-03 | FluentModbus | 5.3.2（源码标签 v5.3.2，提交 `5e44710`） | nuget.org | T0-12 比较 | MIT（nuspec 许可表达式） | 否 | 已记录 |
 | T-04 | System.IO.Ports、runtime.native.System.IO.Ports 及各平台原生包、Microsoft.Extensions.Logging.Abstractions | 5.0.0 等 | nuget.org，T-03 的传递依赖 | 同上 | MIT | 否 | 已记录 |
 | T-05 | 镜像 eclipse-mosquitto | 2.1.2-alpine，digest `sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408` | Docker Hub | T0-11 测试 Broker | EPL-2.0 或 EDL-1.0（开发准备 S-03） | 否 | 已记录；附带 Broker 的分发与声明在 T5-04、T5-07 处理 |

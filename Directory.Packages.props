@@ -53,7 +53,7 @@
   </ItemGroup>
 
   <!--
-    协议候选库（T0-11 MQTT 最小原型、T0-12 Modbus 候选库比较）：MQTTnet 已用于 T1-04 正式 MQTT 输出，其他候选库仅由验证代码引用；
+    协议候选库（T0-11 MQTT 最小原型、T0-12 Modbus 候选库比较）：MQTTnet 已用于正式 MQTT 适配，NModbus 3.0.83 已获 T2-02 采用确认；FluentModbus 仅由验证代码引用；
     正式适配器在 T1、T2 按验证结论选定后由 Adapters 引用（依赖规则禁止 Runtime 与 Abstractions 引用协议库）。
     版本不低于总设计 §2.3 的要求，来源与许可见 docs/reference-notes.md §4。
   -->

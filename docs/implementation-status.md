@@ -1912,6 +1912,17 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 聚焦 MQTT 会话/Host/真实进程重建：42 项通过，日志 `/tmp/tenonedge-resubscribe-green.log`。全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=resubscribe' --results-directory /tmp/tenonedge-resubscribe --blame-hang-timeout 5m --blame-hang-dump-type none`：**888 单元 + 716 集成 = 1604 项通过，0 失败、0 跳过**，日志 `/tmp/tenonedge-resubscribe-full.log`，TRX Counters 已核对。原 KnownBrokerLimitation 测试现已转换为恢复断言，不再按“复现缺陷”计通过。四项 C# 文件限定格式校验与 `git diff --check` 通过，环境同 §2.84。
 - 边界：此修复恢复当前需要的订阅，不恢复 Broker 已丢失消息，也不保证识别 Broker 回滚复活、且本地已删除日志的历史订阅；后者仍可能额外积存，输入按当前绑定匹配并计数后确认。Modbus 正式适配、T2 完整退出和 T3 网页仍未完成。
 
+### 2.89 T2-02 NModbus 正式只读传输层（2026-10-09）
+
+- 在 §2.88 选型确认后，Adapters 正式引用 NModbus 3.0.83；使用实际包 API（CreateIpMaster / CreateRtuMaster + IStreamResource），没有复制参考仓源码。版本仍集中管理，Adapters/Host/两个测试工程锁文件随还原更新；`dotnet restore TenonEdge.sln --locked-mode` 通过（`/tmp/tenonedge-modbus-locked.log`）。包内 nuspec/许可证已核对，MIT 及版权登记在 reference-notes N-10；T5-07 仍需附带许可材料。
+- ModbusReadClient 仅开放 FC01/02/03/04；TCP UnitId 0–255、RTU 1–247。接收由统一出站连接器取得的双向可超时流，在已有 ModbusRequestExecutor 专用线程上串行执行；不新增 DNS/代理通道，不使用库的线程池 Async 包装，不自行创建第二套连接。
+- 库前的帧门禁使用固定 260 字节缓冲：验证 MBAP 协议号/长度、事务号、UnitId、功能码和字节数，RTU 另校验 CRC。旧 TCP 事务完整帧跳过，不重发当前请求；一代连接用尽事务号时要求更换连接，不在同一连接重复使用号码。未完成 TCP 头/正文保留到下一请求，旧帧补齐后跳过，避免将半帧剩余误当 MBAP；普通超时本身不擅自判定所有从站离线或强制重连。
+- 请求总期限覆盖所有碎片与跳过旧帧的读取，每次实际读写按剩余时间设置同步超时。库内重试为 0；异常帧在交给库之前完成归属/CRC 验证，异常 02/05/06 等以结构化 Code 返回，不陷入 ACK 无限等候或 Busy 重发。取消关闭同代流并等待真实阻塞调用退出。
+- 新测试：13 单元 + 24 集成 = 37 项聚焦通过（`dotnet test TenonEdge.sln -c Release --no-restore --filter FullyQualifiedName~ModbusReadClientTests`，`/tmp/tenonedge-modbus-client3.log`）。涵盖四功能码、跨字节位读取、边界 UnitId、真实本机从站已知寄存器、异常码、异常帧的错误 UnitId、CRC、旧帧的不同 UnitId/功能码、真实读取超时与取消，以及可控时钟的碎片总期限、TCP 半头/半正文跨请求、事务号用尽和写出前参数拒绝。既有独立模拟器增加 FC01/02 的已知交替位响应，03/04 行为不变。
+- 超时用例把测试自身 WaitAsync 期限放在异常捕获之外，不能把测试等候超时误判为产品读取期限生效。真实通信为 Linux 回环 TCP 和模拟从站，不是实物串口服务器/厂商兼容性验收。
+- 首轮全量单元通过，集成编译失败：将测试超时移出异常捕获后，xUnit Record.ExceptionAsync 返回 ValueTask，须先 AsTask 再 WaitAsync；已修正（`/tmp/tenonedge-modbus-client-full.log`）。首轮格式检查发现 if 换行，限定文件修正后校验通过。最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-client-repeat' --results-directory /tmp/tenonedge-modbus-client-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`，**901 单元 + 740 集成 = 1641 项通过，0 失败、0 跳过**；TRX Counters 已核对，日志 `/tmp/tenonedge-modbus-client-full-repeat.log`。四个 C# 文件限定格式校验（`/tmp/tenonedge-modbus-client-format2.log`）与 `git diff --check` 通过，Linux x64 / SDK 10.0.401。
+- 边界：传输已通过实际 NModbus 和统一出站连接器测试，但尚未注册 input.modbus。下一步为计划配置、共享会话、请求间隔、RTU 超时静默整合、UnitId 调度/快速失败/离线退避及消息生成；不得据此声称 T2-02 或 T2 完成。RTU 重用前仍须由会话执行 §2.72 的静默隔离，取消/坏 MBAP/事务耗尽需换连接。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

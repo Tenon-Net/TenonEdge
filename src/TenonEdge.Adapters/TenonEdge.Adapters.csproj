@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="MQTTnet" />
+    <PackageReference Include="NModbus" />
     <ProjectReference Include="..\TenonEdge.Abstractions\TenonEdge.Abstractions.csproj" />
   </ItemGroup>
 

@@ -710,6 +710,7 @@
         "type": "Project",
         "dependencies": {
           "MQTTnet": "[5.2.0.1603, )",
+          "NModbus": "[3.0.83, )",
           "TenonEdge.Abstractions": "[1.0.0, )"
         }
       },
