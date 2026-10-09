@@ -1978,6 +1978,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 最终全量复跑：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-host-repeat' --results-directory /tmp/tenonedge-modbus-host-repeat --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 771 集成 = 1747 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-host-repeat.log`）。Linux x64 / SDK 10.0.401。七个本批 C# 文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-host-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-host-restore.log`）与 `git diff --check` 通过；无新增依赖。
 - 新增 `docs/modbus-integration.md` 与 README 入口，说明实际种子格式、手工接入前提、地址/类型/出站策略、精度和诊断，以及运行中的周期边界；人工地址/点位不是客户配置。尚无网页；多组不同周期、同 UnitId 多逻辑设备、设备恢复、压力/资源及实物验收仍待后续，不标记 T2 完成。
 
+### 2.95 T2-02 同物理 UnitId 的别名绑定、完整离线诊断与恢复（2026-10-09）
+
+- 扩充运行单元反例，先在原实现执行：同逻辑设备两组第三次失败后，后续组被退避检查提前返回，等待其第 3 次失败报告超时；两个逻辑设备引用相同连接/UnitId 时，第一个窗口实际发送 2 次超时请求而非 1 次。两项均失败（`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~PhysicalUnitSharesFastFailure`，`/tmp/tenonedge-modbus-unit-sharing-red.log`），不是静态猜测。
+- 工厂增加按 `(connectionId, UnitId)` 索引的共享设备调度对象；逻辑 deviceKey 仍独立校验连接身份，点位 key 唯一性按 `(deviceKey, pointKey)`，不同逻辑设备可使用相同字段名。物理 UnitId 的串行准入、最短周期窗口、快速失败和离线退避不再因逻辑别名而复制；不改变连接的引用计数或实际客户端数量。
+- 本窗口快速失败的诊断先于后续周期退避检查，因此第三次整体失败时，同窗口的后续组也更新离线状态。实际连接失败与读取超时均可触发同 UnitId 本窗口后续组快速失败；纯连接退避的无尝试结果不能新造窗口失败或给其他 UnitId 增加失败事实。
+- 增强集成测试：同设备两组与两个逻辑设备同 UnitId 均连续 3 窗口只发 3 次超时请求，两组均显示离线；退避期间健康 UnitId 继续，恢复后两组真实值重新进入预算通道、状态正常，并在下一秒恢复正常频率，始终一条物理连接。另验证慢组周期 5 秒超时，只抑制最短 1 秒窗口，健康快组下一秒即可读取，不能被慢周期压住 5 秒；连接被出站策略拒绝的两组同样完成 3 次失败离线诊断，只有实际连接尝试才增加连接次数。
+- 聚焦全部 ModbusInputTests 10 项通过（`dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusInputTests`，`/tmp/tenonedge-modbus-unit-sharing-target2.log`）。使用可控调度时钟与真实回环 Modbus I/O；恢复后的返回值和请求数均实测，不是只改状态对象。未增加等待时长规避失败，也没有降低原协议断言。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-unit-sharing' --results-directory /tmp/tenonedge-modbus-unit-sharing-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 773 集成 = 1749 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-unit-sharing-full.log`）。Linux x64 / SDK 10.0.401。两文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-unit-sharing-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-unit-sharing-restore.log`）与 `git diff --check` 通过，无新增依赖。
+- 仍须进行完整多输出隔离、资源/压力和剩余协议故障回归；不把同 UnitId 修复视为 T2 全部完成，不宣称实物兼容或已有网页。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

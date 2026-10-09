@@ -109,34 +109,71 @@ public sealed class ModbusInputTests
         Assert.Equal(1, slave.ConnectionCount);
     }
 
-    [Fact]
-    public async Task SilentDevicesMultipleGroupsFastFailOncePerWindowAndShareOfflineBackoff()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PhysicalUnitSharesFastFailureOfflineDiagnosticsAndRecoveryAcrossBindings(bool alias)
     {
-        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, request => new SlaveReply { Silent = request.Unit == 1 });
+        var silent = 1;
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp,
+            request => new SlaveReply { Silent = request.Unit == 1 && Volatile.Read(ref silent) != 0 });
         await using var harness = new Harness();
         var first = harness.Add(Plan(slave, "silent/fast", 1));
-        var second = harness.Add(Plan(slave, "silent/slow", 1, key: "other"));
+        var second = harness.Add(Plan(slave, alias ? "alias/fast" : "silent/slow", 1, key: alias ? "value" : "other"));
         var healthy = harness.Add(Plan(slave, "healthy/fast", 2));
         harness.Activate();
         harness.Start();
         for (var cycle = 1; cycle <= 3; cycle++)
         {
             await healthy.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
-            await OutputPipelineTests.UntilAsync(() => slave.Requests.Count(request => request.Unit == 1) == cycle &&
-                first.Reads.Snapshot().ReadsFailed + second.Reads.Snapshot().ReadsFailed >= cycle * 2 - 1);
-            // 到两组都完成本次失败报告再推进时钟，避免把窗口截止制造为 overrun。
+            await OutputPipelineTests.UntilAsync(() => first.Reads.Snapshot().ReadsFailed == cycle && second.Reads.Snapshot().ReadsFailed == cycle);
+            Assert.Equal(cycle, slave.Requests.Count(request => request.Unit == 1));
             if (cycle < 3)
-            {
-                await OutputPipelineTests.UntilAsync(() => first.Reads.Snapshot().ReadsFailed + second.Reads.Snapshot().ReadsFailed == cycle * 2);
-                harness.Time.Advance(TimeSpan.FromSeconds(1));
-            }
+            { harness.Time.Advance(TimeSpan.FromSeconds(1)); }
         }
+        Assert.Equal(InputReadHealth.Offline, first.Reads.Snapshot().Health);
+        Assert.Equal(InputReadHealth.Offline, second.Reads.Snapshot().Health);
         harness.Time.Advance(TimeSpan.FromSeconds(1));
         await healthy.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
         Assert.Equal(3, slave.Requests.Count(request => request.Unit == 1));
+        Volatile.Write(ref silent, 0);
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        await first.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        await second.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        await healthy.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.Equal(InputReadHealth.Normal, first.Reads.Snapshot().Health);
+        Assert.Equal(InputReadHealth.Normal, second.Reads.Snapshot().Health);
+        Assert.Equal(5, slave.Requests.Count(request => request.Unit == 1));
+        // 恢复后回到正常 1 秒周期，而不是继续离线退避。
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        await first.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        await second.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.Equal(7, slave.Requests.Count(request => request.Unit == 1));
         Assert.Equal(1, slave.ConnectionCount);
-        Assert.False(first.Channel.Reader.TryRead(out _));
-        Assert.False(second.Channel.Reader.TryRead(out _));
+    }
+
+    [Fact]
+    public async Task SlowGroupTimeoutDoesNotSuppressFastGroupUntilSlowPeriodEnds()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp,
+            request => new SlaveReply { Silent = request.Unit == 1 && request.Address == 0 });
+        await using var harness = new Harness();
+        var slow = harness.Add(Plan(slave, "device/slow", 1, period: 5000));
+        var fast = harness.Add(Plan(slave, "device/fast", 1, key: "fast", address: 10));
+        var sibling = harness.Add(Plan(slave, "sibling/fast", 2));
+        harness.Activate();
+        harness.Start();
+        await sibling.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        await OutputPipelineTests.UntilAsync(() => slow.Reads.Snapshot().ReadsFailed == 1 && fast.Reads.Snapshot().ReadsFailed == 1);
+        Assert.Equal(2, slave.RequestCount);
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        var message = await fast.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        await sibling.Channel.Reader.ReadAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.Equal(FieldValue.FromInt64(4106), message.Values["fast"]);
+        Assert.Equal(InputReadHealth.Normal, fast.Reads.Snapshot().Health);
+        Assert.Equal(1, slow.Reads.Snapshot().ReadsFailed);
+        Assert.Equal(1, slave.Requests.Count(request => request.Unit == 1 && request.Address == 0));
+        Assert.Equal(1, slave.ConnectionCount);
     }
 
     [Fact]
@@ -146,14 +183,16 @@ public sealed class ModbusInputTests
         var connector = new DeniedConnector();
         await using var harness = new Harness(connector);
         var input = harness.Add(Plan(slave, "device/fast", 1));
+        var sibling = harness.Add(Plan(slave, "device/slow", 1, key: "other"));
         harness.Activate();
         harness.Start();
-        await OutputPipelineTests.UntilAsync(() => input.Reads.Snapshot().ReadsFailed == 1);
+        await OutputPipelineTests.UntilAsync(() => input.Reads.Snapshot().ReadsFailed == 1 && sibling.Reads.Snapshot().ReadsFailed == 1);
         harness.Time.Advance(TimeSpan.FromSeconds(1));
-        await OutputPipelineTests.UntilAsync(() => input.Reads.Snapshot().ReadsFailed == 2);
+        await OutputPipelineTests.UntilAsync(() => input.Reads.Snapshot().ReadsFailed == 2 && sibling.Reads.Snapshot().ReadsFailed == 2);
         harness.Time.Advance(TimeSpan.FromSeconds(2));
-        await OutputPipelineTests.UntilAsync(() => input.Reads.Snapshot().ReadsFailed == 3);
+        await OutputPipelineTests.UntilAsync(() => input.Reads.Snapshot().ReadsFailed == 3 && sibling.Reads.Snapshot().ReadsFailed == 3);
         Assert.Equal(InputReadHealth.Offline, input.Reads.Snapshot().Health);
+        Assert.Equal(InputReadHealth.Offline, sibling.Reads.Snapshot().Health);
         Assert.Equal(3, connector.Calls);
         Assert.Equal(0, slave.ConnectionCount);
         Assert.False(input.Channel.Reader.TryRead(out _));
@@ -170,18 +209,18 @@ public sealed class ModbusInputTests
         }
     }
 
-    private static RuntimeUnitPlan Plan(ModbusTestSlave slave, string id, byte unit, string key = "value", bool rtu = false, int timeout = 500) =>
+    private static RuntimeUnitPlan Plan(ModbusTestSlave slave, string id, byte unit, string key = "value", bool rtu = false, int timeout = 500, int period = 1000, int address = 0) =>
         new(RuntimeUnitId.Create("input.modbus", id), JsonSerializer.SerializeToElement(new
         {
             connectionId = 1,
             host = "127.0.0.1",
             port = slave.Endpoint.Port,
             unitId = unit,
-            periodMs = 1000,
+            periodMs = period,
             readTimeoutMs = timeout,
             rtuSilenceMs = 100,
             frameFormat = rtu ? "rtu-over-tcp" : "tcp",
-            points = new[] { new { key, functionCode = 3, address = 0, type = "uint16" } }
+            points = new[] { new { key, functionCode = 3, address, type = "uint16" } }
         }));
 
     private sealed class Harness : IAsyncDisposable

@@ -16,6 +16,7 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
     private readonly IOutboundConnector _connector = connector;
     private readonly TimeProvider _time = time;
     private readonly Dictionary<long, Connection> _connections = [];
+    private readonly Dictionary<(long Connection, byte Unit), Device> _physicalUnits = [];
     private readonly Dictionary<string, Device> _devices = new(StringComparer.Ordinal);
     private readonly Dictionary<RuntimeUnitId, Binding> _inputs = [];
     private volatile bool _started;
@@ -43,7 +44,8 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
             var device = _devices.GetValueOrDefault(context.DeviceKey);
             if (device is not null && (device.ConnectionId != settings.ConnectionId || device.Unit != settings.UnitId))
             { throw new ArgumentException("同一 Modbus 设备必须使用相同连接与 UnitId。"); }
-            if (device is not null && settings.Points.Any(point => device.Keys.Contains(point.Key)))
+            device ??= _physicalUnits.GetValueOrDefault((settings.ConnectionId, settings.UnitId!.Value));
+            if (device is not null && settings.Points.Any(point => device.Keys.Contains((context.DeviceKey, point.Key))))
             { throw new ArgumentException("同一设备的 Modbus 点位 key 不能跨组重复。"); }
             // 完成全部校验之后再登记，失败的构建不能污染已准备的设备/连接。
             connection ??= new Connection(settings.Connection, _time);
@@ -51,11 +53,12 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
             var binding = new Binding(plan.Id, plan.ConfigurationHash, settings, table, context, connection, device);
             _connections[settings.ConnectionId] = connection;
             _devices[context.DeviceKey] = device;
+            _physicalUnits[(settings.ConnectionId, settings.UnitId!.Value)] = device;
             connection.Units.Add(settings.UnitId!.Value);
             device.PeriodMs = Math.Min(device.PeriodMs, settings.PeriodMs);
             device.Latest.Add(plan.Id, null);
             foreach (var point in settings.Points)
-            { device.Keys.Add(point.Key); }
+            { device.Keys.Add((context.DeviceKey, point.Key)); }
             _inputs.Add(plan.Id, binding);
             return new Unit(this, binding);
         }
@@ -75,14 +78,15 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
         public long ConnectionId { get; } = connectionId;
         public byte Unit { get; } = unit;
         public int PeriodMs { get; set; } = int.MaxValue;
-        public HashSet<string> Keys { get; } = new(StringComparer.Ordinal);
+        public HashSet<(string Device, string Point)> Keys { get; } = [];
         public Dictionary<RuntimeUnitId, bool?> Latest { get; } = [];
         public SemaphoreSlim Serial { get; } = new(1, 1);
         public ModbusDevicePollingState? State { get; set; }
-        public long? TimeoutAt { get; set; }
-        public TimeSpan TimeoutWindow { get; set; }
+        public long? FailureAt { get; set; }
+        public ModbusRequestOutcome WindowFailure { get; set; }
+        public TimeSpan FailureWindow { get; set; }
         public long LastFailureWindow { get; set; } = -1;
-        public bool FastFailed => TimeoutAt is { } at && time.GetElapsedTime(at) < TimeoutWindow;
+        public bool FastFailed => FailureAt is { } at && time.GetElapsedTime(at) < FailureWindow;
 
         public void Record(Binding input, ModbusCycleResult cycle)
         {
@@ -134,21 +138,25 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
                                 try
                                 {
                                     input.Device.State ??= new ModbusDevicePollingState(TimeSpan.FromMilliseconds(input.Device.PeriodMs), owner._time);
-                                    if (!input.Device.State.CanRead)
-                                    { return null; }
                                     if (input.Device.FastFailed)
                                     {
-                                        input.Context.Reads.ReadFailed(owner._time.GetUtcNow(), "Modbus 同设备本周期前序读取超时，跳过剩余采集块。");
+                                        input.Context.Reads.ReadFailed(owner._time.GetUtcNow(), input.Device.WindowFailure == ModbusRequestOutcome.Timeout
+                                            ? "Modbus 同设备本周期前序读取超时，跳过剩余采集块。"
+                                            : "Modbus 同设备本周期连接失败，跳过剩余采集块。");
                                         return null;
                                     }
+                                    // 先报告本窗口快速失败，再检查后续周期退避；否则第三次失败的后续组会漏掉离线诊断。
+                                    if (!input.Device.State.CanRead)
+                                    { return null; }
                                     var left = period * (cycle + 1) - owner._time.GetElapsedTime(started);
                                     var result = await ModbusCycleReader.ReadAsync(lease, input.Settings.UnitId!.Value, input.Table.Blocks, left, owner._time, token);
-                                    if (result.Blocks.Any(block => block.Outcome == ModbusRequestOutcome.Timeout))
+                                    if (result.HasActualAttempt && result.Blocks.FirstOrDefault(block => block.Outcome is ModbusRequestOutcome.Timeout or ModbusRequestOutcome.ConnectionError) is { } failure)
                                     {
-                                        input.Device.TimeoutAt = owner._time.GetTimestamp();
+                                        input.Device.FailureAt = owner._time.GetTimestamp();
+                                        input.Device.WindowFailure = failure.Outcome;
                                         var devicePeriod = TimeSpan.FromMilliseconds(input.Device.PeriodMs);
                                         var deviceWindow = (long)(owner._time.GetElapsedTime(started) / devicePeriod);
-                                        input.Device.TimeoutWindow = devicePeriod * (deviceWindow + 1) - owner._time.GetElapsedTime(started);
+                                        input.Device.FailureWindow = devicePeriod * (deviceWindow + 1) - owner._time.GetElapsedTime(started);
                                         foreach (var group in input.Device.Latest.Keys)
                                         { input.Device.Latest[group] = false; }
                                     }
