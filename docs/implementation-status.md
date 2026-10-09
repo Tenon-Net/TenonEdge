@@ -1946,6 +1946,16 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 限定新增四个 C# 文件的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...` 通过（`/tmp/tenonedge-modbus-cycle-format-verify.log`）；`dotnet restore TenonEdge.sln --locked-mode` 与 `git diff --check` 通过（还原日志 `/tmp/tenonedge-modbus-cycle-restore.log`），未增加依赖或更改锁文件。
 - 范围仅为 AT-02/08/13、V-05 的单周期执行和退避组件；并非已注册 input.modbus。常驻固定周期循环、多采集组同 UnitId 协调、消息生成/预算预约、诊断计数/离线事件以及宿主端到端链路仍须后续接入。本节不声称 overrun 已出现在管理 API，不声称 T2 或实物验证完成。
 
+### 2.92 T2-02 Modbus 输入配置与点表消息解码（2026-10-09）
+
+- 新增 ModbusInputSettings / ModbusPointSettings：严格 JSON 成员检查，连接参数复用 §2.90 校验；TCP UnitId 0—255 / RTU 1—247，UnitId 与地址必须显式提供，不能把缺项静默当成合法的 0。周期默认 5 秒、最小 1 秒；读取默认 5 秒。运行计划只接受规范化零基偏移，手册编号仍由已有地址转换器在草稿/导入边界处理，不在采集时猜测。
+- 点位校验功能码、类型、寄存器占用范围、四种字节序与位号；01/02 只接受 bool，寄存器取位用 bit + 0—15。禁用点位仍须结构合法但不进入读取规划；同组 key 不可重复。内部点表上限暂取 10000 项（与 CSV 行数上限对齐，不是容量承诺），运行组至少一个启用点；跨组同设备 key 唯一性仍由计划工厂接入时执行。
+- 新增不可变 ModbusPointTable，将连续读取规划与点位原始序号关联，解码只使用本周期的块结果。部分失败：成功值进入 values，超时/异常/读取失败分别映射 readTimeout/deviceException/readError，失败字段不取历史值、不补零；非有限浮点为 nonFinite。整组通信失败或 overrun 返回 null，不能伪造正常消息。消息采集/接收时间均为本次网关读取完成时间，由调用者传入当时 Gateway/GatewayUnsynced 来源；uint64 保持无符号 64 位精度。
+- 聚焦 37 单元 + 2 集成通过：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~ModbusInputSettingsTests|FullyQualifiedName~ModbusPointTableTests'`（`/tmp/tenonedge-modbus-points-target.log`）。单元覆盖严格/必填参数、禁用点校验、UnitId 边界、乱序/重叠地址身份、禁用地址间隙不合并、各失败质量、无旧值、uint64 最大值、无穷浮点、位与位输入、消息时间及 malformed success 拒绝。首轮单元编译失败为 xUnit 的 int/byte? 比较重载，显式 byte 后修正（`/tmp/tenonedge-modbus-points-unit.log`）；禁用点反例增加独立合法启用点，避免被“全禁用”检查掩盖。
+- 两种帧格式的集成测试从真实 JSON 配置，经统一出站连接器、共享租约、NModbus、读取规划与周期层，到真实 EdgeMessage；对端为回环模拟从站。四功能码共同采集，手写独立期望 `0x1000100110021003` 核对大整数，寄存器取位与 bool 正确，超时块及快速失败的未请求块只进入 quality，确认没有发送后续地址请求。不据此声称真实设备/串口服务器兼容。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-points' --results-directory /tmp/tenonedge-modbus-points-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**962 单元 + 761 集成 = 1723 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-points-full.log`）。Linux x64 / SDK 10.0.401。五个新增 C# 文件的限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-points-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-points-restore.log`）与 `git diff --check` 通过，未新增依赖。
+- 尚未注册 input.modbus；计划工厂、设备多组调度、全局在途预算、诊断事件与宿主端到端测试是下一步。此处没有前端，没有把组件集成测试当成 T2 完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
