@@ -37,7 +37,27 @@ export function SessionGate() {
     if (session && !session.mustChangePassword)
         return (
             <>
-                <ErrorMessage error={sessionQuery.error} />
+                {sessionQuery.error && (
+                    <div className="space-y-2 border-b p-3">
+                        <ErrorMessage error={sessionQuery.error} />
+                        <p className="text-xs text-muted-foreground">
+                            {t('lastSessionRefresh', {
+                                time: sessionQuery.dataUpdatedAt
+                                    ? new Date(
+                                          sessionQuery.dataUpdatedAt,
+                                      ).toLocaleString('zh-CN')
+                                    : t('neverRefreshed'),
+                            })}
+                        </p>
+                        <Button
+                            variant="outline"
+                            disabled={sessionQuery.isFetching}
+                            onClick={() => void sessionQuery.refetch()}
+                        >
+                            {t('retry')}
+                        </Button>
+                    </div>
+                )}
                 <Workspace />
             </>
         )

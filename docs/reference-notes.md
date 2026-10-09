@@ -134,3 +134,14 @@ FE-D01 固定 shadcn-admin 提交 `e16c87f213a5ba5e45964e9b67c792105ec74d26` 实
 | zustand | 5.0.15 | MIT |
 
 工具基线：Node 22.23.2 / npm 11.21.0、TypeScript 5.9.3、Vite 8.3.4、Vitest 4.1.11、Playwright 1.64.0、oxlint 1.87.0、Prettier 3.9.9；直接工具精确版本见 package.json。未采用上游 Clerk/Axios/ESLint 或第二套路由。安装和审计中的失败、修正及实际验证见实施状态 §2.100，不据此宣称最低浏览器通过。
+
+### T3-02 点表依赖补充
+
+TanStack Table 作为行/选择模型，TanStack Virtual 作为大表虚拟化；只通过 npm 使用，未复制其他参考项目源码。新增生产依赖及传递核心如下，许可证实际文本一并进入现有 `web/public/licenses/npm-notices.txt`（现在共 42 个生产包），没有增加另一个包管理器或锁文件。
+
+| 包 | 固定版本 | 包声明许可 |
+|---|---|---|
+| @tanstack/react-table | 8.21.3 | MIT |
+| @tanstack/table-core | 8.21.3 | MIT |
+| @tanstack/react-virtual | 3.14.14 | MIT |
+| @tanstack/virtual-core | 3.18.0 | MIT |

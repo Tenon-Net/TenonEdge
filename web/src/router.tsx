@@ -3,6 +3,7 @@ import {
     createRoute,
     createRouter,
     Link,
+    lazyRouteComponent,
 } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { SessionGate } from './features/auth/session-gate'
@@ -59,8 +60,16 @@ const accountRoute = createRoute({
     path: '/account',
     component: AccountPage,
 })
+const pointsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/prototypes/points',
+    component: lazyRouteComponent(
+        () => import('./features/points/editor'),
+        'PointEditor',
+    ),
+})
 export const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, accountRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, accountRoute, pointsRoute]),
     defaultPreload: false,
 })
 declare module '@tanstack/react-router' {

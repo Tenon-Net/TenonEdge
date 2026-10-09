@@ -1,3 +1,4 @@
+import { pointStrings } from '../features/points/strings'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 void i18n.use(initReactI18next).init({
@@ -7,10 +8,13 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                points: pointStrings,
                 product: 'TenonEdge',
                 subtitle: '边缘接入与转发网关',
                 loading: '正在读取网关状态…',
                 retry: '重新查询',
+                lastSessionRefresh: '会话状态上次成功刷新：{{time}}',
+                neverRefreshed: '尚未成功刷新',
                 requestFailed: '请求失败，请检查网关连接后重试。',
                 timeoutNotice:
                     '请求失败或超时；操作不会自动重试，请先核对当前状态。',
@@ -48,7 +52,7 @@ void i18n.use(initReactI18next).init({
                     viewer: '只读',
                 },
                 foundationNotice:
-                    'T3 开发中：认证已接入真实服务；点表与路线编辑尚未交付。此页面不代表已配置或正在采集设备。',
+                    'T3 开发中：认证已接入真实服务；点表为不保存到网关的交互原型，路线编辑尚未交付。此页面不代表已配置或正在采集设备。',
                 noPage: '此页面不存在。',
                 backHome: '返回工作区',
                 security: '账号安全',
