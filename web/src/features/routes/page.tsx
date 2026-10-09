@@ -258,6 +258,7 @@ export function RoutesPage() {
                         key={generation}
                         editor={canvas}
                         persisted
+                        version={form.version}
                         onPendingChange={setPendingConfig}
                         readOnly={!canEdit || busy}
                     />

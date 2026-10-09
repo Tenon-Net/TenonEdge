@@ -13,6 +13,7 @@ import {
 
 type Props = {
     configText: string
+    fieldListId?: string
     disabled: boolean
     dirty: (value: boolean) => void
     accept: (text: string) => boolean
@@ -198,6 +199,14 @@ function MappingEditorForm({
                                                                 inputClass
                                                             }
                                                             aria-label={`${t(`routes.mapping.${key}`)} ${index + 1}`}
+                                                            list={
+                                                                key ===
+                                                                    'value' &&
+                                                                row.source ===
+                                                                    'field'
+                                                                    ? props.fieldListId
+                                                                    : undefined
+                                                            }
                                                             value={row[key]}
                                                             maxLength={
                                                                 key === 'value'

@@ -13,6 +13,7 @@ import {
 type Props = {
     kind: 'output.http' | 'output.mqtt'
     configText: string
+    fieldListId?: string
     disabled: boolean
     dirty: (value: boolean) => void
     accept: (text: string) => boolean
@@ -297,6 +298,11 @@ function OutputEditorForm({
                                     ) : (
                                         <input
                                             className={inputClass}
+                                            list={
+                                                row.source === 'field'
+                                                    ? props.fieldListId
+                                                    : undefined
+                                            }
                                             value={row.value}
                                             maxLength={65535}
                                             onChange={(event) =>

@@ -2642,6 +2642,25 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-fields-regression --blame-hang-timeout 5m --blame-hang-dump-type none` **1165 单元 + 1053 集成 = 2218 通过，0 失败/跳过**（`/tmp/tenonedge-route-fields-regression.log`），`verify-test-results.py` 按两个程序集核对通过；`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-fields-format-verify-final.log`）。web/ 的 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check` 通过，Vitest **199 通过，0 失败/跳过**（`/tmp/tenonedge-route-fields-web-final.log`）。环境沿用 §2.132，本批未重跑浏览器、未更新常驻实例或推送；字段选择页面、无输出样本预览与应用/回滚继续实施。
 
+### 2.134 T3-05 画布上游字段分析与表单建议（2026-10-10）
+
+接续 §2.133，将真实字段分析接入路线画布；对应功能 §5.4/5.5、T3-05 的字段描述子场景和 FE-AT-03 的错误不丢编辑子场景。**不是样本预览或完整 AT-07/13/29 验收，也未实现应用/回滚。**
+
+- 当前选中节点可显式分析已确认的未保存图；使用路线原编辑版本，不通过查询自动采用新版本。搜索字段键、100 项分页、共同字段数、上游描述组数、缺失/类型差异、单位差异、诊断截断和节点错误均来自真实 API。局部分析通过不等于完整图编译通过。
+- 映射 field 模式和通用输出自定义 field 模式使用原生 datalist 提供本页建议；手工填写、JSON Pointer 和常量入口保留。已有值不在当前页时不替换，也不自动改目标类型/单位。分析不修改图或新增撤销步骤；未确认的表单须先确认/放弃，才允许新查询。
+- 只保留一页结果和一次请求，不将完整图当作 TanStack Query 缓存键。图文档身份、节点或编辑版本变化同步屏蔽旧结果并取消请求；检查 AbortSignal，避免切回原节点时恢复已取消的 pending 状态。卸载同样取消。409 显示保留本地修改/重新核对提示，500 不回写编辑内容。
+- README 和路线契约说明同步当前能力；仍未更新常驻调试实例，未增加依赖、后端端点或运行服务。
+
+新增 3 项真实 Host + Chromium 浏览器用例：105 字段分析、分页/大小写搜索、原生建议与输入框关联、非当前页既有值保留、修改映射保存重读、下游字段随已确认映射变化；延迟响应取消、500 故障注入和真实草稿版本 409 保留本地编辑；分支扇入的缺失/类型/单位差异、100 项诊断截断及祖先映射缺字段报错。浏览器验证了 datalist 候选及表单绑定，保存通过输入框填写候选值，未自动操作操作系统原生候选弹窗；最低 Chrome/Edge 111 仍未重验。
+
+初次浏览器运行 2 通过/1 失败：夹具试图给模拟设备添加第二来源，触发既有 409 约束；改为同一来源分叉映射形成不同上游。第二轮 2 通过/1 失败：断言假定截断的差异列表必含 f000，实际该项在截断范围外；改为断言实际范围内的缺失项，并独立核对共同候选已排除不兼容字段。最终补充单位差异断言后回归如下：
+
+- Linux x64、.NET SDK 10.0.401、Node 22.23.2、npm 11.21.0、Headless Chromium 156.0.8078.4；临时真实产品 Host `http://127.0.0.1:18084`，结束清理数据。
+- `cd web && npx --yes npm@11.21.0 run build`：通过（`/tmp/tenonedge-field-ui-build-final.log`）。
+- `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check`：通过；`run test -- --reporter=json --outputFile=reports/unit.json`：**199 通过，0 失败/跳过**（`/tmp/tenonedge-field-ui-web-final.log`、`web/reports/unit.json`）。
+- `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'upstream fields|mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'`：**12 通过，0 失败/跳过**（`/tmp/tenonedge-field-ui-browser-verified.log`，35.3 秒）。
+- 本批未改后端，未重跑 .NET 回归，后端基线仍见 §2.133。无真实设备/外部输出验证，无发版/推送。下一子项为无输出、无入队的路径样本预览，其后才推进 T3-06。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

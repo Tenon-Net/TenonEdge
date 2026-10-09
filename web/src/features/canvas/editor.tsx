@@ -1,3 +1,4 @@
+import { FieldAnalysis, useFieldAnalysis } from '../routes/field-analysis'
 import { MappingEditor } from '../routes/mapping-editor'
 import { OutputEditor } from '../routes/output-editor'
 import { ReferencePicker } from '../routes/reference-picker'
@@ -56,12 +57,14 @@ type CanvasProps = {
     editor?: ReturnType<typeof createGraphEditor>
     readOnly?: boolean
     persisted?: boolean
+    version?: string
     onPendingChange?: (pending: boolean) => void
 }
 function CanvasWorkspace({
     editor,
     readOnly = false,
     persisted = false,
+    version,
     onPendingChange,
 }: CanvasProps) {
     const { t } = useTranslation()
@@ -88,6 +91,11 @@ function CanvasWorkspace({
     }
     const selected = doc.definition.nodes.filter((n) =>
         state.selectedNodes.includes(n.id),
+    )
+    const analysis = useFieldAnalysis(
+        doc,
+        selected.length === 1 ? selected[0].id : undefined,
+        version,
     )
     const nodes = useMemo<CanvasNode[]>(
         () =>
@@ -488,6 +496,12 @@ function CanvasWorkspace({
                                 }
                             />
                         )}
+                    {persisted && selected.length === 1 && version && (
+                        <FieldAnalysis
+                            analysis={analysis}
+                            disabled={readOnly || pendingConfig}
+                        />
+                    )}
                     {persisted &&
                         selected.length === 1 &&
                         (selected[0].kind === 'output.http' ||
@@ -496,6 +510,7 @@ function CanvasWorkspace({
                                 key={`output:${selected[0].id}:${selected[0].configText}`}
                                 kind={selected[0].kind}
                                 configText={selected[0].configText}
+                                fieldListId={analysis.listId}
                                 disabled={readOnly || pendingOwner === 'json'}
                                 dirty={(value) => pending(value, 'output')}
                                 accept={(text) =>
@@ -516,6 +531,7 @@ function CanvasWorkspace({
                             <MappingEditor
                                 key={`mapping:${selected[0].id}:${selected[0].configText}`}
                                 configText={selected[0].configText}
+                                fieldListId={analysis.listId}
                                 disabled={readOnly || pendingOwner === 'json'}
                                 dirty={(value) => pending(value, 'mapping')}
                                 accept={(text) =>

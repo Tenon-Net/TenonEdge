@@ -3415,3 +3415,338 @@ test('mapping rule table pages 1000 saved rules without rendering all rows at on
         page.getByText('路线草稿已保存，未应用。', { exact: true }),
     ).toBeVisible()
 })
+
+async function openFieldAnalysisRoute(
+    page: import('@playwright/test').Page,
+    key: string,
+    fanIn = false,
+) {
+    await page.setViewportSize({ width: 1700, height: 1100 })
+    await openPointEditor(page)
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const headers = { 'X-CSRF-Token': session.csrfToken }
+    const version = (
+        await (await page.request.get('/api/edge-admin/v1/routes')).json()
+    ).version
+    const deviceResponse = await page.request.post(
+        '/api/edge-admin/v1/devices',
+        {
+            headers,
+            data: {
+                expectedVersion: version,
+                key,
+                name: key,
+                kind: 'simulator',
+            },
+        },
+    )
+    expect(deviceResponse.status()).toBe(200)
+    const device = await deviceResponse.json()
+    const sample = Object.fromEntries(
+        Array.from({ length: 105 }, (_, i) => [
+            `f${String(i).padStart(3, '0')}`,
+            i,
+        ]),
+    )
+    const sourceResponse = await page.request.post(
+        `/api/edge-admin/v1/devices/${device.device.id}/inputs`,
+        {
+            headers,
+            data: {
+                expectedVersion: device.version,
+                key: 'source',
+                name: 'Source',
+                simulator: { sampleJson: JSON.stringify(sample) },
+            },
+        },
+    )
+    expect(sourceResponse.status()).toBe(200)
+    const source = await sourceResponse.json()
+    const sourceIds = [source.input.id]
+    const graph = {
+        schemaVersion: 1,
+        nodes: [
+            ...(fanIn
+                ? [
+                      {
+                          id: 'branch',
+                          type: 'transform.map',
+                          version: 1,
+                          name: 'Branch',
+                          config: {
+                              rules: [
+                                  {
+                                      target: 'f000',
+                                      type: 'string',
+                                      constant: 'different type',
+                                  },
+                                  {
+                                      target: 'f001',
+                                      type: 'integer',
+                                      constant: 1,
+                                      unit: 'W',
+                                  },
+                                  {
+                                      target: 'other',
+                                      type: 'boolean',
+                                      constant: true,
+                                  },
+                              ],
+                          },
+                      },
+                  ]
+                : []),
+            {
+                id: 'in',
+                type: 'input.simulator',
+                version: 1,
+                name: 'Input',
+                config: { sourceIds },
+            },
+            {
+                id: 'map',
+                type: 'transform.map',
+                version: 1,
+                name: 'Map',
+                config: {
+                    rules: [
+                        {
+                            target: 'mapped',
+                            type: 'integer',
+                            sourceField: fanIn ? 'f002' : 'f000',
+                        },
+                    ],
+                },
+            },
+            {
+                id: 'out',
+                type: 'output.http',
+                version: 1,
+                name: 'Output',
+                config: {
+                    connectionId: null,
+                    payload: {
+                        mode: 'custom',
+                        fields: [{ target: 'result', sourceField: 'mapped' }],
+                    },
+                },
+            },
+        ],
+        edges: [
+            ...(fanIn
+                ? [
+                      { source: 'in', target: 'branch' },
+                      { source: 'branch', target: 'map' },
+                  ]
+                : []),
+            { source: 'in', target: 'map' },
+            { source: 'map', target: 'out' },
+        ],
+        layout: {
+            nodes: {
+                in: { x: 10, y: 40 },
+                map: { x: 260, y: 40 },
+                out: { x: 510, y: 40 },
+            },
+        },
+    }
+    const created = await page.request.post('/api/edge-admin/v1/routes', {
+        headers,
+        data: {
+            expectedVersion: source.version,
+            key,
+            name: key,
+            enabled: false,
+            graph,
+        },
+    })
+    expect(created.status()).toBe(200)
+    const saved = await created.json()
+    await page.goto('/routes')
+    await page.getByRole('button', { name: `打开 ${key}`, exact: true }).click()
+    await page.locator('.react-flow__node[data-id="map"]').click()
+    return { headers, saved }
+}
+
+test('upstream fields analyze real draft schemas, page and search suggestions, and propagate confirmed mapping edits', async ({
+    page,
+}) => {
+    await openFieldAnalysisRoute(page, 'field-ui')
+    const panel = page.getByRole('region', {
+        name: '上游字段分析',
+        exact: true,
+    })
+    const analyze = panel.getByRole('button', {
+        name: '分析 / 返回第一页',
+        exact: true,
+    })
+    await analyze.click()
+    await expect(panel.getByRole('status')).toContainText(
+        '105 个同名同类型字段',
+    )
+    await expect(panel.locator('datalist option')).toHaveCount(100)
+    const value = page.getByLabel('来源字段 / Pointer / 固定值 1', {
+        exact: true,
+    })
+    await expect(value).toHaveAttribute(
+        'list',
+        (await panel.locator('datalist').getAttribute('id')) as string,
+    )
+    await panel.getByRole('button', { name: '下一页', exact: true }).click()
+    await expect(panel.locator('datalist option')).toHaveCount(5)
+    await expect(value).toHaveValue('f000') // Not in this page; never silently replace it.
+    await panel.getByLabel('搜索上游字段键').fill('F104')
+    await analyze.click()
+    await expect(panel.locator('datalist option')).toHaveCount(1)
+    await expect(panel.locator('datalist option')).toHaveAttribute(
+        'value',
+        'f104',
+    )
+    await value.fill('f104') // Native datalist retains the same editable input.
+    await expect(analyze).toBeDisabled()
+    await page
+        .getByRole('button', { name: '确认映射规则', exact: true })
+        .click()
+    await expect(panel.locator('datalist option')).toHaveCount(0)
+    await page.locator('.react-flow__node[data-id="out"]').click()
+    await panel.getByLabel('搜索上游字段键').fill('')
+    await analyze.click()
+    await expect(panel.locator('datalist option')).toHaveCount(1)
+    await expect(panel.locator('datalist option')).toHaveAttribute(
+        'value',
+        'mapped',
+    )
+    const output = page.getByRole('form', { name: '输出参数', exact: true })
+    await expect(
+        output.getByLabel('字段取值', { exact: true }),
+    ).toHaveAttribute(
+        'list',
+        (await panel.locator('datalist').getAttribute('id')) as string,
+    )
+    await output.getByLabel('字段取值', { exact: true }).fill('mapped')
+    await output
+        .getByRole('button', { name: '确认输出参数', exact: true })
+        .click()
+    const saved = page.waitForResponse(
+        (response) =>
+            response.request().method() === 'PUT' &&
+            /\/routes\/\d+$/.test(response.url()),
+    )
+    await page
+        .getByRole('button', { name: '保存路线草稿', exact: true })
+        .click()
+    expect((await saved).status()).toBe(200)
+    await expect(
+        page.getByText('路线草稿已保存，未应用。', { exact: true }),
+    ).toBeVisible()
+    await page.reload()
+    await page
+        .getByRole('button', { name: '打开 field-ui', exact: true })
+        .click()
+    await page.locator('.react-flow__node[data-id="map"]').click()
+    await expect(value).toHaveValue('f104')
+})
+
+test('upstream fields discard late responses and preserve local edits on server errors and real version conflicts', async ({
+    page,
+}) => {
+    const { headers, saved } = await openFieldAnalysisRoute(page, 'field-stale')
+    const panel = page.getByRole('region', {
+        name: '上游字段分析',
+        exact: true,
+    })
+    const analyze = panel.getByRole('button', {
+        name: '分析 / 返回第一页',
+        exact: true,
+    })
+    const endpoint = '**/api/edge-admin/v1/routes/fields'
+    let release!: () => void
+    let observed!: () => void
+    const held = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    const received = new Promise<void>((resolve) => {
+        observed = resolve
+    })
+    await page.route(endpoint, async (route) => {
+        const response = await route.fetch()
+        observed()
+        await held
+        await route.fulfill({ response }).catch(() => {}) // Request may have been cancelled.
+    })
+    await analyze.click()
+    await received
+    await page.getByLabel('节点名称', { exact: true }).fill('Local edit')
+    release()
+    await expect(panel.locator('datalist option')).toHaveCount(0)
+    await expect(panel.getByText(/尚无当前图的分析结果/)).toBeVisible()
+    await page.unroute(endpoint)
+    await page.route(endpoint, (route) =>
+        route.fulfill({ status: 500, json: { title: 'test failure' } }),
+    )
+    await analyze.click()
+    await expect(panel.getByRole('alert')).toBeVisible()
+    await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue(
+        'Local edit',
+    )
+    await page.unroute(endpoint)
+    const change = await page.request.post('/api/edge-admin/v1/devices', {
+        headers,
+        data: {
+            expectedVersion: saved.version,
+            key: 'field-conflict',
+            name: 'Conflict',
+            kind: 'simulator',
+        },
+    })
+    expect(change.status()).toBe(200)
+    const conflict = page.waitForResponse((response) =>
+        response.url().endsWith('/routes/fields'),
+    )
+    await analyze.click()
+    expect((await conflict).status()).toBe(409)
+    await expect(panel.getByRole('alert')).toBeVisible()
+    await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue(
+        'Local edit',
+    )
+    await expect(
+        page.getByLabel('来源字段 / Pointer / 固定值 1', { exact: true }),
+    ).toHaveValue('f000')
+    await expect(panel.locator('datalist option')).toHaveCount(0)
+})
+
+test('upstream fields fan-in excludes missing or mismatched types and reports invalid ancestor mapping', async ({
+    page,
+}) => {
+    await openFieldAnalysisRoute(page, 'field-fanin', true)
+    const panel = page.getByRole('region', {
+        name: '上游字段分析',
+        exact: true,
+    })
+    const analyze = panel.getByRole('button', {
+        name: '分析 / 返回第一页',
+        exact: true,
+    })
+    await analyze.click()
+    await expect(panel.getByRole('status')).toContainText(
+        '上游 2 组描述，共有 1 个',
+    )
+    await expect(panel.locator('datalist option')).toHaveAttribute(
+        'value',
+        'f001',
+    )
+    await expect(panel.getByText(/缺失或类型不一致的字段/)).toContainText(
+        'f002',
+    )
+    await expect(panel.getByText('差异列表仅显示前 100 项。')).toBeVisible()
+    await expect(
+        panel.getByText('上游单位有差异；共同字段不推定单位。'),
+    ).toBeVisible()
+    await page.locator('.react-flow__node[data-id="out"]').click()
+    await analyze.click()
+    await expect(panel.getByRole('status')).toContainText('上游字段分析未通过')
+    await expect(panel.locator('datalist option')).toHaveCount(0)
+    await expect(panel.locator('li')).toContainText(['map:'])
+})
