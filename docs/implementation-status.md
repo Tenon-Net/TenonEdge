@@ -1988,6 +1988,15 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-unit-sharing' --results-directory /tmp/tenonedge-modbus-unit-sharing-results --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 773 集成 = 1749 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-unit-sharing-full.log`）。Linux x64 / SDK 10.0.401。两文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include ...`（`/tmp/tenonedge-modbus-unit-sharing-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-unit-sharing-restore.log`）与 `git diff --check` 通过，无新增依赖。
 - 仍须进行完整多输出隔离、资源/压力和剩余协议故障回归；不把同 UnitId 修复视为 T2 全部完成，不宣称实物兼容或已有网页。
 
+### 2.96 T2-06 Modbus 产品 Host 扇出隔离与扇入不合并（2026-10-09）
+
+- 在 §2.94 的真实 Host 链路上新增一源四路径：正常原始值 HTTP 输出、重命名并转字符串的 HTTP 输出、真实已接收请求但暂不应答的目标、缺少必填来源字段而拒绝的映射路径。采集周期设为 60 秒，验证窗口只采一次；路径都使用既有产品工厂、映射器、持久队列和发送者，没有模拟输出适配器或修改产品代码来迎合测试。
+- 故障目标按输出标识排在前面；独立 TCP 接收端读完其请求后用明确屏障暂停应答（产品请求期限 60 秒）。两个正常接收端在该请求仍未完成时已拿到报文，再显式关闭故障连接且不应答，观察真实 output.retry。这比仅等一次短超时后再查看正常结果更强，避免串行输出也误通过隔离验收。
+- 核对：实际 Modbus 请求恰好 1 次、物理连接 1 条；两正常目标 sourceMessageId 相同但 deliveryId 不同；映射结果为精确 uint64 原文字符串，原路径仍为原始整数且未混入重命名字段。故障目标仍有 1 条已提交待发记录，冻结 Payload 与已经写到 TCP 的报文逐字节相同，来源编号一致而投递编号独立；网络失败不计毒消息。缺字段路径只有 dataRejected=1，没有待发记录；成功两条确认删除、共提交三条，输入在途额度归零且峰值不越预算。
+- 另一个产品 Host 场景：两个不同 Modbus UnitId/设备经一个物理连接，扇入一个 HTTP 目标，独立接收端得到两条消息，分别是各自已知寄存器值与 deviceKey，sourceMessageId 不同、字段没有 join 或互相替换。恰好采集两次、提交两条并确认删除两条。
+- 最终全量：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=modbus-fanout-final' --results-directory /tmp/tenonedge-modbus-fanout-final --blame-hang-timeout 5m --blame-hang-dump-type none`，**976 单元 + 775 集成 = 1751 项通过，0 失败、0 跳过**；TRX Counters 已核对（`/tmp/tenonedge-modbus-fanout-final.log`）。Linux x64 / SDK 10.0.401。单文件限定 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include tests/IntegrationTests/Runtime/ModbusHostTests.cs`（`/tmp/tenonedge-modbus-fanout-format-verify.log`）、`dotnet restore TenonEdge.sln --locked-mode`（`/tmp/tenonedge-modbus-fanout-restore.log`）与 `git diff --check` 通过，无新增依赖；没有为已能通过的链路增加不必要产品分支。
+- 聚焦 `dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ModbusHostTests`，含已有两帧格式场景共 4 项通过（`/tmp/tenonedge-modbus-fanout-target3.log`）。本节是 GW-13 / AT-06/29 软件链路与故障路径证据，不是设备兼容或长期资源验收；故障目标为真实 TCP 故障注入，不是实物网络断线声明。RSS、规模和剩余协议回归仍继续。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
