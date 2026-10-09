@@ -1,3 +1,4 @@
+import { CredentialPanel } from './credential-panel'
 import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
@@ -590,6 +591,19 @@ export function ConnectionsPage() {
                     </div>
                 </form>
             )}
+            {form?.id !== undefined &&
+                form.kind !== 'modbus' &&
+                (!dirty && form.version === query.data?.version ? (
+                    <CredentialPanel
+                        key={`${form.id}:${form.version}`}
+                        connection={query.data.connections.find(
+                            (item) => item.id === form.id,
+                        )!}
+                        draftVersion={form.version}
+                    />
+                ) : (
+                    <p>{t('credentials.saveDraftFirst')}</p>
+                ))}
         </section>
     )
 }

@@ -2143,6 +2143,25 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：T3-04 的凭证/信任证书表单、连接测试、设备/来源/点位草稿、复制/CSV/字段推断仍未完成；现有凭证 API 仍是 T2 种子专用接口，本批不宣称已经具备草稿资源归属与完整凭证类型联动。接收方变更保存仅修改草稿，凭证重绑定/应用拦截随 T3-04 后续与 T3-06 完成。T3-05/06 的引用编译、受控应用与版本回滚未实现，网页仍不能独立完成整个网关配置。AT-18/FE-AT 仅上述子场景有软件证据，最低浏览器、真实设备和远端 CI 未验证。未推送或发版，总目标继续保持未完成。
 
+### 2.104 T3-04 连接凭证子项：受管草稿绑定与真实网页保存（2026-10-10）
+
+沿已授权 T3-04 继续，不标整项完成；不新增依赖、不复制参考项目源码。连接草稿非秘密参数与独立凭证继续分开保存。
+
+- 已有 MQTT 密码及 HTTP Basic、Bearer、API Key 请求头/查询参数的真实凭证接口接入连接表单。只对已保存、未修改且版本仍匹配的 MQTT/HTTP 连接显示表单；只读角色仅查看状态。保存和清除分别二次确认，秘密不回显、不存浏览器持久存储，成功后清空输入。TanStack Mutation 变量只包含动作，不携带秘密。接收账户声明没有默认值；接收方改变时仅管理员可显式保留旧秘密。
+- 受管连接的凭证写入在同一个配置事务内检查全局草稿版本、连接存在性、协议类型和规范化接收方；表单过期、删除或协议/目标不符时拒绝。新增两种 DELETE 凭证端点，检查凭证版本与有效/上一/待生效运行快照引用，清除与审计原子提交，且不推进草稿版本。身份作废与明确清除仍是两种行为。
+- 删除无引用、无发送记录的连接草稿时，同事务删除其认证凭证并追加审计。新建草稿不占用已有种子凭证或保留运行快照的编号。引用检查兼容现有种子解析允许的数字及数字字符串 connectionId，覆盖三种保留版本指针。
+- 修复 HTTP API Key 改参数名绕过账户声明的问题：参数名不是账户身份；存在待发/失败记录时，同类型秘密替换仍需声明（Basic 用户名确实改变除外）。MQTT 请求对象的 ToString 与 HTTP 一样明确省略秘密。
+- 实际 Development Host 导出 OpenAPI 后重新生成客户端；更新端点授权清单与 operationId 清单。
+
+实际验证：
+
+1. Linux x64、.NET SDK 10.0.401、Node 22.23.2/npm 11.21.0、Chromium 156.0.8078.4。Release 构建随全量测试完成；完整格式门禁 `dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-credential-format-verify.log`）。
+2. 后端最终全量 **992 单元 + 829 集成 = 1821 通过，0 失败/跳过**；命令 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t3-credential-final' --results-directory artifacts/test-results/t3-credential-final --blame-hang-timeout 5m --blame-hang-dump-type none`，日志 `/tmp/tenonedge-credential-full-final.log`。TRX 门禁 `python3 .github/scripts/verify-test-results.py artifacts/test-results/t3-credential-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过。新增 17 项集成场景覆盖受管绑定、过期草稿、删除清理、角色/CSRF、审计失败回滚、保留版本禁止清除、账户声明及种子编号碰撞；引用采用配置库夹具，不冒充真实设备验证。
+3. `npx --yes npm@11.21.0 run build`、`run lint`、`run format:check` 通过，仍保留主入口超过 500 kB 提示。Vitest `test -- --reporter=default --reporter=json --outputFile=reports/unit.json`：**99 通过，0 失败/跳过**；日志 `/tmp/tenonedge-credential-web-tests.log`、`/tmp/tenonedge-credential-web-build.log`。
+4. `PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://192.168.0.88:18082 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json`：**9 通过，0 失败/跳过**。实际 Production Host/临时配置库、网卡 HTTP；除此前 7 项回归，新增 MQTT 保存/重载状态/不回显/无 localStorage 秘密/草稿版本不变/清除，以及 HTTP 四种认证方式逐项真实 PUT 和秘密清空。日志 `/tmp/tenonedge-credential-browser-final.log`；`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 通过。已查看 `web/test-results/connection-credential.png`，页面显示已设置而非秘密。这不是对外 Broker/HTTP 的认证联调。
+
+剩余与安全边界：旧 T1/T2 种子入口仍允许在不存在草稿时不带草稿版本预置凭证，未宣称完成旧入口资源归属迁移；现有待发/失败检查仍是凭证事务前的快照，活跃运行时跨库凭证轮换协调/隔离竞态尚须在 T3 收尾。客户端证书、信任证书、连接测试、设备/来源/点位持久草稿、复制/CSV/字段推断未完成；T3-05 编译与 T3-06 应用/回滚未实现。现有表单子场景通过不代表 AT-18 或完整可视化配置验收通过。未推送、未发版，远端 CI 与真实设备未验证，总目标仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -703,7 +703,7 @@
           "Credentials"
         ],
         "summary": "写入 MQTT 凭证或更新接收方绑定",
-        "description": "T1 种子连接专用：ID 与种子配置一致，秘密不进入种子；已有凭证须带 expectedVersion。变更接收方默认作废，retainExisting 仅管理员可用。",
+        "description": "草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。",
         "operationId": "writeMqttCredential",
         "parameters": [
           {
@@ -747,6 +747,76 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "清除未被保留运行版本引用的草稿连接认证凭证",
+        "operationId": "clearMqttCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "expectedDraftVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
           },
           "401": {
             "description": "Unauthorized",
@@ -831,7 +901,7 @@
           "Credentials"
         ],
         "summary": "写入 HTTP 凭证或更新接收方绑定",
-        "description": "T2 种子连接专用：ID 与种子配置一致，秘密不进入种子；已有凭证须带 expectedVersion。变更接收方默认作废，retainExisting 仅管理员可用。",
+        "description": "草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。",
         "operationId": "writeHttpCredential",
         "parameters": [
           {
@@ -875,6 +945,76 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "清除未被保留运行版本引用的草稿连接认证凭证",
+        "operationId": "clearHttpCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "expectedDraftVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
           },
           "401": {
             "description": "Unauthorized",
@@ -2036,6 +2176,12 @@
           "retainExisting": {
             "type": "boolean",
             "default": false
+          },
+          "expectedDraftVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2455,6 +2601,12 @@
           "retainExisting": {
             "type": "boolean",
             "default": false
+          },
+          "expectedDraftVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

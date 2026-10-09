@@ -250,11 +250,12 @@ export interface paths {
         get: operations["getMqttCredentialStatus"];
         /**
          * 写入 MQTT 凭证或更新接收方绑定
-         * @description T1 种子连接专用：ID 与种子配置一致，秘密不进入种子；已有凭证须带 expectedVersion。变更接收方默认作废，retainExisting 仅管理员可用。
+         * @description 草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。
          */
         put: operations["writeMqttCredential"];
         post?: never;
-        delete?: never;
+        /** 清除未被保留运行版本引用的草稿连接认证凭证 */
+        delete: operations["clearMqttCredential"];
         options?: never;
         head?: never;
         patch?: never;
@@ -271,11 +272,12 @@ export interface paths {
         get: operations["getHttpCredentialStatus"];
         /**
          * 写入 HTTP 凭证或更新接收方绑定
-         * @description T2 种子连接专用：ID 与种子配置一致，秘密不进入种子；已有凭证须带 expectedVersion。变更接收方默认作废，retainExisting 仅管理员可用。
+         * @description 草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。
          */
         put: operations["writeHttpCredential"];
         post?: never;
-        delete?: never;
+        /** 清除未被保留运行版本引用的草稿连接认证凭证 */
+        delete: operations["clearHttpCredential"];
         options?: never;
         head?: never;
         patch?: never;
@@ -508,6 +510,7 @@ export interface components {
             accountChanged?: null | boolean;
             /** @default false */
             retainExisting: boolean;
+            expectedDraftVersion?: null | string;
         };
         HttpsCertificateInfo: {
             sha256Fingerprint: string;
@@ -635,6 +638,7 @@ export interface components {
             accountChanged?: null | boolean;
             /** @default false */
             retainExisting: boolean;
+            expectedDraftVersion?: null | string;
         };
         OutboundNetworkGrant: {
             cidr: string;
@@ -1384,6 +1388,56 @@ export interface operations {
             };
         };
     };
+    clearMqttCredential: {
+        parameters: {
+            query: {
+                expectedDraftVersion: string;
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     getHttpCredentialStatus: {
         parameters: {
             query?: never;
@@ -1454,6 +1508,56 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    clearHttpCredential: {
+        parameters: {
+            query: {
+                expectedDraftVersion: string;
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

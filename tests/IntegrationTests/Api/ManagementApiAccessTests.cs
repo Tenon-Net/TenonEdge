@@ -21,6 +21,8 @@ public sealed class ManagementApiAccessTests(
         Assert.Equal(
             [
                 "DELETE /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
+                "DELETE /api/edge-admin/v1/connections/{connectionId:long}/http-credential (protected: role:configurator)",
+                "DELETE /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected: role:configurator)",
                 "GET /api/edge-admin/v1/audit (protected: role:administrator)",
                 "GET /api/edge-admin/v1/auth/session (protected)",
                 "GET /api/edge-admin/v1/connections/ (protected)",
@@ -56,6 +58,8 @@ public sealed class ManagementApiAccessTests(
         Assert.Equal(
             [
                 "DELETE /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
+                "DELETE /api/edge-admin/v1/connections/{connectionId:long}/http-credential (protected: role:configurator)",
+                "DELETE /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected: role:configurator)",
                 "GET /api/edge-admin/v1/audit (protected: role:administrator)",
                 "GET /api/edge-admin/v1/auth/session (protected)",
                 "GET /api/edge-admin/v1/connections/ (protected)",

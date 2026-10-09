@@ -21,6 +21,8 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
     private static readonly string[] ExpectedOperationIds =
     [
         "changePassword",
+        "clearHttpCredential",
+        "clearMqttCredential",
         "completeSetup",
         "createConnectionDraft",
         "deleteConnectionDraft",

@@ -70,3 +70,10 @@ export function connectionRequest(form: ConnectionForm): ConnectionRequest {
     }
     return request
 }
+
+export function credentialRecipient(connection: Connection) {
+    if (connection.http) return connection.http.baseAddress
+    const mqtt = connection.mqtt!
+    const host = mqtt.host.includes(':') ? `[${mqtt.host}]` : mqtt.host
+    return `${mqtt.tls ? 'mqtts' : 'mqtt'}://${host}:${mqtt.port}`
+}

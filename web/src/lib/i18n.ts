@@ -1,4 +1,7 @@
-import { connectionStrings } from '../features/connections/strings'
+import {
+    connectionStrings,
+    credentialStrings,
+} from '../features/connections/strings'
 import { canvasStrings } from '../features/canvas/strings'
 import { pointStrings } from '../features/points/strings'
 import i18n from 'i18next'
@@ -13,6 +16,7 @@ void i18n.use(initReactI18next).init({
                 points: pointStrings,
                 canvas: canvasStrings,
                 connections: connectionStrings,
+                credentials: credentialStrings,
                 product: 'TenonEdge',
                 subtitle: '边缘接入与转发网关',
                 loading: '正在读取网关状态…',

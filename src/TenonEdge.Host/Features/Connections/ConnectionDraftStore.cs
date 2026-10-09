@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using SqlSugar;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -33,6 +34,9 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         return database.InTransaction(client =>
         {
             ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
+            if (existingId is null && (client.Queryable<MqttCredentialRecord>().InSingle(id) is not null ||
+                client.Queryable<HttpCredentialRecord>().InSingle(id) is not null || HasRetainedReference(client, id)))
+            { throw new DraftWriteException("connection.reservedIdentity"); }
             var existing = existingId is null ? null : client.Queryable<ConnectionDraftRecord>().InSingle(id)
                 ?? throw new DraftWriteException("connection.notFound");
             if (existing is not null)
@@ -61,23 +65,40 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var row = client.Queryable<ConnectionDraftRecord>().InSingle(id) ?? throw new DraftWriteException("connection.notFound");
         // T3-04 的设备/输入引用检查随其实体接入同一事务；种子仍可存在，不允许删掉被保留运行版本使用的编号。
-        var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
-        foreach (var revision in new[] { state.EffectiveRevision, state.PreviousRevision, state.PendingRevision }.OfType<long>().Distinct())
-        {
-            var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
-                ?? throw new InvalidOperationException("运行版本引用缺失。");
-            var plan = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
-            if (plan.Units.Any(unit => unit.Configuration.TryGetProperty("connectionId", out var value) && value.GetInt64() == id))
-            { throw new DraftWriteException("connection.referenced"); }
-        }
+        if (HasRetainedReference(client, id))
+        { throw new DraftWriteException("connection.referenced"); }
         if (deliveries.ReadPending(id, 0, 1).Count != 0 || deliveries.ReadFailed(id, 0, 1).Count != 0 || deliveries.ReadQuarantined(id, 0, 1).Count != 0)
         { throw new DraftWriteException("connection.hasDeliveries"); }
+        var mqttCleared = client.Deleteable<MqttCredentialRecord>().Where(record => record.ConnectionId == id).ExecuteCommand();
+        var httpCleared = client.Deleteable<HttpCredentialRecord>().Where(record => record.ConnectionId == id).ExecuteCommand();
+        if (mqttCleared != 0 || httpCleared != 0)
+        {
+            audit.Append(client, new AuditEntry("credential.connectionDeleted", AuditResults.Success, account, sourceIp,
+                id.ToString(CultureInfo.InvariantCulture), "删除未被引用且无发送记录的连接草稿，同时清除其认证凭证。"));
+        }
         client.Deleteable(row).ExecuteCommand();
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("connection.draftDeleted", AuditResults.Success, account, sourceIp,
             id.ToString(CultureInfo.InvariantCulture), JsonSerializer.Serialize(new { previousVersion = expectedVersion, version })));
         return new DraftVersion(version);
     });
+
+    internal static bool HasRetainedReference(SqlSugarClient client, long id)
+    {
+        var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
+        foreach (var revision in new[] { state.EffectiveRevision, state.PreviousRevision, state.PendingRevision }.OfType<long>().Distinct())
+        {
+            var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
+                ?? throw new InvalidOperationException("运行版本引用缺失。");
+            var plan = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
+            if (plan.Units.Any(unit => unit.Configuration.TryGetProperty("connectionId", out var value) && value.Deserialize<long>(JsonSerializerOptions.Web) == id))
+            { return true; }
+        }
+        return false;
+    }
+
+    internal static ConnectionDraft? Read(SqlSugarClient client, long id) =>
+        client.Queryable<ConnectionDraftRecord>().InSingle(id) is { } row ? Decode(row) : null;
 
     private static ConnectionDraft Decode(ConnectionDraftRecord row)
     {

@@ -5,6 +5,7 @@ using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
@@ -61,6 +62,7 @@ internal sealed class HttpCredentialStore(
         var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0 || deliveries.ReadFailed(connectionId, 0, 1).Count > 0;
         return database.InTransaction(client =>
         {
+            CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Http, recipient, request.ExpectedDraftVersion);
             if (client.Queryable<MqttCredentialRecord>().InSingle(connectionId) is not null)
             { throw new CredentialWriteException("credential.protocolConflict"); }
             var record = client.Queryable<HttpCredentialRecord>().InSingle(connectionId);
@@ -71,7 +73,8 @@ internal sealed class HttpCredentialStore(
             if (record is null && request.Secret is null)
             { throw new ArgumentException("首次写入须提供认证类型和秘密。"); }
             if (request.Secret is not null && record is not null && hasPending &&
-                record.Kind == (int)request.Kind!.Value && record.Username == request.Username && record.Name == request.Name && request.AccountChanged is null)
+                record.Kind == (int)request.Kind!.Value &&
+                (request.Kind != HttpCredentialKind.Basic || record.Username == request.Username) && request.AccountChanged is null)
             { throw new CredentialWriteException("credential.accountDeclarationRequired"); }
             var existed = record is not null;
             record ??= new HttpCredentialRecord { ConnectionId = connectionId, AccountMarker = Guid.NewGuid().ToString("N") };
@@ -119,6 +122,21 @@ internal sealed class HttpCredentialStore(
         }
     }
 
+    /// <summary>明确清除与接收方变化导致的“作废”不同：只有未被保留运行版本引用的草稿可清除。</summary>
+    public void Clear(long connectionId, string expectedDraftVersion, string expectedVersion, string? account, string? sourceIp) =>
+        database.InTransaction(client =>
+        {
+            CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Http, null, expectedDraftVersion, requireDraft: true);
+            CredentialDraftGuard.RequireUnreferenced(client, connectionId);
+            var record = client.Queryable<HttpCredentialRecord>().InSingle(connectionId);
+            if (record is null || record.Version != expectedVersion)
+            { throw new CredentialWriteException("credential.versionConflict"); }
+            client.Deleteable(record).ExecuteCommand();
+            audit.Append(client, new AuditEntry("credential.http.clear", AuditResults.Success, account, sourceIp,
+                connectionId.ToString(CultureInfo.InvariantCulture), "已明确清除未被运行版本引用的认证凭证。"));
+            return true;
+        });
+
     internal static string NormalizeRecipient(string recipient)
     {
         if (string.IsNullOrWhiteSpace(recipient) || !Uri.TryCreate(recipient, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") ||
@@ -133,7 +151,7 @@ internal sealed class HttpCredentialStore(
 }
 
 internal sealed record HttpCredentialRequest(string Recipient, HttpCredentialKind? Kind = null, string? Username = null, string? Name = null, string? Secret = null,
-    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false)
+    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false, string? ExpectedDraftVersion = null)
 {
     public override string ToString() => "HTTP credential write request (secret omitted)";
 }

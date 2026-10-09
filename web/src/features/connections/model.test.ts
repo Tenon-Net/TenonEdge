@@ -82,3 +82,49 @@ describe('local draft editor lifetime', () => {
         expect(store.getState().form).toBeNull()
     })
 })
+
+describe('credential recipient uses only the saved non-secret connection', () => {
+    it.each(['10.0.0.1', '2001:db8::1'])(
+        'renders a canonical MQTT recipient for %s',
+        async (host) => {
+            const { credentialRecipient } = await import('./model')
+            const connection: Connection = {
+                id: 1,
+                key: 'broker',
+                name: 'Broker',
+                enabled: true,
+                kind: 'mqtt',
+                modbus: null,
+                http: null,
+                mqtt: {
+                    host,
+                    port: 8883,
+                    tls: true,
+                    timeoutMs: 5000,
+                    pingIntervalMs: 15000,
+                },
+            }
+            expect(credentialRecipient(connection)).toBe(
+                `mqtts://${host.includes(':') ? `[${host}]` : host}:8883`,
+            )
+        },
+    )
+    it('preserves the normalized HTTP base path as the credential boundary', async () => {
+        const { credentialRecipient } = await import('./model')
+        expect(
+            credentialRecipient({
+                id: 1,
+                key: 'http',
+                name: 'HTTP',
+                enabled: true,
+                kind: 'http',
+                modbus: null,
+                mqtt: null,
+                http: {
+                    baseAddress: 'https://example.test/api/',
+                    timeoutMs: 5000,
+                },
+            }),
+        ).toBe('https://example.test/api/')
+    })
+})

@@ -5,6 +5,7 @@ using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
@@ -86,6 +87,7 @@ internal sealed class MqttCredentialStore(
         var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0 || deliveries.ReadFailed(connectionId, 0, 1).Count > 0;
         return database.InTransaction(client =>
         {
+            CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Mqtt, recipient, request.ExpectedDraftVersion);
             if (client.Queryable<HttpCredentialRecord>().InSingle(connectionId) is not null)
             { throw new CredentialWriteException("credential.protocolConflict"); }
             var record = client.Queryable<MqttCredentialRecord>().InSingle(connectionId);
@@ -174,6 +176,21 @@ internal sealed class MqttCredentialStore(
         }
     }
 
+    /// <summary>明确清除与接收方变化导致的“作废”不同：只有未被保留运行版本引用的草稿可清除。</summary>
+    public void Clear(long connectionId, string expectedDraftVersion, string expectedVersion, string? account, string? sourceIp) =>
+        database.InTransaction(client =>
+        {
+            CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Mqtt, null, expectedDraftVersion, requireDraft: true);
+            CredentialDraftGuard.RequireUnreferenced(client, connectionId);
+            var record = client.Queryable<MqttCredentialRecord>().InSingle(connectionId);
+            if (record is null || record.Version != expectedVersion)
+            { throw new CredentialWriteException("credential.versionConflict"); }
+            client.Deleteable(record).ExecuteCommand();
+            audit.Append(client, new AuditEntry("credential.mqtt.clear", AuditResults.Success, account, sourceIp,
+                connectionId.ToString(CultureInfo.InvariantCulture), "已明确清除未被运行版本引用的认证凭证。"));
+            return true;
+        });
+
     internal static string NormalizeRecipient(string recipient)
     {
         if (string.IsNullOrWhiteSpace(recipient) || !Uri.TryCreate(recipient, UriKind.Absolute, out var uri) || uri.Scheme is not ("mqtt" or "mqtts") ||
@@ -190,7 +207,10 @@ internal sealed class MqttCredentialStore(
 }
 
 internal sealed record MqttCredentialRequest(string Recipient, string? Username = null, string? Password = null,
-    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false);
+    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false, string? ExpectedDraftVersion = null)
+{
+    public override string ToString() => "MQTT credential write request (secret omitted)";
+}
 internal sealed record MqttCredentialMetadata(long ConnectionId, string Recipient, string Version, bool Configured, DateTimeOffset UpdatedAt);
 internal sealed class CredentialWriteException(string code) : Exception(code)
 {

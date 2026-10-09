@@ -693,3 +693,145 @@ test('real connection drafts persist, conflicts and query failures retain edits,
         fullPage: true,
     })
 })
+
+test('managed connection credentials save separately, never echo, and clear with explicit confirmation', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建连接', exact: true }).click()
+    await page.getByLabel('连接 key', { exact: true }).fill('credential-broker')
+    await page.getByLabel('连接名称', { exact: true }).fill('凭证测试 Broker')
+    await page
+        .getByRole('combobox', { name: '协议类型', exact: true })
+        .selectOption('mqtt')
+    await page.getByLabel('主机或 IP', { exact: true }).fill('10.20.30.42')
+    await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
+    const row = page.getByRole('row').filter({ hasText: 'credential-broker' })
+    await row.getByRole('button', { name: '编辑连接', exact: true }).click()
+    const panel = page.getByRole('region', {
+        name: '连接认证凭证',
+        exact: true,
+    })
+    await expect(panel.getByText('未设置', { exact: true })).toBeVisible()
+    const before = await (
+        await page.request.get('/api/edge-admin/v1/connections')
+    ).json()
+    const connection = before.connections.find(
+        (value: { key: string }) => value.key === 'credential-broker',
+    )
+    await panel.getByLabel('认证用户名', { exact: true }).fill('fixture-user')
+    const secret = 'Browser-credential-fixture-1048'
+    await panel.getByLabel('新密码或秘密', { exact: true }).fill(secret)
+    page.once('dialog', (dialog) => dialog.accept())
+    await panel
+        .getByRole('button', { name: '立即保存凭证', exact: true })
+        .click()
+    await expect(panel.getByText('已设置', { exact: true })).toBeVisible()
+    await expect(panel.getByLabel('新密码或秘密', { exact: true })).toHaveValue(
+        '',
+    )
+    await expect(panel.getByLabel('认证用户名', { exact: true })).toHaveValue(
+        '',
+    )
+    const metadata = await page.request.get(
+        `/api/edge-admin/v1/connections/${connection.id}/mqtt-credential`,
+    )
+    expect(metadata.status()).toBe(200)
+    expect(await metadata.text()).not.toContain(secret)
+    expect(
+        (
+            await (
+                await page.request.get('/api/edge-admin/v1/connections')
+            ).json()
+        ).version,
+    ).toBe(before.version)
+    expect(
+        await page.evaluate(() =>
+            JSON.stringify({
+                local: { ...localStorage },
+                session: { ...sessionStorage },
+            }),
+        ),
+    ).not.toContain(secret)
+    await page.reload()
+    await row.getByRole('button', { name: '编辑连接', exact: true }).click()
+    await expect(panel.getByText('已设置', { exact: true })).toBeVisible()
+    await expect(panel.getByLabel('新密码或秘密', { exact: true })).toHaveValue(
+        '',
+    )
+    page.once('dialog', (dialog) => dialog.accept())
+    await panel.getByRole('button', { name: '清除凭证', exact: true }).click()
+    await expect(panel.getByText('未设置', { exact: true })).toBeVisible()
+    expect(
+        (
+            await page.request.get(
+                `/api/edge-admin/v1/connections/${connection.id}/mqtt-credential`,
+            )
+        ).status(),
+    ).toBe(404)
+})
+
+test('HTTP credential form writes each supported authentication kind without echoing secrets', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    await page.getByRole('button', { name: '新建连接', exact: true }).click()
+    await page.getByLabel('连接 key', { exact: true }).fill('credential-http')
+    await page.getByLabel('连接名称', { exact: true }).fill('凭证测试 HTTP')
+    await page
+        .getByRole('combobox', { name: '协议类型', exact: true })
+        .selectOption('http')
+    await page
+        .getByLabel('HTTP 基础地址', { exact: true })
+        .fill('https://example.test/api/')
+    await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
+    await page
+        .getByRole('row')
+        .filter({ hasText: 'credential-http' })
+        .getByRole('button', { name: '编辑连接', exact: true })
+        .click()
+    const panel = page.getByRole('region', {
+        name: '连接认证凭证',
+        exact: true,
+    })
+    for (const kind of ['basic', 'bearer', 'apiKeyHeader', 'apiKeyQuery']) {
+        await panel
+            .getByRole('combobox', { name: '新认证方式', exact: true })
+            .selectOption(kind)
+        if (kind === 'basic')
+            await panel
+                .getByLabel('认证用户名', { exact: true })
+                .fill('fixture-user')
+        if (kind.startsWith('apiKey'))
+            await panel
+                .getByLabel('API Key 参数名', { exact: true })
+                .fill(kind === 'apiKeyHeader' ? 'X-Fixture-Key' : 'fixture_key')
+        const secret = `fixture-${kind}-not-real`
+        await panel.getByLabel('新密码或秘密', { exact: true }).fill(secret)
+        const saved = page.waitForResponse(
+            (response) =>
+                response.url().endsWith('/http-credential') &&
+                response.request().method() === 'PUT',
+        )
+        page.once('dialog', (dialog) => dialog.accept())
+        await panel
+            .getByRole('button', { name: '立即保存凭证', exact: true })
+            .click()
+        const response = await saved
+        expect(response.status()).toBe(200)
+        expect(response.request().postDataJSON().kind).toBe(kind)
+        expect(await response.text()).not.toContain(secret)
+        await expect(
+            panel.getByLabel('新密码或秘密', { exact: true }),
+        ).toHaveValue('')
+        await expect(
+            panel.getByRole('button', { name: '立即保存凭证', exact: true }),
+        ).toBeEnabled()
+    }
+    await page.screenshot({
+        path: 'test-results/connection-credential.png',
+        fullPage: true,
+    })
+})
