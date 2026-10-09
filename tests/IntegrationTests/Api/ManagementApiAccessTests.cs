@@ -20,8 +20,10 @@ public sealed class ManagementApiAccessTests(
     {
         Assert.Equal(
             [
+                "DELETE /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
                 "GET /api/edge-admin/v1/audit (protected: role:administrator)",
                 "GET /api/edge-admin/v1/auth/session (protected)",
+                "GET /api/edge-admin/v1/connections/ (protected)",
                 "GET /api/edge-admin/v1/connections/{connectionId:long}/delivery-control (protected)",
                 "GET /api/edge-admin/v1/connections/{connectionId:long}/http-credential (protected)",
                 "GET /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected)",
@@ -37,7 +39,9 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/auth/login (anonymous)",
                 "POST /api/edge-admin/v1/auth/logout (protected)",
                 "POST /api/edge-admin/v1/auth/password (protected)",
+                "POST /api/edge-admin/v1/connections/ (protected: role:configurator)",
                 "POST /api/edge-admin/v1/setup (anonymous)",
+                "PUT /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
                 "PUT /api/edge-admin/v1/connections/{connectionId:long}/delivery-control (protected: role:administrator)",
                 "PUT /api/edge-admin/v1/connections/{connectionId:long}/http-credential (protected: role:configurator)",
                 "PUT /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected: role:configurator)",
@@ -51,8 +55,10 @@ public sealed class ManagementApiAccessTests(
     {
         Assert.Equal(
             [
+                "DELETE /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
                 "GET /api/edge-admin/v1/audit (protected: role:administrator)",
                 "GET /api/edge-admin/v1/auth/session (protected)",
+                "GET /api/edge-admin/v1/connections/ (protected)",
                 "GET /api/edge-admin/v1/connections/{connectionId:long}/delivery-control (protected)",
                 "GET /api/edge-admin/v1/connections/{connectionId:long}/http-credential (protected)",
                 "GET /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected)",
@@ -68,7 +74,9 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/auth/login (anonymous)",
                 "POST /api/edge-admin/v1/auth/logout (protected)",
                 "POST /api/edge-admin/v1/auth/password (protected)",
+                "POST /api/edge-admin/v1/connections/ (protected: role:configurator)",
                 "POST /api/edge-admin/v1/setup (anonymous)",
+                "PUT /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
                 "PUT /api/edge-admin/v1/connections/{connectionId:long}/delivery-control (protected: role:administrator)",
                 "PUT /api/edge-admin/v1/connections/{connectionId:long}/http-credential (protected: role:configurator)",
                 "PUT /api/edge-admin/v1/connections/{connectionId:long}/mqtt-credential (protected: role:configurator)",

@@ -3,18 +3,18 @@ using System.Text.Json;
 namespace TenonEdge.Adapters.Modbus;
 
 /// <summary>物理连接参数，不含 UnitId；同一连接的采集组必须使用相同参数。</summary>
-internal sealed record ModbusConnectionSettings
+public sealed record ModbusConnectionSettings
 {
-    internal long ConnectionId { get; init; }
-    internal string Host { get; init; } = string.Empty;
-    internal int Port { get; init; } = 502;
-    internal ModbusFrameFormat Format { get; init; }
-    internal int ConnectTimeoutMs { get; init; } = 5000;
-    internal int ReadTimeoutMs { get; init; } = 1000;
-    internal int RequestIntervalMs { get; init; }
-    internal int RtuSilenceMs { get; init; } = 500;
+    public long ConnectionId { get; init; }
+    public string Host { get; init; } = string.Empty;
+    public int Port { get; init; } = 502;
+    public ModbusFrameFormat Format { get; init; }
+    public int ConnectTimeoutMs { get; init; } = 5000;
+    public int ReadTimeoutMs { get; init; } = 1000;
+    public int RequestIntervalMs { get; init; }
+    public int RtuSilenceMs { get; init; } = 500;
 
-    internal ModbusConnectionSettings Validate()
+    public ModbusConnectionSettings Validate()
     {
         if (ConnectionId is < 1 or > 9007199254740991L)
         { throw new ArgumentException("Modbus 连接编号无效。"); }
@@ -29,6 +29,6 @@ internal sealed record ModbusConnectionSettings
         return this with { Host = Host.ToLowerInvariant() };
     }
 
-    internal string Identity => JsonSerializer.Serialize(new
+    public string Identity => JsonSerializer.Serialize(new
     { Host, Port, Format, ConnectTimeoutMs, ReadTimeoutMs, RequestIntervalMs, RtuSilenceMs });
 }

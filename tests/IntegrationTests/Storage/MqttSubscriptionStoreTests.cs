@@ -59,7 +59,7 @@ public sealed class MqttSubscriptionStoreTests
         using var database = TestConfigStore.Create();
         database.Initialize(ConfigMigrations.All.Where(migration => migration.Version <= 10).ToArray());
         database.Database.Client.Ado.ExecuteCommand("CREATE TABLE upgrade_probe (value TEXT); INSERT INTO upgrade_probe VALUES ('keep')");
-        Assert.Equal(11, database.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, database.CreateMigrator().Migrate());
         Assert.Equal("keep", database.Database.Client.Ado.GetString("SELECT value FROM upgrade_probe"));
         Assert.Empty(new MqttSubscriptionStore(database.Database).Read(new("mqtt://localhost:1883", "client")));
     }

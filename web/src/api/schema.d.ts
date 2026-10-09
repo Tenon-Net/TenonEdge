@@ -326,6 +326,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看连接草稿及全局草稿版本，不代表运行状态 */
+        get: operations["getConnectionDrafts"];
+        put?: never;
+        /** 新建连接草稿，保存不改变运行配置 */
+        post: operations["createConnectionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 更新连接草稿，key 与协议类型不可修改 */
+        put: operations["updateConnectionDraft"];
+        post?: never;
+        /** 删除未被引用且无发送记录的连接草稿 */
+        delete: operations["deleteConnectionDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -365,6 +401,38 @@ export interface components {
             sqliteVersion: string;
             sqliteCompileOptions: string[];
         };
+        ConnectionDraft: {
+            /** Format: int64 */
+            id: number | string;
+            key: string;
+            name: string;
+            kind: components["schemas"]["ConnectionKind"];
+            enabled: boolean;
+            modbus: null | components["schemas"]["ModbusConnectionDraft"];
+            mqtt: null | components["schemas"]["MqttConnectionDraft"];
+            http: null | components["schemas"]["HttpConnectionDraft"];
+        };
+        ConnectionDraftList: {
+            version: string;
+            connections: components["schemas"]["ConnectionDraft"][];
+        };
+        ConnectionDraftRequest: {
+            expectedVersion: string;
+            key: string;
+            name: string;
+            kind: components["schemas"]["ConnectionKind"];
+            /** @default true */
+            enabled: boolean;
+            modbus?: null | components["schemas"]["ModbusConnectionDraft"];
+            mqtt?: null | components["schemas"]["MqttConnectionDraft"];
+            http?: null | components["schemas"]["HttpConnectionDraft"];
+        };
+        ConnectionDraftResult: {
+            version: string;
+            connection: components["schemas"]["ConnectionDraft"];
+        };
+        /** @enum {unknown} */
+        ConnectionKind: "modbus" | "mqtt" | "http";
         DeliveryCacheStatus: {
             storageFault: boolean;
             lastError: null | string;
@@ -400,10 +468,24 @@ export interface components {
             /** Format: int64 */
             availableBytes: number | string;
         };
+        DraftVersion: {
+            version: string;
+        };
         FirstSetupInfo: {
             /** Format: date-time */
             completedAt: string;
             sourceIp: null | string;
+        };
+        HttpConnectionDraft: {
+            baseAddress: string;
+            /**
+             * Format: int32
+             * @default 5000
+             */
+            timeoutMs: number | string;
+            headers?: null | {
+                [key: string]: string;
+            };
         };
         /** @enum {unknown} */
         HttpCredentialKind: "basic" | "bearer" | "apiKeyHeader" | "apiKeyQuery" | null;
@@ -480,6 +562,61 @@ export interface components {
         LoginRequest: {
             accountName: null | string;
             password: null | string;
+        };
+        ModbusConnectionDraft: {
+            host: string;
+            /**
+             * Format: int32
+             * @default 502
+             */
+            port: number | string;
+            format?: components["schemas"]["ModbusFrameFormat"];
+            /**
+             * Format: int32
+             * @default 5000
+             */
+            connectTimeoutMs: number | string;
+            /**
+             * Format: int32
+             * @default 1000
+             */
+            readTimeoutMs: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            requestIntervalMs: number | string;
+            /**
+             * Format: int32
+             * @default 500
+             */
+            rtuSilenceMs: number | string;
+        };
+        /**
+         * @default tcp
+         * @enum {unknown}
+         */
+        ModbusFrameFormat: "tcp" | "rtuOverTcp";
+        MqttConnectionDraft: {
+            host: string;
+            /**
+             * Format: int32
+             * @default 1883
+             */
+            port: number | string;
+            /** @default false */
+            tls: boolean;
+            clientId?: null | string;
+            /**
+             * Format: int32
+             * @default 5000
+             */
+            timeoutMs: number | string;
+            /**
+             * Format: int32
+             * @default 15000
+             */
+            pingIntervalMs: number | string;
         };
         MqttCredentialMetadata: {
             /** Format: int64 */
@@ -1493,6 +1630,226 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConnectionDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionDraftList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    createConnectionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionDraftResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    updateConnectionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionDraftResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    deleteConnectionDraft: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

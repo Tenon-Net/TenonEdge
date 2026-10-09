@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using TenonEdge.Host.Features.Auth;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Health;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
@@ -33,6 +34,7 @@ internal static class HostServiceRegistration
         builder.Services.AddHostedService<DataRetentionService>();
 
         builder.Services.AddAuthFeature();
+        builder.Services.AddSingleton<ConnectionDraftStore>();
 
         // 运行时（T1-01—T1-03）：协调者、运行时宿主、发送缓存与输入适配器。
         builder.Services.AddRuntimeFeature();

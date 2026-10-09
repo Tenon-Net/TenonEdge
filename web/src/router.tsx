@@ -76,12 +76,21 @@ const canvasRoute = createRoute({
         'CanvasEditor',
     ),
 })
+const connectionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/connections',
+    component: lazyRouteComponent(
+        () => import('./features/connections/page'),
+        'ConnectionsPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
         accountRoute,
         pointsRoute,
         canvasRoute,
+        connectionsRoute,
     ]),
     defaultPreload: false,
 })

@@ -180,5 +180,22 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(12, "configuration_draft", [
+            """
+            CREATE TABLE configuration_draft (
+                id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+                version TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+            "INSERT INTO configuration_draft (id, version, updated_at) VALUES (1, '0', 0)",
+            """
+            CREATE TABLE connection_draft (
+                id INTEGER NOT NULL PRIMARY KEY,
+                business_key TEXT NOT NULL UNIQUE,
+                content TEXT NOT NULL
+            )
+            """,
+        ]),
     ];
 }

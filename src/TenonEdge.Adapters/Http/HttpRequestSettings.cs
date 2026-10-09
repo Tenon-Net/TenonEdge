@@ -14,7 +14,7 @@ public record HttpRequestSettings
     public Uri BaseUri => new(BaseAddress, UriKind.Absolute);
     public Uri Endpoint => ResolvePath(BaseUri, Path);
 
-    internal HttpRequestSettings ValidateRequest()
+    public HttpRequestSettings ValidateRequest()
     {
         var settings = this;
         if (settings.ConnectionId is < 1 or > 9007199254740991L)

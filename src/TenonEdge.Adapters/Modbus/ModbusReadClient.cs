@@ -5,7 +5,7 @@ using NModbus.Utility;
 
 namespace TenonEdge.Adapters.Modbus;
 
-internal enum ModbusFrameFormat { Tcp, RtuOverTcp }
+public enum ModbusFrameFormat { Tcp, RtuOverTcp }
 
 internal sealed class ModbusDeviceException(byte code) : Exception("Modbus 从站返回异常应答。")
 {

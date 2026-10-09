@@ -540,3 +540,156 @@ test('canvas keeps 50-step UI history, text editing shortcuts and multi-node cop
     await page.keyboard.press('Delete')
     expect((await graph()).definition.nodes).toHaveLength(2)
 })
+
+test('real connection drafts persist, conflicts and query failures retain edits, save never applies', async ({
+    page,
+}) => {
+    test.setTimeout(60_000)
+    await openPointEditor(page)
+    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    const versionResponse = await page.request.get(
+        '/api/edge-admin/v1/runtime/status',
+    )
+    // Runtime status may evolve diagnostics, but no configuration write is an apply request.
+    const writes: string[] = []
+    page.on('request', (request) => {
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method()))
+            writes.push(new URL(request.url()).pathname)
+    })
+    await page.getByRole('button', { name: '新建连接', exact: true }).click()
+    await page.getByLabel('连接 key', { exact: true }).fill('browser-plc')
+    await page.getByLabel('连接名称', { exact: true }).fill('浏览器 PLC')
+    await page.getByLabel('主机或 IP', { exact: true }).fill('10.20.30.40')
+    await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
+    await expect(page.getByRole('status')).toContainText(
+        '已保存到网关草稿，尚未应用',
+    )
+    await page.reload()
+    const row = page.getByRole('row').filter({ hasText: 'browser-plc' })
+    await expect(row).toContainText('10.20.30.40:502')
+    await row.getByRole('button', { name: '编辑连接', exact: true }).click()
+    await expect(page.getByLabel('连接 key', { exact: true })).toBeDisabled()
+    await expect(
+        page.getByRole('combobox', { name: '协议类型', exact: true }),
+    ).toBeDisabled()
+    await page.getByLabel('连接名称', { exact: true }).fill('保留未保存编辑')
+    // A real second management request changes the same global draft version.
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const list = await (
+        await page.request.get('/api/edge-admin/v1/connections')
+    ).json()
+    const created = await page.request.post('/api/edge-admin/v1/connections', {
+        headers: { 'X-CSRF-Token': session.csrfToken },
+        data: {
+            expectedVersion: list.version,
+            key: 'browser-broker',
+            name: '另一个编辑者的 Broker',
+            kind: 'mqtt',
+            enabled: true,
+            mqtt: { host: '10.20.30.41' },
+        },
+    })
+    expect(created.status()).toBe(200)
+    await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
+    await expect(
+        page.getByText(
+            '草稿已变化或此操作受引用/唯一性约束。编辑内容已保留；请刷新列表核对，必要时明确重新载入此连接，不会自动覆盖他人的修改。',
+        ),
+    ).toBeVisible()
+    await expect(page.getByLabel('连接名称', { exact: true })).toHaveValue(
+        '保留未保存编辑',
+    )
+    await page.route('**/api/edge-admin/v1/connections', (route) =>
+        route.request().method() === 'GET'
+            ? route.fulfill({
+                  status: 500,
+                  contentType: 'application/problem+json',
+                  body: '{"status":500}',
+              })
+            : route.continue(),
+    )
+    const queryFailure = page.waitForResponse(
+        (response) =>
+            response.url().endsWith('/connections') &&
+            response.status() === 500,
+    )
+    await page
+        .getByRole('button', { name: '刷新连接列表', exact: true })
+        .click()
+    await queryFailure
+    await expect(page.getByLabel('连接名称', { exact: true })).toHaveValue(
+        '保留未保存编辑',
+    )
+    await page.unroute('**/api/edge-admin/v1/connections')
+    await page
+        .getByRole('button', { name: '刷新连接列表', exact: true })
+        .click()
+    await expect(
+        page.getByRole('row').filter({ hasText: 'browser-broker' }),
+    ).toBeVisible()
+    await expect(page.getByLabel('连接名称', { exact: true })).toHaveValue(
+        '保留未保存编辑',
+    )
+    page.once('dialog', (dialog) => dialog.accept())
+    await page
+        .getByRole('button', { name: '重新载入此连接', exact: true })
+        .click()
+    await expect(page.getByLabel('连接名称', { exact: true })).toHaveValue(
+        '浏览器 PLC',
+    )
+    await page.getByLabel('连接名称', { exact: true }).fill('更新后的 PLC')
+    await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
+    await expect(row).toContainText('更新后的 PLC')
+    await page.getByRole('button', { name: '新建连接', exact: true }).click()
+    await page.getByLabel('连接 key', { exact: true }).fill('browser-http')
+    await page.getByLabel('连接名称', { exact: true }).fill('HTTP 拉取')
+    await page
+        .getByRole('combobox', { name: '协议类型', exact: true })
+        .selectOption('http')
+    await page
+        .getByLabel('HTTP 基础地址', { exact: true })
+        .fill('https://example.test/api')
+    await page.getByRole('button', { name: '添加请求头', exact: true }).click()
+    await page.getByLabel('请求头 1 名称', { exact: true }).fill('Accept')
+    await page
+        .getByLabel('请求头 1 值', { exact: true })
+        .fill('application/json')
+    await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
+    await expect(
+        page.getByRole('row').filter({ hasText: 'browser-http' }),
+    ).toContainText('https://example.test/api/')
+    await page
+        .getByRole('combobox', { name: '协议筛选', exact: true })
+        .selectOption('http')
+    await expect(row).toHaveCount(0)
+    page.once('dialog', (dialog) => dialog.accept())
+    await page
+        .getByRole('row')
+        .filter({ hasText: 'browser-http' })
+        .getByRole('button', { name: '删除连接', exact: true })
+        .click()
+    await expect(
+        page.getByRole('row').filter({ hasText: 'browser-http' }),
+    ).toHaveCount(0)
+    expect(
+        writes.every((path) =>
+            /^\/api\/edge-admin\/v1\/connections(?:\/\d+)?$/.test(path),
+        ),
+    ).toBe(true)
+    expect(versionResponse.status()).toBe(200)
+    const afterStatus = await (
+        await page.request.get('/api/edge-admin/v1/runtime/status')
+    ).json()
+    expect(afterStatus.coordinator.activeRevision).toBe(
+        (await versionResponse.json()).coordinator.activeRevision,
+    )
+    await page
+        .getByRole('combobox', { name: '协议筛选', exact: true })
+        .selectOption('')
+    await page.screenshot({
+        path: 'test-results/connections-draft.png',
+        fullPage: true,
+    })
+})

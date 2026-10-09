@@ -41,7 +41,8 @@
 | T3 | T3-01 前端精简基础 | 进行中，认证基础待验收 | 真实首次设置/登录/退出/密码修改、同源静态部署及普通 HTTP 浏览器通过；最低浏览器及强制改密/重置完整场景未验证 | §2.99—§2.100 |
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
-| 后续 | T3-04—T3-11 可视化配置验收 | 未开始 | 未执行 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
+| T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
+| 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
 
@@ -2119,6 +2120,28 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 5. `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 与 `git diff --check` 通过。测试宿主均已结束；未推送、未运行远端 CI。
 
 本批后端没有改动，**没有重新执行 .NET 1773 项**，沿用 §2.100。此处只有本地拓扑提示，不是 T3-05 编译/来源字段验证/先饱和计数后路径展开或真实样本预览；不标 AT-07/13/29 整体通过。最低浏览器、完整触摸/辅助技术矩阵未验证。下一步 T3-04 草稿及真实配置 API/表单，之后 T3-05/06 编译与应用回滚；当前仍不能仅靠此原型完成网关配置，总目标不标完成。
+
+### 2.103 T3-04 连接草稿子项：真实持久化与网页表单（2026-10-10）
+
+本次是 T3-04 的连接草稿子项，不标整项完成。前置为 T3-02、T0 安全、T2 与已确认 D-05；沿维护者授权继续可视化配置。核对功能 §2/3、总设计 §7.4/10.1/10.2 及参考项目笔记后，自行实现，不复制参考项目源码、不新增依赖。
+
+- 配置库显式迁移 **12**：`configuration_draft` 保存全局草稿版本，`connection_draft` 保存稳定雪花 ID、唯一业务 key 和类型化非秘密参数。连接 ID 纳入启动时发号下限登记。新增/修改/删除、草稿版本推进与审计在同一短事务中完成；旧版本写入返回 409，不静默合并或覆盖。
+- 分组 Minimal API 的 `GET/POST /connections`、`PUT/DELETE /connections/{connectionId}` 已交付并更新实际 OpenAPI/生成客户端。所有角色可读；写操作要求配置人员或管理员并受既有 CSRF/会话保护。key 与协议类型创建后不变。连接参数复用 Modbus/MQTT/HTTP 适配器的连接校验；未知属性、URL 用户信息/查询及已识别秘密请求头不能保存到草稿。
+- 删除在同一配置事务中检查有效、上一、待生效运行版本引用；待发、失败及隔离记录存在时拒绝删除。引用检查当前覆盖既有 schema 1 种子快照；后续设备/输入实体与 schema 2 快照须接入同一保护，不能跳过。未实现的引用类型不据此宣称通过。
+- `/connections` 是真实表单而非原型：Modbus 帧格式/超时/间隔、MQTT TLS/ClientId/保活、HTTP 基础地址/非秘密请求头；支持名称/key 搜索、类型筛选、启停草稿、删除确认。显示“草稿，尚未应用”，不伪造联网状态。原有种子不会自动转换成草稿，空列表明确说明。
+- 查询用 TanStack Query、编辑用页面内 Zustand，表单捕获打开时的草稿版本。查询 500、冲突或手动刷新都不覆盖输入；重新载入须显式确认丢弃修改。内部导航/离站对未保存编辑给出提醒。保存成功后重新查询实际数据库；不触发应用、采集或外发。
+
+实际验证：
+
+1. 环境沿用 Linux x64、SDK 10.0.401、Node 22.23.2/npm 11.21.0。`dotnet build TenonEdge.sln -c Release --no-restore` 通过，0 警告/错误；新增代码与测试的格式由 `dotnet format` 校正。格式门禁也发现之前提交中 13 个文件的换行/using 排序问题，只做自动格式规范化，不改变其业务逻辑，单独整理为本地提交 `05b4022`。完整 `dotnet format TenonEdge.sln --verify-no-changes --no-restore` 随后通过（`/tmp/tenonedge-draft-format-final.log`），格式化后再次 Release 构建通过（`/tmp/tenonedge-draft-final-build.log`）。
+2. `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t3-draft-final' --results-directory artifacts/test-results/t3-draft --blame-hang-timeout 5m --blame-hang-dump-type none`：**992 单元 + 812 集成 = 1804 通过，0 失败/跳过**；新增 16 项连接参数单测和 15 项草稿集成子场景。日志 `/tmp/tenonedge-draft-full-final.log`；最终两份 TRX 另归集到 `artifacts/test-results/t3-draft-final/`，与初轮失败报告分开，原报告未删除。`python3 .github/scripts/verify-test-results.py artifacts/test-results/t3-draft-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过。
+   - 参数规范化、协议互斥、key/超时/地址及秘密头拒绝；真实会话角色矩阵、匿名/CSRF 拒绝；同版本并发仅一次成功，重复 key/不可变标识/过期删除拒绝；审计失败整体回滚。
+   - 独立数据目录重建宿主后读取相同 ID/版本/内容；更新/删除产生审计。保存不推进有效/上一/待生效指针（此用例从无运行版本开始，不冒充带真实设备在线的无扰动验证）。三类运行版本引用采用存储夹具，三类发送记录采用真实 queue.db 写者，删除均被拦截；夹具不发外部 HTTP/MQTT。
+3. 从临时 Development Host 导出实际 API，`npm run api:generate` 更新 `web/openapi.json` 与 `src/api/schema.d.ts`；临时目录和宿主已清理。`npm run build`、`run lint`、`run format:check` 通过；主入口约 508 kB 的大小提示仍明确保留，未提高阈值掩盖，连接页按路由懒加载。
+4. `npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json`：**96 通过，0 失败/跳过**（新增 5 项表单/编辑状态子场景）。`PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://192.168.0.88:18082 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json`：**7 通过，0 失败/跳过**。实际 Production Host 和网卡 HTTP，完整回归认证、点表和画布；连接场景真实新建 Modbus、重载页面持久保留、第二编辑请求触发 409 且输入保留、GET500 后恢复不丢编辑、显式重载后更新、HTTP 头/路径保存和筛选删除。写请求仅连接 CRUD，运行版本号保持不变。日志 `/tmp/tenonedge-draft-web-unit.log`、`/tmp/tenonedge-draft-browser-final.log`；报告门禁通过，截图 `web/test-results/connections-draft.png` 已查看。
+5. 初轮全量有 4 项失败：新增端点后访问/operationId 清单未更新（3 项）及升级测试硬编码旧 schema 11（1 项）；清单按实际授权逐项扩展、升级断言改为当前末次迁移版本，保留原有数据不改写的断言。后续定向核对又校正了路由库存的尾斜杠。浏览器首轮 6 通过/1 失败是 select 的 label 定位，改为其可访问 combobox 角色定位后通过；没有放宽业务断言。失败日志保留，不能算通过。
+
+剩余：T3-04 的凭证/信任证书表单、连接测试、设备/来源/点位草稿、复制/CSV/字段推断仍未完成；现有凭证 API 仍是 T2 种子专用接口，本批不宣称已经具备草稿资源归属与完整凭证类型联动。接收方变更保存仅修改草稿，凭证重绑定/应用拦截随 T3-04 后续与 T3-06 完成。T3-05/06 的引用编译、受控应用与版本回滚未实现，网页仍不能独立完成整个网关配置。AT-18/FE-AT 仅上述子场景有软件证据，最低浏览器、真实设备和远端 CI 未验证。未推送或发版，总目标继续保持未完成。
 
 ## 3. 验收编号登记
 

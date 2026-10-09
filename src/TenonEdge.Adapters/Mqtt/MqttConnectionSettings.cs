@@ -19,7 +19,7 @@ public record MqttConnectionSettings
 
     public string Recipient => $"{(Tls ? "mqtts" : "mqtt")}://{(Host.Contains(':', StringComparison.Ordinal) ? "[" + Host.ToLowerInvariant() + "]" : Host.ToLowerInvariant())}:{Port}";
 
-    internal MqttConnectionSettings ValidateConnection()
+    public MqttConnectionSettings ValidateConnection()
     {
         var settings = this;
         ArgumentOutOfRangeException.ThrowIfLessThan(settings.ConnectionId, 1);
