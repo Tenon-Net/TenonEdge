@@ -300,6 +300,79 @@ public sealed class ModbusConnectionSessionTests
         }
     }
 
+    [Fact]
+    public async Task TestCreatedSessionBindsRealRuntimeUnitsWithoutPhantomSlaveOrSecondConnection()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var settings = Settings(slave);
+        var shared = new SharedConnections();
+        await using var keep = shared.Acquire(1, "modbus", settings.Identity,
+            () => new ModbusConnectionSession(settings, null, Connector(), TimeProvider.System));
+        var probe = new ModbusConnectionTest(shared, new WaitingConnector(), TimeProvider.System);
+        Assert.True((await probe.RunAsync(settings, Token)).Success);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Read(keep, 2));
+        await keep.ExecuteAsync((session, _) =>
+        {
+            session.ConfigureUnits([2, 3]);
+            session.ConfigureUnits([3, 2]);
+            Assert.Throws<InvalidOperationException>(() => session.ConfigureUnits([1, 2, 3]));
+            return Task.FromResult(true);
+        }, Token);
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(keep, 2)).Outcome);
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(keep, 3)).Outcome);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Read(keep, 1));
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task ProbeTotalBudgetBoundsQueueAndDoesNotTouchRuntimeStream()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var time = new FakeTimeProvider();
+        var settings = Settings(slave);
+        var shared = new SharedConnections();
+        await using var lease = shared.Acquire(1, "modbus", settings.Identity,
+            () => new ModbusConnectionSession(settings, [1], Connector(), time));
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(lease, 1)).Outcome);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var holding = lease.ExecuteAsync(async (_, token) =>
+        {
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            return true;
+        }, Token);
+        await entered.Task.WaitAsync(Token);
+        try
+        {
+            var probe = new ModbusConnectionTest(shared, new WaitingConnector(), time);
+            var result = probe.RunAsync(settings, Token);
+            time.Advance(TimeSpan.FromMilliseconds(settings.ConnectTimeoutMs));
+            var timedOut = await result.WaitAsync(TimeSpan.FromSeconds(5), Token);
+            Assert.Equal("connection.busy", timedOut.Code);
+            Assert.Equal("notReached", timedOut.Steps[0].Status);
+            Assert.Equal("notReached", timedOut.Steps[1].Status);
+        }
+        finally { release.TrySetResult(); }
+        await holding;
+        Assert.Equal(ModbusRequestOutcome.Success, (await Read(lease, 1)).Outcome);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task RuntimeBindingRepeatedBySiblingInputDoesNotEraseTimeoutHistory()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, _ => new SlaveReply { Silent = true });
+        await using var session = new ModbusConnectionSession(Settings(slave), null, Connector(), new FakeTimeProvider());
+        session.ConfigureUnits([2, 3]);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(2, 3, 0, 1, Token)).Outcome);
+        session.ConfigureUnits([3, 2]);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(3, 3, 0, 1, Token)).Outcome);
+        Assert.Equal("connection.backoff", (await session.TestConnectionAsync(Token)).Code);
+        Assert.False((await session.ReadAsync(2, 3, 0, 1, Token)).WasRequested);
+        Assert.Equal(2, slave.RequestCount);
+    }
+
     private sealed class DeniedPolicy : IOutboundAddressPolicy
     {
         public bool IsAllowed(IPAddress address, int port) => false;

@@ -52,6 +52,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "login",
         "logout",
         "testHttpConnection",
+        "testModbusConnection",
         "testMqttConnection",
         "updateConnectionDraft",
         "updateDeviceDraft",

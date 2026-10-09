@@ -279,6 +279,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/test/modbus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 通过共享会话测试未保存的 Modbus 连接参数，不发送协议报文或保存草稿
+         * @description 复用已有流不代表重新验证远端存活；从站读取须通过设备预览。总期限包含共享串行队列等待。
+         */
+        post: operations["testModbusConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -880,6 +900,18 @@ export interface components {
              * @default 500
              */
             rtuSilenceMs: number | string;
+        };
+        ModbusConnectionTestRequest: {
+            connection: components["schemas"]["ModbusConnectionDraft"];
+            /** Format: int64 */
+            connectionId?: null | number | string;
+        };
+        ModbusConnectionTestResult: {
+            success: boolean;
+            code: string;
+            /** Format: double */
+            elapsedMs: number | string;
+            steps: components["schemas"]["ConnectionTestStep"][];
         };
         /**
          * @default tcp
@@ -1770,6 +1802,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HttpConnectionTestResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    testModbusConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModbusConnectionTestRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModbusConnectionTestResult"];
                 };
             };
             /** @description Bad Request */

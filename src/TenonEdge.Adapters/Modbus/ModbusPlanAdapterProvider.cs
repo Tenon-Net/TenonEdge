@@ -117,6 +117,12 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
                 owner._started = true;
                 await using var lease = owner._shared.Acquire(input.Settings.ConnectionId, "modbus", input.Connection.Settings.Identity,
                     () => new ModbusConnectionSession(input.Connection.Settings, input.Connection.Units, owner._connector, owner._time));
+                await lease.ExecuteAsync((session, token) =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    session.ConfigureUnits(input.Connection.Units);
+                    return Task.FromResult(true);
+                }, stoppingToken);
                 var period = TimeSpan.FromMilliseconds(input.Settings.PeriodMs);
                 var started = input.Connection.StartedAt.Value;
                 var cycle = (long)(owner._time.GetElapsedTime(started) / period);

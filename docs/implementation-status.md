@@ -2361,6 +2361,23 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 Linux x64、SDK 10.0.401 / .NET 10.0.12、Release 定向回归：`dotnet test TenonEdge.sln -c Release --no-restore --filter 'FullyQualifiedName~Modbus|FullyQualifiedName~ConnectionTestTrace|FullyQualifiedName~HttpConnectionTest|FullyQualifiedName~MqttConnectionTest' --logger trx --results-directory artifacts/test-results/t3-modbus-test-session`，**207 单元 + 154 集成 = 361 项通过，0 失败/跳过**；TRX 非零/无跳过门禁通过，日志 `/tmp/tenonedge-modbus-test-regression.log`。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-modbus-test-format-verify.log`），`git diff --check` 通过。本子项未重跑完整后端/前端套件，完整基线仍见 §2.114。首次会话定向测试 16 项通过，0 失败/跳过（`/tmp/tenonedge-modbus-test-session.log`）；此前一次构建被 CA1861 拒绝，调整测试常量集合写法后通过，不将失败尝试计作通过。真实网络子场景使用本机模拟从站，DNS/拒绝连接分类为注入错误测试，超时使用可控时钟；不宣称实物兼容。
 
+### 2.116 T3-04 Modbus 未保存参数测试 API 与网页（2026-10-10）
+
+接续 §2.115，补齐连接页测试入口；只建立 TCP 传输，不把建连当作设备读取验证。没有新增依赖、模拟产品数据或旁路连接。
+
+- `POST /connections/test/modbus` 仅 Configurator/Administrator，使用本地会话、CSRF、128 KiB 请求体限制及 MQTT/HTTP 共用的全局 4 / 每会话 2 准入额度。未保存表单用临时唯一编号，不插入配置库；指定编号必须存在且为 Modbus 草稿，配置与现有共享会话不一致返回 409。
+- `ModbusConnectionTest` 借用正式 `ISharedConnections` 串行队列。总连接期限包含排队，进入会话后只使用剩余预算；等待到期与网络超时分别报告。取消后等待真实操作退出，最后租约负责销毁会话，不后台遗留连接。
+- 测试先创建会话时启用 UnitId 集合保持未绑定，而非填入假从站；正式运行单元取得租约后，在同一串行执行器中绑定完整集合，再进入读取循环。同集合重复绑定不清空健康历史，不同集合拒绝，未绑定时不能正式读取；不混合两套计划的成员。
+- 网页支持 TCP / RTU over TCP 未保存参数，显示目标、总耗时与五阶段结果。已有流显示“复用现有连接，未重新检测远端存活”，协议读取明确“不执行”；关闭页面取消请求，新建编辑器清除旧结果。没有从连接页发送读取或写入报文。
+
+定向验证 **36 单元 + 34 集成通过，0 失败/跳过**（`/tmp/tenonedge-modbus-api-targeted2.log`），涵盖角色/匿名/CSRF、非法参数、不存在草稿、运行参数冲突、共用额度、排队到期、未绑定会话接管与真实读取。初次编译提示 nullable 解引用，修正读取路径的非空流分析后通过；不把失败构建计作通过。新增同集合重复绑定保留超时历史回归随全量执行。完整回归：Linux x64、SDK 10.0.401 / .NET 10.0.12、Release，`dotnet build TenonEdge.sln -c Release --no-restore` 通过；`dotnet test TenonEdge.sln -c Release --no-build --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --logger trx --results-directory artifacts/test-results/t3-modbus-test-api` **1071 单元 + 951 集成 = 2022 项通过，0 失败/跳过**，TRX 非零/无跳过门禁通过。日志 `/tmp/tenonedge-modbus-api-build.log`、`/tmp/tenonedge-modbus-api-full.log`。`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 通过（`/tmp/tenonedge-modbus-api-format-verify.log`），`git diff --check` 通过。
+
+前端 Node 22.23.2 / npm 11.21.0 / Chromium 156.0.8078.4，经 `http://192.168.0.88:18082`：build、typecheck、lint、format:check 通过；Vitest **119 项通过**，Playwright **17 项通过**（42.5 秒），报告非零/无跳过门禁通过；日志 `/tmp/tenonedge-modbus-api-web-build.log`、`/tmp/tenonedge-modbus-api-web-unit.log`、`/tmp/tenonedge-modbus-api-web-full.log`，报告 `web/reports/unit.json`、`web/reports/browser.json`。Modbus 浏览器场景在真实网关上临时放行本机 TCP 夹具，分别选择两种帧格式，观察到两次连接及关闭、**0 个协议字节**；草稿未改变，新建表单旧结果清空。策略恢复、夹具关闭；已查看 `web/test-results/modbus-connection-test.png`，结果表正确区分建连与不执行协议读取。
+
+浏览器最初两次独立执行失败（`/tmp/tenonedge-modbus-api-browser.log`、`/tmp/tenonedge-modbus-api-browser2.log`）：trace 显示精确 `getByLabel` 在隐式标签的下拉框上超时，尚未发测试请求；第一次修正命令使用了错误相对路径，第二次仍运行旧定位。改用页面实际可访问名称的 `getByRole('combobox', ...)` 后，上述完整 17 项通过；未放宽断言/超时或重试。
+
+剩余：设备页真实读取/字节序预览、实时抓取、证书表单，以及 T3-05 图编译和 T3-06 应用/回滚尚未完成；本机从站软件验证不代表实物兼容验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

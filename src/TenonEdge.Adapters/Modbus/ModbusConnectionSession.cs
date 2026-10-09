@@ -13,8 +13,8 @@ internal sealed record ModbusReadResult(ModbusRequestOutcome Outcome, bool WasRe
 internal sealed class ModbusConnectionSession : IAsyncDisposable
 {
     private readonly ModbusConnectionSettings _settings;
-    private readonly HashSet<byte> _units;
-    private readonly ModbusConnectionHealth _health;
+    private HashSet<byte>? _units;
+    private ModbusConnectionHealth? _health;
     private readonly IOutboundConnector _connector;
     private readonly TimeProvider _time;
     private readonly ModbusRequestExecutor _executor;
@@ -26,25 +26,41 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
     private int _reconnectSeconds = 1;
     private bool _disposed;
 
-    internal ModbusConnectionSession(ModbusConnectionSettings settings, IEnumerable<byte> enabledUnits,
+    internal ModbusConnectionSession(ModbusConnectionSettings settings, IEnumerable<byte>? enabledUnits,
         IOutboundConnector connector, TimeProvider time)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(enabledUnits);
         ArgumentNullException.ThrowIfNull(connector);
         ArgumentNullException.ThrowIfNull(time);
         _settings = settings.Validate();
-        _units = enabledUnits.ToHashSet();
-        if (_units.Count == 0 || (_settings.Format == ModbusFrameFormat.RtuOverTcp && _units.Any(unit => unit is < 1 or > 247)))
-        { throw new ArgumentException("Modbus 启用从站集合无效。", nameof(enabledUnits)); }
-        _health = new ModbusConnectionHealth(_units);
+        if (enabledUnits is not null)
+        { ConfigureUnits(enabledUnits); }
         _connector = connector;
         _time = time;
         _executor = new ModbusRequestExecutor();
     }
 
+    // 测试先创建的会话尚无采集成员；运行时必须在同一串行租约中一次性绑定完整集合。
+    // 后续重复绑定不清空健康历史，集合不同则拒绝，不能静默合并两个运行计划。
+    internal void ConfigureUnits(IEnumerable<byte> enabledUnits)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(enabledUnits);
+        var units = enabledUnits.ToHashSet();
+        if (units.Count == 0 || (_settings.Format == ModbusFrameFormat.RtuOverTcp && units.Any(unit => unit is < 1 or > 247)))
+        { throw new ArgumentException("Modbus 启用从站集合无效。", nameof(enabledUnits)); }
+        if (_units is not null)
+        {
+            if (!_units.SetEquals(units))
+            { throw new InvalidOperationException("共享会话的运行时从站集合不一致。"); }
+            return;
+        }
+        _units = units;
+        _health = new ModbusConnectionHealth(units);
+    }
+
     // 调用者必须持有共享串行租约；只建立传输，不发送 Modbus 报文。
-    internal async Task<ModbusConnectionTestResult> TestConnectionAsync(CancellationToken token)
+    internal async Task<ModbusConnectionTestResult> TestConnectionAsync(CancellationToken token, TimeSpan? remaining = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         token.ThrowIfCancellationRequested();
@@ -56,14 +72,14 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
         { return Result("connection.backoff", false); }
         if (_client?.NeedsNewConnection == true)
         { Reset(backoff: false); }
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(_settings.ConnectTimeoutMs), _time);
+        using var deadline = new CancellationTokenSource(remaining ?? TimeSpan.FromMilliseconds(_settings.ConnectTimeoutMs), _time);
         using var connect = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             _stream = await new ObservedTestConnector(_connector, trace).ConnectAsync(_settings.Host, _settings.Port, connect.Token);
             connect.Token.ThrowIfCancellationRequested();
             _client = new ModbusReadClient(_stream, _settings.Format, _time);
-            _health.ConnectionReplaced();
+            _health?.ConnectionReplaced();
             _retryStarted = null;
             return Result("success", true);
         }
@@ -92,6 +108,8 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         token.ThrowIfCancellationRequested();
+        if (_units is null || _health is null)
+        { throw new InvalidOperationException("读取前须绑定运行时从站集合。"); }
         if (!_units.Contains(unit))
         { throw new ArgumentOutOfRangeException(nameof(unit)); }
         if (function is < 1 or > 4 || count == 0 || count > (function <= 2 ? 2000 : 125) || (int)address + count > 65536)

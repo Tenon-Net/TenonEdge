@@ -46,6 +46,7 @@ app.MapManagementApi()
     .MapConnectionDraftEndpoints()
     .MapMqttConnectionTestEndpoints()
     .MapHttpConnectionTestEndpoints()
+    .MapModbusConnectionTestEndpoints()
     .MapDeviceDraftEndpoints()
     .MapInputDraftEndpoints()
     .MapPointCsvEndpoints();

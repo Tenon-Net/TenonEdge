@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { createServer } from 'node:http'
+import { createServer as createTcpServer, type Socket } from 'node:net'
 
 test('real setup, session, CSRF password change, logout and offline assets', async ({
     page,
@@ -2042,5 +2043,121 @@ test('HTTP unsaved test performs one real GET with transient credentials, status
         await new Promise<void>((resolve, reject) =>
             peer.close((error) => (error ? reject(error) : resolve())),
         )
+    }
+})
+
+test('Modbus unsaved TCP and RTU connection tests send no protocol bytes and preserve drafts', async ({
+    page,
+}) => {
+    let accepted = 0
+    let bytes = 0
+    const sockets = new Set<Socket>()
+    const peer = createTcpServer((socket) => {
+        accepted++
+        sockets.add(socket)
+        socket.on('data', (chunk) => {
+            bytes += chunk.length
+        })
+        socket.on('close', () => sockets.delete(socket))
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string')
+        throw new Error('fixture-listener-address')
+    let restore: (() => Promise<void>) | undefined
+    try {
+        await openPointEditor(page)
+        await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+        const before = await (
+            await page.request.get('/api/edge-admin/v1/connections')
+        ).json()
+        const session = await (
+            await page.request.get('/api/edge-admin/v1/auth/session')
+        ).json()
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        const allowed = await page.request.put(policyUrl, {
+            headers: { 'X-CSRF-Token': session.csrfToken },
+            data: {
+                expectedVersion: policy.version,
+                networks: policy.networks,
+                localPorts: [...policy.localPorts, address.port],
+            },
+        })
+        expect(allowed.status()).toBe(200)
+        const allowedVersion = (await allowed.json()).version
+        restore = async () => {
+            const response = await page.request.put(policyUrl, {
+                headers: { 'X-CSRF-Token': session.csrfToken },
+                data: {
+                    expectedVersion: allowedVersion,
+                    networks: policy.networks,
+                    localPorts: policy.localPorts,
+                },
+            })
+            expect(response.status()).toBe(200)
+        }
+        await page
+            .getByRole('button', { name: '新建连接', exact: true })
+            .click()
+        await page.getByLabel('主机或 IP', { exact: true }).fill('127.0.0.1')
+        await page
+            .getByLabel('端口', { exact: true })
+            .fill(String(address.port))
+        const panel = page.getByRole('region', {
+            name: 'Modbus 真实连接测试',
+            exact: true,
+        })
+        for (const format of ['tcp', 'rtuOverTcp']) {
+            await page
+                .getByRole('combobox', { name: '帧格式', exact: true })
+                .selectOption(format)
+            const response = page.waitForResponse((item) =>
+                item.url().endsWith('/connections/test/modbus'),
+            )
+            await panel
+                .getByRole('button', { name: '测试 Modbus 连接', exact: true })
+                .click()
+            expect((await response).status()).toBe(200)
+            await expect(panel.getByRole('status')).toContainText(
+                'TCP 建连成功（尚未验证从站读取）',
+            )
+            await expect(
+                panel
+                    .getByRole('table')
+                    .getByRole('row')
+                    .filter({ hasText: '协议读取（本测试不执行）' }),
+            ).toContainText('不执行')
+        }
+        await expect.poll(() => accepted).toBe(2)
+        await expect.poll(() => sockets.size).toBe(0)
+        expect(bytes).toBe(0)
+        expect(
+            await (
+                await page.request.get('/api/edge-admin/v1/connections')
+            ).json(),
+        ).toEqual(before)
+        await page.screenshot({
+            path: 'test-results/modbus-connection-test.png',
+            fullPage: true,
+        })
+        page.once('dialog', (dialog) => dialog.accept())
+        await page
+            .getByRole('button', { name: '新建连接', exact: true })
+            .click()
+        await expect(
+            page
+                .getByRole('region', { name: 'Modbus 真实连接测试' })
+                .getByRole('status'),
+        ).toHaveCount(0)
+    } finally {
+        try {
+            await restore?.()
+        } finally {
+            for (const socket of sockets) socket.destroy()
+            await new Promise<void>((resolve, reject) =>
+                peer.close((error) => (error ? reject(error) : resolve())),
+            )
+        }
     }
 })

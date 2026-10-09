@@ -6,7 +6,7 @@ export function ConnectionTestSteps({
     protocol,
 }: {
     steps: components['schemas']['ConnectionTestStep'][]
-    protocol: 'mqtt' | 'http'
+    protocol: 'mqtt' | 'http' | 'modbus'
 }) {
     const { t } = useTranslation()
     return (

@@ -55,6 +55,29 @@ const mqttTestStrings = {
 export const connectionStrings = {
     title: '连接草稿',
     mqttTest: mqttTestStrings,
+    modbusTest: {
+        ...mqttTestStrings,
+        title: 'Modbus 真实连接测试',
+        notice: '使用当前未保存的参数，通过共享会话串行测试到 TCP 建连为止，不发送 Modbus 报文、不保存或应用。复用现有连接不代表重新验证远端存活；从站是否可读需另行读取测试（设备预览尚未接入）。运行参数冲突时拒绝测试，排队也计入总超时。',
+        run: '测试 Modbus 连接',
+        stages: {
+            ...mqttTestStrings.stages,
+            authentication: '认证（Modbus 不启用）',
+            protocol: '协议读取（本测试不执行）',
+        },
+        statuses: {
+            ...mqttTestStrings.statuses,
+            skipped: '不执行',
+            reused: '复用现有连接（未重新检测存活）',
+        },
+        results: {
+            ...mqttTestStrings.results,
+            success: 'TCP 建连成功（尚未验证从站读取）',
+            'connection.reused': '复用现有连接，未重新检测远端存活',
+            'connection.backoff': '运行时正在重连退避，本次未联网',
+            'connection.busy': '等待共享连接超时，本次未联网',
+        },
+    },
     httpTest: {
         ...mqttTestStrings,
         title: 'HTTP 真实连接测试',
@@ -84,7 +107,7 @@ export const connectionStrings = {
     },
     notice: '这些连接保存在网关配置库的全局草稿中，刷新页面后仍保留。保存、启停或删除草稿均不改变运行配置；编译与应用界面尚在实施。',
     security:
-        '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。MQTT/HTTP 可显式测试连接；客户端证书、信任证书与 Modbus 连接测试尚未接入。',
+        '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。Modbus/MQTT/HTTP 可显式测试连接；客户端证书、信任证书与设备读取预览尚未接入。',
     add: '新建连接',
     edit: '编辑连接',
     view: '查看连接',

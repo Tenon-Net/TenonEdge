@@ -66,7 +66,7 @@ internal sealed class ConnectionTestTrace(TimeProvider time, bool tls)
                     _steps["address"] = new("address", "skipped");
                     _steps["connection"] = new("connection", "reused", Code: code);
                 }
-                else if (_steps["connection"].Status == "notReached" && _current is null && code != "connection.backoff")
+                else if (_steps["connection"].Status == "notReached" && code is not "connection.backoff" and not "connection.busy")
                 {
                     if (_steps["address"].Status == "notReached")
                     { _steps["address"] = new("address", "unknown"); }

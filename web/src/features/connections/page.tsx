@@ -1,5 +1,6 @@
 import { CredentialPanel } from './credential-panel'
 import { MqttTestPanel } from './mqtt-test-panel'
+import { ModbusTestPanel } from './modbus-test-panel'
 import { HttpTestPanel } from './http-test-panel'
 import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
@@ -594,6 +595,9 @@ export function ConnectionsPage() {
                         )}
                     </div>
                 </form>
+            )}
+            {form?.kind === 'modbus' && canEdit && (
+                <ModbusTestPanel key={testGeneration} form={form} />
             )}
             {form?.kind === 'http' && canEdit && (
                 <HttpTestPanel key={testGeneration} form={form} />
