@@ -1005,3 +1005,175 @@ test('device drafts persist real references, preserve conflicted edits, and neve
         final.devices.some((d: { key: string }) => d.key === 'browser-meter'),
     ).toBe(false)
 })
+
+test('Modbus source point table persists normalized offsets and a bounded 10000-row real HTTP payload', async ({
+    page,
+}) => {
+    await openPointEditor(page)
+    const session = await (
+        await page.request.get('/api/edge-admin/v1/auth/session')
+    ).json()
+    const headers = { 'X-CSRF-Token': session.csrfToken }
+    const list = await (
+        await page.request.get('/api/edge-admin/v1/connections')
+    ).json()
+    const connectionResponse = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers,
+            data: {
+                expectedVersion: list.version,
+                key: 'source-plc',
+                name: '来源测试 PLC',
+                kind: 'modbus',
+                modbus: { host: '10.20.30.55' },
+            },
+        },
+    )
+    expect(connectionResponse.status()).toBe(200)
+    const connection = await connectionResponse.json()
+    const deviceResponse = await page.request.post(
+        '/api/edge-admin/v1/devices',
+        {
+            headers,
+            data: {
+                expectedVersion: connection.version,
+                key: 'source-meter',
+                name: '来源测试电表',
+                kind: 'modbus',
+                connectionId: connection.connection.id,
+                unitId: 1,
+            },
+        },
+    )
+    expect(deviceResponse.status()).toBe(200)
+    const device = (await deviceResponse.json()).device
+    const endpoint = '/api/edge-admin/v1/devices/' + device.id + '/inputs'
+    await page.goto('/devices/' + device.id + '/inputs')
+    await page.getByRole('button', { name: '新建采集组', exact: true }).click()
+    await page.getByLabel('来源 key', { exact: true }).fill('fast')
+    await page.getByLabel('来源名称', { exact: true }).fill('快速采集')
+    await pasteIntoGrid(page, pointText(2))
+    await page
+        .getByRole('combobox', { name: '地址写法', exact: true })
+        .selectOption('manual')
+    await page
+        .getByRole('button', { name: '保存来源草稿', exact: true })
+        .click()
+    await expect(page.getByRole('status')).toHaveText(
+        '来源与点表已保存到网关草稿，尚未应用。',
+    )
+    const saved = await (await page.request.get(endpoint)).json()
+    expect(saved.inputs[0].modbus.points[0].address).toBe(0)
+    expect(saved.inputs[0].modbus.points[1].address).toBe(1)
+    await page.reload()
+    await page.getByRole('button', { name: /快速采集 \(fast\)/ }).click()
+    await expect(page.getByLabel('来源 key', { exact: true })).toBeDisabled()
+    await expect(page.getByLabel('第 1 行 key', { exact: true })).toHaveValue(
+        'point_0',
+    )
+    await page.getByRole('button', { name: '添加空行', exact: true }).click()
+    await expect(
+        page.getByText('3 行 · 0 行选中 · 1 行错误 · 0 行重叠提示'),
+    ).toBeVisible()
+    await page
+        .getByRole('button', { name: '保存来源草稿', exact: true })
+        .click()
+    await expect(page.getByText('点表存在错误，请先修正标红行。')).toBeVisible()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page
+        .getByRole('button', { name: '重新载入来源', exact: true })
+        .click()
+    // A second source uses the same point key: device scope, not just table scope.
+    const duplicate = await page.request.post(endpoint, {
+        headers,
+        data: {
+            expectedVersion: saved.version,
+            key: 'slow',
+            name: 'Slow',
+            modbus: { periodMs: 1000, points: saved.inputs[0].modbus.points },
+        },
+    })
+    expect(duplicate.status()).toBe(409)
+    expect((await duplicate.json()).code).toBe('input.duplicateDeviceField')
+    const bulk = {
+        expectedVersion: saved.version,
+        key: 'bulk',
+        name: '万点采集组',
+        modbus: {
+            periodMs: 5000,
+            points: Array.from({ length: 10000 }, (_, index) => ({
+                key: 'bulk_' + index,
+                name: 'n'.repeat(64),
+                unit: 'u'.repeat(64),
+                functionCode: 3,
+                address: index,
+                type: 'uint16',
+                enabled: true,
+            })),
+        },
+    }
+    expect(JSON.stringify(bulk).length).toBeGreaterThan(1024 * 1024)
+    const bulkResponse = await page.request.post(endpoint, {
+        headers,
+        data: bulk,
+    })
+    expect(bulkResponse.status()).toBe(200)
+    // Only source writes opt into 16 MiB; their own ceiling and the ordinary 1 MiB limit remain effective.
+    const tooLarge = await page.request.post(endpoint, {
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        data: ' '.repeat(16 * 1024 * 1024 + 1),
+    })
+    expect(tooLarge.status()).toBe(413)
+    const ordinaryTooLarge = await page.request.post(
+        '/api/edge-admin/v1/connections',
+        {
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            data: ' '.repeat(1024 * 1024 + 1),
+        },
+    )
+    expect(ordinaryTooLarge.status()).toBe(413)
+
+    await page.getByLabel('来源名称', { exact: true }).fill('保留来源修改')
+    await page
+        .getByRole('button', { name: '保存来源草稿', exact: true })
+        .click()
+    await expect(
+        page.getByText(
+            '草稿版本、字段 key 或引用冲突。输入已保留，请刷新后明确重新载入。',
+        ),
+    ).toBeVisible()
+    await expect(page.getByLabel('来源名称', { exact: true })).toHaveValue(
+        '保留来源修改',
+    )
+    await page
+        .getByRole('button', { name: '刷新来源与设备', exact: true })
+        .click()
+    await expect(
+        page.getByRole('button', { name: /万点采集组 \(bulk\)/ }),
+    ).toBeEnabled()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: /万点采集组 \(bulk\)/ }).click()
+    await expect(
+        page.getByText('10000 行 · 0 行选中 · 0 行错误 · 0 行重叠提示'),
+    ).toBeVisible()
+    await page.screenshot({
+        path: 'test-results/source-points.png',
+        fullPage: true,
+    })
+    const reloaded = await (await page.request.get(endpoint)).json()
+    expect(
+        reloaded.inputs.find((i: { key: string }) => i.key === 'bulk').modbus
+            .points,
+    ).toHaveLength(10000)
+    expect(
+        (
+            await (
+                await page.request.get('/api/edge-admin/v1/runtime/status')
+            ).json()
+        ).coordinator.activeRevision,
+    ).toBeNull()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: '删除来源', exact: true }).click()
+    await expect(page.getByRole('status')).toHaveText('来源草稿已删除。')
+})

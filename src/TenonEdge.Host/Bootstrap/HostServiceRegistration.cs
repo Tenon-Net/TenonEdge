@@ -5,6 +5,7 @@ using TenonEdge.Host.Features.Auth;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Health;
+using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
@@ -37,6 +38,7 @@ internal static class HostServiceRegistration
         builder.Services.AddAuthFeature();
         builder.Services.AddSingleton<ConnectionDraftStore>();
         builder.Services.AddSingleton<DeviceDraftStore>();
+        builder.Services.AddSingleton<InputDraftStore>();
 
         // 运行时（T1-01—T1-03）：协调者、运行时宿主、发送缓存与输入适配器。
         builder.Services.AddRuntimeFeature();

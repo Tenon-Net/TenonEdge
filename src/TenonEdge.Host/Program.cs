@@ -6,6 +6,7 @@ using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Health;
+using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Features.SystemInfo;
 
@@ -43,7 +44,8 @@ app.MapManagementApi()
     .MapOutputControlEndpoints()
     .MapOutboundPolicyEndpoints()
     .MapConnectionDraftEndpoints()
-    .MapDeviceDraftEndpoints();
+    .MapDeviceDraftEndpoints()
+    .MapInputDraftEndpoints();
 
 // 后台服务因未处理的异常结束时宿主随之停止，这里改用非零退出码，使服务管理器把它当作失败并重启（启动保护据此计数）。
 // 在宿主停止之后、服务容器释放之前取得各后台服务的结果。

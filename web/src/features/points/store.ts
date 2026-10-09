@@ -10,13 +10,20 @@ import {
     type PointRow,
 } from './model'
 
-export function createPointEditor() {
-    let sequence = 0
+export function createPointEditor(
+    initialRows: PointRow[] = [],
+    initialMode: AddressMode = 'offset',
+) {
+    let sequence = initialRows.reduce(
+        (max, row) => Math.max(max, Number(row.id) || 0),
+        0,
+    )
     const nextId = () => String(++sequence)
     return createStore<{
         rows: PointRow[]
         selected: Record<string, boolean>
         mode: AddressMode
+        load: (rows: PointRow[], mode: AddressMode) => void
         edit: (id: string, field: PointField, value: string) => void
         select: (selected: Record<string, boolean>) => void
         add: () => void
@@ -28,9 +35,16 @@ export function createPointEditor() {
         ) => void
         changeMode: (mode: AddressMode) => void
     }>((set, get) => ({
-        rows: [],
+        rows: initialRows,
         selected: {},
-        mode: 'offset',
+        mode: initialMode,
+        load: (rows, mode) => {
+            sequence = rows.reduce(
+                (max, row) => Math.max(max, Number(row.id) || 0),
+                0,
+            )
+            set({ rows, mode, selected: {} })
+        },
         edit: (id, field, value) =>
             set((state) => ({
                 rows: state.rows.map((row) =>

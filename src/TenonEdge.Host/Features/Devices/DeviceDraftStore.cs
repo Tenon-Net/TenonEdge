@@ -6,6 +6,7 @@ using SqlSugar;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -41,6 +42,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
             { throw new DraftWriteException("device.duplicateKey"); }
             if (existing is null && HasRetainedReference(client, device.Key))
             { throw new DraftWriteException("device.reservedKey"); }
+            InputDraftStore.ValidateDeviceChange(client, device);
             var row = new DeviceDraftRecord
             {
                 Id = id,
@@ -64,9 +66,10 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var row = client.Queryable<DeviceDraftRecord>().InSingle(id) ?? throw new DraftWriteException("device.notFound");
-        // 来源、路线及平台映射持久化后须在这里补入同事务引用检查。
+        // 路线及平台映射持久化后须在这里补入同事务引用检查。
         if (HasRetainedReference(client, row.BusinessKey))
         { throw new DraftWriteException("device.referenced"); }
+        client.Deleteable<InputDraftRecord>().Where(input => input.DeviceId == id).ExecuteCommand();
         client.Deleteable(row).ExecuteCommand();
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("device.draftDeleted", AuditResults.Success, account, sourceIp,
@@ -103,6 +106,9 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
         }
         return false;
     }
+
+    internal static DeviceDraft? Read(SqlSugarClient client, long id) =>
+        client.Queryable<DeviceDraftRecord>().InSingle(id) is { } row ? Decode(row) : null;
 
     private static DeviceDraft Decode(DeviceDraftRecord row)
     {

@@ -2181,6 +2181,26 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 
 剩余：本批仅设备基础配置，不含数据来源/点位的持久化、设备连同来源与点位复制、CSV、字段推断、运行状态；这些仍须继续实现。来源/路线/平台映射持久化后必须补入设备变更与删除引用检查，返回引用方清单；未实现的对象不据此宣称安全验收完成。凭证的旧种子入口与活跃轮换边界仍见 §2.104，证书/信任/连接测试、T3-05 编译、T3-06 应用/回滚仍待完成。实际软件子场景不等于 AT-18/完整 T3 验收，不声称已具备可用采集路线。未推送、未发版、未进行实物验证。
 
+### 2.106 T3-04 Modbus 来源与点表的真实持久化（2026-10-10）
+
+继续 §2.105 后的来源/点位子项，本次贯通 Modbus；不把它当作全部协议来源、T3-04 或可视化配置目标完成。核对功能 §3.3、总设计 §10.2 与实际 Modbus 适配器/现有点表原型接口，复用本项目代码，无新增依赖。
+
+- 显式迁移 **14** 新增 `input_draft`：来源拥有稳定 ID、设备内唯一不可变 key、名称、启停、Modbus 周期与点表；点位作为所属来源的类型化内容存储，内部地址永远为零基偏移。来源 ID 纳入启动发号下限。草稿允许空组/全停用点表，不伪造启用点位；能否生成运行单元须后续编译判断。
+- `/devices/{deviceId}/inputs` GET/POST、`/{inputId}` PUT/DELETE 已交付。每次写入在同事务检查全局草稿版本、父设备存在、来源归属、来源 key、设备内跨来源字段 key 唯一性，以及正式 Modbus 单点校验；后端独立校验周期、功能码、地址占用、位号、类型和字节序，禁用点也不能带非法参数。单来源最多 10000 点，未擅自添加“全设备总共 10000 点”的限制。
+- 与设备删除一起原子清理所属来源；设备存在来源时不能切成不相容协议。有效/上一/待生效运行快照中的来源引用阻止删除或新建占用相同 key。所有变更与审计/全局版本同事务；任何失败都不应用、不采集、不入队。
+- 来源写端点在认证授权后、JSON 绑定前允许有界 **16 MiB** 请求体，满足 10000 点表保存；其他端点仍为 1 MiB，不扩大所有 API 上限。未知点位属性拒绝，凭证不进入点表。
+- 设备详情增加“数据来源与点位”入口，新页面 `/devices/{deviceId}/inputs` 接入真实 API。表单/点表在 Zustand、查询在 TanStack Query；编辑版本被捕获，刷新或 409 不覆盖输入，重新载入/离站丢弃须确认。不同设备路由以设备 ID 重建本地编辑器，防止沿用上台设备表单。
+- 现有点表编辑器通过受控 store 复用，原型路由仍保留明确的不保存说明；真实来源页使用不同说明。支持已有虚拟表格、粘贴、批量改值、地址转换、逐行错误与重叠提示；保存前转换为零基偏移。加载持久点表后重置本地行号分配器，追加不会与已加载行 ID 冲突。只读角色禁用编辑和粘贴；保存期间禁用点表，避免成功清空未提交的新改动。
+
+实际验证：
+
+1. 环境沿 §2.105，Release 构建完成。后端最终全量 **1010 单元 + 857 集成 = 1867 通过，0 失败/跳过**；命令 `dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=t3-input-final' --results-directory artifacts/test-results/t3-input-final --blame-hang-timeout 5m --blame-hang-dump-type none`，日志 `/tmp/tenonedge-input-full-final.log`；`python3 .github/scripts/verify-test-results.py artifacts/test-results/t3-input-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过。新增 6 个参数/边界单测、14 个集成场景，覆盖角色/CSRF、资源归属、设备内字段唯一、三种快照保护、来源/父设备删除审计回滚，以及真实数据目录重建后点表持久保留且运行指针不变。快照为存储夹具，不是实物采集。
+2. 从实际临时 Development Host 导出 OpenAPI 并生成客户端，日志 `/tmp/tenonedge-input-api.log`；临时 Host/数据已清理。前端 build 通过（`/tmp/tenonedge-input-web-build-final.log`）；共享点表按路由拆分后主入口约 466 kB，此次构建无此前 500 kB 提示，未改警告阈值。Vitest `npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json`：**106 通过，0 失败/跳过**，日志 `/tmp/tenonedge-input-web-tests.log`。
+3. 浏览器最终 **11 通过，0 失败/跳过**，命令沿 §2.104，日志 `/tmp/tenonedge-input-browser-final2.log`。新增真实创建连接/设备/来源、粘贴两点、手册地址转换保存、重载后保留、追加行 ID 不冲突、非法行拒绝保存、跨来源重复 key 被后端拒绝、真实大于 1 MiB 的 10000 点 HTTP 保存与读取、版本冲突保留输入、来源删除及运行版本不变；另核对来源 16 MiB 与普通端点 1 MiB 的 413 边界。完整后端格式门禁 `dotnet format TenonEdge.sln --verify-no-changes --no-restore`、前端 typecheck/lint/format:check 与 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 均通过。截图 `web/test-results/source-points.png` 已查看。这是软件 HTTP/数据库验证，不是 PLC 读取，也不是操作系统 Excel 剪贴板实测。
+4. 初轮定向 2 项失败：operationId 清单排序及测试把 ArgumentOutOfRangeException 当成精确 ArgumentException，校正清单与精确异常类型后定向 6 单元 + 17 集成通过。首次前端构建暴露生成客户端的可选字段/数值字符串联合类型，显式规范化后通过；读取现有点表 ID 时发现分配器可能与已加载 ID 冲突，修正 load 并加回归。后补持久化/引用用例的首次全量编译发现 RuntimeSnapshotRecord 命名空间写错，改为实际 Storage 类型后重跑；旧日志 `/tmp/tenonedge-input-full.log` 不算通过。
+
+剩余：MQTT、HTTP、模拟来源与字段表单尚未接入持久化；设备复制、CSV、字段推断、连接测试、客户端证书/信任表单仍未完成。来源/设备与路线草稿/平台映射的引用检查须随相应对象接入并给出引用方清单；当前仅既有运行快照保护。凭证边界继续见 §2.104。T3-05 编译与 T3-06 应用/回滚未完成，因此网页仍不能独立完成一条实际采集路线。未推送、未发版、未进行真实设备验证，总目标保持未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

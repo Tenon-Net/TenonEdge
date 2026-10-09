@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore } from 'zustand'
-import { useBlocker } from '@tanstack/react-router'
+import { Link, useBlocker } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, queryClient, useSession } from '../../lib/session'
@@ -242,6 +242,15 @@ export function DevicesPage() {
                         }}
                     >
                         <p className="text-sm">{t('devices.immutable')}</p>
+                        {form.id !== undefined && (
+                            <Link
+                                to="/devices/$deviceId/inputs"
+                                params={{ deviceId: String(form.id) }}
+                                className="inline-block underline"
+                            >
+                                {t('inputs.title')}
+                            </Link>
+                        )}
                         {!canEdit && <p>{t('devices.readOnly')}</p>}
                         <fieldset
                             disabled={!canEdit || busy}

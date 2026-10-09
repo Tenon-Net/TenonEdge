@@ -1,5 +1,8 @@
 export const pointStrings = {
     title: '点表交互原型',
+    managedTitle: '来源点表',
+    managedNotice:
+        '点位编辑暂存在本页。点击“保存来源草稿”后写入网关配置库；不会开始读取或改变运行配置。',
     notice: '仅用于验证本地点表交互，不保存到网关、不读取设备、不改变运行配置。离开此页面或退出后内容会丢失。',
     mode: '地址写法',
     modes: {
@@ -11,7 +14,7 @@ export const pointStrings = {
         '切换写法会换算现有地址，不会重新解释数字。地址错误须先修正；空表可以直接切换。',
     add: '添加空行',
     remove: '删除所选行',
-    removeConfirm: '删除所选的本地原型行？此操作不能撤销。',
+    removeConfirm: '删除所选的未保存点位行？此操作不能撤销。',
     selectAll: '选择全部行',
     selectRow: '选择第 {{row}} 行',
     count: '{{count}} 行 · {{selected}} 行选中 · {{errors}} 行错误 · {{warnings}} 行重叠提示',

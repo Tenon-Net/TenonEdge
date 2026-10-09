@@ -92,6 +92,14 @@ const devicesRoute = createRoute({
         'DevicesPage',
     ),
 })
+const inputsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/devices/$deviceId/inputs',
+    component: lazyRouteComponent(
+        () => import('./features/inputs/page'),
+        'InputsPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
@@ -100,6 +108,7 @@ export const router = createRouter({
         canvasRoute,
         connectionsRoute,
         devicesRoute,
+        inputsRoute,
     ]),
     defaultPreload: false,
 })

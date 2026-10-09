@@ -208,5 +208,16 @@ internal static class ConfigMigrations
             """,
             "CREATE INDEX ix_device_draft_connection ON device_draft (connection_id)",
         ]),
+        new(14, "input_draft", [
+            """
+            CREATE TABLE input_draft (
+                id INTEGER NOT NULL PRIMARY KEY,
+                device_id INTEGER NOT NULL REFERENCES device_draft(id) ON DELETE RESTRICT,
+                business_key TEXT NOT NULL,
+                content TEXT NOT NULL,
+                UNIQUE (device_id, business_key)
+            )
+            """,
+        ]),
     ];
 }

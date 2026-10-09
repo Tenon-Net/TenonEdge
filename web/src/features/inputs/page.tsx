@@ -1,0 +1,371 @@
+import { useState } from 'react'
+import { useStore } from 'zustand'
+import { createStore } from 'zustand/vanilla'
+import { useBlocker, useParams } from '@tanstack/react-router'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
+import { api, queryClient, useSession } from '../../lib/session'
+import { ApiError } from '../../api/errors'
+import { ErrorMessage } from '../auth/error-message'
+import { Button } from '../../components/ui/button'
+import { PointEditor } from '../points/editor'
+import { createPointEditor } from '../points/store'
+import {
+    inputForm,
+    inputRows,
+    inputRequest,
+    type Input,
+    type InputForm,
+    type InputRequest,
+} from './model'
+import type { AddressMode } from '../points/model'
+
+const fieldClass =
+    'mt-1 w-full rounded border bg-background p-2 disabled:opacity-60'
+export function InputsPage() {
+    const { deviceId } = useParams({ from: '/devices/$deviceId/inputs' })
+    return <DeviceInputsPage key={deviceId} routeId={deviceId} />
+}
+function DeviceInputsPage({ routeId }: { routeId: string }) {
+    const deviceId = Number(routeId)
+    const { t } = useTranslation()
+    const role = useSession((s) => s.value?.role)
+    const canEdit = role === 'administrator' || role === 'configurator'
+    const queryKey = ['input-drafts', deviceId]
+    const query = useQuery({
+        queryKey,
+        retry: false,
+        queryFn: async ({ signal }) => {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/devices/{deviceId}/inputs',
+                { params: { path: { deviceId } }, signal },
+            )
+            if (!data) throw new Error('missing-inputs')
+            return data
+        },
+    })
+    const devices = useQuery({
+        queryKey: ['device-drafts'],
+        queryFn: async ({ signal }) => {
+            const { data } = await api.GET('/api/edge-admin/v1/devices', {
+                signal,
+            })
+            if (!data) throw new Error('missing-devices')
+            return data
+        },
+    })
+    const device = devices.data?.devices.find((d) => Number(d.id) === deviceId)
+    const coherent =
+        device && query.data && query.data.version === devices.data?.version
+    const [editor] = useState(() =>
+        createStore<{
+            form: InputForm | null
+            original: string
+            generation: number
+        }>(() => ({ form: null, original: '', generation: 0 })),
+    )
+    const [points] = useState(createPointEditor)
+    const { form, original, generation } = useStore(editor)
+    const { rows, mode } = useStore(points)
+    const dirty = form !== null && JSON.stringify({ form, rows }) !== original
+    const [notice, setNotice] = useState('')
+    const [invalid, setInvalid] = useState(false)
+    useBlocker({
+        disabled: !dirty,
+        enableBeforeUnload: dirty,
+        shouldBlockFn: () => !window.confirm(t('inputs.discard')),
+    })
+    const mutation = useMutation({
+        retry: false,
+        mutationFn: async (
+            action:
+                | { type: 'save'; id?: number; body: InputRequest }
+                | { type: 'delete'; id: number; version: string },
+        ) => {
+            if (action.type === 'delete')
+                await api.DELETE(
+                    '/api/edge-admin/v1/devices/{deviceId}/inputs/{inputId}',
+                    {
+                        params: {
+                            path: { deviceId, inputId: action.id },
+                            query: { expectedVersion: action.version },
+                        },
+                    },
+                )
+            else if (action.id === undefined)
+                await api.POST('/api/edge-admin/v1/devices/{deviceId}/inputs', {
+                    params: { path: { deviceId } },
+                    body: action.body,
+                })
+            else
+                await api.PUT(
+                    '/api/edge-admin/v1/devices/{deviceId}/inputs/{inputId}',
+                    {
+                        params: { path: { deviceId, inputId: action.id } },
+                        body: action.body,
+                    },
+                )
+            return action.type
+        },
+        onSuccess: async (type) => {
+            editor.setState({ form: null })
+            setNotice(t(type === 'save' ? 'inputs.saved' : 'inputs.deleted'))
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey }),
+                queryClient.invalidateQueries({ queryKey: ['device-drafts'] }),
+                queryClient.invalidateQueries({
+                    queryKey: ['connection-drafts'],
+                }),
+            ])
+        },
+    })
+    function open(input?: Input) {
+        if (
+            !coherent ||
+            mutation.isPending ||
+            (dirty && !window.confirm(t('inputs.discard')))
+        )
+            return
+        const nextForm = inputForm(query.data!.version, input)
+        const nextMode: AddressMode =
+            device?.addressNotation === 'manual' ? 'manual' : 'offset'
+        const nextRows = inputRows(input, nextMode)
+        points.getState().load(nextRows, nextMode)
+        editor.setState({
+            form: nextForm,
+            original: JSON.stringify({ form: nextForm, rows: nextRows }),
+            generation: generation + 1,
+        })
+        mutation.reset()
+        setNotice('')
+        setInvalid(false)
+    }
+    function save() {
+        if (!canEdit || !form || mutation.isPending) return
+        try {
+            const body = inputRequest(form, rows, mode)
+            setInvalid(false)
+            mutation.mutate({ type: 'save', id: form.id, body })
+        } catch {
+            setInvalid(true)
+        }
+    }
+    const patch = (value: Partial<InputForm>) => {
+        if (form) editor.setState({ form: { ...form, ...value } })
+    }
+    return (
+        <section className="space-y-4">
+            <h1 className="text-2xl font-semibold">{t('inputs.title')}</h1>
+            <p>
+                {t('inputs.device', {
+                    name: device?.name ?? '—',
+                    key: device?.key ?? routeId,
+                })}
+            </p>
+            <p className="text-sm text-muted-foreground">
+                {t('inputs.notice')}
+            </p>
+            <ErrorMessage
+                error={query.error ?? devices.error ?? mutation.error}
+            />
+            {invalid && <p role="alert">{t('inputs.invalid')}</p>}
+            {mutation.error instanceof ApiError &&
+                mutation.error.status === 409 && (
+                    <p role="alert">{t('inputs.conflict')}</p>
+                )}
+            {!coherent && !query.isPending && !devices.isPending && (
+                <p role="alert">{t('inputs.missing')}</p>
+            )}
+            {notice && <p role="status">{notice}</p>}
+            <div className="flex gap-2">
+                <Button
+                    variant="outline"
+                    disabled={
+                        mutation.isPending ||
+                        query.isFetching ||
+                        devices.isFetching
+                    }
+                    onClick={() => {
+                        void query.refetch()
+                        void devices.refetch()
+                    }}
+                >
+                    {t('inputs.refresh')}
+                </Button>
+                {canEdit && device?.kind === 'modbus' && (
+                    <Button
+                        disabled={!coherent || mutation.isPending}
+                        onClick={() => open()}
+                    >
+                        {t('inputs.new')}
+                    </Button>
+                )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+                {t('inputs.version', { version: query.data?.version ?? '—' })}
+            </p>
+            {!query.data?.inputs.length && <p>{t('inputs.empty')}</p>}
+            <div className="flex flex-wrap gap-2">
+                {query.data?.inputs.map((input) => (
+                    <Button
+                        key={input.id}
+                        variant="outline"
+                        disabled={!coherent || mutation.isPending}
+                        onClick={() => open(input)}
+                    >
+                        {input.name} ({input.key}) ·{' '}
+                        {t('inputs.points', {
+                            count: input.modbus?.points.length ?? 0,
+                            period: input.modbus?.periodMs,
+                        })}
+                    </Button>
+                ))}
+            </div>
+            {form && (
+                <section className="space-y-4 rounded border p-4">
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault()
+                            save()
+                        }}
+                        className="space-y-3"
+                    >
+                        <fieldset
+                            disabled={!canEdit || mutation.isPending}
+                            className="grid gap-3 md:grid-cols-4"
+                        >
+                            <label>
+                                {t('inputs.key')}
+                                <input
+                                    className={fieldClass}
+                                    required
+                                    maxLength={64}
+                                    pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
+                                    disabled={form.id !== undefined}
+                                    value={form.key}
+                                    onChange={(e) =>
+                                        patch({ key: e.target.value })
+                                    }
+                                />
+                            </label>
+                            <label>
+                                {t('inputs.name')}
+                                <input
+                                    className={fieldClass}
+                                    required
+                                    maxLength={64}
+                                    value={form.name}
+                                    onChange={(e) =>
+                                        patch({ name: e.target.value })
+                                    }
+                                />
+                            </label>
+                            <label>
+                                {t('inputs.period')}
+                                <input
+                                    className={fieldClass}
+                                    required
+                                    type="number"
+                                    min={1000}
+                                    max={86400000}
+                                    step={1}
+                                    value={form.period}
+                                    onChange={(e) =>
+                                        patch({
+                                            period: Number(e.target.value),
+                                        })
+                                    }
+                                />
+                            </label>
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={form.enabled}
+                                    onChange={(e) =>
+                                        patch({ enabled: e.target.checked })
+                                    }
+                                />
+                                {t('inputs.enabled')}
+                            </label>
+                        </fieldset>
+                        <div className="flex flex-wrap gap-2">
+                            {canEdit && (
+                                <Button
+                                    type="submit"
+                                    disabled={mutation.isPending}
+                                >
+                                    {t('inputs.save')}
+                                </Button>
+                            )}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={mutation.isPending}
+                                onClick={() => {
+                                    if (
+                                        !dirty ||
+                                        window.confirm(t('inputs.discard'))
+                                    )
+                                        editor.setState({ form: null })
+                                }}
+                            >
+                                {t('inputs.close')}
+                            </Button>
+                            {form.id !== undefined && (
+                                <>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={
+                                            !coherent || mutation.isPending
+                                        }
+                                        onClick={() => {
+                                            const input =
+                                                query.data?.inputs.find(
+                                                    (i) =>
+                                                        Number(i.id) ===
+                                                        form.id,
+                                                )
+                                            if (input) open(input)
+                                        }}
+                                    >
+                                        {t('inputs.reload')}
+                                    </Button>
+                                    {canEdit && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            disabled={mutation.isPending}
+                                            onClick={() => {
+                                                if (
+                                                    window.confirm(
+                                                        t(
+                                                            'inputs.confirmDelete',
+                                                        ),
+                                                    )
+                                                )
+                                                    mutation.mutate({
+                                                        type: 'delete',
+                                                        id: form.id!,
+                                                        version: form.version,
+                                                    })
+                                            }}
+                                        >
+                                            {t('inputs.delete')}
+                                        </Button>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </form>
+                    <PointEditor
+                        key={generation}
+                        store={points}
+                        managed
+                        readOnly={!canEdit || mutation.isPending}
+                    />
+                </section>
+            )}
+        </section>
+    )
+}

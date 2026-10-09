@@ -36,9 +36,17 @@ const orders64: Record<string, string> = {
     DCBA: 'HGFEDCBA',
 }
 
-export function PointEditor() {
+export function PointEditor({
+    store: suppliedStore,
+    managed = false,
+    readOnly = false,
+}: {
+    store?: ReturnType<typeof createPointEditor>
+    managed?: boolean
+    readOnly?: boolean
+} = {}) {
     const { t } = useTranslation()
-    const [store] = useState(createPointEditor)
+    const [store] = useState(() => suppliedStore ?? createPointEditor())
     const {
         rows,
         selected,
@@ -102,6 +110,7 @@ export function PointEditor() {
             setPasteMs(performance.now() - started)
         })
     const onPaste = (event: ClipboardEvent) => {
+        if (readOnly) return
         const text = event.clipboardData.getData('text/plain')
         if (!/[\t\r\n]/.test(text) && event.target !== viewport.current) return
         event.preventDefault()
@@ -148,10 +157,12 @@ export function PointEditor() {
                   ? `${value} / ${orders64[value] ?? value}`
                   : value
     return (
-        <section className="space-y-4">
-            <h1 className="text-2xl font-semibold">{t('points.title')}</h1>
+        <fieldset disabled={readOnly} className="min-w-0 space-y-4">
+            <h1 className="text-2xl font-semibold">
+                {t(managed ? 'points.managedTitle' : 'points.title')}
+            </h1>
             <p className="rounded-md border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">
-                {t('points.notice')}
+                {t(managed ? 'points.managedNotice' : 'points.notice')}
             </p>
             <div className="flex flex-wrap items-center gap-3">
                 <label>
@@ -511,6 +522,6 @@ export function PointEditor() {
                     })}
                 </div>
             </div>
-        </section>
+        </fieldset>
     )
 }

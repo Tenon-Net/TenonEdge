@@ -56,6 +56,7 @@ public sealed record ModbusInputSettings
     }
 }
 
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ModbusPointSettings
 {
     public string Key { get; init; } = string.Empty;
@@ -90,6 +91,9 @@ public sealed record ModbusPointSettings
         "DCBA" => ModbusByteOrder.Dcba,
         _ => throw new ArgumentException("Modbus 字节序无效。")
     };
+
+    /// <summary>草稿与运行共用单点校验；空组/全停用是否可运行由调用方决定。</summary>
+    public void ValidateDefinition() => _ = Validate();
 
     internal ModbusReadPoint Validate()
     {

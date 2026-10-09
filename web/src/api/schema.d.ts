@@ -400,6 +400,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看设备来源草稿和规范化点表 */
+        get: operations["getInputDrafts"];
+        put?: never;
+        /** 新建 Modbus 来源草稿，不开始采集 */
+        post: operations["createInputDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/devices/{deviceId}/inputs/{inputId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 保存 Modbus 来源及零基偏移点表，不改变运行配置 */
+        put: operations["updateInputDraft"];
+        post?: never;
+        /** 删除未被保留运行版本引用的来源草稿 */
+        delete: operations["deleteInputDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -610,6 +646,33 @@ export interface components {
             /** Format: int64 */
             peakReservedBytes: number | string;
         };
+        InputDraft: {
+            /** Format: int64 */
+            id: number | string;
+            /** Format: int64 */
+            deviceId: number | string;
+            key: string;
+            name: string;
+            kind: components["schemas"]["DeviceKind"];
+            enabled: boolean;
+            modbus: null | components["schemas"]["ModbusSourceDraft"];
+        };
+        InputDraftList: {
+            version: string;
+            inputs: components["schemas"]["InputDraft"][];
+        };
+        InputDraftRequest: {
+            expectedVersion: string;
+            key: string;
+            name: string;
+            /** @default true */
+            enabled: boolean;
+            modbus?: null | components["schemas"]["ModbusSourceDraft"];
+        };
+        InputDraftResult: {
+            version: string;
+            input: components["schemas"]["InputDraft"];
+        };
         /** @enum {unknown} */
         InputReadHealth: "notRead" | "normal" | "partialFailure" | "failing" | "offline";
         InputReadSnapshot: {
@@ -676,6 +739,25 @@ export interface components {
          * @enum {unknown}
          */
         ModbusFrameFormat: "tcp" | "rtuOverTcp";
+        ModbusPointSettings: {
+            key?: string;
+            /** Format: uint8 */
+            functionCode?: number | string;
+            /** Format: int32 */
+            address?: null | number | string;
+            type?: string;
+            byteOrder?: null | string;
+            /** Format: int32 */
+            bit?: null | number | string;
+            enabled?: boolean;
+            name?: null | string;
+            unit?: null | string;
+        };
+        ModbusSourceDraft: {
+            /** Format: int32 */
+            periodMs: number | string;
+            points: components["schemas"]["ModbusPointSettings"][];
+        };
         MqttConnectionDraft: {
             host: string;
             /**
@@ -2259,6 +2341,160 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getInputDrafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputDraftList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    createInputDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputDraftResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    updateInputDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: number;
+                inputId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputDraftResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    deleteInputDraft: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                deviceId: number;
+                inputId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

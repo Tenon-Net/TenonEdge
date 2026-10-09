@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.Features;
 using TenonEdge.Host.Security;
 
 namespace TenonEdge.Host.Bootstrap;
@@ -24,6 +25,13 @@ internal static class RequestPipeline
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.Use(async (context, next) =>
+        {
+            if (context.GetEndpoint()?.Metadata.GetMetadata<RequestBodyLimit>() is { } limit &&
+                context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } body)
+            { body.MaxRequestBodySize = limit.Bytes; }
+            await next(context);
+        });
         app.UseTenonEdgeWebAssets();
 
         return app;
