@@ -1,0 +1,32 @@
+# TenonEdge Web（T3 实施中）
+
+真实首次设置、会话登录、退出与密码修改；目前只有认证基础，**尚不能通过网页配置和运行采集路线**。
+点表和画布原型是接下来的任务，不提供模拟业务数据或无效配置按钮。
+
+## 环境与命令
+
+- Node.js 22（实际验证 22.23.2），npm **11.21.0**；可用 `npx --yes npm@11.21.0 <command>` 运行固定版本，不必修改系统 npm。
+- `npm ci`：按唯一锁文件安装。
+- `npm run build`：类型检查、生产依赖许可文本和静态构建，输出 `dist/`。
+- `npm test`、`npm run lint`、`npm run format:check`：Vitest、oxlint、Prettier。
+- 在仓库根运行 `dotnet build TenonEdge.sln -c Release --no-restore`，再回到 web 执行 `npm run test:e2e`。
+  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；先执行 `npx playwright install chromium`。
+- `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
+  当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。
+
+## 类型生成
+
+用独立临时数据目录启动 Development Host（HTTP 127.0.0.1:18081，HTTPS 端口 0），执行 `npm run api:generate`。
+脚本只读真实 `/api/edge-admin/v1/openapi/v1.json` 并保存 `openapi.json`，openapi-typescript 据此生成 `src/api/schema.d.ts`。
+可设置 `TENONEDGE_API_URL`。不手写接口结构，不在脚本中写生产会话或密码。新增后端契约时重新生成并审查 diff。
+
+## 同源部署
+
+构建后 .NET Host 通过标准 `--webroot=<web/dist 的绝对路径>` 提供静态文件；HTTP/HTTPS 地址、端口与数据目录仍按后端部署参数。
+只运行 .NET，不需要 Node 服务。正式发布集成/安装包属于后续任务，当前不会在 dotnet build 中静默联网安装 npm 包。
+`npm run dev` 仅为开发便利，Vite 默认监听回环，将 `/api` 代理至本机测试 Host，**不是生产部署**。
+
+构建目标显式设置 Chrome/Edge 111、Safari 16.4、Firefox 128；最低浏览器和离线现场验收仍待执行。
+账户状态和防 CSRF 令牌只保留内存；会话 Cookie 由 .NET 管理，密码不写本地存储；所有写操作禁止自动重试。
+
+来源、实际裁剪和许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。验证证据统一见 `docs/implementation-status.md`。

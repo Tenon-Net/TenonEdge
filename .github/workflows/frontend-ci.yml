@@ -1,0 +1,63 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.23.2
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          global-json-file: global.json
+      - name: Build actual host
+        run: |
+          dotnet restore TenonEdge.sln --locked-mode
+          dotnet build TenonEdge.sln -c Release --no-restore
+      - name: Locked frontend install and checks
+        working-directory: web
+        run: |
+          node --version
+          npx --yes npm@11.21.0 --version
+          npx --yes npm@11.21.0 ci
+          npx --yes npm@11.21.0 run format:check
+          npx --yes npm@11.21.0 run lint
+          npx --yes npm@11.21.0 run build
+          git diff --exit-code -- public/licenses/npm-notices.txt
+      - name: Unit tests
+        working-directory: web
+        run: npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json
+      - name: Browser on ordinary HTTP against actual host
+        working-directory: web
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: reports/browser.json
+        run: |
+          npx playwright install --with-deps chromium
+          export TENONEDGE_TEST_URL="http://$(hostname -I | awk '{print $1}'):18082"
+          npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json
+      - name: Verify nonzero reports without skips
+        if: ${{ !cancelled() }}
+        working-directory: web
+        run: node scripts/verify-results.mjs reports/unit.json reports/browser.json
+      - name: Upload test evidence only (not the application)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frontend-test-evidence
+          path: |
+            web/test-results/
+            web/reports/
+          if-no-files-found: error

@@ -8,4 +8,4 @@ TenonEdge 图标取自 [Tenon-Brand](https://github.com/Tenon-Net/Tenon-Brand)�
 | `assets/brand/tenonedge/icon-512.png` | `assets/tenonedge/transparent/icon-512.png` | `321de1943e0b461b1b6874ad7784c4115f0f37dd0a038ea119abfa534e19691b` |
 | `assets/brand/tenonedge/favicon.ico` | `assets/tenonedge/transparent/favicon.ico` | `5c60d7bdf48c281009c5b8b27e86a02662c91e54e85883b95a3a56b79784425b` |
 
-图标直接复制，未改色或重绘。`README.md` 使用 128px 图标；前端工程尚未建立，`favicon.ico` 留作其页面入口资源。
+图标直接复制，未改色或重绘。`README.md` 使用 128px 图标；T3-01 前端的 `web/public/` 直接复制 `icon-128.png` 和 `favicon.ico` 作为界面品牌与页面入口资源，原文件未改动。

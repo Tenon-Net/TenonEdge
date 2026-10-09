@@ -38,7 +38,7 @@
 | T2 | T2-06 输入复用与多输出 | 后端软件子集待验收 | 三协议共享链路及 Modbus Host 扇出/扇入通过；图编译与实时应用属 T3 | §2.34—§2.39、§2.96 |
 | T2 | T2-07 设备直连与 LoRa 样例 | 软件子集待验收 | 已解码样例、真实 Broker ACL/持久化/积存边界通过；无线实物未验证 | §2.67、§2.76—§2.87 |
 | T2 | T2-08 协议故障与资源回归 | 软件回归待验收，长期观察未完成 | 1754 项基线通过；连接/缓冲/线程有界和一分钟 Modbus 观测，不代表长期整机压力 | §2.62—§2.66、§2.80、§2.97—§2.98 |
-| T3 | T3-01 前端精简基础 | 进行中 | 先建立 .NET 静态托管边界；尚无前端构建或可视化访问 | §2.99 |
+| T3 | T3-01 前端精简基础 | 进行中，认证基础待验收 | 真实首次设置/登录/退出/密码修改、同源静态部署及普通 HTTP 浏览器通过；最低浏览器及强制改密/重置完整场景未验证 | §2.99—§2.100 |
 | 后续 | T3-02—T3-11 可视化配置与验收 | 未开始 | 未执行 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -2045,6 +2045,32 @@ dotnet test TenonEdge.sln -c Release --no-restore \
 - 全量回归：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=web-assets-full' --results-directory /tmp/tenonedge-web-assets-full --blame-hang-timeout 5m --blame-hang-dump-type none`：**976 单元 + 797 集成 = 1773 项通过，0 失败/跳过**，两个 TRX Counters 已核对；日志 `/tmp/tenonedge-web-assets-full.log`，Linux x64 / SDK 10.0.401。`dotnet restore TenonEdge.sln --locked-mode`、三个改动 C# 文件限定的 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --include …` 与 `git diff --check` 通过，日志 `/tmp/tenonedge-web-assets-restore.log`、`/tmp/tenonedge-web-assets-format-verify.log`。无新增依赖。
 - 前端来源准备：从 FE-D01 固定提交 `e16c87f213a5ba5e45964e9b67c792105ec74d26` 下载源码到 `/tmp/tenonedge-shadcn-source/`，再次核对 MIT / Copyright (c) 2024 Sat Naing 及 package.json；本机 Node 22.23.2、npm 10.9.8。仅核查，不照搬上游 Clerk/Axios/ESLint 依赖，不把上游版本范围视为本项目锁定版本。实际裁剪、来源清单与许可分发随下一 T3-01 子项提交。
 - **未完成：** 尚无 `web/`、真实前端构建/登录、浏览器测试或可访问产品页面；临时测试壳不进入发布物。FE-AT-07 仅服务端路由边界子场景，不称为离线浏览器或最低版本验证。T3-01 继续，再先做点表/画布原型。
+
+### 2.100 T3-01 裁剪前端、真实认证与普通 HTTP 浏览器（2026-10-09）
+
+- 建立 `web/`：从 FE-D01 固定提交实际裁剪 Button/Input/Label/Card、Main 和主题，共 6 文件；许可、改动路径与实际 npm 生产许可证保存并随静态构建输出（`web/THIRD_PARTY.md`、`public/licenses/`、来源登记第 6 节）。删除未使用图表/外部字体变量；没有复制 Clerk、mock 用户/Token、社交登录、示例仪表盘或整个模板。导航只出现真实工作区/账号安全，不用未来页面的无效按钮充数。
+- React 19.3、TanStack Router 代码路由、Query、openapi-fetch、Zustand 内存会话、react-i18next 中文、RHF/Zod 与 Tailwind 4；一套 npm 锁文件/精确直接版本，无 Axios/React Router/ESLint，无 Node 运行服务。Node 22.23.2，统一 npm 11.21.0（命令可经 `npx --yes npm@11.21.0`，没有修改全局 npm）。
+- `openapi.json` 来自真实 Development Host 的管理文档；`api:generate` 保存文档并由 openapi-typescript 7.13.0 生成 `schema.d.ts`，未手写后端请求/响应结构。只对无秘密的本机临时 Host 取文档，没有保存会话 Cookie 或密码。API 基础路径、CSRF 头及角色来自真实契约。
+- 真实首次设置、重置待设置/窗口关闭提示、账号登录、会话恢复、退出、自改密码、强制改临时密码入口均按实际 API 编写；Cookie 由 .NET HttpOnly 会话维护，CSRF 只在内存，不写 localStorage/sessionStorage。退出/401 清查询和会话，旧会话代次的迟到响应拒绝写回。错误在对应区域显示，登录错误不清空输入；写请求 `retry=false`，路由不预加载操作。
+- 请求总期限 15 秒覆盖响应头和**整个正文接收**，调用方取消同样中止读取；使用普通 AbortController，不依赖 Chrome 111 不支持的 AbortSignal.any/timeout 或 HTTP 非安全上下文的 crypto.randomUUID。单元测试用真实 HTTP 服务发头和半截正文后保持连接，证实期限没有在收到头时提前清除。
+- .NET Production Host 通过绝对 `--webroot` 指向构建产物；Playwright 启动临时数据目录的真实 .NET，不使用假认证服务。关闭后移除测试数据，不在仓库中生成真实配置/秘密。构建/测试命令与开发方式见 `web/README.md`。当前工作区明确提示“开发中，点表/路线尚未交付”，没有模拟采集数据。
+
+实际发现与修正（不把失败步骤算通过）：
+
+1. 直接尝试上游 TypeScript 6 被 openapi-typescript 的 `^5.x` peer 约束拒绝；改为 5.9.3，未使用 `--force` 或忽略 peer 检查。npm 10.9.8 多次出现 Arborist `edgesOut` 内部异常（日志 `/tmp/tenonedge-web-npm-install.log`、`-npm-pinned.log`），用兼容本机 Node 的 npm 11.21.0 正常解析同一组合。
+2. 旧 Vite 8.0.8/Vitest 4.1.4 有高/中风险公告；按 npm audit 实际结果更新至 Vite 8.3.4/Vitest 4.1.11，重新安装为零已知漏洞，不执行强制整树升级。TypeScript 首次编译还发现测试登录体漏了契约必需字段，补齐测试，不放松生成类型。
+3. Playwright 1.59.1 不支持本机 Ubuntu 26.04，安装浏览器失败；更新到 1.64.0 后正常使用 Chromium 156.0.8078.4。**这个现代 Chromium 不是最低浏览器验收。** 原日志 `/tmp/tenonedge-web-browser-install.log`，修正后 `-browser-install2.log`。
+
+验证（本地 Linux x64；本批远端 CI 未运行）：
+
+- `cd web && npx --yes npm@11.21.0 ci`：按锁文件干净重装成功、审计 0 漏洞（`/tmp/tenonedge-web-ci.log`）。`run format:check`、`run lint`、`run build` 通过；构建记录 `/tmp/tenonedge-web-build-final.log`。产物 JS 约 545kB / gzip 172kB，CSS 约 21.4kB；Vite 有 >500kB chunk 提醒，未隐藏，不称为性能优化完成。最低浏览器只设置构建 target，尚无实测。
+- `npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json`：**19 通过，0 失败/跳过**，7 项 API/期限测试及 12 项 CI 报告门禁（含零用例、跳过、失败、全局错误负向用例）；`/tmp/tenonedge-web-unit-report2.log`、`web/reports/unit.json`。
+- `PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://192.168.0.88:18082 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json`：**2 通过，0 失败/跳过**；实际网卡 HTTP，明确断言 `isSecureContext=false`。第一场景完成首次设置→自动会话→/account 深链刷新→真实 CSRF 改密码→退出→新密码登录；核对 HttpOnly Cookie、精确 4 次 POST、未知 API 仍 JSON404、内存外存储为空、页面无跨源资源请求。阻断非同源浏览器请求仍成功，这是页面资源独立子场景，不冒充断网现场部署。第二场景注入登录500，确认保留输入且没有自动重试，随后实际错误密码返回401。日志 `/tmp/tenonedge-web-browser-last.log`（第二场景补为可独立初始化后复测），JSON `web/reports/browser.json`，截图 `web/test-results/workspace.png` 已人工查看。
+- `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 通过；新增 Frontend CI 固定 Action SHA，执行 locked install、实际 Host 构建、静态检查、非 localhost 浏览器与非零/无跳过报告检查。只上传测试证据，不上传发行物；GitHub 作业尚未触发，不称为远端通过。
+
+- 后端全量回归：`dotnet test TenonEdge.sln -c Release --no-restore --logger 'trx;LogFilePrefix=web-foundation' --results-directory /tmp/tenonedge-web-foundation-dotnet --blame-hang-timeout 5m --blame-hang-dump-type none`：**976 单元 + 797 集成 = 1773 项通过，0 失败/跳过**（两个 TRX Counters 已核对，`/tmp/tenonedge-web-foundation-dotnet.log`）。未修改后端业务代码。品牌两文件与仓库原图 SHA-256 一致，源 MIT 文本 cmp 一致，`git diff --check` 通过。
+
+边界：FE-AT-01/02/04/06/07 的上述子场景获软件证据，不表示 FE 全部完成。强制改临时密码/主机重置、只读角色浏览器矩阵、会话强制失效竞态和所有最低浏览器仍需补测；没有点表/画布/草稿/应用/回滚，不标“可独立使用网关”或总目标完成。下一步先 T3-02 点表与 T3-03 画布原型，继续真实配置链路，不止步于登录壳。
 
 ## 3. 验收编号登记
 

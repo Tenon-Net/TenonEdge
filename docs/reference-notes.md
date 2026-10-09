@@ -107,3 +107,30 @@ S-01 之外，T1-02 的模拟输入使用 SplitMix64 伪随机数算法（Steele
 | T-06 | 镜像 mcr.microsoft.com/dotnet/runtime-deps | 10.0，digest `sha256:099f6f87ed745377dd27bd722f0d1a352bca71b4fddaabfd75e7c064bcaa82da`（Ubuntu 24.04.5） | mcr.microsoft.com | T0-13 未预装 .NET 的干净环境 | 镜像内各组件按其许可 | 否 | 只用于验证；产品基础镜像在 T5-04 另行选定并登记 |
 | T-08 | Microsoft.Extensions.TimeProvider.Testing | 10.10.0（dotnet/extensions，提交 `02107c65bab30aad9e35b5133ed643eaa77bccd8`） | nuget.org | T1 的单元与集成测试：可控时钟 FakeTimeProvider | MIT（nuspec 许可表达式） | 否 | 已记录（2026-10-01）；net10.0 下没有传递依赖 |
 | T-07 | SQLitePCLRaw.lib.e_sqlite3 中的 linux-x64 原生库（SQLite 3.49.1） | 2.1.11 | nuget.org，验证时下载，包的 SHA-512 与 nuget.org 登记核对一致 | T0-13 验证“实际加载低版本 SQLite 时运行时不启动” | Apache-2.0（SQLite 本身为公有领域） | 否 | 只在验证的临时目录中使用，不进入仓库或发布物 |
+
+## 6. T3-01 前端基础（2026-10-09）
+
+FE-D01 固定 shadcn-admin 提交 `e16c87f213a5ba5e45964e9b67c792105ec74d26` 实际裁剪 6 个文件，完整路径/改动见 `web/THIRD_PARTY.md`；MIT / Copyright (c) 2024 Sat Naing 保存在 `web/public/licenses/shadcn-admin-MIT.txt` 并进入 dist，不改变本项目 LICENSE。品牌直接复制仓库资产，没有修改原图。
+
+本批直接生产依赖如下；通过 npm 使用，未移植其源码，实际包级生产许可文本由 `web/scripts/licenses.mjs` 收集至 `web/public/licenses/npm-notices.txt`，构建缺文本即失败。清单保守覆盖安装的生产依赖，不以 tree-shaking 推定免除许可义务。开发/测试工具不作为运行服务分发；完整传递版本、完整性及声明在唯一 `web/package-lock.json`，正式发行的综合许可核查仍属 T5-07。
+
+| npm 包 | 精确版本 | 包声明许可 |
+|---|---|---|
+| @hookform/resolvers | 5.9.1 | MIT |
+| @radix-ui/react-label | 2.1.16 | MIT |
+| @radix-ui/react-slot | 1.4.0 | MIT |
+| @tanstack/react-query | 5.104.1 | MIT |
+| @tanstack/react-router | 1.170.41 | MIT |
+| class-variance-authority | 0.7.1 | Apache-2.0 |
+| clsx | 2.1.1 | MIT |
+| i18next | 26.4.2 | MIT |
+| openapi-fetch | 0.17.0 | MIT |
+| react | 19.3.0 | MIT |
+| react-dom | 19.3.0 | MIT |
+| react-hook-form | 7.89.0 | MIT |
+| react-i18next | 17.0.16 | MIT |
+| tailwind-merge | 3.7.0 | MIT |
+| zod | 4.6.5 | MIT |
+| zustand | 5.0.15 | MIT |
+
+工具基线：Node 22.23.2 / npm 11.21.0、TypeScript 5.9.3、Vite 8.3.4、Vitest 4.1.11、Playwright 1.64.0、oxlint 1.87.0、Prettier 3.9.9；直接工具精确版本见 package.json。未采用上游 Clerk/Axios/ESLint 或第二套路由。安装和审计中的失败、修正及实际验证见实施状态 §2.100，不据此宣称最低浏览器通过。

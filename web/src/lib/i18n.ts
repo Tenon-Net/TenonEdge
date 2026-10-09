@@ -1,0 +1,63 @@
+import i18n from 'i18next'
+import { initReactI18next } from 'react-i18next'
+void i18n.use(initReactI18next).init({
+    lng: 'zh-CN',
+    fallbackLng: 'zh-CN',
+    interpolation: { escapeValue: false },
+    resources: {
+        'zh-CN': {
+            translation: {
+                product: 'TenonEdge',
+                subtitle: '边缘接入与转发网关',
+                loading: '正在读取网关状态…',
+                retry: '重新查询',
+                requestFailed: '请求失败，请检查网关连接后重试。',
+                timeoutNotice:
+                    '请求失败或超时；操作不会自动重试，请先核对当前状态。',
+                unauthorized: '账号或密码错误，或会话已失效。',
+                forbidden: '权限不足或防 CSRF 校验失败，请重新登录。',
+                rateLimited: '尝试次数过多，请稍后重试。',
+                conflict: '状态已经变化，请刷新核对后再操作。',
+                login: '登录',
+                setup: '首次设置',
+                reset: '重置管理员密码',
+                passwordChange: '修改密码',
+                logout: '退出登录',
+                accountName: '账号',
+                account: '账号',
+                password: '密码',
+                currentPassword: '原密码',
+                newPassword: '新密码',
+                gatewayName: '网关名称（可选）',
+                submitSetup: '创建管理员并登录',
+                submitReset: '设置密码并登录',
+                submitPassword: '保存新密码',
+                pending: '正在提交…',
+                required: '请填写此项。',
+                setupClosed: '设置窗口已关闭，请在主机上重启服务后再试。',
+                windowCloses: '设置窗口关闭时间：{{time}}',
+                httpWarning:
+                    '当前使用 HTTP，密码会明文传输。请仅在可信管理网络使用，建议通过 HTTPS 访问。',
+                temporaryPassword: '当前账号必须先修改临时密码，才能继续操作。',
+                workspace: '工作区',
+                authenticated: '已连接到真实网关',
+                accountDetail: '当前账号：{{name}}',
+                roles: {
+                    administrator: '管理员',
+                    configurator: '配置人员',
+                    viewer: '只读',
+                },
+                foundationNotice:
+                    'T3 开发中：认证已接入真实服务；点表与路线编辑尚未交付。此页面不代表已配置或正在采集设备。',
+                noPage: '此页面不存在。',
+                backHome: '返回工作区',
+                security: '账号安全',
+                savedPassword: '密码已修改。',
+                showNavigation: '展开导航',
+                hideNavigation: '收起导航',
+                navigation: '主导航',
+            },
+        },
+    },
+})
+export default i18n

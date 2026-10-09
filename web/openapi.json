@@ -1,0 +1,2650 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "TenonEdge 管理 API",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:18081/"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "进程存活检查",
+        "description": "进程能够处理请求即返回 200 与文本 Healthy。",
+        "operationId": "getLiveness",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "就绪检查",
+        "description": "全部就绪条件满足时返回 200；任一条件不满足时返回 503。只返回状态文本，不返回原因。",
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/setup": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "summary": "首次设置状态",
+        "description": "未登录即可查询：当前状态、设置窗口是否开放及关闭时间；重置待设置时给出等待设置新密码的账号。",
+        "operationId": "getSetupStatus",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "summary": "完成首次设置",
+        "description": "未初始化时创建管理员；重置待设置时为被重置的账号设置新密码。成功后自动登录。已有管理员或窗口已关闭时返回 409。",
+        "operationId": "completeSetup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "登录",
+        "description": "账号或密码错误时返回 401，不区分账号是否存在；连续失败达到上限后返回 429 并带 Retry-After。",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "登出",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/auth/session": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "当前会话",
+        "description": "返回当前账号、角色、是否须先修改密码，以及写操作须回传的防 CSRF 令牌。",
+        "operationId": "getSession",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/auth/password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "修改自己的密码",
+        "description": "须输入原密码。成功后该账号的其他会话失效，当前会话重新签发。原密码连续错误 5 次时结束该账号的全部会话（包括当前会话），返回 401；登录锁定不影响已登录的用户修改密码。与登录共用按来源地址的限流，超出时返回 429。",
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/audit": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "查询审计记录",
+        "description": "仅管理员。按发生时间（from 含、to 不含）、账号、操作代码、对象精确筛选，从新到旧排列；下一页以上一页返回的 nextCursor 作为 before 参数。",
+        "operationId": "listAuditRecords",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/events": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "查询运行事件",
+        "description": "所有角色可查看。按时间（from 含、to 不含；合并的事件只要有一次发生落在区间内即列出）、级别（info、warning、error，与返回值相同）、类型代码、对象筛选，按首次发生从新到旧排列；同一对象的同类事件在 5 分钟内合并为一条并计数。下一页以上一页返回的 nextCursor 作为 before 参数。",
+        "operationId": "listRuntimeEvents",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeEventPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/status": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "查看运行状态、存储保护和累计计数",
+        "operationId": "getRuntimeStatus",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeDiagnosticsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/trends": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "查看本进程最近一小时的收发和失败趋势计数",
+        "operationId": "getRuntimeTrends",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuntimeTrendPoint"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/system/info": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "查看系统信息",
+        "description": "所有角色可查看：版本、NodeId、网关名称、数据目录与磁盘空间、HTTPS 证书的 SHA-256 指纹与到期时间、实际加载的 SQLite 版本、首次设置的时间与来源 IP，以及阻止运行时启动的原因。",
+        "operationId": "getSystemInfo",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfoResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
+      "get": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "查看 MQTT 凭证状态（不返回秘密）",
+        "operationId": "getMqttCredentialStatus",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MqttCredentialMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "写入 MQTT 凭证或更新接收方绑定",
+        "description": "T1 种子连接专用：ID 与种子配置一致，秘密不进入种子；已有凭证须带 expectedVersion。变更接收方默认作废，retainExisting 仅管理员可用。",
+        "operationId": "writeMqttCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MqttCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MqttCredentialMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/{connectionId}/http-credential": {
+      "get": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "查看 HTTP 凭证状态（不返回秘密）",
+        "operationId": "getHttpCredentialStatus",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpCredentialMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "写入 HTTP 凭证或更新接收方绑定",
+        "description": "T2 种子连接专用：ID 与种子配置一致，秘密不进入种子；已有凭证须带 expectedVersion。变更接收方默认作废，retainExisting 仅管理员可用。",
+        "operationId": "writeHttpCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HttpCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpCredentialMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/{connectionId}/delivery-control": {
+      "get": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "查看目标手动暂停状态",
+        "operationId": "getOutputControl",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputControlState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "确认后手动暂停或恢复目标",
+        "description": "暂停持久保存；已经在途的一条发送允许在协议超时内结束。恢复也会重新探测自动暂停的目标。",
+        "operationId": "writeOutputControl",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutputControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputControlState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/system/outbound-policy": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "查看持久出站白名单与本机端口例外",
+        "description": "部署参数规则额外生效，不会被本接口删除；本机管理端口和危险地址始终禁止。",
+        "operationId": "getOutboundPolicy",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundPolicyState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "System"
+        ],
+        "summary": "管理员更新出站白名单并记录审计",
+        "description": "仅影响之后建立的连接；已建立的连接不会被本次更新强制中断。",
+        "operationId": "writeOutboundPolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboundPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundPolicyState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuditPage": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditRecord"
+            }
+          },
+          "nextCursor": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "AuditRecord": {
+        "required": [
+          "id",
+          "occurredAt",
+          "accountName",
+          "tokenName",
+          "sourceIp",
+          "action",
+          "target",
+          "result",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accountName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tokenName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sourceIp": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "result": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "newPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ClockSyncState": {
+        "enum": [
+          "unknown",
+          "synchronized",
+          "notSynchronized"
+        ]
+      },
+      "CompleteSetupRequest": {
+        "required": [
+          "accountName",
+          "password",
+          "gatewayName"
+        ],
+        "type": "object",
+        "properties": {
+          "accountName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "gatewayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ConfigStoreInfo": {
+        "required": [
+          "schemaVersion",
+          "sqliteVersion",
+          "sqliteCompileOptions"
+        ],
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "sqliteVersion": {
+            "type": "string"
+          },
+          "sqliteCompileOptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DeliveryCacheStatus": {
+        "required": [
+          "storageFault",
+          "lastError",
+          "lastErrorAt",
+          "committedBatches",
+          "committedRecords",
+          "deletedRecords",
+          "failedBatches",
+          "failedRecords",
+          "rejectedRecords",
+          "store"
+        ],
+        "type": "object",
+        "properties": {
+          "storageFault": {
+            "type": "boolean"
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastErrorAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "committedBatches": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "committedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "deletedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failedBatches": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "rejectedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "store": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeliveryStoreInfo"
+              }
+            ]
+          }
+        }
+      },
+      "DeliveryStoreInfo": {
+        "required": [
+          "filePath",
+          "sqliteVersion",
+          "journalMode",
+          "synchronous",
+          "schemaVersion",
+          "configStoreId"
+        ],
+        "type": "object",
+        "properties": {
+          "filePath": {
+            "type": "string"
+          },
+          "sqliteVersion": {
+            "type": "string"
+          },
+          "journalMode": {
+            "type": "string"
+          },
+          "synchronous": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "configStoreId": {
+            "type": "string"
+          }
+        }
+      },
+      "DiskSpaceInfo": {
+        "required": [
+          "totalBytes",
+          "availableBytes"
+        ],
+        "type": "object",
+        "properties": {
+          "totalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "availableBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "FirstSetupInfo": {
+        "required": [
+          "completedAt",
+          "sourceIp"
+        ],
+        "type": "object",
+        "properties": {
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceIp": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "HttpCredentialKind": {
+        "enum": [
+          "basic",
+          "bearer",
+          "apiKeyHeader",
+          "apiKeyQuery",
+          null
+        ]
+      },
+      "HttpCredentialMetadata": {
+        "required": [
+          "connectionId",
+          "recipient",
+          "version",
+          "configured",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HttpCredentialRequest": {
+        "required": [
+          "recipient"
+        ],
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string"
+          },
+          "kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpCredentialKind"
+              }
+            ]
+          },
+          "username": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "secret": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountChanged": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "retainExisting": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "HttpsCertificateInfo": {
+        "required": [
+          "sha256Fingerprint",
+          "notAfter"
+        ],
+        "type": "object",
+        "properties": {
+          "sha256Fingerprint": {
+            "type": "string"
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HttpValidationProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "InFlightBudgetStatus": {
+        "required": [
+          "capacityBytes",
+          "reservedBytes",
+          "peakReservedBytes"
+        ],
+        "type": "object",
+        "properties": {
+          "capacityBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "reservedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "peakReservedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "InputReadHealth": {
+        "enum": [
+          "notRead",
+          "normal",
+          "partialFailure",
+          "failing",
+          "offline"
+        ]
+      },
+      "InputReadSnapshot": {
+        "required": [
+          "deviceKey",
+          "inputKey",
+          "health",
+          "lastSuccessAt",
+          "lastFailureAt",
+          "lastError",
+          "consecutiveFailures",
+          "readsCompleted",
+          "readsFailed",
+          "cyclesSkipped",
+          "lastSkippedAt",
+          "dataRejected",
+          "invalidUpstreamTimes"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceKey": {
+            "type": "string"
+          },
+          "inputKey": {
+            "type": "string"
+          },
+          "health": {
+            "$ref": "#/components/schemas/InputReadHealth"
+          },
+          "lastSuccessAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastFailureAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "consecutiveFailures": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "readsCompleted": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "readsFailed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "cyclesSkipped": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "lastSkippedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "dataRejected": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "invalidUpstreamTimes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "LoginRequest": {
+        "required": [
+          "accountName",
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "accountName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "MqttCredentialMetadata": {
+        "required": [
+          "connectionId",
+          "recipient",
+          "version",
+          "configured",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MqttCredentialRequest": {
+        "required": [
+          "recipient"
+        ],
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string"
+          },
+          "username": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountChanged": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "retainExisting": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "OutboundNetworkGrant": {
+        "required": [
+          "cidr",
+          "port"
+        ],
+        "type": "object",
+        "properties": {
+          "cidr": {
+            "type": "string"
+          },
+          "port": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "OutboundPolicyRequest": {
+        "required": [
+          "networks",
+          "localPorts"
+        ],
+        "type": "object",
+        "properties": {
+          "networks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundNetworkGrant"
+            }
+          },
+          "localPorts": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "OutboundPolicyState": {
+        "required": [
+          "version",
+          "networks",
+          "localPorts"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundNetworkGrant"
+            }
+          },
+          "localPorts": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        }
+      },
+      "OutputControlRequest": {
+        "required": [
+          "paused",
+          "confirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "paused": {
+            "type": "boolean"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "OutputControlState": {
+        "required": [
+          "manuallyPaused",
+          "resumeVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "manuallyPaused": {
+            "type": "boolean"
+          },
+          "resumeVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RuntimeCoordinatorState": {
+        "enum": [
+          "starting",
+          "blocked",
+          "idle",
+          "active",
+          "runFailed",
+          "stopping",
+          "stopped"
+        ]
+      },
+      "RuntimeCoordinatorStatus": {
+        "required": [
+          "state",
+          "reason",
+          "activeRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/RuntimeCoordinatorState"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "activeRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "RuntimeDiagnosticsResponse": {
+        "required": [
+          "coordinator",
+          "runtime",
+          "queue",
+          "storageProtection",
+          "clockSyncState",
+          "persistentCounters",
+          "inFlight",
+          "unpersistedCounters"
+        ],
+        "type": "object",
+        "properties": {
+          "coordinator": {
+            "$ref": "#/components/schemas/RuntimeCoordinatorStatus"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeStatusReport"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/DeliveryCacheStatus"
+          },
+          "storageProtection": {
+            "$ref": "#/components/schemas/StorageProtectionStatus"
+          },
+          "clockSyncState": {
+            "$ref": "#/components/schemas/ClockSyncState"
+          },
+          "persistentCounters": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          "inFlight": {
+            "$ref": "#/components/schemas/InFlightBudgetStatus"
+          },
+          "unpersistedCounters": {
+            "type": "object",
+            "additionalProperties": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          }
+        }
+      },
+      "RuntimeEventItem": {
+        "required": [
+          "id",
+          "firstOccurredAt",
+          "lastOccurredAt",
+          "level",
+          "type",
+          "target",
+          "message",
+          "occurrenceCount"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "firstOccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastOccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "level": {
+            "$ref": "#/components/schemas/RuntimeEventLevel"
+          },
+          "type": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "occurrenceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "RuntimeEventLevel": {
+        "enum": [
+          "info",
+          "warning",
+          "error"
+        ]
+      },
+      "RuntimeEventPage": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeEventItem"
+            }
+          },
+          "nextCursor": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "RuntimeStartBlocker": {
+        "required": [
+          "code",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "RuntimeStatusReport": {
+        "required": [
+          "activeRevision",
+          "units"
+        ],
+        "type": "object",
+        "properties": {
+          "activeRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeUnitStatus"
+            }
+          }
+        }
+      },
+      "RuntimeTrendPoint": {
+        "required": [
+          "at",
+          "uptimeSeconds",
+          "durationSeconds",
+          "received",
+          "sent",
+          "readFailures",
+          "sendFailures",
+          "rejectedPaths",
+          "storageFailedRecordAttempts"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uptimeSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "durationSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "received": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "sent": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "readFailures": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "sendFailures": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "rejectedPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "storageFailedRecordAttempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "RuntimeUnitId": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "key": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "keySegments": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RuntimeUnitState": {
+        "enum": [
+          "running",
+          "backoff",
+          "stopping",
+          "stopped",
+          "stopTimedOut",
+          "buildFailed"
+        ]
+      },
+      "RuntimeUnitStatus": {
+        "required": [
+          "id",
+          "state",
+          "restartCount",
+          "lastError",
+          "lastErrorAt",
+          "nextRestartAt",
+          "reads"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/RuntimeUnitId"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RuntimeUnitState"
+          },
+          "restartCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastErrorAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "nextRestartAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "reads": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InputReadSnapshot"
+              }
+            ]
+          }
+        }
+      },
+      "SessionResponse": {
+        "required": [
+          "accountName",
+          "displayName",
+          "role",
+          "mustChangePassword",
+          "csrfToken"
+        ],
+        "type": "object",
+        "properties": {
+          "accountName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "mustChangePassword": {
+            "type": "boolean"
+          },
+          "csrfToken": {
+            "type": "string"
+          }
+        }
+      },
+      "SetupState": {
+        "enum": [
+          "uninitialized",
+          "initialized",
+          "resetPending"
+        ]
+      },
+      "SetupStatusResponse": {
+        "required": [
+          "state",
+          "windowOpen",
+          "windowClosesAt",
+          "resetAccountName"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/SetupState"
+          },
+          "windowOpen": {
+            "type": "boolean"
+          },
+          "windowClosesAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "resetAccountName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "StorageProtectionStatus": {
+        "required": [
+          "rejectNewRecords",
+          "spaceUnknown",
+          "space"
+        ],
+        "type": "object",
+        "properties": {
+          "rejectNewRecords": {
+            "type": "boolean"
+          },
+          "spaceUnknown": {
+            "type": "boolean"
+          },
+          "space": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StorageSpace"
+              }
+            ]
+          }
+        }
+      },
+      "StorageSpace": {
+        "required": [
+          "totalBytes",
+          "availableBytes"
+        ],
+        "type": "object",
+        "properties": {
+          "totalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "availableBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "SystemInfoResponse": {
+        "required": [
+          "version",
+          "nodeId",
+          "gatewayName",
+          "dataDirectory",
+          "dataDirectoryDisk",
+          "httpsCertificate",
+          "configStore",
+          "firstSetup",
+          "runtimeStartBlockers",
+          "clockSyncState"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "gatewayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "dataDirectory": {
+            "type": "string"
+          },
+          "dataDirectoryDisk": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskSpaceInfo"
+              }
+            ]
+          },
+          "httpsCertificate": {
+            "$ref": "#/components/schemas/HttpsCertificateInfo"
+          },
+          "configStore": {
+            "$ref": "#/components/schemas/ConfigStoreInfo"
+          },
+          "firstSetup": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FirstSetupInfo"
+              }
+            ]
+          },
+          "runtimeStartBlockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeStartBlocker"
+            }
+          },
+          "clockSyncState": {
+            "$ref": "#/components/schemas/ClockSyncState"
+          }
+        }
+      },
+      "UserRole": {
+        "enum": [
+          "administrator",
+          "configurator",
+          "viewer"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Setup"
+    },
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "Audit"
+    },
+    {
+      "name": "Runtime"
+    },
+    {
+      "name": "System"
+    },
+    {
+      "name": "Credentials"
+    },
+    {
+      "name": "Deliveries"
+    }
+  ]
+}

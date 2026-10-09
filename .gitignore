@@ -42,3 +42,9 @@ Thumbs.db
 
 .omx/
 .omx-state-locks.identity.json
+
+# Browser test output
+/web/test-results/
+/web/playwright-report/
+
+/web/reports/
