@@ -109,7 +109,7 @@ public sealed class RuntimeApplicationLifecycleTests
     public async Task SecondTargetCheckSeesRecordsProducedWhileOldInputIsQuiescing()
     {
         using var data = TemporaryDirectory.Create();
-        using var input = new ControlledInput { ProduceOnlyOnFirstStop = true };
+        using var input = new ControlledInput { ProduceOnlyOnFirstStop = true, StopWorkDelay = TimeSpan.FromMilliseconds(200) };
         await using var factory = Create(data.Path, input);
         var saved = Seed(factory);
         var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
@@ -174,8 +174,12 @@ public sealed class RuntimeApplicationLifecycleTests
         services.AddSingleton<IInputUnitFactory>(input);
         services.RemoveAll<IOutboundConnector>();
         services.AddSingleton<IOutboundConnector, DeniedConnector>();
-        services.RemoveAll<RuntimeOptions>();
-        services.AddSingleton(new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(100) });
+        if (input.BlockFirstStop)
+        {
+            // 只有专门验证停止超时的场景缩短期限；正常排空使用产品默认值。
+            services.RemoveAll<RuntimeOptions>();
+            services.AddSingleton(new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(100) });
+        }
     });
 
     private static RouteDraftResult Seed(FixedDataDirectoryApplicationFactory factory)
@@ -205,6 +209,7 @@ public sealed class RuntimeApplicationLifecycleTests
         public bool RejectPreparation { get; set; }
         public bool BlockFirstStop { get; init; }
         public bool ProduceOnlyOnFirstStop { get; init; }
+        public TimeSpan StopWorkDelay { get; init; }
         public TaskCompletionSource Preparing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ManualResetEventSlim ReleasePreparation { get; } = new();
         public TaskCompletionSource ReleaseStop { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -238,6 +243,8 @@ public sealed class RuntimeApplicationLifecycleTests
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
                 if (generation == 1 && owner.ProduceOnlyOnFirstStop)
                 {
+                    // 有界的收尾工作，不要求真实 SQLite/线程池在测试专用的 100 ms 内完成。
+                    await Task.Delay(owner.StopWorkDelay, CancellationToken.None);
                     await context.Messages.ProduceAsync(1024, _ =>
                     {
                         var now = context.Time.GetUtcNow();

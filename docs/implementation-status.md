@@ -3098,6 +3098,32 @@ Linux x64（Linux 7.0.0-31-generic）、.NET SDK 10.0.401/runtime 10.0.12；未�
 
 Linux x64、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖或配置库表迁移。下一步是历史清单/比较、保留策略及人工回滚的草稿一致性检查与原子替换，再接分组鉴权端点、确认清单和 UI。现有 schema 1 历史没有完整草稿，人工回滚界面必须明确处理该兼容边界，不能宣称能恢复未保存过的编辑模型。未推送、发布或改变部署。
 
+### 2.158 T3-06 历史保留、分页和完整草稿比较基础（2026-10-10）
+
+本批承接 §2.157，实现 T3-06 / GW-10 / 功能 §6.4、§6.6 的后端子场景。**没有新增 HTTP 端点或网页历史/确认清单，不宣称人工回滚已实现。**
+
+- 提交成功时在同一配置事务中保留最近 20 个生效过的版本；放弃或启动丢弃 pending 时另外保留最近 20 个“未生效”版本。启动无 pending 时也整理已有历史。有效、上一、pending 和运行中指针引用不会被成功版本清理误删；正常数据下第 21 次成功应用删除最早成功版本。版本下限不变，清理后仍不复用编号；不清理发送缓存、凭证或审计。
+- 清理失败导致当前配置事务整体回滚，不能产生有效指针已切换但审计或历史只更新一半的结果。启动恢复、应用失败恢复仍按既有规则处理存储异常。
+- 历史列表按版本号倒序和游标分页，单页 1—100 项，默认 20；只投影状态、来源、操作人、时间、稳定标记和未生效原因等元数据，不把每个完整快照载入列表。
+- schema 2 的两个历史版本可按完整配置对象比较，也可以将指定版本或空基准与确认过版本号的当前草稿比较。两个版本/版本与草稿在同一配置事务内读取，差异计算在事务外进行；版本已清理和过期草稿分别明确失败。
+- 比较按连接、设备、来源和路线分类，以稳定 ID 区分新增/修改/删除，携带前后非秘密对象内容；来源带设备 ID，后续可汇总点位。全局草稿版本、路线修改人/时间本身不制造配置差异；JSON 对象属性顺序不制造差异；停用对象、字段内容与路线布局变化仍算修改。相同业务 key 换了内部 ID 记为删除加新增，不假装同一对象修改。
+- 旧 schema 1 仍可列入历史，但没有完整草稿时明确拒绝“按配置对象比较”，不伪造空草稿或零差异。其运行计划比较视图仍待接入。
+
+新增 **10 项场景**：21 次成功应用保留、独立未生效上限、启动 pending 丢弃、游标全量遍历且不重复、版本号不复用；清理 SQL 故障时指针/运行标记/审计原子回滚；历史与当前草稿的隔离/冲突/新增修改删除；旧种子历史边界；元数据和属性顺序忽略但布局变化可见；相同 key 不同 ID；来源设备归属和前后字段内容；三种分页边界。一个用例内的多个断言不另算用例。
+
+验证经过与证据：
+
+- `dotnet build TenonEdge.sln --no-restore -v minimal` 初版产品实现构建通过（`/tmp/tenonedge-history-build.log`）。首轮新测试编译触发 CA1861 常量数组诊断（`/tmp/tenonedge-history-focused.log`），改为分别检查两个差异条目，未关闭分析器。
+- `dotnet test tests/IntegrationTests --no-restore --filter 'FullyQualifiedName~RuntimeHistoryTests|FullyQualifiedName~RuntimeVersionStoreTests|FullyQualifiedName~RuntimeCoordinatorTests' -v minimal`：阶段 **37 项通过，0 失败/跳过**（`/tmp/tenonedge-history-focused2.log`）；此时尚未加入最后一个来源前后内容用例。
+- 第一轮全量出现既有 `SecondTargetCheckSeesRecordsProducedWhileOldInputIsQuiescing` 失败：期望第二次目标检查拦截，实际先发生静默超时；1258 单元通过，1219 集成通过、1 失败（`/tmp/tenonedge-history-regression.log`）。保留该失败，不将重复执行替代诊断。
+- 夹具把所有场景的停止期限统一缩成 100 ms，包含需要真实线程池、通道与 SQLite 排空的非超时场景。加入 200 ms 有界收尾工作的定向实验：首次因遗漏显式 `CancellationToken.None` 触发 CA2016（`/tmp/tenonedge-history-stop-red.log`）；修正后用 `--filter FullyQualifiedName~SecondTargetCheckSeesRecordsProducedWhileOldInputIsQuiescing` 实际复现相同失败（`/tmp/tenonedge-history-stop-red2.log`，0 通过、1 失败）。仅让专门阻塞停止的超时场景使用 100 ms，其余沿用产品默认期限；保留 200 ms 收尾作为回归场景，目标检查、单条入库、原版本恢复等断言不变。产品超时/静默实现未改。该实验验证了夹具的不合理时限；原始全量运行具体在哪一段消耗了 100 ms 未另外插桩。
+- 修正后 `--filter 'FullyQualifiedName~RuntimeHistoryTests|FullyQualifiedName~RuntimeApplicationLifecycleTests'` **16 项通过**（`/tmp/tenonedge-history-stop-green.log`）。生命周期类使用 `--no-build --no-restore --filter FullyQualifiedName~RuntimeApplicationLifecycleTests` 连续 5 轮，每轮 6 项，**30 次执行通过**（`/tmp/tenonedge-history-stop-repeat.log`）。
+- 格式初次仅报告历史投影的换行（`/tmp/tenonedge-history-format.log`），只用 `dotnet format whitespace --no-restore --include src/TenonEdge.Host/Features/Runtime/RuntimeVersionStore.History.cs` 修正，未运行编译错误的自动修复。
+- 最终 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-history-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1220 集成 = 2478 项通过，0 失败/跳过**（`/tmp/tenonedge-history-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-history-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-history-trx.log`）。
+- 最终 `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-history-format-final.log`），`git diff --check` 通过。
+
+Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖、迁移、服务注册或后台循环。比较尚未形成完整用户变更清单：字段级展开呈现、点位按设备计数、所有对象修改人/时间、可填写变更说明、接收方影响和平台结构影响仍待补齐；不把对象级比较当作功能 §6.2 完整通过。下一步继续人工回滚的草稿一致性检查与原子替换，再接鉴权端点和 UI。未推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

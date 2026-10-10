@@ -13,7 +13,7 @@ namespace TenonEdge.Host.Features.Runtime;
 /// 配置库中的运行版本元数据（总设计 §7.4、§10.2）：快照、三个指针（effective、previous、pending）、“运行中”标记与稳定、非正常退出计数。
 /// 每个方法是一个单独的事务；不在事务中等待网络或做耗时计算（后端实施规范 §4）。
 /// </summary>
-internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail audit, TimeProvider time, MqttCredentialStore credentials, DeliveryCache deliveries, HttpCredentialStore httpCredentials)
+internal sealed partial class RuntimeVersionStore(ConfigDatabase database, AuditTrail audit, TimeProvider time, MqttCredentialStore credentials, DeliveryCache deliveries, HttpCredentialStore httpCredentials)
 {
     /// <summary>自动操作的操作人（总设计 §7.4：自动回滚的操作人记为“系统”）。</summary>
     public const string SystemOperator = "系统";
@@ -40,12 +40,14 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         var state = State(client);
         if (state.PendingRevision is not { } pending)
         {
+            PruneHistory(client);
             return (long?)null;
         }
 
         MarkNotEffective(client, pending, InterruptedReason);
         state.PendingRevision = null;
         client.Updateable(state).UpdateColumns(record => new { record.PendingRevision }).ExecuteCommand();
+        PruneHistory(client);
         return pending;
     });
 
@@ -151,6 +153,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
 
         state.SeedHash = seedHash ?? state.SeedHash;
         client.Updateable(state).UpdateColumns(record => new { record.PendingRevision, record.SeedHash }).ExecuteCommand();
+        PruneHistory(client);
         return true;
     });
 
@@ -250,6 +253,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
             audit.Append(client, auditEntry);
         }
 
+        PruneHistory(client);
         return true;
     });
 
