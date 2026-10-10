@@ -10,7 +10,7 @@
 - `npm run build`：类型检查、生产依赖许可文本和静态构建，输出 `dist/`。
 - `npm test`、`npm run lint`、`npm run format:check`：Vitest、oxlint、Prettier。
 - 在仓库根运行 `dotnet build TenonEdge.sln -c Release --no-restore`，再回到 web 执行 `npm run test:e2e`。
-  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；先执行 `npx playwright install chromium`。
+  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的回环端口，在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
 - `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
   当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。
 
