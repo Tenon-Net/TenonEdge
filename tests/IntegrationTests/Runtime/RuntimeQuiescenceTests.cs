@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
@@ -12,6 +13,117 @@ namespace TenonEdge.IntegrationTests.Runtime;
 
 public sealed class RuntimeQuiescenceTests
 {
+    [Fact]
+    public async Task RecoveryBuildFailureKeepsRevisionAndCanBeRetriedAfterRepair()
+    {
+        using var data = TemporaryDirectory.Create();
+        var source = new OneShotInputFactory();
+        var factory = new RepairableInputFactory(source);
+        await using var runtime = RuntimeTesting.CreateRuntime([factory], data.Path);
+        var idle = await runtime.RestoreInputsAsync();
+        Assert.True(idle.Succeeded);
+        Assert.False(idle.Restarted);
+        await using var plan = runtime.Prepare(Plan(Input()));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await source.Written.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        Assert.True((await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken)).Succeeded);
+        factory.Reject = true;
+        var failed = await runtime.RestoreInputsAsync();
+        Assert.False(failed.Succeeded);
+        Assert.Equal(Input().Id, Assert.Single(failed.Failures).Id);
+        Assert.Equal(1, runtime.ActiveRevision);
+        Assert.Equal(RuntimeUnitState.BuildFailed, Assert.Single(runtime.GetStatus().Units, unit => unit.Id == Input().Id).State);
+        Assert.Equal(1, source.Started);
+        factory.Reject = false;
+        Assert.True((await runtime.RestoreInputsAsync()).Succeeded);
+        await UntilAsync(() => source.Started == 2);
+        Assert.Equal(RuntimeUnitState.Running, Assert.Single(runtime.GetStatus().Units, unit => unit.Id == Input().Id).State);
+    }
+
+    [Fact]
+    public async Task RecoveryRebuildsInputChannelsButKeepsIndependentSenderAndOldRevision()
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        var output = new OutputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path, outputs: [output]);
+        await using var plan = runtime.Prepare(Plan(Input(), Output(1, false), Output(2, true)));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 2 && output.Created.Count == 2);
+        for (var round = 1; round <= 2; round++)
+        {
+            Assert.True((await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken)).Succeeded);
+            var restored = await runtime.RestoreInputsAsync();
+            Assert.True(restored.Succeeded);
+            Assert.True(restored.Restarted);
+            Assert.Equal(1, restored.Revision);
+            await UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 2 * (round + 1) && output.Created.Count == round + 2);
+            Assert.Equal(round + 1, input.Started);
+            Assert.Equal(1, output.Created.Count(id => id == 1));
+            Assert.DoesNotContain(1L, output.Disposed);
+            Assert.Equal(round + 1, output.Created.Count(id => id == 2));
+            Assert.All(runtime.Deliveries.ReadPending(1, 0, 10), record => Assert.Equal(1, record.Revision));
+            Assert.False((await runtime.RestoreInputsAsync()).Restarted);
+            Assert.Equal(1, runtime.ActiveRevision);
+            Assert.Equal(5, runtime.GetStatus().Units.Count);
+        }
+    }
+
+    [Fact]
+    public async Task RecoveryCannotBuildNewInputUntilTimedOutOldInputExits()
+    {
+        using var data = TemporaryDirectory.Create();
+        var input = new GatedInputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], data.Path,
+            options: new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(50) });
+        await using var plan = runtime.Prepare(Plan(Input()));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await input.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False((await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken)).Succeeded);
+            var blocked = await runtime.RestoreInputsAsync();
+            Assert.False(blocked.Succeeded);
+            Assert.False(blocked.Restarted);
+            Assert.NotNull(blocked.BlockedBy);
+            Assert.Equal(1, input.Builds);
+            input.Release.TrySetResult();
+            await UntilAsync(() => runtime.GetStatus().Units.Single(unit => unit.Id == Input().Id).State == RuntimeUnitState.Stopped);
+            Assert.True((await runtime.RestoreInputsAsync()).Succeeded);
+            await UntilAsync(() => input.Runs == 2);
+            Assert.Equal(2, input.Builds);
+        }
+        finally { input.Release.TrySetResult(); }
+    }
+
+    [Fact]
+    public async Task CoupledSenderRecoveryDeletesPreviouslyAcknowledgedRecordWithoutResendingIt()
+    {
+        using var data = TemporaryDirectory.Create();
+        var output = new OutputFactory { SendStatus = OutputSendStatus.Ack };
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], data.Path, outputs: [output]);
+        _ = runtime.Deliveries.GetPersistentCounters();
+        runtime.StartCore();
+        using var database = new SqliteConnection($"Data Source={Path.Combine(data.Path, "queue.db")};Pooling=False");
+        database.Open();
+        using var command = database.CreateCommand();
+        command.CommandText = "CREATE TRIGGER fail_recovery_delete BEFORE DELETE ON delivery BEGIN SELECT RAISE(ABORT, 'injected'); END";
+        command.ExecuteNonQuery();
+        await using var plan = runtime.Prepare(Plan(Input(), Output(1, true)));
+        await runtime.ActivateAsync(plan);
+        await UntilAsync(() => output.Sends == 1 && runtime.GetStatus().Units.Single(unit => unit.Id.Kind == "output.test").State == RuntimeUnitState.Backoff);
+        Assert.True((await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken)).Succeeded);
+        Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
+        command.CommandText = "DROP TRIGGER fail_recovery_delete";
+        command.ExecuteNonQuery();
+        Assert.True((await runtime.RestoreInputsAsync()).Succeeded);
+        await UntilAsync(() => output.Sends >= 2 && runtime.Deliveries.ReadPending(1, 0, 10).Count == 0);
+        Assert.Equal(2, output.Sends); // One ACK in each input generation, never a third send for the old record.
+    }
+
     [Fact]
     public async Task DrainsOldRevisionAndStopsOnlyInputCoupledSenders()
     {
@@ -167,6 +279,8 @@ public sealed class RuntimeQuiescenceTests
     {
         public string Kind => "output.test";
         public Action? BeforeFormat { get; init; }
+        public OutputSendStatus SendStatus { get; init; } = OutputSendStatus.SuspendTarget;
+        public int Sends;
         public ConcurrentBag<long> Disposed { get; } = [];
         public ConcurrentBag<long> Created { get; } = [];
         public IOutputTarget Build(RuntimeUnitPlan plan) => new Target(this, plan);
@@ -193,29 +307,45 @@ public sealed class RuntimeQuiescenceTests
         }
         private sealed class Adapter(OutputFactory factory, long connection) : IOutputAdapter
         {
-            public Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken) =>
-                Task.FromResult(new OutputSendResult(OutputSendStatus.SuspendTarget, "test-paused"));
+            public Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken)
+            {
+                Interlocked.Increment(ref factory.Sends);
+                return Task.FromResult(new OutputSendResult(factory.SendStatus, "test-paused"));
+            }
             public ValueTask DisposeAsync() { factory.Disposed.Add(connection); return ValueTask.CompletedTask; }
         }
+    }
+
+    private sealed class RepairableInputFactory(OneShotInputFactory source) : IInputUnitFactory
+    {
+        public string Kind => source.Kind;
+        public bool Reject { get; set; }
+        public IRuntimeUnit Build(RuntimeUnitPlan plan, InputUnitContext context) =>
+            Reject ? throw new InvalidOperationException("injected-build-failure") : source.Build(plan, context);
     }
 
     private sealed class GatedInputFactory : IInputUnitFactory
     {
         public string Kind => "input.test";
         public int Runs;
+        public int Builds;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Stopping { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public IRuntimeUnit Build(RuntimeUnitPlan plan, InputUnitContext context) => new Unit(this, plan.Id);
+        public IRuntimeUnit Build(RuntimeUnitPlan plan, InputUnitContext context)
+        { Interlocked.Increment(ref Builds); return new Unit(this, plan.Id); }
         private sealed class Unit(GatedInputFactory factory, RuntimeUnitId id) : IRuntimeUnit
         {
             public RuntimeUnitId Id => id;
             public async Task RunAsync(CancellationToken stoppingToken)
             {
-                Interlocked.Increment(ref factory.Runs);
+                var generation = Interlocked.Increment(ref factory.Runs);
                 factory.Started.TrySetResult();
                 using var registration = stoppingToken.Register(() => factory.Stopping.TrySetResult());
-                await factory.Release.Task;
+                if (generation == 1)
+                { await factory.Release.Task; }
+                else
+                { await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken); }
             }
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }

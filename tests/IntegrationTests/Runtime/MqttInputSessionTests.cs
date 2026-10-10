@@ -307,8 +307,10 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal(1, connector.Connections);
     }
 
-    [Fact]
-    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput(bool restore)
     {
         var broker = fixture.Require();
         using var data = TemporaryDirectory.Create();
@@ -376,6 +378,22 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             await confirmed.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
             await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.ReadPending(1, 0, 10).Count == 0);
             Assert.Equal(1, connector.Connections);
+            if (restore)
+            {
+                Assert.True((await runtime.QuiesceInputsAsync(Token)).Succeeded);
+                var recovery = await runtime.RestoreInputsAsync();
+                Assert.True(recovery.Succeeded);
+                Assert.True(recovery.Restarted);
+                Assert.Equal(1, recovery.Revision);
+                await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref subscriptions) == 4);
+                Assert.Equal(2, connector.Connections);
+                await MqttProbe.PublishAsync(peer, topic + "/one", "{\"v\":99}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, Token);
+                var delivered = await received.NextAsync(Token);
+                using var payload = JsonDocument.Parse(delivered.ApplicationMessage.ConvertPayloadToString());
+                Assert.Equal(99, payload.RootElement.GetProperty("values").GetProperty("value").GetInt64());
+                await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref confirmations) == 3 && runtime.Deliveries.ReadPending(1, 0, 10).Count == 0);
+                Assert.Equal(2, connector.Connections);
+            }
             await runtime.StopAsync(Token);
             Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
         }

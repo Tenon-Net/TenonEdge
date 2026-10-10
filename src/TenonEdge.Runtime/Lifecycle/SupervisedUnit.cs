@@ -52,10 +52,22 @@ internal sealed partial class SupervisedUnit
         TimeProvider time,
         IRuntimeEventSink events,
         ILogger logger,
+        InputReadStatus? reads) : this(initial.Id, rebuild, backoff, time, events, logger, reads)
+    {
+        _initial = initial;
+    }
+
+    /// <summary>延迟构建：仅在上一个实例完全退出后登记，由监督循环构建并处理构建退避。</summary>
+    internal SupervisedUnit(
+        RuntimeUnitId id,
+        Func<IRuntimeUnit> rebuild,
+        RestartBackoff backoff,
+        TimeProvider time,
+        IRuntimeEventSink events,
+        ILogger logger,
         InputReadStatus? reads)
     {
-        Id = initial.Id;
-        _initial = initial;
+        Id = id;
         _rebuild = rebuild;
         _backoff = backoff;
         _time = time;
@@ -67,6 +79,12 @@ internal sealed partial class SupervisedUnit
     public RuntimeUnitId Id { get; }
 
     public InputReadStatus? Reads { get; }
+
+    /// <summary>包括停止回调与释放在内的完整退出；不能以状态已改为 Stopped 代替此任务完成。</summary>
+    internal Task Completion
+    {
+        get { lock (_lock) { return _loop ?? Task.CompletedTask; } }
+    }
 
     /// <summary>循环已经开始且尚未退出：此时不得为同一标识创建新实例。</summary>
     public bool IsAlive
@@ -142,17 +160,21 @@ internal sealed partial class SupervisedUnit
         }
         catch (Exception exception) when (exception is TimeoutException or OperationCanceledException)
         {
+            bool stopped;
             bool firstTimeout;
             lock (_lock)
             {
-                // 按循环自己设的状态判断，不按任务是否完成：循环在锁内设为“已停止”之后任务才完成，期限恰在其间到期时，单元其实已经停止。
-                if (_state == RuntimeUnitState.Stopped)
-                {
-                    return true;
-                }
-
-                firstTimeout = _state != RuntimeUnitState.StopTimedOut;
-                _state = RuntimeUnitState.StopTimedOut;
+                // 状态已停止表示用户循环、回调和释放全部结束；任务的最后完成仍可能稍后发生。
+                stopped = _state == RuntimeUnitState.Stopped;
+                firstTimeout = !stopped && _state != RuntimeUnitState.StopTimedOut;
+                if (!stopped)
+                { _state = RuntimeUnitState.StopTimedOut; }
+            }
+            if (stopped)
+            {
+                // 确保返回成功时 IsAlive 同样为 false，避免紧接着的恢复被单实例门拒绝。
+                await loop;
+                return true;
             }
 
             if (firstTimeout)
@@ -189,6 +211,12 @@ internal sealed partial class SupervisedUnit
                 try
                 {
                     instance = _rebuild();
+                    if (instance.Id != Id)
+                    {
+                        await DisposeQuietlyAsync(instance);
+                        instance = null;
+                        throw new InvalidOperationException("重新构建的单元标识与监督标识不一致。");
+                    }
                 }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
@@ -198,8 +226,12 @@ internal sealed partial class SupervisedUnit
 
             if (instance is not null)
             {
-                SetRunning();
-                failure = await RunOnceAsync(instance, stoppingToken);
+                // 构建期间也可能收到停止请求；此时只释放构建结果，不再进入采集/发送循环。
+                if (!stoppingToken.IsCancellationRequested)
+                {
+                    SetRunning();
+                    failure = await RunOnceAsync(instance, stoppingToken);
+                }
                 if (stoppingToken.IsCancellationRequested)
                 {
                     // 停止时先等取消回调执行完，再释放实例：回调（例如关闭连接）与释放不会同时操作同一资源。

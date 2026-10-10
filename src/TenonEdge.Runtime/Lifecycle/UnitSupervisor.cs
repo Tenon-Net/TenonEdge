@@ -12,6 +12,7 @@ namespace TenonEdge.Runtime.Lifecycle;
 internal sealed class UnitSupervisor
 {
     private readonly Dictionary<RuntimeUnitId, SupervisedUnit> _units = [];
+    private readonly Dictionary<RuntimeUnitId, PendingRestart> _pending = [];
     private readonly Lock _lock = new();
     private readonly RestartBackoff _backoff;
     private readonly TimeProvider _time;
@@ -36,7 +37,7 @@ internal sealed class UnitSupervisor
         ArgumentNullException.ThrowIfNull(rebuild);
         lock (_lock)
         {
-            if (_units.TryGetValue(instance.Id, out var existing) && existing.IsAlive)
+            if (_pending.ContainsKey(instance.Id) || (_units.TryGetValue(instance.Id, out var existing) && existing.IsAlive))
             {
                 return false;
             }
@@ -46,6 +47,82 @@ internal sealed class UnitSupervisor
             unit.Start();
             return true;
         }
+    }
+
+    /// <summary>为已请求停止的单元登记当前有效计划的重建工厂。旧循环、取消回调及释放全部结束后才构建。
+    /// 返回 true 表示已登记，不表示已启动；等待期间重复登记只更新为最新工厂。仍正常运行的单元不接受替换。
+    /// StopAsync 同时撤销尚未启动的登记，停机后不会由本登记复活单元。</summary>
+    public bool TryRestartStopped(RuntimeUnitId id, Func<IRuntimeUnit> rebuild, InputReadStatus? reads)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(rebuild);
+        lock (_lock)
+        {
+            if (_pending.TryGetValue(id, out var pending))
+            {
+                pending.Rebuild = rebuild;
+                pending.Reads = reads;
+                return true;
+            }
+            if (_units.TryGetValue(id, out var previous) && previous.Snapshot().State is not
+                (RuntimeUnitState.Stopped or RuntimeUnitState.Stopping or RuntimeUnitState.StopTimedOut))
+            { return false; }
+
+            if (previous is null || previous.Completion.IsCompleted)
+            {
+                StartDeferred(id, rebuild, reads);
+                return true;
+            }
+
+            pending = new PendingRestart(rebuild, reads);
+            _pending.Add(id, pending);
+            pending.Completion = Task.Run(() => RestartAfterExitAsync(id, previous.Completion, pending));
+            return true;
+        }
+    }
+
+    // 调用方持有监督者锁；此处只登记，适配器工厂在 SupervisedUnit 的受监督循环中运行。
+    private void StartDeferred(RuntimeUnitId id, Func<IRuntimeUnit> rebuild, InputReadStatus? reads)
+    {
+        var unit = new SupervisedUnit(id, rebuild, _backoff, _time, _events, _logger, reads);
+        _units[id] = unit;
+        unit.Start();
+    }
+
+    private async Task RestartAfterExitAsync(RuntimeUnitId id, Task previous, PendingRestart pending)
+    {
+        try
+        {
+            try
+            { await previous.WaitAsync(pending.Cancel.Token); }
+            catch (OperationCanceledException) { return; }
+            lock (_lock)
+            {
+                if (!_pending.TryGetValue(id, out var current) || !ReferenceEquals(current, pending))
+                { return; }
+                _pending.Remove(id);
+                StartDeferred(id, pending.Rebuild, pending.Reads);
+            }
+        }
+        finally
+        {
+            // 与 StopAsync 的取消串行；正常重启和撤销都释放等待令牌。
+            lock (_lock)
+            {
+                if (_pending.TryGetValue(id, out var current) && ReferenceEquals(current, pending))
+                { _pending.Remove(id); }
+                pending.Dispose();
+            }
+        }
+    }
+
+    private sealed class PendingRestart(Func<IRuntimeUnit> rebuild, InputReadStatus? reads) : IDisposable
+    {
+        public Func<IRuntimeUnit> Rebuild { get; set; } = rebuild;
+        public InputReadStatus? Reads { get; set; } = reads;
+        public CancellationTokenSource Cancel { get; } = new();
+        public Task Completion { get; set; } = Task.CompletedTask;
+        public void Dispose() => Cancel.Dispose();
     }
 
     /// <summary>该标识是否有循环尚未退出的实例。</summary>
@@ -61,13 +138,30 @@ internal sealed class UnitSupervisor
     public async Task<IReadOnlyList<RuntimeUnitId>> StopAsync(Func<RuntimeUnitId, bool> predicate, TimeSpan timeout, CancellationToken cancellationToken)
     {
         SupervisedUnit[] targets;
+        PendingRestart[] pending;
         lock (_lock)
         {
+            pending = [.. _pending.Where(pair => predicate(pair.Key)).Select(pair => pair.Value)];
+            foreach (var id in _pending.Keys.Where(predicate).ToArray())
+            { _pending.Remove(id); }
+            foreach (var restart in pending)
+            { restart.Cancel.Cancel(); }
             targets = [.. _units.Values.Where(unit => predicate(unit.Id))];
         }
 
+        await Task.WhenAll(pending.Select(restart => restart.Completion));
         var results = await Task.WhenAll(targets.Select(async unit => (unit.Id, Stopped: await unit.StopAsync(timeout, cancellationToken))));
         return [.. results.Where(result => !result.Stopped).Select(result => result.Id)];
+    }
+
+    /// <summary>丢弃已完整退出且没有待启动登记的旧状态；切换时不能隐藏活跃或停止超时的实例。</summary>
+    public void ForgetStopped()
+    {
+        lock (_lock)
+        {
+            foreach (var id in _units.Where(pair => !pair.Value.IsAlive && !_pending.ContainsKey(pair.Key)).Select(pair => pair.Key).ToArray())
+            { _units.Remove(id); }
+        }
     }
 
     public IReadOnlyList<RuntimeUnitStatus> Snapshot()

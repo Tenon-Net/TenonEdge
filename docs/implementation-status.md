@@ -2964,6 +2964,23 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 剩余：停止失败后的旧版本恢复、发送者变更协调和新版本激活、全程应用锁、完整草稿检查点/历史/比较/回滚、Host 编排及网页入口，以及 §7.4 各边界的进程中断验证。当前仍不能通过网页独立配置并启动采集路线。未更改部署、推送、发布或安装前端依赖。
 
+### 2.151 T3-06 旧有效版本恢复与延迟重建基础（2026-10-10）
+
+承接 §2.150，继续 GW-10、AT-28 的提交前失败恢复子场景。本次停止点为 Runtime 恢复入口及监督者的延迟重建基础，不涉及新版本提交/切换、应用 API 或前端按钮。
+
+- 已准备计划保留不可变运行定义。`RestoreInputsAsync` 只使用当前有效定义，重新创建输入通道与计划范围协议上下文，不能重新使用已经完成的旧通道或已静默的 MQTT 组；不读取或应用新草稿，不改有效版本。空运行时与已经恢复的调用无副作用。
+- 完全排空后恢复可用输入和输入耦合发送者，独立发送者继续运行；旧版本的记录仍是原 revision，写者和队列不重建。构建失败按单元返回并显示，保留恢复待办，修复依赖后可重试；旧已停止状态清理后不会与新状态重复显示。
+- `PreparedOutput` 保留每连接共享的发送状态。恢复耦合会话时继续处理已 ACK 但尚未删库、待提交失败/隔离等状态，不能因重新建客户端而重新发送已确认记录。普通 Prepare 仍创建自己的状态，不在准备新草稿时改动现有发送循环。
+- 监督者新增延迟重建登记：旧循环、停止回调和释放都结束后才构建；等待期间只采用最新登记的工厂；停止撤销待启动登记；构建失败按原监督退避，不运行标识错误的实例。该原语目前仅做运行时基础验证，尚未接入共享会话分组的持续恢复编排。
+
+**剩余边界明确保留**：恢复尝试先重试旧排空。仍有未退出实例或未完成旧分发时返回 BlockedBy，不创建替代输入；调用方需继续安排恢复。本次尚未实现“某组超时期间先恢复其他已停止组、超时组退出后自动恢复”的完整编排，不能把监督者原语测试当成该产品行为通过。新有效版本切换、全程应用锁、Host 编排、完整草稿历史/比较/回滚及网页应用仍未完成。
+
+测试包括原版本多轮恢复/新输入通道、独立发送者不重建、构建故障修复后恢复、超时旧输入退出前不构建新输入、已确认记录删库失败后恢复不重发，以及真实 Mosquitto 的两个输入/同连接输出静默后恢复订阅与继续收发。另测监督者等待完整退出与释放、最新工厂替代、停机撤销、禁止覆盖正在运行的单元、构建异常与错误标识退避。MQTT 是真实软件 Broker；SQLite trigger 是临时测试库故障注入，不是实物、断电、浏览器或 §7.4 全流程验收。
+
+初次构建因 IReadOnlySet 集合表达式不可构造及 CA1859 检查失败，私有参数改为实际使用的 HashSet（`/tmp/tenonedge-recovery-build.log`）。首次 ACK 测试在队列 schema 初始化之前创建 trigger，失败 1 项；已改为先初始化队列，未修改产品迁移逻辑来适应测试（`/tmp/tenonedge-recovery-focused.log`）。针对性回归 32 通过、0 失败/跳过（`/tmp/tenonedge-recovery-focused-final.log`）。临时移除恢复中的发送状态继承做变异验证，ACK 用例实际失败：预期发送 2 次，实际 3 次，证明用例能识别旧记录重复发送；随后恢复产品实现（`/tmp/tenonedge-recovery-ack-mutation.log`）。补充“延迟构建期间收到停止”用例实际红测失败：停止后仍进入了新实例 RunAsync（`/tmp/tenonedge-recovery-stop-red.log`）。修复为构建返回后重新检查停止令牌，只释放、不运行；修正后针对性 33 通过、0 失败/跳过（`/tmp/tenonedge-recovery-focused-complete.log`）。另外在 StopAsync 观察到 Stopped 的期限竞态分支等待监督任务真正完成，使成功返回与 IsAlive=false 一致，防止随后的恢复被单实例门误拒绝。最终全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-recovery-regression-final -v minimal`：**1258 单元 + 1163 集成 = 2421 项通过，0 失败/跳过**（`/tmp/tenonedge-recovery-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-recovery-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过（`/tmp/tenonedge-recovery-trx.log`）。格式门禁曾指出新增 if 的换行（`/tmp/tenonedge-recovery-format-final.log`），已只修正空白；最终 `dotnet format --verify-no-changes --no-restore`（`/tmp/tenonedge-recovery-format-final2.log`）与 `git diff --check` 通过。环境 Linux x64、.NET SDK 10.0.401/runtime 10.0.12。
+
+本批不新增依赖、不更改常驻部署、不推送或发布；README 继续明确网页应用与回滚未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

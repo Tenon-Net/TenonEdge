@@ -28,7 +28,17 @@ public sealed partial class RuntimeHost
     private async Task<RuntimeQuiescenceResult> QuiesceOwnedAsync(TaskCompletionSource operation)
     {
         try
+        { return await QuiesceCoreAsync(); }
+        finally { CompleteOperation(operation); }
+    }
+
+    private bool _quiescenceRequested;
+
+    private async Task<RuntimeQuiescenceResult> QuiesceCoreAsync()
+    {
+        try
         {
+            _quiescenceRequested = _activeRevision is not null;
             var timeout = _options.UnitStopTimeout;
             var stopped = await _supervisor.StopAsync(id => id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal), timeout, CancellationToken.None);
             if (stopped.Count != 0)
@@ -61,7 +71,6 @@ public sealed partial class RuntimeHost
                 "输入静默未完成；保留旧版本与未退出实例，不允许提交新版本。");
             return new(_activeRevision, false, []);
         }
-        finally { CompleteOperation(operation); }
     }
 
     private TaskCompletionSource EnterOperation()

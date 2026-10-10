@@ -20,14 +20,17 @@ public sealed class PreparedPlan : IAsyncDisposable
     private bool _handedOver;
     private readonly TaskCompletionSource _activation;
 
-    internal PreparedPlan(long revision, IReadOnlyList<PreparedUnit> units, IReadOnlyList<PreparedOutput> outputs, TaskCompletionSource activation)
+    internal PreparedPlan(RuntimePlan definition, IReadOnlyList<PreparedUnit> units, IReadOnlyList<PreparedOutput> outputs, TaskCompletionSource activation)
     {
         _activation = activation;
-        Revision = revision;
+        Definition = definition;
+        Revision = definition.Revision;
         Units = units;
         Outputs = outputs;
         Failures = [.. units.Where(unit => unit.Error is not null).Select(unit => new RuntimeUnitBuildFailure(unit.Id, unit.Error!))];
     }
+
+    internal RuntimePlan Definition { get; }
 
     public long Revision { get; }
 
@@ -89,4 +92,4 @@ internal sealed record PreparedUnit(
     Channel<EdgeMessage>? Channel,
     InputReadStatus? Reads);
 
-internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Mapping.FieldMappingPipeline? Mapping);
+internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Mapping.FieldMappingPipeline? Mapping, TenonEdge.Runtime.Outputs.OutputSenderState State);

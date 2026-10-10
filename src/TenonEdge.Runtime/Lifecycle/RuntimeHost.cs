@@ -19,7 +19,7 @@ namespace TenonEdge.Runtime.Lifecycle;
 /// <item><see cref="ActivateAsync"/>：启动输入、分发器与按目标划分的发送者；构建失败的只告警，单实例规则由监督者执行。</item>
 /// <item><see cref="StopAsync"/>：停止输入，排空分发器，写者最后提交，再取消在途发送并释放协议客户端。</item>
 /// </list>
-/// 本批每个进程只激活一次；应用新版本时的静默与切换在 T3-06 实现。
+/// ActivateAsync 仅用于初次激活；输入静默后可恢复原版本，新有效版本的在线切换继续在 T3-06 实现。
 /// </summary>
 public sealed partial class RuntimeHost : IAsyncDisposable
 {
@@ -52,6 +52,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     private Task? _stopping;
     private TaskCompletionSource? _operation;
     private IReadOnlyList<PreparedOutput> _activeOutputs = [];
+    private RuntimePlan? _activeDefinition;
 
     public RuntimeHost(
         IEnumerable<IInputUnitFactory> inputFactories,
@@ -145,7 +146,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     /// <summary>
     /// 只构建、不启动（总设计 §7.4 第 2 步）：不做外部 I/O，不生成消息。返回的计划中列出构建失败的单元及原因。
     /// </summary>
-    public PreparedPlan Prepare(RuntimePlan plan)
+    public PreparedPlan Prepare(RuntimePlan plan) => PrepareCore(plan, null);
+
+    private PreparedPlan PrepareCore(RuntimePlan plan, IReadOnlyDictionary<long, OutputSenderState>? senderStates)
     {
         ArgumentNullException.ThrowIfNull(plan);
         var inputFactories = new Dictionary<string, IInputUnitFactory>(_inputFactories, StringComparer.Ordinal);
@@ -216,10 +219,10 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     }
                 }
 
-                var state = new OutputSenderState();
+                var state = shared?.State ?? senderStates?.GetValueOrDefault(target.ConnectionId) ?? new OutputSenderState();
                 IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
                     new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
-                outputs.Add(new PreparedOutput(target, mapping));
+                outputs.Add(new PreparedOutput(target, mapping, state));
                 if (shared is null)
                 { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null)); }
             }
@@ -229,7 +232,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             }
         }
 
-        return new PreparedPlan(plan.Revision, units, outputs, activation);
+        return new PreparedPlan(plan, units, outputs, activation);
     }
 
     /// <summary>启动发送缓存写者；重复调用无效。</summary>
@@ -255,7 +258,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
     /// <summary>
     /// 激活一个已构建的计划：启动构建成功的输入与输出，并连接输入的分发器。构建失败的单元不启动，记运行事件并在状态中显示原因。
-    /// 本批每个进程只激活一次。
+    /// 仅用于初次激活；恢复原版本输入使用 RestoreInputsAsync。
     /// </summary>
     public async Task ActivateAsync(PreparedPlan prepared)
     {
@@ -273,13 +276,14 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             ThrowIfStopping();
             if (_activeRevision is not null)
             {
-                throw new InvalidOperationException($"运行时已激活版本 r{_activeRevision}；应用新版本的静默与切换在 T3-06 实现。");
+                throw new InvalidOperationException($"运行时已激活版本 r{_activeRevision}；不能通过初次激活入口切换版本。");
             }
 
             // 已释放或已激活过的计划在这里被拒绝，不改变运行时的状态。
             prepared.HandOver();
             _activeRevision = prepared.Revision;
             _activeOutputs = prepared.Outputs;
+            _activeDefinition = prepared.Definition;
         }
 
         try
@@ -298,61 +302,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     }
 
                     lock (_lock)
-                    { _activeRevision = null; _activeOutputs = []; }
+                    { _activeRevision = null; _activeOutputs = []; _activeDefinition = null; }
                     throw new DeliveryStoreException("启动目标隔离未提交，运行计划没有启动；修复存储后重启以重新核对。");
                 }
             }
 
-            foreach (var input in prepared.Units.Where(unit => unit.Channel is BudgetedInputChannel))
-            {
-                var channel = (BudgetedInputChannel)input.Channel!;
-                var paths = prepared.Outputs.Count(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
-                // 按协议声明预留报文、冻结拷贝及非秘密元数据；不代表实际堆占用。
-                channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
-                    .Sum(output => output.Target.FormattingReservationBytes);
-                channel.ReserveSerializationWorkspace = paths > 0;
-                channel.MinimumSerializationReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
-                    .Select(output => output.Target.MinimumSerializationReservationBytes).DefaultIfEmpty().Max();
-                channel.MappingWorkingReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
-                    .Select(output => output.Mapping?.WorkingReservationBytes ?? 0).DefaultIfEmpty().Max();
-            }
-
-            foreach (var unit in prepared.Units)
-            {
-                if (unit.Instance is null)
-                {
-                    RecordNotStarted(unit.Id, unit.Error ?? "构建失败。", unit.Reads);
-                    LogUnitNotStarted(_logger, unit.Id.ToString(), unit.Error ?? string.Empty);
-                    _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), $"运行单元没有启动：{unit.Error}");
-                    continue;
-                }
-
-                if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads))
-                {
-                    const string reason = "同一单元的上一个实例仍在运行，没有启动新实例（单实例规则）。";
-                    RecordNotStarted(unit.Id, reason, unit.Reads);
-                    _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), reason);
-                    await unit.Instance.DisposeAsync();
-                    continue;
-                }
-
-                if (unit.Channel is not null)
-                {
-                    lock (_lock)
-                    {
-                        _inputChannels[unit.Id] = (BudgetedInputChannel)unit.Channel;
-                    }
-
-                    var targets = prepared.Outputs.Select(output => output.Target).Where(target => target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal)).ToArray();
-                    // 无输出也持续排空：诊断捕获不应在 100 条后因无人消费而停止。
-                    var state = new InputDispatcherState();
-                    var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
-                        .ToDictionary(output => output.Target.Id, output => output.Mapping!);
-                    IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
-                    _dispatchers.Add((unit.Channel, state));
-                    _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
-                }
-            }
+            await StartPreparedUnitsAsync(prepared, []);
 
             LogActivated(_logger, prepared.Revision, prepared.Units.Count - prepared.Failures.Count, prepared.Failures.Count);
             prepared.CompleteActivation();
@@ -362,6 +317,67 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             prepared.CancelActivation();
             throw;
         }
+    }
+
+    private async Task StartPreparedUnitsAsync(PreparedPlan prepared, HashSet<RuntimeUnitId> retainedSenders)
+    {
+        foreach (var input in prepared.Units.Where(unit => unit.Channel is BudgetedInputChannel))
+        {
+            var channel = (BudgetedInputChannel)input.Channel!;
+            var paths = prepared.Outputs.Count(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal));
+            // 按协议声明预留报文、冻结拷贝及非秘密元数据；不代表实际堆占用。
+            channel.OutputReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                .Sum(output => output.Target.FormattingReservationBytes);
+            channel.ReserveSerializationWorkspace = paths > 0;
+            channel.MinimumSerializationReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                .Select(output => output.Target.MinimumSerializationReservationBytes).DefaultIfEmpty().Max();
+            channel.MappingWorkingReservationBytes = prepared.Outputs.Where(output => output.Target.Inputs.Contains(input.Id.Key, StringComparer.Ordinal))
+                .Select(output => output.Mapping?.WorkingReservationBytes ?? 0).DefaultIfEmpty().Max();
+        }
+
+        foreach (var unit in prepared.Units)
+        {
+            if (retainedSenders.Contains(unit.Id))
+            {
+                if (unit.Instance is not null)
+                { await unit.Instance.DisposeAsync(); }
+                continue;
+            }
+            if (unit.Instance is null)
+            {
+                RecordNotStarted(unit.Id, unit.Error ?? "构建失败。", unit.Reads);
+                LogUnitNotStarted(_logger, unit.Id.ToString(), unit.Error ?? string.Empty);
+                _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), $"运行单元没有启动：{unit.Error}");
+                continue;
+            }
+
+            if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads))
+            {
+                const string reason = "同一单元的上一个实例仍在运行，没有启动新实例（单实例规则）。";
+                RecordNotStarted(unit.Id, reason, unit.Reads);
+                _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), reason);
+                await unit.Instance.DisposeAsync();
+                continue;
+            }
+
+            if (unit.Channel is not null)
+            {
+                lock (_lock)
+                {
+                    _inputChannels[unit.Id] = (BudgetedInputChannel)unit.Channel;
+                }
+
+                var targets = prepared.Outputs.Select(output => output.Target).Where(target => target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal)).ToArray();
+                // 无输出也持续排空：诊断捕获不应在 100 条后因无人消费而停止。
+                var state = new InputDispatcherState();
+                var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
+                    .ToDictionary(output => output.Target.Id, output => output.Mapping!);
+                IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
+                _dispatchers.Add((unit.Channel, state));
+                _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
+            }
+        }
+
     }
 
     /// <summary>
