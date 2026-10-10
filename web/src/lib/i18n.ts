@@ -1,3 +1,4 @@
+import { configurationStrings } from '../features/configuration/strings'
 import { routeStrings } from '../features/routes/strings'
 import { inputStrings } from '../features/inputs/strings'
 import { deviceStrings } from '../features/devices/strings'
@@ -16,6 +17,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                configuration: configurationStrings,
                 routes: routeStrings,
                 devices: deviceStrings,
                 inputs: inputStrings,
@@ -66,7 +68,7 @@ void i18n.use(initReactI18next).init({
                     viewer: '只读',
                 },
                 foundationNotice:
-                    'T3 开发中：认证已接入真实服务；点表为不保存到网关的交互原型，路线编辑尚未交付。此页面不代表已配置或正在采集设备。',
+                    'T3 开发中：连接、设备、来源与路线编辑已接入真实草稿，可在“配置应用”查看变更并确认应用。原型页面仍不保存配置；历史比较与回滚页面尚未完成。此工作区不代表设备已经在采集。',
                 noPage: '此页面不存在。',
                 backHome: '返回工作区',
                 security: '账号安全',

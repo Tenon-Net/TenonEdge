@@ -108,10 +108,19 @@ const routesRoute = createRoute({
         'RoutesPage',
     ),
 })
+const configurationRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/configuration',
+    component: lazyRouteComponent(
+        () => import('./features/configuration/page'),
+        'ConfigurationPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
         accountRoute,
+        configurationRoute,
         pointsRoute,
         canvasRoute,
         connectionsRoute,

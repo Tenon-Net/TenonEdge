@@ -112,6 +112,9 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
             return action.type
         },
         onSuccess: async (type) => {
+            void queryClient.invalidateQueries({
+                queryKey: ['configuration-summary'],
+            })
             editor.setState({ form: null })
             setNotice(t(type === 'save' ? 'inputs.saved' : 'inputs.deleted'))
             await Promise.all([

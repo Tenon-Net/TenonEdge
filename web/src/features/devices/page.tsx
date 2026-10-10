@@ -92,6 +92,9 @@ export function DevicesPage() {
             return action.type
         },
         onSuccess: async (type) => {
+            void queryClient.invalidateQueries({
+                queryKey: ['configuration-summary'],
+            })
             open(null)
             setNotice(
                 t(

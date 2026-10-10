@@ -1,3 +1,4 @@
+import { ConfigurationHeader } from '../../features/configuration/header'
 import { useState } from 'react'
 import { Link, Outlet } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
@@ -99,6 +100,7 @@ export function Workspace() {
                             {session && t(`roles.${session.role}`)}
                         </p>
                     </div>
+                    <ConfigurationHeader />
                     <LogoutButton />
                 </header>
                 <Main>

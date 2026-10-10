@@ -85,6 +85,9 @@ export function ConnectionsPage() {
             return action.type
         },
         onSuccess: async (type) => {
+            void queryClient.invalidateQueries({
+                queryKey: ['configuration-summary'],
+            })
             setNotice(
                 t(
                     type === 'save'

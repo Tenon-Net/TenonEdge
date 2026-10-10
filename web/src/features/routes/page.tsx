@@ -88,6 +88,9 @@ export function RoutesPage() {
             return { type: action.type, form: null }
         },
         onSuccess: async (result) => {
+            void queryClient.invalidateQueries({
+                queryKey: ['configuration-summary'],
+            })
             load(result.form, result.type === 'save')
             setNotice(
                 result.type === 'read'
