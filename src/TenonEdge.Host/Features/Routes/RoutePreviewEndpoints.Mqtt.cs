@@ -20,7 +20,7 @@ internal static partial class RoutePreviewEndpoints
     private static void MapMqttSamplePreview(RouteGroupBuilder api) =>
         api.MapPost("/routes/preview/mqtt", PreviewMqtt).WithTags("Routes").WithName("previewRouteMqttSample")
             .WithSummary("显式抓取图内 MQTT 来源一条消息并预览路线；不发布、不保存、不入队")
-            .WithDescription("复用随机 ClientId/CleanSession 诊断订阅，不影响正式订阅。标记保留/重复消息；完整且未脱敏才计算，失败或截断返回 422。整次 30 秒。")
+            .WithDescription("复用随机 ClientId/CleanSession 诊断订阅，不影响正式订阅。标记保留/重复消息；完整且未脱敏才计算，采用正式解码完整消息，不受诊断展示裁剪；失败、脱敏或协议超限返回 422。整次 30 秒。")
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithMetadata(new RequestBodyLimit(1024 * 1024))
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(422).ProducesProblem(429).ProducesProblem(504);
 
@@ -45,19 +45,15 @@ internal static partial class RoutePreviewEndpoints
             var connection = device.ConnectionId is { } id ? snapshot.Connections.GetValueOrDefault(id) : null;
             var compiled = RouteSourceCompiler.Compile(input, device, connection, connection is not null && snapshot.MqttCredentials.Contains(connection.Id));
             var state = clock.State;
-            var received = await reader.RunAsync(MqttInputSettings.Parse(compiled.Unit.Configuration), state, operation.Token);
-            var captured = received.Preview;
+            var received = await reader.ReadSampleAsync(MqttInputSettings.Parse(compiled.Unit.Configuration),
+                input.Key, device.Key, state, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
-            if (captured is null || !captured.CanUseAsSample || captured.RawJson is null || captured.ReceivedAt is null)
+            if (received.Message is null)
             {
-                var code = captured is { RawTruncated: true } or { FieldsTruncated: true } ? "sample.truncated" : received.Code;
-                return ApiProblems.Problem(422, "preview.mqtt." + code, "未取得完整且可用于路线预览的 MQTT 样本；未执行输出、保存或入队。");
+                return ApiProblems.Problem(422, "preview.mqtt." + received.Code, "未取得完整且可用于路线预览的 MQTT 样本；未执行输出、保存或入队。");
             }
-            // Preserve the actual reception time, schema and clock state; never re-label the sample as received now.
-            var sample = RoutePreviewSample.Decode(snapshot, request.SourceId, captured.RawJson,
-                captured.ReceivedAt.Value, state, operation.Token);
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, sample.Message, operation.Token);
-            return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, sample.InvalidUpstreamTime, result, [],
+            var result = RouteSamplePreview.Run(snapshot, request.SourceId, received.Message, operation.Token);
+            return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, received.InvalidUpstreamTime, result, [],
                 new(received.Retained, received.Duplicate, received.Qos)));
         }
         catch (RouteTopologyException error)

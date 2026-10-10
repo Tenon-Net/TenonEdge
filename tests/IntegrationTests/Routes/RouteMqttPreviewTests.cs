@@ -60,8 +60,38 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Theory]
+    [InlineData(40000)]
+    [InlineData(700000)]
+    public async Task LargeCompleteSampleCanMapRawTailWithoutDisplayReparse(int size)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("route-full");
+        await Publish(topic, "{\"padding\":\"" + new string('x', size) + "\",\"value\":1,\"tail\":9223372036854775807}");
+        await using var factory = new TenonEdgeApplicationFactory();
+        var request = Seed(factory.Services, broker.Port, topic, 1);
+        request = request with
+        {
+            Graph = request.Graph with
+            {
+                Nodes = [.. request.Graph.Nodes,
+                    new("map", "transform.map", 1, "Map", JsonSerializer.Deserialize<JsonElement>(
+                        """{"rules":[{"target":"value","sourcePath":"/tail","type":"integer","required":true}]}"""))],
+                Edges = [new("in", "map"), new("map", "out")]
+            }
+        };
+        TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
+        using var client = await factory.CreateLoggedInClientAsync("operator", Token);
+        using var response = await client.PostJsonAsync(Endpoint, request, Token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.ReadJsonAsync(Token);
+        Assert.Equal("{\"result\":9223372036854775807}", json.GetProperty("result").GetProperty("paths")[0].GetProperty("output").GetProperty("body").GetString());
+        Assert.True(json.GetProperty("mqtt").GetProperty("retained").GetBoolean());
+        Assert.Equal(0, factory.Services.GetRequiredService<RuntimeHost>().InFlight.Status.ReservedBytes);
+    }
+
+    [Theory]
     [InlineData("redacted", "preview.mqtt.payload.redacted")]
-    [InlineData("large", "preview.mqtt.sample.truncated")]
+    [InlineData("large", "preview.mqtt.payload.tooLarge")]
     [InlineData("invalid", "preview.mqtt.payload.invalidJson")]
     public async Task UnusableCaptureCannotBecomeARouteSample(string kind, string code)
     {
@@ -70,7 +100,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
         var payload = kind switch
         {
             "redacted" => """{"password":"fixture-secret","value":42}""",
-            "large" => JsonSerializer.Serialize(new { value = 42, padding = new string('x', 40000) }),
+            "large" => JsonSerializer.Serialize(new { value = 42, padding = new string('x', 1024 * 1024) }),
             _ => "not-json"
         };
         await Publish(topic, payload);

@@ -19,6 +19,12 @@ public sealed record MqttReadPreviewResult(string Code, string? Topic, bool Topi
     public override string ToString() => $"MQTT read preview ({Code}; topic and payload omitted)";
 }
 
+public sealed record MqttReadSampleResult(string Code, bool Retained, bool Duplicate, int? Qos,
+    EdgeMessage? Message, bool InvalidUpstreamTime)
+{
+    public override string ToString() => $"MQTT input sample ({Code}; payload omitted)";
+}
+
 /// <summary>管理器拥有的独立随机 ClientId/CleanSession 诊断订阅，不改变正式订阅或确认状态。
 /// 只等待一条匹配消息；原始报文在分配前预约共享预算，返回前关闭连接并等回调退出。</summary>
 public sealed class MqttReadPreview(ISharedConnections connections, IOutboundConnector connector,
@@ -26,6 +32,39 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
 {
     public async Task<MqttReadPreviewResult> RunAsync(MqttInputSettings settings, ClockSyncState clockState,
         CancellationToken cancellationToken, int timeoutMs = 30000)
+    {
+        var captured = await CaptureAsync(settings, clockState, timeoutMs, (root, decoder, secrets, receivedAt, token) =>
+        {
+            var preview = JsonReadPreview.Render(root, decoder, null, clockState, receivedAt, null,
+                token, maximumDisplayBytes: 60 * 1024, additionalSecrets: secrets);
+            return (preview.Code, preview);
+        }, cancellationToken);
+        return new(captured.Code, captured.Topic, captured.TopicOmitted, captured.Retained, captured.Duplicate,
+            captured.Qos, captured.ElapsedMs, captured.Payload);
+    }
+
+    public async Task<MqttReadSampleResult> ReadSampleAsync(MqttInputSettings settings, string inputKey, string deviceKey,
+        ClockSyncState clockState, CancellationToken cancellationToken, int timeoutMs = 30000)
+    {
+        BusinessKeys.Validate(inputKey, nameof(inputKey));
+        BusinessKeys.Validate(deviceKey, nameof(deviceKey));
+        if (settings.Fields.ValueKind != JsonValueKind.Array || settings.Fields.GetArrayLength() == 0)
+        { throw new ArgumentException("完整路线样本须有正式字段定义；空字段仅用于诊断展示/推断。"); }
+        var captured = await CaptureAsync(settings, clockState, timeoutMs, (root, decoder, secrets, receivedAt, token) =>
+        {
+            var sample = JsonReadSample.Decode(root, decoder!, null, inputKey, deviceKey, clockState, receivedAt, token, secrets);
+            return (sample.Code, sample);
+        }, cancellationToken);
+        return new(captured.Code, captured.Retained, captured.Duplicate, captured.Qos,
+            captured.Payload?.Message, captured.Payload?.InvalidUpstreamTime ?? false);
+    }
+
+    private sealed record CaptureResult<T>(string Code, string? Topic, bool TopicOmitted, bool Retained, bool Duplicate,
+        int? Qos, double ElapsedMs, T? Payload) where T : class;
+
+    private async Task<CaptureResult<T>> CaptureAsync<T>(MqttInputSettings settings, ClockSyncState clockState, int timeoutMs,
+        Func<JsonElement, IJsonInputDecoder?, string[], DateTimeOffset, CancellationToken, (string Code, T Payload)> decode,
+        CancellationToken cancellationToken) where T : class
     {
         settings = (MqttInputSettings)settings.ValidateConnection();
         MqttInputSettings.ValidateSubscription(settings.TopicFilter, settings.Qos, settings.ProcessRetained, settings.UpstreamTime);
@@ -50,7 +89,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
         {
             return await lease.ExecuteAsync(async (capture, token) =>
             {
-                var received = new TaskCompletionSource<MqttReadPreviewResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var received = new TaskCompletionSource<CaptureResult<T>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var claimed = 0;
                 string? wireFailure = null;
                 capture.Buffer = new MqttReceiveBuffer(bufferBudget, 1, Receive, reason =>
@@ -104,7 +143,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                     if (MqttTopicFilterComparer.Compare(message.Topic, settings.TopicFilter) != MqttTopicFilterCompareResult.IsMatch ||
                         Interlocked.CompareExchange(ref claimed, 1, 0) != 0)
                     { return; }
-                    MqttReadPreviewResult result;
+                    CaptureResult<T> result;
                     var secrets = credential is null ? Array.Empty<string>() : new[] { credential.Password, Uri.EscapeDataString(credential.Password) };
                     try
                     {
@@ -116,14 +155,13 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                             if (!Utf8.IsValid(bytes))
                             { throw new JsonException(); }
                             using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 64 });
-                            var preview = JsonReadPreview.Render(document.RootElement, decoder, null, clockState, time.GetUtcNow(), null,
-                                callback.Token, maximumDisplayBytes: 60 * 1024, additionalSecrets: secrets);
+                            var decoded = decode(document.RootElement, decoder, secrets, time.GetUtcNow(), callback.Token);
                             // 主题也可能含秘密；不允许用主题绕过正文脱敏，也限制最长 Topic 的展示。
                             var topic = message.Topic;
                             var safeTopic = secrets.Any(secret => secret.Length > 0 && topic.Contains(secret, StringComparison.Ordinal))
                                 ? null : topic.Length <= 256 ? topic : null;
-                            result = new(preview.Code, safeTopic, safeTopic is null, message.Retain, message.Dup, (int)message.QualityOfServiceLevel,
-                                time.GetElapsedTime(started).TotalMilliseconds, preview);
+                            result = new(decoded.Code, safeTopic, safeTopic is null, message.Retain, message.Dup, (int)message.QualityOfServiceLevel,
+                                time.GetElapsedTime(started).TotalMilliseconds, decoded.Payload);
                         }
                     }
                     catch (JsonException) { result = Failure("payload.invalidJson"); }
@@ -142,7 +180,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
             return Failure(deadline.IsCancellationRequested ? "timeout" : Classify(exception));
         }
 
-        MqttReadPreviewResult Failure(string code) => new(code, null, false, false, false, null, time.GetElapsedTime(started).TotalMilliseconds, null);
+        CaptureResult<T> Failure(string code) => new(code, null, false, false, false, null, time.GetElapsedTime(started).TotalMilliseconds, null);
     }
 
     private static string Classify(Exception exception) => exception switch

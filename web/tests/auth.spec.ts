@@ -4166,7 +4166,8 @@ function mqttCapturePeer(payload: () => string | null, requests: string[]) {
 test('route MQTT onsite preview confirms diagnostic capture and marks retained values without publishing', async ({
     page,
 }) => {
-    let payload: string | null = '{"value":9223372036854775807}'
+    let payload: string | null =
+        '{"padding":"' + 'x'.repeat(80000) + '","value":9223372036854775807}'
     const requests: string[] = []
     const { peer, sockets } = mqttCapturePeer(() => payload, requests)
     await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
@@ -4323,9 +4324,18 @@ test('route MQTT onsite preview confirms diagnostic capture and marks retained v
             'manual text is not a captured message',
         )
         payload = '{"password":"fixture-secret","value":42}'
+        const redacted = page.waitForResponse(
+            (response) =>
+                response.url().endsWith('/routes/preview/mqtt') &&
+                response.request().method() === 'POST',
+        )
         page.once('dialog', (dialog) => dialog.accept())
         await run.click()
-        await expect(panel.getByRole('alert')).toContainText('样本已截断/脱敏')
+        expect((await redacted).status()).toBe(422)
+        expect((await (await redacted).json()).code).toBe(
+            'preview.mqtt.payload.redacted',
+        )
+        await expect(panel.getByRole('alert')).toContainText('包含敏感内容')
         await expect(body).toHaveCount(0)
         expect(requests).toEqual([
             'route/values',

@@ -401,7 +401,7 @@ export interface paths {
         put?: never;
         /**
          * 显式抓取图内 MQTT 来源一条消息并预览路线；不发布、不保存、不入队
-         * @description 复用随机 ClientId/CleanSession 诊断订阅，不影响正式订阅。标记保留/重复消息；完整且未脱敏才计算，失败或截断返回 422。整次 30 秒。
+         * @description 复用随机 ClientId/CleanSession 诊断订阅，不影响正式订阅。标记保留/重复消息；完整且未脱敏才计算，采用正式解码完整消息，不受诊断展示裁剪；失败、脱敏或协议超限返回 422。整次 30 秒。
          */
         post: operations["previewRouteMqttSample"];
         delete?: never;

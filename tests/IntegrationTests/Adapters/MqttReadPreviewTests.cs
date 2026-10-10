@@ -4,6 +4,7 @@ using System.Text.Json;
 using MQTTnet;
 using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Abstractions.Messages;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
@@ -17,6 +18,91 @@ public sealed class MqttReadPreviewTests(MosquittoBrokerFixture fixture) : IClas
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static MqttCredential Credential => new(MosquittoBroker.UserName, MosquittoBroker.Password, "fixture", "1");
+
+    [Theory]
+    [InlineData(40000, false)]
+    [InlineData(700000, false)]
+    [InlineData(40000, true)]
+    public async Task FullSamplePreservesTypedTailRawAndTimeBeyondDisplayBudget(int padding, bool invalidTime)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("full-sample");
+        var at = DateTimeOffset.UtcNow.AddSeconds(-5);
+        var payload = JsonSerializer.Serialize(new
+        {
+            padding = new string('x', padding),
+            value = long.MaxValue,
+            at = invalidTime ? "invalid" : at.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            text = new string('中', 1000)
+        });
+        await PublishRetained(broker, topic, payload);
+        var settings = Settings(broker, topic) with
+        {
+            Fields = JsonSerializer.Deserialize<JsonElement>("""[{"key":"value","path":"/value","type":"integer"},{"key":"text","path":"/text","type":"string"},{"key":"bad","path":"/text","type":"integer"},{"key":"absent","path":"/absent","type":"integer"}]"""),
+            UpstreamTime = JsonSerializer.SerializeToElement(new { path = "/at", format = "rfc3339" })
+        };
+        var budget = Budget();
+        var result = await Probe(budget).ReadSampleAsync(settings, "input", "device", ClockSyncState.Synchronized, Token);
+        Assert.Equal("success", result.Code);
+        Assert.True(result.Retained);
+        Assert.False(result.Duplicate);
+        Assert.Equal(1, result.Qos);
+        Assert.Equal(invalidTime, result.InvalidUpstreamTime);
+        var message = Assert.IsType<EdgeMessage>(result.Message);
+        Assert.Equal("9223372036854775807", message.Values["value"].ToString());
+        Assert.Equal(new string('中', 1000), message.Values["text"].ToString());
+        Assert.Equal(QualityCode.ConversionFailed, message.Quality["bad"]);
+        Assert.False(message.Values.ContainsKey("absent"));
+        Assert.Equal(padding, message.RawJson!.Root.GetProperty("padding").GetString()!.Length);
+        Assert.Equal(invalidTime ? message.ReceivedAt : at, message.CollectedAt);
+        Assert.Equal(invalidTime ? TimeSource.Gateway : TimeSource.Upstream, message.TimeSource);
+        Assert.Equal(DiagnosticSampleAccess.Safe, message.DiagnosticAccess);
+        Assert.Equal(0, budget.Status.ReservedBytes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullSampleScansSensitiveDataBeyondDisplayPrefix(bool credentialEcho)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("full-sensitive");
+        var payload = "{\"padding\":\"" + new string('x', 100000) + "\",\"value\":42," +
+            (credentialEcho ? "\"echo\":" + JsonSerializer.Serialize(Credential.Password) : "\"password\":\"fixture-secret\"") + "}";
+        await PublishRetained(broker, topic, payload);
+        var result = await Probe().ReadSampleAsync(Settings(broker, topic), "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("payload.redacted", result.Code);
+        Assert.Null(result.Message);
+        Assert.DoesNotContain(Credential.Password, result.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FullSampleRejectsCredentialChangedAfterCapture()
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("full-rotation");
+        await PublishRetained(broker, topic, "{\"value\":42}");
+        var result = await Probe(credentials: new RotatingResolver()).ReadSampleAsync(Settings(broker, topic),
+            "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("credential.changed", result.Code);
+        Assert.Null(result.Message);
+    }
+
+    private sealed class RotatingResolver : ICredentialResolver
+    {
+        private int _resolves;
+        public MqttCredentialIdentity? DescribeMqtt(long connectionId) => new(Credential.Username, Credential.AccountMarker, Credential.Version);
+        public MqttCredential? ResolveMqtt(long connectionId, string recipient) =>
+            ++_resolves >= 3 ? Credential with { Version = "rotated" } : Credential;
+    }
+
+    [Fact]
+    public async Task FullSampleRequiresFieldsBeforeNetworking()
+    {
+        var settings = Settings(fixture.Require(), "valid/topic") with { Fields = JsonSerializer.SerializeToElement(Array.Empty<object>()) };
+        await Assert.ThrowsAsync<ArgumentException>(() => Probe(connector: new ForbiddenConnector())
+            .ReadSampleAsync(settings, "input", "device", ClockSyncState.Unknown, Token));
+    }
 
     [Fact]
     public async Task RetainedSamplePreservesExactNumbersWithoutDisplacingOrAcknowledgingRuntimeMessages()
@@ -46,6 +132,12 @@ public sealed class MqttReadPreviewTests(MosquittoBrokerFixture fixture) : IClas
             Assert.True(result.Preview!.CanUseAsSample);
             Assert.Equal("9223372036854775807", Assert.Single(result.Preview.Fields).Text);
             Assert.True(result.Preview.Fields[0].UnsafeJavaScriptInteger);
+            Assert.Equal(0, budget.Status.ReservedBytes);
+            var full = await Probe(budget: budget).ReadSampleAsync(Settings(broker, topic) with { ClientId = runtimeId },
+                "input", "device", ClockSyncState.Unknown, Token);
+            Assert.Equal("success", full.Code);
+            Assert.Equal("9223372036854775807", full.Message!.Values["value"].ToString());
+            Assert.True(full.Retained);
             Assert.Equal(0, budget.Status.ReservedBytes);
             await runtime.PingAsync(Token);
             Assert.True(runtime.IsConnected);
@@ -105,6 +197,11 @@ public sealed class MqttReadPreviewTests(MosquittoBrokerFixture fixture) : IClas
         stop.CancelAfter(300);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe.RunAsync(settings, ClockSyncState.Unknown, stop.Token));
         Assert.Equal(0, budget.Status.ReservedBytes);
+        Assert.Equal("timeout", (await probe.ReadSampleAsync(settings, "input", "device", ClockSyncState.Unknown, Token, timeoutMs: 300)).Code);
+        using var fullStop = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        fullStop.CancelAfter(300);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe.ReadSampleAsync(settings, "input", "device", ClockSyncState.Unknown, fullStop.Token));
+        Assert.Equal(0, budget.Status.ReservedBytes);
     }
 
     [Fact]
@@ -113,6 +210,7 @@ public sealed class MqttReadPreviewTests(MosquittoBrokerFixture fixture) : IClas
         var settings = Settings(fixture.Require(), "valid/topic");
         var probe = Probe(connector: new ForbiddenConnector(), credentials: new Resolver(null));
         Assert.Equal("credential.unavailable", (await probe.RunAsync(settings, ClockSyncState.Unknown, Token)).Code);
+        Assert.Equal("credential.unavailable", (await probe.ReadSampleAsync(settings, "input", "device", ClockSyncState.Unknown, Token)).Code);
         await Assert.ThrowsAsync<ArgumentException>(() => probe.RunAsync(settings with { TopicFilter = "invalid/#/tail" }, ClockSyncState.Unknown, Token));
     }
 

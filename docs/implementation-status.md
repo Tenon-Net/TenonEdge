@@ -2902,6 +2902,22 @@ Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故�
 
 尚未部署、推送或实物验证；本子项不宣称 MQTT 完整现场样本桥接、诊断元数据、T3-06 应用/回滚已经完成。
 
+### 2.147 T3-05 MQTT 完整现场消息桥接（2026-10-10）
+
+接续 §2.145—§2.146，MQTT 路线现场采样不再把设备诊断的裁剪 JSON 重新解析成业务消息。ReadSampleAsync 与原 RunAsync 共用一次捕获实现：同一随机 ClientId/CleanSession、凭证初始/连接后/返回前检查、连接管理、有界接收、协议上限、敏感扫描和退出清理。仅返回解码策略不同；设备展示/字段推断继续有界，不扩大诊断 DTO。
+
+完整入口要求正式非空字段，复用 JsonReadSample 的正式解码并独立复制 RawJson，保留字段精度、质量、接收/采集时间与无效上游时间告警。retained/DUP/QoS 来自同一实际 MQTT 消息；诊断 PUBACK 不接管正式客户端数据。不放宽 1 MiB 正文、深度 64、UTF-8、解码字段、输出报文或最终 64 KiB 展示预算。
+
+新增大报文/时间/质量/RawJson、展示前缀之外敏感键和凭证回显、空字段联网前拒绝、返回前凭证版本变化拒绝、40 KB/700 KB 尾部 RawJson Pointer 路线映射测试。扩充正式持久 MQTT 会话隔离/未确认消息重放、超时取消释放预算、缺失凭证拒绝的既有测试；将旧 40 KB 展示截断拒绝场景改为协议超过 1 MiB 拒绝，并独立验证合法大报文成功。浏览器 MQTT 对端现返回 80 KB padding 与精确 int64。
+
+第一轮定向 25 集成通过（`/tmp/tenonedge-full-mqtt-focused.log`），单元程序集筛选 0 项不计为通过；格式门禁发现新增匿名对象的换行不符（`/tmp/tenonedge-full-mqtt-format.log`），修正后门禁通过（`/tmp/tenonedge-full-mqtt-format-final.log`）；新增返回前轮换与 RawJson Pointer 加强后的最终结果见下。首轮浏览器 2 通过、1 失败：仍断言旧“截断/脱敏”文案，实际已经显示新的超限/敏感说明；更新断言并补充精确 HTTP 422 与 preview.mqtt.payload.redacted 响应码核对，不放宽拒绝要求。失败记录见 `/tmp/tenonedge-full-mqtt-web.log`。
+
+最终命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-full-mqtt-regression -v minimal`：**1252 单元 + 1132 集成 = 2384 项通过，0 失败/跳过**（`/tmp/tenonedge-full-mqtt-regression.log`），TRX 门禁 `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-full-mqtt-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-full-mqtt-trx.log`）。
+
+Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-release.log`、`/tmp/tenonedge-full-mqtt-api.log`）。前端 build、lint、format:check 与 **219 Vitest 通过**（`/tmp/tenonedge-full-mqtt-web.log`）；修正浏览器断言后再次 lint、format:check 通过，并执行 `PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json --grep 'route MQTT onsite|MQTT capture marks|route recent samples|route HTTP onsite'`：**4 浏览器场景通过，0 失败/跳过**，报告门禁 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 通过（`/tmp/tenonedge-full-mqtt-browser-final.log`）。设备 MQTT 的有界展示/采用样本/超时取消继续通过，路线 MQTT 使用实际回环协议夹具发送 80 KB 报文；最近记录仍是明确的元数据夹具。环境同 §2.145，软件 Broker 与协议夹具不等于真实设备。`git diff --check` 通过。
+
+未部署、推送、发布或实物验证；T3-06 应用/回滚、最近缓存 MQTT/时间告警元数据及完整 T3 验收仍待继续。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
