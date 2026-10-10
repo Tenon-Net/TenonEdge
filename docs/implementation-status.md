@@ -3078,6 +3078,26 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 Linux x64（Linux 7.0.0-31-generic）、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖。下一步仍须完成全草稿检查点、历史/比较/回滚、鉴权分组端点及 UI，并执行浏览器配置→应用→运行→重启和 §7.4 进程中断矩阵。“提交结果不可读”的保守分支尚未故障注入验证；本批不把事务 SQL 故障测试当作断电/进程中断通过。未修改常驻部署，未推送或发布。
 
+### 2.157 T3-06 完整非秘密草稿检查点（2026-10-10）
+
+本批承接 §2.156，为历史比较和回滚恢复草稿建立实际数据基础（T3-06 / GW-10 / AT-10、AT-28 的软件子场景）。在线应用改用 schema 2 快照，包含已编译计划及完整连接、设备、来源、路线草稿；**没有把运行计划反向拼成缺少停用对象的草稿，也没有开放应用/回滚 API 或网页按钮**。
+
+- 包含停用、未引用和暂不参与运行的配置，以及路线自有图结构、布局和非秘密元数据。明确不读取凭证表、平台绑定和运行状态；凭证修改仍按现行规则立即生效，不随快照回滚。
+- 在配置事务内校验同一全局草稿版本并读取所有行，物化前核对总字节；序列化和整体大小校验在事务外完成，再由冻结事务重检草稿版本、分配版本号、写入完整内容和 pending。草稿版本发生变化不写入混合检查点。
+- schema 2 完整信封（草稿加计划）受 16 MiB 上限约束，内容哈希覆盖两部分。统一加载器核对哈希、版本及格式；启动、提交、目标检查和连接/设备/来源引用保护均通过该入口取得计划。旧 schema 1 种子/历史保持可读，不给旧版本伪造原本不存在的草稿。
+- 自动回滚复制目标的完整内容、schema 与哈希，生成新版本；中断计数按整个目标快照哈希匹配，不降格为只复制运行计划。未生效或 pending 检查点不能成为回滚目标。自动回滚仍不改变当前草稿。
+
+新增 **8 项场景**：完整停用/未引用配置与画布布局冻结、实际写入的 HTTP 秘密不进入快照、后续草稿修改与宿主重启隔离；回滚冻结保留原检查点；schema 2 启动保护产生 r3 并保持当前草稿；完整信封大小上限；pending/未生效目标拒绝；内容损坏及重新计算哈希后的未知格式拒绝提交。首个综合用例同时验证凭证排除与重启，未将断言数算作用例数。重启是测试宿主释放后用同一目录重新建立宿主；启动保护计数由测试 SQL 设置，**不代替真实进程中断或断电验证**。
+
+验证经过与证据：
+
+- 首轮针对性 19 项中 18 通过、1 失败，原因是旧断言仍要求在线快照等于 schema 1 计划文本；改为验证 schema 2 和其中的原计划、完整内容哈希（`/tmp/tenonedge-checkpoint-focused.log`）。
+- 新测试先后遇到 SqlSugar 接口类型和 HTTP 凭证枚举命名空间编译错误（`/tmp/tenonedge-checkpoint-focused2.log`、`/tmp/tenonedge-checkpoint-focused3.log`、`/tmp/tenonedge-checkpoint-focused-final.log`）。编译错误期间运行格式自动修复生成了不正确的 SqlSugarClient 强制转换，后续 46 项针对性执行为 45 通过、1 InvalidCastException（`/tmp/tenonedge-checkpoint-focused-verified.log`）。已移除转换，改用真实配置事务客户端读取草稿版本；不将这些运行写成通过。
+- 最终 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-checkpoint-regression --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1210 集成 = 2468 项通过，0 失败/跳过**（`/tmp/tenonedge-checkpoint-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-checkpoint-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-checkpoint-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-checkpoint-format.log`），`git diff --check` 通过。
+
+Linux x64、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖或配置库表迁移。下一步是历史清单/比较、保留策略及人工回滚的草稿一致性检查与原子替换，再接分组鉴权端点、确认清单和 UI。现有 schema 1 历史没有完整草稿，人工回滚界面必须明确处理该兼容边界，不能宣称能恢复未保存过的编辑模型。未推送、发布或改变部署。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -281,13 +281,13 @@ internal sealed partial class RuntimeCoordinator(
             return StartupDecision.Fail($"{reason}但上一生效版本 r{target.Revision} 的快照已损坏：{problem}。");
         }
 
-        var interrupted = versions.CountInterrupted(RuntimeSnapshotOrigins.AutoRollback, document.ContentHash, Target(target.Revision));
+        var interrupted = versions.CountInterrupted(RuntimeSnapshotOrigins.AutoRollback, target.ContentHash, Target(target.Revision));
         if (interrupted >= StartupProtection.AbnormalExitLimit)
         {
             return StartupDecision.Fail($"{reason}但自动回滚到 r{target.Revision} 已有 {interrupted} 次在提交前中断（例如构建运行单元时进程崩溃），不再尝试。");
         }
 
-        var revision = versions.Freeze(document, RuntimeSnapshotOrigins.AutoRollback, Target(target.Revision), RuntimeVersionStore.SystemOperator);
+        var revision = versions.FreezeRollback(target, RuntimeVersionStore.SystemOperator);
         var prepared = runtime.Prepare(document.ToPlan(revision));
         var targetChangeProblem = prepared.Failures.Count == 0 ? versions.TargetChangeProblem(document) : null;
         if (prepared.Failures.Count > 0 || targetChangeProblem is not null)
@@ -402,21 +402,9 @@ internal sealed partial class RuntimeCoordinator(
     private static bool TryReadDocument(RuntimeSnapshotRecord snapshot, out RuntimePlanDocument document, out string problem)
     {
         document = null!;
-        if (snapshot.SchemaVersion != RuntimePlanDocument.SchemaVersion)
-        {
-            problem = $"快照的 schema 版本 {snapshot.SchemaVersion} 不受支持";
-            return false;
-        }
-
-        if (RuntimePlanDocument.HashOf(snapshot.Content) != snapshot.ContentHash)
-        {
-            problem = "内容哈希不符";
-            return false;
-        }
-
         try
         {
-            document = RuntimePlanDocument.Parse(System.Text.Encoding.UTF8.GetBytes(snapshot.Content));
+            document = RuntimeSnapshotDocument.ReadPlan(snapshot);
         }
         catch (RuntimePlanDocumentException exception)
         {

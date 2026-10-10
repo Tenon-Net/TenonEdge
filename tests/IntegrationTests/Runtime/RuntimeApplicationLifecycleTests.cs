@@ -53,7 +53,7 @@ public sealed class RuntimeApplicationLifecycleTests
             Assert.Null(versions.ReadPointers().PendingRevision);
             Assert.Equal(1, coordinator.Runtime.ActiveRevision);
             Assert.Equal(edited.Version, drafts.Read().Version);
-            Assert.NotEmpty(RuntimePlanDocument.Parse(System.Text.Encoding.UTF8.GetBytes(versions.Load(1)!.Content)).Units);
+            Assert.NotEmpty(RuntimeSnapshotDocument.ReadPlan(versions.Load(1)!).Units);
             await Assert.ThrowsAsync<InvalidOperationException>(async () =>
                 await coordinator.ApplyDraftAsync(edited.Version, "operator", null, Token));
         }

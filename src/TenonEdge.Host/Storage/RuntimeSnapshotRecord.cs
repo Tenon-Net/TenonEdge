@@ -4,8 +4,8 @@ namespace TenonEdge.Host.Storage;
 
 /// <summary>
 /// RuntimeSnapshot（总设计 §7.4、§10.2）：一个配置版本的完整非秘密快照及其最小元数据。
-/// T1 的快照内容是种子快照规范化后的运行计划（<see cref="SchemaVersion"/> 为 1）；T3 的配置模型快照使用新的 schema 版本，
-/// 加载时按版本解析。时间为 UTC Unix 毫秒。
+/// T1 的快照内容是种子快照规范化后的运行计划（<see cref="SchemaVersion"/> 为 1）；T3 在线应用使用版本 2，
+/// 包含完整非秘密草稿和编译后的运行计划。加载时按版本解析；凭证不进入快照。时间为 UTC Unix 毫秒。
 /// </summary>
 [SugarTable(TableName)]
 internal sealed class RuntimeSnapshotRecord

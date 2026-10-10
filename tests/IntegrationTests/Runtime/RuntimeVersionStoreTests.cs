@@ -57,8 +57,9 @@ public sealed class RuntimeVersionStoreTests
         var frozen = versions.Load(revision)!;
         Assert.Equal(RuntimeSnapshotOrigins.Apply, frozen.Origin);
         Assert.Equal("operator", frozen.CreatedBy);
-        Assert.Equal(Document().CanonicalText, frozen.Content);
-        Assert.Equal(Document().ContentHash, frozen.ContentHash);
+        Assert.Equal(2, frozen.SchemaVersion);
+        Assert.Equal(Document().CanonicalText, RuntimeSnapshotDocument.ReadPlan(frozen).CanonicalText);
+        Assert.Equal(RuntimePlanDocument.HashOf(frozen.Content), frozen.ContentHash);
         var changed = database.InTransaction(client => ConfigurationDraft.Advance(client, TimeProvider.System));
         versions.Commit(revision, null);
         Assert.Equal(changed, ReadDraftVersion(database));

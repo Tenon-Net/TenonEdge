@@ -108,7 +108,7 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
         return Decode(row);
     }
 
-    private static RouteDraft Decode(RouteDraftRecord row) => new(row.Id, row.BusinessKey, row.Name, row.Description, row.Enabled,
+    internal static RouteDraft Decode(RouteDraftRecord row) => new(row.Id, row.BusinessKey, row.Name, row.Description, row.Enabled,
             JsonSerializer.Deserialize<RouteGraph>(row.Graph, RouteGraphFormat.Json) ?? throw new InvalidOperationException("路线草稿损坏。"), row.UpdatedBy, row.UpdatedAt);
 
     private static void Unique(SqlSugarClient client, string key, long id)

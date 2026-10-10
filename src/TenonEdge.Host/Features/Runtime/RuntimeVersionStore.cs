@@ -1,4 +1,3 @@
-using System.Text;
 using SqlSugar;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
@@ -82,7 +81,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
     {
         if (origin is not (RuntimeSnapshotOrigins.Seed or RuntimeSnapshotOrigins.AutoRollback))
         { throw new ArgumentException("在线应用必须使用带草稿版本检查的冻结入口。", nameof(origin)); }
-        return FreezeCore(document, origin, originDetail, createdBy, expectedDraftVersion: null);
+        return FreezeCore(RuntimeSnapshotDocument.FromPlan(document), origin, originDetail, createdBy, expectedDraftVersion: null);
     }
 
     /// <summary>在线应用的冻结入口：编译在事务外完成；确认草稿版本、分配版本、写快照和 pending 在同一事务。
@@ -91,10 +90,21 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
     {
         if (string.IsNullOrEmpty(expectedDraftVersion) || expectedDraftVersion.Length > 64)
         { throw new ArgumentException("须提供已确认的草稿版本。", nameof(expectedDraftVersion)); }
-        return FreezeCore(document, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion);
+        var draft = database.InTransaction(client => ConfigurationCheckpoint.Read(client, expectedDraftVersion));
+        var snapshot = RuntimeSnapshotDocument.Create(document, draft);
+        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion);
     }
 
-    private long FreezeCore(RuntimePlanDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion) =>
+    public long FreezeRollback(RuntimeSnapshotRecord target, string createdBy)
+    {
+        if (target.State is not (RuntimeSnapshotStates.Effective or RuntimeSnapshotStates.History) || target.ActivatedAt is null)
+        { throw new InvalidOperationException("只有生效过的版本可以回滚。"); }
+        _ = RuntimeSnapshotDocument.Read(target);
+        return FreezeCore(new(target.SchemaVersion, target.Content, target.ContentHash), RuntimeSnapshotOrigins.AutoRollback,
+            $"r{target.Revision}", createdBy, expectedDraftVersion: null);
+    }
+
+    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion) =>
         database.InTransaction(client =>
         {
             ArgumentNullException.ThrowIfNull(document);
@@ -109,8 +119,8 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
             client.Insertable(new RuntimeSnapshotRecord
             {
                 Revision = revision,
-                SchemaVersion = RuntimePlanDocument.SchemaVersion,
-                Content = document.CanonicalText,
+                SchemaVersion = document.SchemaVersion,
+                Content = document.Content,
                 ContentHash = document.ContentHash,
                 Origin = origin,
                 OriginDetail = originDetail,
@@ -153,7 +163,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
             return null;
         }
 
-        var previous = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
+        var previous = RuntimeSnapshotDocument.ReadPlan(snapshot);
         var current = OutputRecipients(next).ToHashSet();
         foreach (var old in OutputRecipients(previous))
         {
@@ -210,7 +220,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
                 .ExecuteCommand();
         }
 
-        var document = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
+        var document = RuntimeSnapshotDocument.ReadPlan(snapshot);
         if (TargetChangeProblem(document) is { } problem)
         {
             throw new InvalidOperationException(problem);

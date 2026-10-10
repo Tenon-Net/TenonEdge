@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlSugar;
@@ -97,7 +96,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         {
             var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
                 ?? throw new InvalidOperationException("运行版本引用缺失。");
-            var plan = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
+            var plan = RuntimeSnapshotDocument.ReadPlan(snapshot);
             if (plan.Units.Any(unit => unit.Configuration.TryGetProperty("connectionId", out var value) && value.Deserialize<long>(JsonSerializerOptions.Web) == id))
             { return true; }
         }

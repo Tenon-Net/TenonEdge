@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlSugar;
@@ -123,7 +122,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         {
             var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
                 ?? throw new InvalidOperationException("运行版本引用缺失。");
-            var plan = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content));
+            var plan = RuntimeSnapshotDocument.ReadPlan(snapshot);
             if (plan.Units.Any(unit =>
                 unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal) && unit.Id.Key == key ||
                 unit.Configuration.TryGetProperty("inputs", out var inputs) && inputs.EnumerateArray().Any(input => input.GetString() == key)))
