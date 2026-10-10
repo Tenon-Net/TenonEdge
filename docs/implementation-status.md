@@ -2782,6 +2782,25 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故障组合的端到端 UI 验收仍需补齐，不能把底层已有覆盖写成新端点全场景均已验收。下一步继续运行中最近消息和完整样本桥接，不提前声明应用/回滚或 T3-05 完成。未推送、发布或部署到常驻调试实例。
 
+### 2.141 T3-05 最近消息预览前置：内存调试缓存预算基础（2026-10-10）
+
+接续 §2.140，检查实际运行代码后确认尚无调试消息缓存，不能把现场读取结果或页面模拟数据冒充“运行中最近消息”。本子项实现 T3-05 所需缓存基础，对应 AT-29/功能 §4.2—§4.3 与设计 §8.7 的 **存储/淘汰算法子场景**；与 T3-07 最终调试面板共用，但不提前声称完整 T3-07。**尚未注册到 RuntimeHost、捕获真实输入或开放 API/UI。**
+
+- 新增 RuntimeMessageCache：每条只复制 UTF-8 前缀，最多 64 KiB，不拆多字节字符，记录完整捕获载荷大小和截断状态；不持有传入数组、EdgeMessage 或协议 JSON 文档。
+- 每对象最多 100 条、含元数据的保守逻辑计费不超过 1 MiB，全局不超过 32 MiB。元数据、对象标识、链表与索引按每条 2 KiB 保守计费；StoredBytes 与 ChargedBytes 分开报告，不将逻辑计费伪称 CLR 堆实测。对象数量大幅减少时收缩字典，避免空索引长期保留历史高水位。
+- 对象与全局按锁内捕获序号 FIFO 淘汰，墙上时钟只用于展示，时钟倒退不会改变淘汰次序。空桶同步移除；生命周期可在旧生产者静默后保留新配置对象并释放其余对象，新进程为空缓存。
+- 元数据读取不返回/解码正文；正文与完整样本读取均为副本，不能修改缓存持有的字节。完整样本取出须同时匹配对象、序号、运行版本与原消息 GUID，截断或淘汰后直接拒绝，不退回较旧记录。原消息 GUID 防止重启后序号重用误取另一条消息。
+- 当前字节载荷仍是内部不透明格式；取出完整字节 **不代表已经验证来源正在运行，也不等于已得到可安全执行的 EdgeMessage**。保精度编码、运行输入捕获、激活/停止时的生命周期门禁、API 权限及界面须后续接通，输出/映射/入队调试记录也尚未实现。
+
+新增 16 项单元场景覆盖：源数组/读取副本不影响缓存、元数据不含正文、UTF-8 四字节字符边界、精确 64 KiB 与空记录、对象条数/字节和跨对象全局 FIFO、时钟倒退、删除对象/重启释放、对象/版本/消息身份校验、截断与淘汰不能取样、并发编号与预算、700 个对象压满默认 32 MiB、唯一记录被淘汰后的桶重建、非法 UTF-8/身份不驱逐已有记录。首次倒退时钟测试误用不支持回拨的 FakeTimeProvider.SetUtcNow，改用测试专有可回拨 TimeProvider 后验证，未把失败轮记作通过。
+
+环境沿用 §2.140。最终验证：
+- `dotnet test tests/UnitTests --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-message-cache-unit-verified`：**1200 单元通过，0 失败/跳过**（`/tmp/tenonedge-message-cache-unit-verified.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-message-cache-unit-verified --require TenonEdge.UnitTests` 核对通过（`/tmp/tenonedge-message-cache-trx-verified.log`）。
+- `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-message-cache-format-verified.log`）。
+
+本批未执行集成或浏览器回归；未修改前端或现有运行路径，因此不把此前报告重新计作新增覆盖。未推送、发布或部署。下一步继续完成输入消息编码与真实捕获链路，最近消息预览仍标记未接入。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
