@@ -55,6 +55,29 @@ public sealed class RuntimeRollbackTests
     }
 
     [Fact]
+    public async Task RollbackReviewUsesTargetContentButDoesNotReplaceDraftAllocateVersionOrReadBackSecrets()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        var saved = await SeedAsync(factory, credential: true);
+        var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
+        var pointers = versions.ReadPointers();
+        var review = versions.ReviewRollback(1, saved.Version, Token);
+        Assert.True(review.PreflightPassed);
+        Assert.Equal(1, review.TargetRevision);
+        Assert.Equal(2, review.EffectiveRevision);
+        Assert.Equal(saved.Version, review.Version);
+        Assert.Equal("Updated", Assert.Single(review.Changes).Before!.Value.GetProperty("name").GetString());
+        Assert.Equal("Original", Assert.Single(review.Changes).After!.Value.GetProperty("name").GetString());
+        Assert.Contains("configuration.rollbackDoesNotRetractSentData", review.Warnings);
+        Assert.Contains("configuration.rollbackKeepsConcurrentDraftEdits", review.Warnings);
+        Assert.Contains("configuration.rollbackUsesCurrentCredentials", review.Warnings);
+        Assert.DoesNotContain("initial-secret", JsonSerializer.Serialize(review), StringComparison.Ordinal);
+        Assert.Equal(pointers, versions.ReadPointers());
+        Assert.Equal(2, versions.ReadHistory().Length);
+        Assert.Equal("Updated", Assert.Single(factory.Services.GetRequiredService<DeviceDraftStore>().Read().Devices).Name);
+    }
+
+    [Fact]
     public async Task DirtyDraftRejectsRollbackWithoutAllocatingOrChangingRuntime()
     {
         await using var factory = new TenonEdgeApplicationFactory();
@@ -64,6 +87,7 @@ public sealed class RuntimeRollbackTests
         var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
         var error = await Assert.ThrowsAsync<DraftWriteException>(() => coordinator.RollbackAsync(1, edited.Version, "operator", null, Token));
         Assert.Equal("configuration.unappliedChanges", error.Code);
+        Assert.Equal(error.Code, Assert.Throws<DraftWriteException>(() => factory.Services.GetRequiredService<RuntimeVersionStore>().ReviewRollback(1, edited.Version, Token)).Code);
         Assert.Equal(2, coordinator.Runtime.ActiveRevision);
         var store = factory.Services.GetRequiredService<RuntimeVersionStore>();
         Assert.Null(store.Load(3));
@@ -141,6 +165,7 @@ public sealed class RuntimeRollbackTests
         store.Abandon(frozen.Revision, "fixture");
         var initialCheck = Assert.Throws<DraftWriteException>(() => store.FreezeManualRollback(1, saved.Version, "operator"));
         Assert.Equal("configuration.rollbackCredentialMissing", initialCheck.Code);
+        Assert.Equal(initialCheck.Code, Assert.Throws<DraftWriteException>(() => store.ReviewRollback(1, saved.Version, Token)).Code);
         Assert.Null(store.Load(4));
     }
 
@@ -160,6 +185,7 @@ public sealed class RuntimeRollbackTests
             .RollbackAsync(1, saved.Version, "operator", null, Token));
         Assert.Equal(2, store.ReadPointers().EffectiveRevision);
         Assert.Null(store.Load(3));
+        Assert.Throws<NotSupportedException>(() => store.ReviewRollback(1, saved.Version, Token));
     }
 
     [Fact]

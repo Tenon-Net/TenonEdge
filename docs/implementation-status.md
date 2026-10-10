@@ -3210,6 +3210,30 @@ Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖或配置库�
 
 没有新增依赖、数据库迁移、公开 API 或前端页面，未推送/发布、未修改持久部署。这里只是静态/软件子场景；尚不能在网页确认并启动采集，不替代逐点强杀/断电或真实 Broker/设备验收。下一步继续修改人/时间的可靠记录、回滚预检，以及有权限/并发/取消边界的端点与页面。
 
+### 2.163 T3-06 回滚预检与确认清单 API（2026-10-10）
+
+承接 §2.162，接入 T3-06 / GW-10 / 功能 §6.2、§6.4 的回滚预检及两类只读计算端点。**端点不执行应用/回滚；修改人/时间、旧快照恢复、正式写入口和网页确认流程仍未完成，不能据此宣称已能从网页启动采集。**
+
+- `ReviewRollback` 与正式冻结复用草稿干净、有效版本存在和目标生效过的检查；在事务外读取、比较目标完整内容，再以短事务重查草稿版本、有效指针、目标哈希及当前连接/凭证。差异从当前有效草稿指向目标草稿，携带目标 revision；不复制历史秘密、不替换草稿、不分配版本，也不触碰运行单元。
+- 回滚与应用共用积压目标阻断检查；附带整体输入暂停、MQTT Broker 条件、QoS 0/轮询缺口和旧报文保留提示，回滚另外说明已发数据不撤回、并发编辑会保留，以及继续使用当前凭证。无有效版本或目标未生效改为稳定业务错误码，不再被当作未知内部异常。
+- 分组 Minimal API 新增 `POST /api/edge-admin/v1/configuration/review` 与 `POST /api/edge-admin/v1/configuration/versions/{revision}/review`，请求只接收确认草稿版本。两端点均限管理员/配置人员、本地会话和 CSRF；复用现有会话/全局预览预算，不另起运行时，拒绝后不排队。请求上限 4096 字节，返回 `Cache-Control: no-store`。版本不存在、前提冲突、旧版不可验证、损坏快照分别返回安全的 404/409 ProblemDetails，参数无效返回 400，不回传异常正文。
+- 新增 **13 项**测试：回滚差异方向、目标/当前版本和无副作用/无秘密；两端点的三种角色（6 项）、匿名/CSRF（2 项）、会话/全局预算及错误后额度释放（2 项）、缺失/未生效/冲突/损坏错误码、真实 Kestrel 两端点 4096 字节限额。既有未应用草稿、凭证缺失/损坏/接收方变化及旧凭证元数据测试同时补查回滚预检，未另算新增。
+
+验证经过：
+
+- 初次针对性 **37 通过、3 失败**（`/tmp/tenonedge-review-api-focused.log`）：OpenAPI 预期清单插入位置未按名称排序；另两项在 TestServer 期待 Kestrel 的请求体限额，而 TestServer 未提供该限制特性，实际进入参数校验返回 400。清单已排序；请求体限额改为独立 Production Host + 真实 Kestrel 验证，不放松产品上限，也不把 400 冒充 413。
+- 修正后的预检、回滚、访问清单和 OpenAPI 针对性 **41 项通过，0 失败/跳过**（`/tmp/tenonedge-review-api-focused-final.log`），其中真实 Kestrel 对两端点均返回 413，后续合法预检成功，Host 正常停止退出 0；独立目录随夹具清理。
+- 从临时独立 Development Host（HTTP `127.0.0.1:18081`，HTTPS 动态回环端口）执行 `npm run api:generate`，更新真实 OpenAPI 与 TypeScript 类型；Node 22.23.2、固定 npm 11.21.0、openapi-typescript 7.13.0。Host SIGTERM 后退出 0，临时数据删除，没有固定部署或临时 server URL 差异（`/tmp/tenonedge-review-api-export.log`）。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12）：
+
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-review-api-regression --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1276 集成 = 2534 项通过，0 失败/跳过**（`/tmp/tenonedge-review-api-regression.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-review-api-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-review-api-trx.log`）。
+- 固定 npm CLI `node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js` 执行 `run typecheck`、`run lint`、`test`（15 文件、219 项）、`run format:check` 全部通过（`/tmp/tenonedge-review-api-web.log`）。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-review-api-format.log`），`git diff --check` 通过；本批未执行浏览器页面验收。
+
+本批无新依赖或数据库迁移，未推送/发布。Production Host 仅验证请求体边界，不是应用中断矩阵或浏览器操作验收；下一步继续修改人/时间的可靠记录及确认/应用/回滚页面和写入口，不能把预检成功当作配置已生效。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

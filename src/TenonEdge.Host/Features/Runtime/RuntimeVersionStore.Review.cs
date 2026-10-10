@@ -6,7 +6,7 @@ namespace TenonEdge.Host.Features.Runtime;
 
 internal sealed record ConfigurationReview(string Version, long? EffectiveRevision, bool ComparisonAvailable,
     ConfigurationChange[] Changes, ConfigurationPointSummary[] Points, RouteTopologyIssue[] RouteIssues, RuntimeTargetChangeBlock[] TargetBlocks,
-    string? PlanHash, string[] Warnings)
+    string? PlanHash, string[] Warnings, long? TargetRevision = null)
 {
     // 仅静态检查，不承诺之后准备/静默/提交必然成功；队列及草稿仍可变化。
     public bool PreflightPassed => ComparisonAvailable && PlanHash is not null && RouteIssues.Length == 0 && TargetBlocks.Length == 0;
@@ -72,6 +72,42 @@ internal sealed partial class RuntimeVersionStore
             before is null ? [] : ConfigurationDiff.Between(before, captured.Draft),
             before is null ? [] : ConfigurationPointSummary.Between(before, captured.Draft), issues.Distinct().ToArray(),
             blocks, plan?.ContentHash, warnings.ToArray());
+    }
+
+    /// <summary>只读人工回滚预检；复用冻结前提和当前凭证检查，不恢复旧秘密或分配版本。</summary>
+    public ConfigurationReview ReviewRollback(long targetRevision, string expectedDraftVersion, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var captured = ReadManualRollback(targetRevision, expectedDraftVersion);
+        var target = RuntimeSnapshotDocument.Read(captured.Target);
+        var draft = target.Draft ?? throw new NotSupportedException("旧版快照没有完整草稿，不能确认人工回滚。");
+        token.ThrowIfCancellationRequested();
+        database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, expectedDraftVersion);
+            if (State(client).EffectiveRevision != captured.Effective.Revision ||
+                RequiredSnapshot(client, targetRevision).ContentHash != captured.Target.ContentHash)
+            { throw new RuntimeVersionConflictException("runtime.versionChanged", targetRevision); }
+            ValidateRollbackReferences(client, draft);
+            return true;
+        });
+        var blocks = TargetChangeBlocks(RuntimeSnapshotDocument.ReadPlan(captured.Effective), target.Plan, token);
+        var warnings = new List<string>
+        {
+            "configuration.allInputsPause",
+            "configuration.mqttQos1RequiresPersistentBrokerSession",
+            "configuration.qos0AndPollingGap",
+            "configuration.queuedMessagesKeepOriginalContent",
+            "configuration.rollbackDoesNotRetractSentData",
+            "configuration.rollbackKeepsConcurrentDraftEdits",
+            "configuration.rollbackUsesCurrentCredentials",
+        };
+        if (blocks.Length != 0)
+        { warnings.Add("configuration.targetChangeRequiresDrainClearOrMigration"); }
+        token.ThrowIfCancellationRequested();
+        return new(expectedDraftVersion, captured.Effective.Revision, true,
+            ConfigurationDiff.Between(captured.Draft, draft), ConfigurationPointSummary.Between(captured.Draft, draft),
+            [], blocks, target.Plan.ContentHash, warnings.ToArray(), targetRevision);
     }
 
     private RuntimeTargetChangeBlock[] TargetChangeBlocks(RuntimePlanDocument previous, RuntimePlanDocument next, CancellationToken token)

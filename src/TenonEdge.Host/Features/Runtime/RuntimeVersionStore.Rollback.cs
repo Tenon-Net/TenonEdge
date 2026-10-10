@@ -13,19 +13,7 @@ internal sealed partial class RuntimeVersionStore
 {
     public RuntimeRollbackPreparation FreezeManualRollback(long targetRevision, string expectedDraftVersion, string account, string? changeDescription = null)
     {
-        var captured = database.InTransaction(client =>
-        {
-            ConfigurationDraft.CheckVersion(client, expectedDraftVersion);
-            var state = State(client);
-            var effective = state.EffectiveRevision is { } revision ? RequiredSnapshot(client, revision)
-                : throw new InvalidOperationException("尚无有效配置，不能回滚。");
-            var target = RequiredSnapshot(client, targetRevision);
-            if (target.State is not (RuntimeSnapshotStates.Effective or RuntimeSnapshotStates.History))
-            { throw new InvalidOperationException("只有生效过的版本可以回滚。"); }
-            return (Effective: effective, Target: target, Draft: ConfigurationCheckpoint.Read(client, expectedDraftVersion));
-        });
-        if (ConfigurationDiff.Between(RequiredDraft(captured.Effective), captured.Draft).Length != 0)
-        { throw new DraftWriteException("configuration.unappliedChanges"); }
+        var captured = ReadManualRollback(targetRevision, expectedDraftVersion);
         var draft = RequiredDraft(captured.Target);
         var document = RuntimeSnapshotDocument.ReadPlan(captured.Target);
         var revision = FreezeCore(new(captured.Target.SchemaVersion, captured.Target.Content, captured.Target.ContentHash),
@@ -37,6 +25,28 @@ internal sealed partial class RuntimeVersionStore
                 ValidateRollbackReferences(client, draft);
             }, changeDescription);
         return new(revision, document);
+    }
+
+    // 预检和冻结使用相同的草稿干净/目标状态前提，不分配版本或改变指针。
+    private (RuntimeSnapshotRecord Effective, RuntimeSnapshotRecord Target, ConfigurationCheckpoint Draft) ReadManualRollback(long targetRevision, string expectedDraftVersion)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
+        if (string.IsNullOrWhiteSpace(expectedDraftVersion) || expectedDraftVersion.Length > 64)
+        { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
+        var captured = database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, expectedDraftVersion);
+            var state = State(client);
+            var effective = state.EffectiveRevision is { } revision ? RequiredSnapshot(client, revision)
+                : throw new DraftWriteException("configuration.noEffectiveVersion");
+            var target = RequiredSnapshot(client, targetRevision);
+            if (target.State is not (RuntimeSnapshotStates.Effective or RuntimeSnapshotStates.History))
+            { throw new DraftWriteException("configuration.rollbackTargetNotEffective"); }
+            return (Effective: effective, Target: target, Draft: ConfigurationCheckpoint.Read(client, expectedDraftVersion));
+        });
+        if (ConfigurationDiff.Between(RequiredDraft(captured.Effective), captured.Draft).Length != 0)
+        { throw new DraftWriteException("configuration.unappliedChanges"); }
+        return captured;
     }
 
     private void ValidateRollbackReferences(SqlSugarClient client, ConfigurationCheckpoint draft)

@@ -564,6 +564,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/configuration/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 预检当前草稿的配置差异、路线错误和目标阻断；不应用配置 */
+        post: operations["reviewConfigurationDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/versions/{revision}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 预检回滚目标与当前草稿、凭证及积压记录；不执行回滚 */
+        post: operations["reviewConfigurationRollback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -888,6 +922,45 @@ export interface components {
             schemaVersion: number | string;
             sqliteVersion: string;
             sqliteCompileOptions: string[];
+        };
+        ConfigurationChange: {
+            kind: string;
+            /** Format: int64 */
+            id: number | string;
+            key: string;
+            /** Format: int64 */
+            deviceId: null | number | string;
+            change: string;
+            before: null | components["schemas"]["JsonElement"];
+            after: null | components["schemas"]["JsonElement"];
+        };
+        ConfigurationPointSummary: {
+            /** Format: int64 */
+            deviceId: number | string;
+            /** Format: int32 */
+            added: number | string;
+            /** Format: int32 */
+            modified: number | string;
+            /** Format: int32 */
+            removed: number | string;
+        };
+        ConfigurationReview: {
+            version: string;
+            /** Format: int64 */
+            effectiveRevision: null | number | string;
+            comparisonAvailable: boolean;
+            changes: components["schemas"]["ConfigurationChange"][];
+            points: components["schemas"]["ConfigurationPointSummary"][];
+            routeIssues: components["schemas"]["RouteTopologyIssue"][];
+            targetBlocks: components["schemas"]["RuntimeTargetChangeBlock"][];
+            planHash: null | string;
+            warnings: string[];
+            /** Format: int64 */
+            targetRevision?: null | number | string;
+            preflightPassed?: boolean;
+        };
+        ConfigurationReviewRequest: {
+            expectedVersion: string;
         };
         ConnectionDraft: {
             /** Format: int64 */
@@ -1887,6 +1960,15 @@ export interface components {
             /** Format: int64 */
             activeRevision: null | number | string;
             units: components["schemas"]["RuntimeUnitStatus"][];
+        };
+        RuntimeTargetChangeBlock: {
+            /** Format: int64 */
+            connectionId: number | string;
+            kind: string;
+            recipient: string;
+            address: string;
+            hasPending: boolean;
+            hasFailed: boolean;
         };
         RuntimeTrendPoint: {
             /** Format: date-time */
@@ -3792,6 +3874,173 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reviewConfigurationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reviewConfigurationRollback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
