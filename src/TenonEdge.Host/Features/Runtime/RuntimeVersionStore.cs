@@ -192,8 +192,9 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
     /// 提交（总设计 §7.4 第 4 步）：单事务中 previous = effective、effective = 新版本、清空 pending，原有效版本转为历史；
     /// 有审计记录时在同一事务中写入。种子快照在同一事务中记下种子的内容哈希。
     /// 冻结之后、提交或放弃之前进程退出时不记，下次启动丢弃中断的版本后重新导入同一份种子。
+    /// 在线应用指定 markRunning，把新运行标记也放入本事务，避免提交之后仍遗留旧版本标记。
     /// </summary>
-    public void Commit(long revision, AuditEntry? auditEntry, string? seedHash = null) => database.InTransaction(client =>
+    public void Commit(long revision, AuditEntry? auditEntry, string? seedHash = null, bool markRunning = false) => database.InTransaction(client =>
     {
         var state = State(client);
         var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
@@ -221,6 +222,8 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         snapshot.State = RuntimeSnapshotStates.Effective;
         snapshot.ActivatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
         client.Updateable(snapshot).UpdateColumns(record => new { record.State, record.ActivatedAt }).ExecuteCommand();
+        if (markRunning)
+        { state.RunningRevision = revision; }
         state.PreviousRevision = state.EffectiveRevision;
         state.EffectiveRevision = revision;
         if (state.PendingRevision == revision)
@@ -230,7 +233,7 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
 
         state.SeedHash = seedHash ?? state.SeedHash;
         client.Updateable(state)
-            .UpdateColumns(record => new { record.PreviousRevision, record.EffectiveRevision, record.PendingRevision, record.SeedHash })
+            .UpdateColumns(record => new { record.PreviousRevision, record.EffectiveRevision, record.PendingRevision, record.SeedHash, record.RunningRevision })
             .ExecuteCommand();
         if (auditEntry is not null)
         {
@@ -292,9 +295,11 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         return true;
     });
 
-    /// <summary>把版本记为“已稳定”；此后它上面的退出不再计入启动保护。已稳定时返回 false。</summary>
+    /// <summary>把当前有效版本记为“已稳定”；此后它上面的退出不再计入启动保护。旧版本或已稳定时返回 false。</summary>
     public bool MarkStable(long revision) => database.InTransaction(client =>
     {
+        if (State(client).EffectiveRevision != revision)
+        { return false; }
         var stableAt = time.GetUtcNow().ToUnixTimeMilliseconds();
         return client.Updateable<RuntimeSnapshotRecord>()
             .SetColumns(record => new RuntimeSnapshotRecord { IsStable = true, StableAt = stableAt })

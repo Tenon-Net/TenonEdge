@@ -107,6 +107,8 @@ internal static class AuditActions
 
     /// <summary>启动保护自动回滚到上一生效版本的内容（总设计 §7.4）；操作人为“系统”。</summary>
     public const string AutoRollback = "runtime.autoRollback";
+
+    public const string SnapshotApplied = "runtime.apply";
 }
 
 internal static class AuditResults

@@ -3056,6 +3056,28 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 下一步为 Host 的应用所有者/全局互斥、配置提交与运行标记、逐版本稳定计时，以及草稿检查点、历史/比较/回滚、网页和 §7.4 中断矩阵；本批未验证这些部分。未改变常驻部署、推送或发布。
 
+### 2.156 T3-06 Host 在线应用所有权与逐版本稳定计时（2026-10-10）
+
+本批承接 §2.155，在唯一的 `RuntimeCoordinator` 中加入内部 `ApplyDraftAsync` 编排；没有增加第二个运行时或 HostedService。范围为 T3-06 / GW-10 / AT-28 的 Host 软件子场景，**尚无公开应用/回滚端点或网页应用按钮，不代表完整 T3-06 验收**。
+
+- 输入仅为已确认草稿版本、已解析操作人与来源地址；读取脱离事务的编译材料，事务外编译，冻结事务再次校验草稿版本。冻结后的草稿修改不混入本次应用。
+- 协调者持有贯穿准备、两次目标检查、输入静默/排空、提交与激活的唯一应用所有权。并发应用被拒绝；开始前取消无副作用，接管后请求取消只结束调用方等待。任务不继承请求 ExecutionContext、HttpContext 或数据库异步上下文；停机先等待已接管操作结束，再停止运行时并清除最终版本标记。
+- 准备结构错误在停止输入之前拒绝，并保存经过脱敏/截断的单元原因。静默前后分别检查待发/失败区与接收方变更，覆盖停止过程中最后一批入库。提交前失败只放弃新 pending 并恢复原输入；放弃写库失败保留 pending 供启动恢复，不阻止原输入恢复。
+- 有效指针、历史指针、pending 清除、成功审计与新版本运行标记在同一事务提交。提交异常须读回有效指针再决定是否恢复旧版本；无法确认提交结果时保持静默并进入运行失败，不猜测回滚。提交后的激活异常保留新有效版本，不自动退回旧版本。
+- 单个后台循环在空闲及首个版本稳定后仍继续工作，按每次激活重置稳定计时。计时器在公布激活完成之前注册，旧版本计时不能标记新版本或历史版本。稳定落库与应用领取串行；存储错误后保守重新等待完整稳定期，停机/释放时取消计时器。
+
+新增 **10 项集成场景**：逐版本 r1/r2/r3 稳定、事务审计/运行标记、过期和预取消不分配版本、提交或审计 SQL 故障回滚、取消等待后仍持有操作、停机等待、冻结后并发草稿不混入、结构准备失败不中断原输入、静默前后目标检查、输入停止超时后恢复。测试使用真实临时 config.db/queue.db、真实模拟输入和 HTTP 格式生成；HTTP 出站连接由拒绝连接的测试实现替代，**不是真实接收端、浏览器或设备测试**。可控时钟只替换协调者，不冻结其他运行服务。
+
+验证经过与证据：
+
+- 最初测试把全 Host 时钟替换为停止推进的 FakeTimeProvider，冻结了发送缓存写者的提交间隔，激活协调等待未结束；明确终止本次测试进程并改为只替换协调者时钟。`/tmp/tenonedge-application-focused.log` 没有完成判定，不能计为通过。生命周期测试首次编译触发 CA1859（`/tmp/tenonedge-application-lifecycle.log`），收窄测试助手参数后修正。
+- 阶段针对性 8 项、37 项通过（`/tmp/tenonedge-application-lifecycle2.log`、`/tmp/tenonedge-application-focused-final.log`）。初版全量 1258 单元 + 1201 集成 = 2459 项通过（`/tmp/tenonedge-application-regression.log`），这不是最终实现的验证结果。
+- 随后 9 项新增场景重复执行，第 1—4 轮通过，第 5 轮第三版本稳定断言超时（8 通过、1 失败，`/tmp/tenonedge-application-repeat.log`）。发现“计算剩余时间后才注册计时器”之间可推进测试时钟的窗口；改为激活完成公布前直接注册完整稳定期计时器。修正后针对性 9 项通过，连续 20 轮每轮 9 项，**180 次执行通过，0 失败/跳过**（`/tmp/tenonedge-application-stability-fixed.log`、`/tmp/tenonedge-application-repeat-fixed.log`）。这 20 轮发生在新增第 10 项结构失败原因用例之前，不记为 200 次。
+- 最终当前代码命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-application-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1202 集成 = 2460 项通过，0 失败/跳过**（`/tmp/tenonedge-application-regression-final.log`，包含计时修正与第 10 项用例）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-application-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-application-trx-final.log`）。
+- 格式检查初次报告 lock/try 换行与 using 排序，修正后最终 `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-application-format-final2.log`）；`git diff --check` 通过。
+
+Linux x64（Linux 7.0.0-31-generic）、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖。下一步仍须完成全草稿检查点、历史/比较/回滚、鉴权分组端点及 UI，并执行浏览器配置→应用→运行→重启和 §7.4 进程中断矩阵。“提交结果不可读”的保守分支尚未故障注入验证；本批不把事务 SQL 故障测试当作断电/进程中断通过。未修改常驻部署，未推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

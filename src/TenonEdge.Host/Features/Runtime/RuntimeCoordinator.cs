@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using SqlSugar;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Lifecycle;
@@ -29,6 +30,7 @@ namespace TenonEdge.Host.Features.Runtime;
 internal sealed partial class RuntimeCoordinator(
     RuntimeHost runtime,
     RuntimeVersionStore versions,
+    RouteDraftStore drafts,
     RuntimeSettings settings,
     RuntimeStartConditions startConditions,
     RuntimeEventLog runtimeEvents,
@@ -110,6 +112,10 @@ internal sealed partial class RuntimeCoordinator(
 
     private async Task StopOnceAsync(CancellationToken cancellationToken)
     {
+        Task application;
+        lock (_lock)
+        { application = _application?.Task ?? Task.CompletedTask; }
+        await application;
         await base.StopAsync(cancellationToken);
         var faulted = ExecuteTask is { IsFaulted: true };
         long? revision;
@@ -117,6 +123,7 @@ internal sealed partial class RuntimeCoordinator(
         {
             revision = _activeRevision;
             _state = RuntimeCoordinatorState.Stopping;
+            CancelStabilityTimer();
         }
 
         try
@@ -142,53 +149,6 @@ internal sealed partial class RuntimeCoordinator(
         }
 
         SetState(RuntimeCoordinatorState.Stopped, null);
-    }
-
-    /// <summary>稳定计时（总设计 §7.4 第 6 步）：激活后连续运行满稳定时间，把版本记为“已稳定”。</summary>
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        long revision;
-        lock (_lock)
-        {
-            if (_activeRevision is null || _activeIsStable)
-            {
-                return;
-            }
-
-            revision = _activeRevision.Value;
-        }
-
-        try
-        {
-            await Task.Delay(settings.StableAfter, time, stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        try
-        {
-            if (versions.MarkStable(revision))
-            {
-                LogStable(logger, revision, settings.StableAfter);
-                runtimeEvents.Record(
-                    RuntimeEventLevel.Info,
-                    RuntimeEventTypes.VersionStable,
-                    Target(revision),
-                    $"版本 r{revision} 已连续运行 {settings.StableAfter.TotalSeconds:0} 秒，记为已稳定。");
-            }
-
-            lock (_lock)
-            {
-                _activeIsStable = true;
-            }
-        }
-        catch (Exception exception) when (IsStorageError(exception))
-        {
-            // 没记下“已稳定”只会让之后的非正常退出被计数，偏于保守。
-            LogStableNotRecorded(logger, revision);
-        }
     }
 
     private static string Target(long revision) => $"r{revision}";
@@ -227,6 +187,7 @@ internal sealed partial class RuntimeCoordinator(
                     _reason = null;
                     _activeRevision = prepared.Revision;
                     _activeIsStable = decision.ActiveIsStable;
+                    ResetStabilityClock();
                 }
 
                 return;
@@ -492,6 +453,9 @@ internal sealed partial class RuntimeCoordinator(
         {
             _state = state;
             _reason = reason;
+            if (state != RuntimeCoordinatorState.Active)
+            { CancelStabilityTimer(); }
+            SignalVersionChange();
         }
     }
 
