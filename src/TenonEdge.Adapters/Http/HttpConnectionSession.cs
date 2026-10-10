@@ -115,15 +115,32 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         }
         catch (HttpInputResponseException exception)
         {
-            return JsonReadPreviewResult.Failure(exception.Failure switch
-            {
-                HttpInputFailure.Status => "http.status",
-                HttpInputFailure.TooLarge => "payload.tooLarge",
-                HttpInputFailure.Encoding => "payload.encoding",
-                _ => "payload.invalidJson"
-            }, (int)response.StatusCode);
+            return JsonReadPreviewResult.Failure(PreviewFailure(exception), (int)response.StatusCode);
         }
     }
+
+    internal async Task<JsonReadSampleResult> ReadSampleAsync(HttpInputSettings settings, IHttpCredentialResolver credentials,
+        IJsonInputDecoder decoder, string inputKey, string deviceKey, ClockSyncState clockState, TimeProvider time, CancellationToken token)
+    {
+        var (message, credential) = CreateInputRequest(settings, credentials);
+        using var request = message;
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        try
+        {
+            using var document = await HttpInputResponse.ReadAsync(response, token);
+            return JsonReadSample.Decode(document.RootElement, decoder, credential, inputKey, deviceKey, clockState, time.GetUtcNow(), token);
+        }
+        catch (HttpInputResponseException exception)
+        { return JsonReadSampleResult.Failure(PreviewFailure(exception)); }
+    }
+
+    private static string PreviewFailure(HttpInputResponseException exception) => exception.Failure switch
+    {
+        HttpInputFailure.Status => "http.status",
+        HttpInputFailure.TooLarge => "payload.tooLarge",
+        HttpInputFailure.Encoding => "payload.encoding",
+        _ => "payload.invalidJson"
+    };
 
     private static (HttpRequestMessage Request, HttpCredential? Credential) CreateInputRequest(HttpInputSettings settings, IHttpCredentialResolver credentials)
     {

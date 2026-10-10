@@ -23,7 +23,7 @@ export const routeStrings = {
         duplicate: '消息带 DUP 标记，不代表新的业务事件。',
         httpRun: '现场读取 HTTP 一次并预览',
         httpUnavailable:
-            'HTTP 读取失败，或样本已截断/脱敏，不能用于路线预览。请在设备的一次读取面板核对原因；本地手工样本仍保留。',
+            'HTTP 读取失败、报文/解码结果超限或包含敏感内容，不能用于路线预览。请在设备的一次读取面板核对原因；本地手工样本仍保留。',
         connectionBusy:
             '共享连接参数不匹配、正在释放或容量不足，未创建第二会话。请核对连接后重试；本地修改仍保留。',
         httpConfirm:

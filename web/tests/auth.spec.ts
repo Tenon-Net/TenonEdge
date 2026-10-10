@@ -3936,7 +3936,7 @@ test('route HTTP onsite preview confirms one real read, preserves manual text an
     page,
 }) => {
     const calls: string[] = []
-    let responseBody = '{"value":9223372036854775807}'
+    let responseBody = `{"padding":"${'x'.repeat(80000)}","value":9223372036854775807}`
     const peer = createServer((request, response) => {
         calls.push(request.method + ' ' + request.url)
         response.writeHead(200, { 'Content-Type': 'application/json' })
@@ -4076,7 +4076,9 @@ test('route HTTP onsite preview confirms one real read, preserves manual text an
         responseBody = '{"password":"fixture-secret","value":42}'
         page.once('dialog', (dialog) => dialog.accept())
         await run.click()
-        await expect(panel.getByRole('alert')).toContainText('样本已截断/脱敏')
+        await expect(panel.getByRole('alert')).toContainText(
+            '超限或包含敏感内容',
+        )
         await expect(
             panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true }),
         ).toHaveCount(0)

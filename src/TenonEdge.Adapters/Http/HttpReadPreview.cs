@@ -11,14 +11,37 @@ namespace TenonEdge.Adapters.Http;
 public sealed class HttpReadPreview(ISharedConnections connections, IOutboundConnector connector,
     IHttpCredentialResolver credentials, IJsonInputDecoderFactory decoders, TimeProvider time)
 {
-    public async Task<JsonReadPreviewResult> RunAsync(HttpInputSettings settings, ClockSyncState clockState, CancellationToken cancellationToken, int? timeoutMs = null, int maximumDisplayBytes = JsonReadPreview.MaximumDisplayBytes)
+    public Task<JsonReadPreviewResult> RunAsync(HttpInputSettings settings, ClockSyncState clockState, CancellationToken cancellationToken,
+        int? timeoutMs = null, int maximumDisplayBytes = JsonReadPreview.MaximumDisplayBytes)
+    {
+        if (maximumDisplayBytes is < 2048 or > JsonReadPreview.MaximumDisplayBytes)
+        { throw new ArgumentException("HTTP 预览展示预算无效。"); }
+        return ReadAsync(settings, clockState, timeoutMs,
+            (session, validated, decoder, token) => session.ReadPreviewAsync(validated, credentials, decoder, clockState, time, maximumDisplayBytes, token),
+            code => JsonReadPreviewResult.Failure(code), cancellationToken);
+    }
+
+    public Task<JsonReadSampleResult> ReadSampleAsync(HttpInputSettings settings, string inputKey, string deviceKey,
+        ClockSyncState clockState, CancellationToken cancellationToken)
+    {
+        BusinessKeys.Validate(inputKey, nameof(inputKey));
+        BusinessKeys.Validate(deviceKey, nameof(deviceKey));
+        if (settings.Fields.ValueKind != JsonValueKind.Array || settings.Fields.GetArrayLength() == 0)
+        { throw new ArgumentException("完整路线样本须有正式字段定义；空字段仅用于诊断展示/推断。"); }
+        return ReadAsync(settings, clockState, null,
+            (session, validated, decoder, token) => session.ReadSampleAsync(validated, credentials, decoder!, inputKey, deviceKey, clockState, time, token),
+            JsonReadSampleResult.Failure, cancellationToken);
+    }
+
+    private async Task<T> ReadAsync<T>(HttpInputSettings settings, ClockSyncState clockState,
+        int? timeoutMs, Func<HttpConnectionSession, HttpInputSettings, IJsonInputDecoder?, CancellationToken, Task<T>> read, Func<string, T> failure, CancellationToken cancellationToken)
     {
         settings = (HttpInputSettings)settings.ValidateRequest();
         if (settings.PeriodMs is < 1000 or > 86400000 || settings.Fields.ValueKind != JsonValueKind.Array)
         { throw new ArgumentException("HTTP 来源周期或字段无效。"); }
         if (!Enum.IsDefined(clockState))
         { throw new ArgumentException("校时状态无效。"); }
-        if (timeoutMs is < 1 || timeoutMs > settings.TimeoutMs || maximumDisplayBytes is < 2048 or > JsonReadPreview.MaximumDisplayBytes)
+        if (timeoutMs is < 1 || timeoutMs > settings.TimeoutMs)
         { throw new ArgumentException("HTTP 预览剩余预算无效。"); }
         var decoder = settings.Fields.GetArrayLength() == 0 ? null : decoders.Build(settings.Fields, settings.UpstreamTime);
         cancellationToken.ThrowIfCancellationRequested();
@@ -32,18 +55,18 @@ public sealed class HttpReadPreview(ISharedConnections connections, IOutboundCon
         await using var ownership = lease;
         try
         {
-            var result = await lease.ExecuteAsync((session, token) => session.ReadPreviewAsync(settings, credentials, decoder, clockState, time, maximumDisplayBytes, token), operation.Token);
+            var result = await lease.ExecuteAsync((session, token) => read(session, settings, decoder, token), operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             return result;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        { return JsonReadPreviewResult.Failure("timeout"); }
+        { return failure("timeout"); }
         catch (HttpCredentialUnavailableException)
-        { return JsonReadPreviewResult.Failure("credential.unavailable"); }
+        { return failure("credential.unavailable"); }
         catch (InputMessageSizeException)
-        { return JsonReadPreviewResult.Failure("fields.tooLarge"); }
+        { return failure("fields.tooLarge"); }
         catch (Exception exception) when (exception is HttpRequestException or IOException or SocketException or AuthenticationException)
-        { return JsonReadPreviewResult.Failure(Classify(exception)); }
+        { return failure(Classify(exception)); }
     }
 
     public async Task<HttpDevicePreviewResult> RunSourcesAsync(IReadOnlyList<HttpPreviewSource> sources,

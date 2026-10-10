@@ -44,6 +44,94 @@ public sealed class HttpReadPreviewTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullSamplePreservesLargeTextQualityOriginalJsonAndFormalTime(bool invalidTime)
+    {
+        using var listener = Listen();
+        var text = new string('中', 40000) + "😀";
+        var body = JsonSerializer.Serialize(new { text, when = invalidTime ? "invalid" : "2026-10-10T00:00:00Z" });
+        var peer = Reply(listener, body);
+        var settings = Settings(listener) with
+        {
+            Fields = JsonSerializer.Deserialize<JsonElement>(
+                """[{"key":"text","path":"/text","type":"string"},{"key":"bad","path":"/text","type":"integer"},{"key":"absent","path":"/absent","type":"number"}]"""),
+            UpstreamTime = JsonSerializer.Deserialize<JsonElement>("""{"path":"/when","format":"rfc3339"}""")
+        };
+        var receivedAt = new DateTimeOffset(2026, 10, 10, 0, 0, 1, TimeSpan.Zero);
+        var result = await Probe(time: new FakeTimeProvider(receivedAt)).ReadSampleAsync(settings, "input", "device",
+            ClockSyncState.NotSynchronized, Token);
+        Assert.Equal("success", result.Code);
+        var message = Assert.IsType<EdgeMessage>(result.Message);
+        Assert.Equal(text, message.Values["text"].ToString());
+        Assert.Equal(QualityCode.ConversionFailed, message.Quality["bad"]);
+        Assert.False(message.Values.ContainsKey("absent"));
+        Assert.Equal(body, message.RawJson!.Root.GetRawText());
+        Assert.True(message.RawJson.ByteLength > 65536);
+        Assert.Equal(receivedAt, message.ReceivedAt);
+        Assert.Equal(invalidTime ? receivedAt : receivedAt.AddSeconds(-1), message.CollectedAt);
+        Assert.Equal(invalidTime ? TimeSource.GatewayUnsynced : TimeSource.Upstream, message.TimeSource);
+        Assert.Equal(invalidTime, result.InvalidUpstreamTime);
+        Assert.Equal("input", message.InputId);
+        Assert.Equal("device", message.DeviceKey);
+        Assert.DoesNotContain(text, result.ToString(), StringComparison.Ordinal);
+        await peer;
+    }
+
+    [Theory]
+    [InlineData("password", "unrelated-private-value")]
+    [InlineData("echo", "fixture-secret")]
+    [InlineData("echo", "dXNlcjpmaXh0dXJlLXNlY3JldA==")]
+    public async Task FullSampleStillRejectsSensitiveContentBeyondTheDisplayPrefix(string key, string value)
+    {
+        using var listener = Listen();
+        var body = "{\"padding\":\"" + new string('x', 100000) + "\"," + JsonSerializer.Serialize(key) + ":" + JsonSerializer.Serialize(value) + "}";
+        var peer = Reply(listener, body);
+        var credential = new HttpCredential(new(HttpCredentialKind.Basic, "user", null, "account", "version"), "fixture-secret");
+        var result = await Probe(credentials: new CredentialResolver(credential)).ReadSampleAsync(SampleSettings(listener), "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("payload.redacted", result.Code);
+        Assert.Null(result.Message);
+        Assert.DoesNotContain(value, JsonSerializer.Serialize(result), StringComparison.Ordinal);
+        await peer;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullSampleCancellationAndDeadlineCloseActualIoWithoutReturningPartialMessage(bool timeout)
+    {
+        using var listener = Listen();
+        var accepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var peer = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptTcpClientAsync(Token);
+            var stream = socket.GetStream();
+            using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+            await ReadHeaders(reader);
+            await Write(stream, "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{");
+            accepted.SetResult();
+            Assert.Equal(0, await stream.ReadAsync(new byte[1], Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token));
+        }, Token);
+        var time = new FakeTimeProvider();
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        var pending = Probe(time: time).ReadSampleAsync(SampleSettings(listener), "input", "device", ClockSyncState.Unknown, stop.Token);
+        await accepted.Task.WaitAsync(Token);
+        if (timeout)
+        {
+            time.Advance(TimeSpan.FromSeconds(5));
+            var result = await pending.WaitAsync(TimeSpan.FromSeconds(5), Token);
+            Assert.Equal("timeout", result.Code);
+            Assert.Null(result.Message);
+        }
+        else
+        {
+            await stop.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        }
+        await peer;
+    }
+
+    [Theory]
     [InlineData(302, "{}", "http.status")]
     [InlineData(401, "{}", "http.status")]
     [InlineData(500, "{}", "http.status")]
@@ -113,7 +201,7 @@ public sealed class HttpReadPreviewTests
             using var socket = await listener.AcceptTcpClientAsync(Token);
             var stream = socket.GetStream();
             using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
-            for (var index = 0; index < 3; index++)
+            for (var index = 0; index < 4; index++)
             {
                 await ReadHeaders(reader);
                 await Write(stream, "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n{\"value\":42}");
@@ -123,6 +211,9 @@ public sealed class HttpReadPreviewTests
         { }
         var result = await Probe(shared, new ForbiddenConnector()).RunAsync(settings, ClockSyncState.Unknown, Token);
         Assert.True(result.Success);
+        var sample = await Probe(shared, new ForbiddenConnector()).ReadSampleAsync(SampleSettings(listener), "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("success", sample.Code);
+        Assert.Equal(42, sample.Message!.RawJson!.Root.GetProperty("value").GetInt32());
         using (await runtime.ExecuteAsync((session, token) => session.ReadInputAsync(settings, new CredentialResolver(), token), Token))
         { }
         await peer.WaitAsync(TimeSpan.FromSeconds(5), Token);
@@ -136,6 +227,10 @@ public sealed class HttpReadPreviewTests
         var credential = new HttpCredential(new(HttpCredentialKind.Bearer, null, null, "account", "v"), "fixture-secret");
         var result = await Probe(credentials: new CredentialResolver(credential, missing: true)).RunAsync(Settings(listener), ClockSyncState.Unknown, Token);
         Assert.Equal("credential.unavailable", result.Code);
+        var sample = await Probe(credentials: new CredentialResolver(credential, missing: true))
+            .ReadSampleAsync(SampleSettings(listener), "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("credential.unavailable", sample.Code);
+        Assert.Null(sample.Message);
         Assert.False(listener.Pending());
     }
 
@@ -285,6 +380,19 @@ public sealed class HttpReadPreviewTests
         await peer;
         Assert.False(listener.Pending());
     }
+
+    [Fact]
+    public async Task FullSampleRequiresFormalFieldsBeforeNetworkUnlikeInferenceDisplay()
+    {
+        using var listener = Listen();
+        await Assert.ThrowsAsync<ArgumentException>(() => Probe().ReadSampleAsync(Settings(listener), "input", "device", ClockSyncState.Unknown, Token));
+        Assert.False(listener.Pending());
+    }
+
+    private static HttpInputSettings SampleSettings(TcpListener listener) => Settings(listener) with
+    {
+        Fields = JsonSerializer.Deserialize<JsonElement>("""[{"key":"value","path":"/value","type":"integer"}]""")
+    };
 
     private static HttpReadPreview Probe(SharedConnections? shared = null, IOutboundConnector? connector = null, IHttpCredentialResolver? credentials = null, TimeProvider? time = null) =>
         new(shared ?? new(), connector ?? Connector(), credentials ?? new CredentialResolver(), new JsonInputDecoderFactory(), time ?? TimeProvider.System);

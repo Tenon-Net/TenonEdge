@@ -20,7 +20,7 @@ internal static partial class RoutePreviewEndpoints
     private static void MapHttpSamplePreview(RouteGroupBuilder api) =>
         api.MapPost("/routes/preview/http", PreviewHttp).WithTags("Routes").WithName("previewRouteHttpSample")
             .WithSummary("显式读取图内 HTTP 来源一次并预览当前路线；不访问输出、不保存、不入队")
-            .WithDescription("复用串行 HTTP 会话、凭证与出站策略。仅完整且未脱敏的一次读取结果可用于计算；截断、脱敏或读取失败返回 422。整次 30 秒。")
+            .WithDescription("复用串行 HTTP 会话、凭证与出站策略。读取最多 1 MiB 完整 JSON 并保精度解码，不受设备诊断展示预算裁剪；脱敏、输入超限或读取失败返回 422。整次 30 秒。")
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithMetadata(new RequestBodyLimit(1024 * 1024))
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(422).ProducesProblem(429).ProducesProblem(504);
 
@@ -45,18 +45,15 @@ internal static partial class RoutePreviewEndpoints
             var connection = device.ConnectionId is { } id ? snapshot.Connections.GetValueOrDefault(id) : null;
             var compiled = RouteSourceCompiler.Compile(input, device, connection, false);
             var state = clock.State;
-            var captured = await reader.RunAsync(HttpInputSettings.Parse(compiled.Unit.Configuration), state, operation.Token);
+            var captured = await reader.ReadSampleAsync(HttpInputSettings.Parse(compiled.Unit.Configuration),
+                input.Key, device.Key, state, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
-            if (!captured.CanUseAsSample || captured.RawJson is null || captured.ReceivedAt is null)
+            if (captured.Message is null)
             {
-                var code = captured.RawTruncated || captured.FieldsTruncated ? "sample.truncated" : captured.Code;
-                return ApiProblems.Problem(422, "preview.http." + code, "未取得完整且可用于路线预览的 HTTP 样本；未执行输出、保存或入队。");
+                return ApiProblems.Problem(422, "preview.http." + captured.Code, "未取得完整且可用于路线预览的 HTTP 样本；未执行输出、保存或入队。");
             }
-            // Preserve the actual reception time, schema and clock state; never re-label the sample as received now.
-            var sample = RoutePreviewSample.Decode(snapshot, request.SourceId, captured.RawJson,
-                captured.ReceivedAt.Value, state, operation.Token);
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, sample.Message, operation.Token);
-            return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, sample.InvalidUpstreamTime, result, []));
+            var result = RouteSamplePreview.Run(snapshot, request.SourceId, captured.Message, operation.Token);
+            return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, captured.InvalidUpstreamTime, result, []));
         }
         catch (RouteTopologyException error)
         { return TypedResults.Ok(new RoutePreviewResponse(request.ExpectedVersion, false, false, null, [error.Issue])); }

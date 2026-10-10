@@ -1296,7 +1296,7 @@
           "Routes"
         ],
         "summary": "显式读取图内 HTTP 来源一次并预览当前路线；不访问输出、不保存、不入队",
-        "description": "复用串行 HTTP 会话、凭证与出站策略。仅完整且未脱敏的一次读取结果可用于计算；截断、脱敏或读取失败返回 422。整次 30 秒。",
+        "description": "复用串行 HTTP 会话、凭证与出站策略。读取最多 1 MiB 完整 JSON 并保精度解码，不受设备诊断展示预算裁剪；脱敏、输入超限或读取失败返回 422。整次 30 秒。",
         "operationId": "previewRouteHttpSample",
         "requestBody": {
           "content": {

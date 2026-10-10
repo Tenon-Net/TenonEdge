@@ -30,8 +30,7 @@ internal static class JsonReadPreview
     {
         var raw = root.GetRawText();
         var rawBytes = Encoding.UTF8.GetByteCount(raw);
-        var secrets = CredentialForms(credential).Concat(additionalSecrets ?? []).Where(value => value.Length > 0).ToArray();
-        if (ContainsSensitive(root, secrets, cancellationToken))
+        if (IsSensitive(root, credential, cancellationToken, additionalSecrets))
         { return new(false, "payload.redacted", statusCode, null, rawBytes, false, false, true, receivedAt, null, null, false, []); }
         var decoded = decoder?.Decode(root, receivedAt, clockState, cancellationToken);
         var rawDisplay = Limit(raw, maximumDisplayBytes / 2);
@@ -61,6 +60,9 @@ internal static class JsonReadPreview
             decoded?.TimeSource ?? (clockState == ClockSyncState.NotSynchronized ? TimeSource.GatewayUnsynced : TimeSource.Gateway),
             decoded?.InvalidUpstreamTime ?? false, fields.ToArray());
     }
+
+    internal static bool IsSensitive(JsonElement root, HttpCredential? credential, CancellationToken token, string[]? additionalSecrets = null) =>
+        ContainsSensitive(root, CredentialForms(credential).Concat(additionalSecrets ?? []).Where(value => value.Length > 0).ToArray(), token);
 
     private static string Limit(string text, int bytes)
     {

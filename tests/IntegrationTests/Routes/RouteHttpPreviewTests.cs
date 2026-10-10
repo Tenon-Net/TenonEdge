@@ -58,7 +58,7 @@ public sealed class RouteHttpPreviewTests
 
     [Theory]
     [InlineData("redacted", "preview.http.payload.redacted")]
-    [InlineData("large", "preview.http.sample.truncated")]
+    [InlineData("large", "preview.http.payload.tooLarge")]
     [InlineData("invalid", "preview.http.payload.invalidJson")]
     public async Task UnsafeOrIncompleteSamplesAreNotUsedForRouteCalculation(string kind, string code)
     {
@@ -71,16 +71,53 @@ public sealed class RouteHttpPreviewTests
         var body = kind switch
         {
             "redacted" => """{"password":"fixture-secret","value":42}""",
-            "large" => JsonSerializer.Serialize(new { value = 42, padding = new string('x', 40000) }),
+            "large" => JsonSerializer.Serialize(new { value = 42, padding = new string('x', 1024 * 1024) }),
             _ => "not-json"
         };
-        var peer = Reply(source, body);
+        var peer = Reply(source, body, allowDisconnect: kind == "large");
         using var response = await client.PostJsonAsync(Endpoint, request, Token);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var text = await response.Content.ReadAsStringAsync(Token);
         Assert.Contains(code, text, StringComparison.Ordinal);
         Assert.DoesNotContain("fixture-secret", text, StringComparison.Ordinal);
         Assert.DoesNotContain("succeededPaths", text, StringComparison.Ordinal);
+        await peer.WaitAsync(TimeSpan.FromSeconds(5), Token);
+    }
+
+    [Theory]
+    [InlineData(40000)]
+    [InlineData(700000)]
+    public async Task FullHttpBodyBeyondDisplayBudgetReachesRawPointerMapping(int padding)
+    {
+        using var source = new TcpListener(IPAddress.Loopback, 0);
+        using var output = new TcpListener(IPAddress.Loopback, 0);
+        source.Start();
+        output.Start();
+        await using var factory = new TenonEdgeApplicationFactory();
+        var request = Seed(factory.Services, Port(source), Port(output));
+        request = request with
+        {
+            Graph = request.Graph with
+            {
+                Nodes = [.. request.Graph.Nodes,
+                    new("map", "transform.map", 1, "Map", JsonSerializer.Deserialize<JsonElement>(
+                        """{"rules":[{"target":"value","sourcePath":"/tail","type":"integer","required":true}]}"""))],
+                Edges = [new("in", "map"), new("map", "out")]
+            }
+        };
+        TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
+        using var client = await factory.CreateLoggedInClientAsync("operator", Token);
+        var peer = Reply(source, "{\"value\":1,\"padding\":\"" + new string('x', padding) + "\",\"tail\":9223372036854775807}");
+        using var response = await client.PostJsonAsync(Endpoint, request, Token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var bytes = await response.Content.ReadAsByteArrayAsync(Token);
+        Assert.True(bytes.Length <= 65536);
+        using var json = JsonDocument.Parse(bytes);
+        var result = json.RootElement.GetProperty("result");
+        Assert.Equal(1, result.GetProperty("succeededPaths").GetInt32());
+        Assert.Equal("""{"result":9223372036854775807}""",
+            result.GetProperty("paths")[0].GetProperty("output").GetProperty("body").GetString());
+        Assert.False(output.Pending());
         await peer.WaitAsync(TimeSpan.FromSeconds(5), Token);
     }
 
@@ -151,7 +188,7 @@ public sealed class RouteHttpPreviewTests
             [new("in", "out")], new([]));
         return new(input.Version, graph, input.Input.Id);
     }
-    private static async Task Reply(TcpListener listener, string body)
+    private static async Task Reply(TcpListener listener, string body, bool allowDisconnect = false)
     {
         using var socket = await listener.AcceptTcpClientAsync(Token);
         var stream = socket.GetStream();
@@ -161,6 +198,8 @@ public sealed class RouteHttpPreviewTests
         { }
         var bytes = Encoding.UTF8.GetBytes(body);
         await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Length: {bytes.Length}\r\n\r\n"), Token);
-        await stream.WriteAsync(bytes, Token);
+        try
+        { await stream.WriteAsync(bytes, Token); }
+        catch (IOException) when (allowDisconnect) { } // declared oversize body may be rejected before it is read
     }
 }

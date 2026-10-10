@@ -2864,6 +2864,26 @@ Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故�
 
 未更新常驻调试部署，未推送、发布或进行真实设备验收。最近输入子场景已接通，但跨版本应用/清理、HTTP/MQTT 完整大报文桥接、MQTT/上游时间诊断元数据、完整输出/映射/入队调试与 T3 总体验收仍未完成。
 
+### 2.145 T3-05 HTTP 完整现场消息桥接（2026-10-10）
+
+接续 §2.144，消除 HTTP 路线现场样本依赖诊断展示裁剪的限制；本子项不改变设备诊断展示/推断接口，也不宣称 MQTT 完整消息或应用/回滚已完成。
+
+- HttpReadPreview 新增 ReadSampleAsync，与原 RunAsync 共用同一规范化配置校验、串行共享会话、凭证解析、出站策略、期限及失败分类。完整样本要求正式的 1—1000 字段定义；空字段仍只用于诊断展示/推断，不能绕过正式输入约束。
+- HttpConnectionSession 沿用正式 HttpInputResponse 的 1 MiB、深度 64、UTF-8、状态码与编码限制，获取完整文档后直接调用正式字段/上游时间解码，保留 FieldValue、稀疏质量、真实接收时间与独立 RawJson 副本。路线接口不再从展示字符串二次解析，也不受手工样本 64 KiB 上限误伤；最终路线显示、解码结果及输出报文仍各受既有预算约束。
+- JsonReadSample 与 JsonReadPreview 共用同一敏感内容检查：敏感键及当前请求使用的凭证（含 URL 编码、Basic 编码形式）在完整文档任何位置出现时拒绝整个样本，不仅扫描前 64 KiB。没有因为“完整消息”绕过原有保护。
+- 设备一次读取/批量读取仍返回有界展示；展示截断仍不能进入字段推断。共享会话复用验证同时覆盖正式读取→诊断展示→完整样本→正式读取，不创建第二套 HTTP 客户端。取消/期限到达关闭实际 I/O，不返回半条消息。
+- 更新 HTTP 路线错误文案、API 描述和路线契约；从实际 Release/Development Host 重新导出 OpenAPI。公共类型 JsonReadSampleResult 的 ToString 省略正文，不直接作为管理响应返回。
+
+新增 10 项集成场景：40 KB/700 KB 报文尾部 Pointer 仍能映射精确 int64；大中文字段、坏值质量、未携带字段、有效/无效上游时间与独立原始 JSON；展示前缀之外的敏感键、明文及 Basic 凭证回显拒绝；完整样本取消/期限的真实套接字关闭；空字段在联网前拒绝。扩充共享会话和凭证缺失的既有用例，保留旧诊断展示截断测试。将原先 40 KB 报文被展示预算拒绝的断言改为协议超过 1 MiB 的拒绝，并另测合法大报文成功；不是放宽协议上限。
+
+初轮私有辅助方法被取消令牌末位分析器拦截，调整参数顺序；补充空字段测试时误用同步 Throws 检查 Task 返回方法，被 xUnit 分析器拦截，改为 ThrowsAsync。失败轮分别见 `/tmp/tenonedge-full-http-build.log`、`/tmp/tenonedge-full-http-focused3.log`，不计为通过。补齐空字段门禁前定向 44 项通过（`/tmp/tenonedge-full-http-focused2.log`），最终以全量回归为准。
+
+前端构建、lint、format:check 通过，**219 Vitest 通过，0 失败/跳过**（`/tmp/tenonedge-full-http-web.log`）。重新构建最终 Release Host 后，以 `PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json --grep 'HTTP live sample|route recent samples|route manual preview|route Modbus onsite|route MQTT onsite|route HTTP onsite'` 验证：**8 浏览器场景通过，0 失败/跳过**（`/tmp/tenonedge-full-http-browser-final.log`）。HTTP 路线场景现在真实返回 80 KB padding 加精确 int64，仍只 GET 来源、不 POST 输出、不覆盖手工文本；设备诊断的大报文截断/敏感内容拒绝继续通过。报告门禁 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 通过（`/tmp/tenonedge-full-http-web-final-verified.log`）。最近记录浏览器场景的夹具边界仍按 §2.144，不扩写成真实应用验收。
+
+最终后端全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-full-http-final -v minimal`：**1249 单元 + 1112 集成 = 2361 项通过，0 失败/跳过**（日志 `/tmp/tenonedge-full-http-final.log`）。以 `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-full-http-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对 TRX，通过（`/tmp/tenonedge-full-http-trx-final.log`）。`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-full-http-format-verified.log`），`git diff --check` 通过。环境为 Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2、npm 11.21.0、Chromium 156.0.8078.4；协议证据来自回环测试服务，不是真实设备。
+
+未部署、推送、发布或实物验收。后续仍须完成 MQTT 完整消息桥接、最近缓存样本的敏感内容准入与诊断元数据，以及 T3-06 应用/回滚；现场 HTTP 的敏感扫描证据不能代替运行缓存取样的安全验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
