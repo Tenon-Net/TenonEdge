@@ -106,13 +106,14 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             $"r{target.Revision}", createdBy, expectedDraftVersion: null);
     }
 
-    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion) =>
+    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion, Action<SqlSugarClient>? validate = null) =>
         database.InTransaction(client =>
         {
             ArgumentNullException.ThrowIfNull(document);
             ArgumentException.ThrowIfNullOrWhiteSpace(createdBy);
             if (expectedDraftVersion is not null)
             { ConfigurationDraft.CheckVersion(client, expectedDraftVersion); }
+            validate?.Invoke(client);
             var state = State(client);
             if (state.PendingRevision is { } pending)
             { throw new RuntimeVersionConflictException("runtime.applicationInProgress", pending); }
@@ -206,56 +207,69 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
     /// 有审计记录时在同一事务中写入。种子快照在同一事务中记下种子的内容哈希。
     /// 冻结之后、提交或放弃之前进程退出时不记，下次启动丢弃中断的版本后重新导入同一份种子。
     /// 在线应用指定 markRunning，把新运行标记也放入本事务，避免提交之后仍遗留旧版本标记。
+    /// 人工回滚同时条件替换草稿；并发编辑使替换跳过，不阻止有效版本提交。
     /// </summary>
-    public void Commit(long revision, AuditEntry? auditEntry, string? seedHash = null, bool markRunning = false) => database.InTransaction(client =>
+    /// <returns>是否替换了草稿，不表示提交成败；普通应用或保留并发草稿时为 false，提交失败抛异常。</returns>
+    public bool Commit(long revision, AuditEntry? auditEntry, string? seedHash = null, bool markRunning = false, string? replaceDraftVersion = null)
     {
-        var state = State(client);
-        var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
-            ?? throw new InvalidOperationException($"版本 r{revision} 不存在。");
-        if (state.PendingRevision != revision || snapshot.State != RuntimeSnapshotStates.Pending)
-        { throw new RuntimeVersionConflictException("runtime.pendingMismatch", revision); }
-
-        if (state.EffectiveRevision is { } old && old != revision)
+        var frozen = replaceDraftVersion is null ? null : Load(revision) ?? throw new KeyNotFoundException("配置版本不存在。");
+        var replacement = frozen is null ? null : new ConfigurationReplacement(RequiredDraft(frozen));
+        return database.InTransaction(client =>
         {
-            client.Updateable<RuntimeSnapshotRecord>()
-                .SetColumns(record => record.State == RuntimeSnapshotStates.History)
-                .Where(record => record.Revision == old)
+            var state = State(client);
+            var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
+                ?? throw new InvalidOperationException($"版本 r{revision} 不存在。");
+            if (state.PendingRevision != revision || snapshot.State != RuntimeSnapshotStates.Pending)
+            { throw new RuntimeVersionConflictException("runtime.pendingMismatch", revision); }
+            if ((snapshot.Origin == RuntimeSnapshotOrigins.Rollback) != (replacement is not null) ||
+                frozen is not null && frozen.ContentHash != snapshot.ContentHash)
+            { throw new InvalidOperationException("人工回滚须使用对应的完整草稿检查点提交。"); }
+            if (replacement is not null)
+            { ValidateRollbackReferences(client, RequiredDraft(snapshot)); }
+
+            if (state.EffectiveRevision is { } old && old != revision)
+            {
+                client.Updateable<RuntimeSnapshotRecord>()
+                    .SetColumns(record => record.State == RuntimeSnapshotStates.History)
+                    .Where(record => record.Revision == old)
+                    .ExecuteCommand();
+            }
+
+            var document = RuntimeSnapshotDocument.ReadPlan(snapshot);
+            if (TargetChangeProblem(document) is { } problem)
+            {
+                throw new InvalidOperationException(problem);
+            }
+
+            credentials.InvalidateChangedRecipients(client, document);
+            httpCredentials.InvalidateChangedRecipients(client, document);
+
+            snapshot.State = RuntimeSnapshotStates.Effective;
+            snapshot.ActivatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
+            client.Updateable(snapshot).UpdateColumns(record => new { record.State, record.ActivatedAt }).ExecuteCommand();
+            if (markRunning)
+            { state.RunningRevision = revision; }
+            state.PreviousRevision = state.EffectiveRevision;
+            state.EffectiveRevision = revision;
+            if (state.PendingRevision == revision)
+            {
+                state.PendingRevision = null;
+            }
+
+            state.SeedHash = seedHash ?? state.SeedHash;
+            client.Updateable(state)
+                .UpdateColumns(record => new { record.PreviousRevision, record.EffectiveRevision, record.PendingRevision, record.SeedHash, record.RunningRevision })
                 .ExecuteCommand();
-        }
+            if (auditEntry is not null)
+            {
+                audit.Append(client, auditEntry);
+            }
 
-        var document = RuntimeSnapshotDocument.ReadPlan(snapshot);
-        if (TargetChangeProblem(document) is { } problem)
-        {
-            throw new InvalidOperationException(problem);
-        }
-
-        credentials.InvalidateChangedRecipients(client, document);
-        httpCredentials.InvalidateChangedRecipients(client, document);
-
-        snapshot.State = RuntimeSnapshotStates.Effective;
-        snapshot.ActivatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
-        client.Updateable(snapshot).UpdateColumns(record => new { record.State, record.ActivatedAt }).ExecuteCommand();
-        if (markRunning)
-        { state.RunningRevision = revision; }
-        state.PreviousRevision = state.EffectiveRevision;
-        state.EffectiveRevision = revision;
-        if (state.PendingRevision == revision)
-        {
-            state.PendingRevision = null;
-        }
-
-        state.SeedHash = seedHash ?? state.SeedHash;
-        client.Updateable(state)
-            .UpdateColumns(record => new { record.PreviousRevision, record.EffectiveRevision, record.PendingRevision, record.SeedHash, record.RunningRevision })
-            .ExecuteCommand();
-        if (auditEntry is not null)
-        {
-            audit.Append(client, auditEntry);
-        }
-
-        PruneHistory(client);
-        return true;
-    });
+            var replaced = replacement?.Apply(client, replaceDraftVersion!, time) ?? false;
+            PruneHistory(client);
+            return replaced;
+        });
+    }
 
     /// <summary>
     /// 同一来源、同一内容（自动回滚时为同一回滚目标）在提交前连续中断的次数：导入种子或自动回滚时进程反复崩溃，

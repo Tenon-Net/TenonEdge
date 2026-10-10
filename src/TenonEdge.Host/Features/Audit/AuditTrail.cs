@@ -109,6 +109,8 @@ internal static class AuditActions
     public const string AutoRollback = "runtime.autoRollback";
 
     public const string SnapshotApplied = "runtime.apply";
+
+    public const string SnapshotRolledBack = "runtime.rollback";
 }
 
 internal static class AuditResults

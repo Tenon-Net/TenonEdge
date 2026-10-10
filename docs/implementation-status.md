@@ -3124,6 +3124,29 @@ Linux x64、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖或配置库表�
 
 Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖、迁移、服务注册或后台循环。比较尚未形成完整用户变更清单：字段级展开呈现、点位按设备计数、所有对象修改人/时间、可填写变更说明、接收方影响和平台结构影响仍待补齐；不把对象级比较当作功能 §6.2 完整通过。下一步继续人工回滚的草稿一致性检查与原子替换，再接鉴权端点和 UI。未推送或发布。
 
+### 2.159 T3-06 人工回滚编排与草稿原子替换（2026-10-10）
+
+本批承接 §2.158，接入内部 `RuntimeCoordinator.RollbackAsync`，覆盖 T3-06 / GW-10 / AT-28 / 功能 §6.4 的软件子场景。**仍未开放应用/回滚端点、进度查询或网页按钮，不能据此宣称完整配置产品或中断矩阵通过。**
+
+- 人工回滚与应用共用同一个操作所有者、取消等待语义和准备—双目标检查—静默—提交—激活流程，不新增 HostedService。回滚目标须生效过且仍被保留；开始时确认草稿版本，并比较当前完整草稿与有效检查点，有未应用修改即拒绝，不分配版本。事务外比较后，冻结事务重检草稿、有效版本和目标哈希。
+- 回滚复制目标完整内容为新版本，来源为 `rollback`，不改写历史；提交与成功审计 `runtime.rollback`、有效/上一/pending 指针和运行标记仍在同一事务。提交失败恢复原输入，提交之后不自动退回旧版本。
+- 事务外序列化草稿替换所需的连接、设备、来源、路线及引用索引行。提交时草稿版本未变则按外键顺序整体替换，并分配新草稿版本；已被编辑则完全保留当前草稿。结果的 `DraftReplaced` 明确区分已替换/保留，提交结果不明时不猜测。旧待发记录不重新生成、不撤回，之后的采集按新版本编号。
+- 完整检查点新增可选的**凭证引用连接 ID 列表**，不含密码、令牌、用户名或密文，只记录当前草稿连接的引用；该列表不计为草稿业务差异，凭证保存仍立即生效。人工回滚冻结及提交均检查连接仍存在且身份一致；要求凭证的连接须仍有相同接收方、可解密的当前凭证。HTTP 与 MQTT 都不恢复旧秘密；MQTT 接收方直接使用适配器的规范形式，覆盖主机大小写和 IPv6。
+- 旧 schema 1 没有完整草稿，不能执行本入口的草稿同步回滚；此前缺少凭证引用列表的 schema 2 若含 MQTT/HTTP 连接，也不能假定当时匿名而安全回滚，会明确拒绝并提示重新配置/应用。自动启动保护的既有入口仍保持不改动草稿。本批未宣称解决这些旧快照的完整人工迁移，也未解决有效快照损坏时无法判断草稿一致性的恢复入口；须在公开回滚交互中继续处理。
+- 自查回滚的“草稿无修改”前提时发现 `JsonElement.DeepEquals` 会把数字原文 `1` 与 `1.0` 视为相同。新增定向用例实际得到空差异而失败；现按运行计划既有原文规则比较数字，仍忽略对象属性顺序、保留数组顺序和布局变化，避免回滚把此类编辑当作未修改丢弃。
+
+新增 **13 项场景**：完整草稿/引用索引恢复与新版本、当前秘密不回退、未应用修改拒绝、冻结后编辑保留、替换 SQL 故障的配置/指针/审计全事务回退及重试编号；凭证删除/密文损坏/接收方变化的冻结与提交复核；缺失连接拒绝、旧快照凭证边界、MQTT 大小写/IPv6 规范化；实际模拟输入→SQLite→被拒绝的 HTTP 连接路径上的回滚互斥、并发草稿保留、r1 旧待发记录继续保留且出现 r3 新记录；数字原文差异回归。既有应用所有权用例同时补查回滚入口被互斥拒绝，未另算新增用例。
+
+验证经过与证据：
+
+- 初版 `dotnet build TenonEdge.sln --no-restore -v minimal` 通过（`/tmp/tenonedge-rollback-build.log`）；阶段针对性 20 项、16 项分别通过（`/tmp/tenonedge-rollback-focused.log`、`/tmp/tenonedge-rollback-lifecycle.log`）。
+- 数字原文回归先执行 `dotnet test tests/IntegrationTests --no-restore --filter FullyQualifiedName~NumericLiteralTextChangesAreNotDiscardedAsAnUnchangedDraft -v minimal`，**0 通过、1 失败**：期望修改，实际差异集合为空（`/tmp/tenonedge-rollback-literal-red.log`）。修正比较后，含回滚、生命周期、历史、检查点及版本存储的针对性 **46 项通过，0 失败/跳过**（`/tmp/tenonedge-rollback-focused-final.log`）。
+- 首轮格式门禁报告检查点文件的 using 排序（`/tmp/tenonedge-rollback-format.log`），已调整；只用 whitespace 格式化事务缩进与初始化器换行，不进行语义自动修复。
+- 最终 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-rollback-regression --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1233 集成 = 2491 项通过，0 失败/跳过**（`/tmp/tenonedge-rollback-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-rollback-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-rollback-trx.log`）。
+- 最终 `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-rollback-format-final.log`），`git diff --check` 通过。
+
+Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖或配置库迁移，没有推送/发布。HTTP 出站在生命周期用例中被测试连接器拒绝，MQTT 凭证用例只校验本地接收方/解密，不是 Broker 或设备联调；SQL 故障和同进程宿主测试不代替 §7.4 逐点强杀/断电矩阵。后续继续完整确认清单、变更说明和操作进度、旧版本/损坏有效快照恢复边界、鉴权端点及浏览器配置→应用→回滚验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -77,10 +77,12 @@ internal static class RuntimeSnapshotStates
     public const string NotEffective = "notEffective";
 }
 
-/// <summary>版本的来源。人工回滚在 T3-06 后续接入。</summary>
+/// <summary>版本的来源；人工回滚同样生成新版本，不改写目标历史。</summary>
 internal static class RuntimeSnapshotOrigins
 {
     public const string Apply = "apply";
+
+    public const string Rollback = "rollback";
 
     /// <summary>启动时从种子快照文件导入（T1）。</summary>
     public const string Seed = "seed";

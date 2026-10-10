@@ -33,13 +33,45 @@ internal static class ConfigurationDiff
             {
                 var existed = old.TryGetValue(id, out var left);
                 var exists = current.TryGetValue(id, out var right);
-                if (existed && exists && JsonElement.DeepEquals(left.Value, right.Value))
+                if (existed && exists && Same(left.Value, right.Value))
                 { continue; }
                 var display = exists ? right : left;
                 changes.Add(new(kind, id, display.Key, display.DeviceId, !existed ? "added" : !exists ? "removed" : "modified",
                     existed ? left.Value : null, exists ? right.Value : null));
             }
         }
+    }
+
+    // 与运行计划的数字原文规则一致；1 与 1.0 不能在回滚前被误判为“草稿未改动”。
+    private static bool Same(JsonElement left, JsonElement right)
+    {
+        if (left.ValueKind != right.ValueKind)
+        { return false; }
+        if (left.ValueKind == JsonValueKind.Number)
+        { return left.GetRawText() == right.GetRawText(); }
+        if (left.ValueKind == JsonValueKind.Object)
+        {
+            var properties = right.EnumerateObject().ToDictionary(property => property.Name, property => property.Value, StringComparer.Ordinal);
+            foreach (var property in left.EnumerateObject())
+            {
+                if (!properties.Remove(property.Name, out var value) || !Same(property.Value, value))
+                { return false; }
+            }
+            return properties.Count == 0;
+        }
+        if (left.ValueKind == JsonValueKind.Array)
+        {
+            if (left.GetArrayLength() != right.GetArrayLength())
+            { return false; }
+            var values = right.EnumerateArray();
+            foreach (var value in left.EnumerateArray())
+            {
+                if (!values.MoveNext() || !Same(value, values.Current))
+                { return false; }
+            }
+            return true;
+        }
+        return JsonElement.DeepEquals(left, right);
     }
 }
 

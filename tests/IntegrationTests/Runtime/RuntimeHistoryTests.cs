@@ -154,6 +154,20 @@ public sealed class RuntimeHistoryTests
         Assert.Equal("{\"value\":2}", change.After.Value.GetProperty("simulator").GetProperty("sampleJson").GetString());
     }
 
+    [Fact]
+    public void NumericLiteralTextChangesAreNotDiscardedAsAnUnchangedDraft()
+    {
+        var graph = new RouteGraph(1, [new("node", "input.simulator", 1, "Source", JsonSerializer.Deserialize<JsonElement>("{\"literal\":1}"))], [], new([]));
+        var route = new RouteDraft(7, "route", "Route", null, false, graph, null, 0);
+        var before = new ConfigurationCheckpoint("v1", [], [], [], [route]);
+        var after = before with
+        {
+            Routes = [route with { Graph = graph with
+        { Nodes = [graph.Nodes[0] with { Config = JsonSerializer.Deserialize<JsonElement>("{\"literal\":1.0}") }] } }]
+        };
+        Assert.Equal("modified", Assert.Single(ConfigurationDiff.Between(before, after)).Change);
+    }
+
     [Theory]
     [InlineData(0, 20)]
     [InlineData(1, 0)]

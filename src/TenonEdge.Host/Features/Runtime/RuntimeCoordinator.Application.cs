@@ -4,7 +4,7 @@ using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.Host.Features.Runtime;
 
-internal sealed record RuntimeApplicationResult(long Revision, bool Committed, bool Activated, string Code, bool RecoveryPending = false);
+internal sealed record RuntimeApplicationResult(long Revision, bool Committed, bool Activated, string Code, bool RecoveryPending = false, bool? DraftReplaced = null);
 internal sealed class RuntimeApplicationBusyException : InvalidOperationException;
 
 internal sealed partial class RuntimeCoordinator
@@ -13,7 +13,16 @@ internal sealed partial class RuntimeCoordinator
 
     /// <summary>拥有完整在线应用操作；只接收确认过的草稿版本及已解析的操作人，不接收 HttpContext 或任意运行计划。
     /// 取消只结束调用方等待。冻结之后，即使请求断开也完成提交或放弃/恢复；停机先等本操作结束。</summary>
-    public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken)
+    public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken) =>
+        StartApplication(null, expectedDraftVersion, account, sourceIp, cancellationToken);
+
+    public Task<RuntimeApplicationResult> RollbackAsync(long targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
+        return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, cancellationToken);
+    }
+
+    private Task<RuntimeApplicationResult> StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(account);
@@ -29,20 +38,32 @@ internal sealed partial class RuntimeCoordinator
         Task<RuntimeApplicationResult> task;
         // 不把请求的 AsyncLocal/HttpContextAccessor 或数据库客户端上下文带入所拥有的后台流程。
         using (ExecutionContext.SuppressFlow())
-        { task = Task.Run(() => ApplyOwnedAsync(expectedDraftVersion, account, sourceIp, operation)); }
+        { task = Task.Run(() => ApplyOwnedAsync(targetRevision, expectedDraftVersion, account, sourceIp, operation)); }
         return task.WaitAsync(cancellationToken);
     }
 
-    private async Task<RuntimeApplicationResult> ApplyOwnedAsync(string expectedDraftVersion, string account, string? sourceIp, TaskCompletionSource operation)
+    private async Task<RuntimeApplicationResult> ApplyOwnedAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, TaskCompletionSource operation)
     {
         try
         {
-            var snapshot = drafts.ReadCompilation(expectedDraftVersion, CancellationToken.None);
-            var document = RoutePlanCompiler.Compile(snapshot, CancellationToken.None).Document;
-            var revision = versions.FreezeDraft(document, expectedDraftVersion, account);
+            RuntimePlanDocument document;
+            long revision;
+            if (targetRevision is { } target)
+            {
+                var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account);
+                document = rollback.Document;
+                revision = rollback.Revision;
+            }
+            else
+            {
+                var snapshot = drafts.ReadCompilation(expectedDraftVersion, CancellationToken.None);
+                document = RoutePlanCompiler.Compile(snapshot, CancellationToken.None).Document;
+                revision = versions.FreezeDraft(document, expectedDraftVersion, account);
+            }
             PreparedPlan? prepared = null;
             var quiesced = false;
             var committed = false;
+            bool? draftReplaced = null;
             var code = "runtime.prepareFailed";
             try
             {
@@ -61,8 +82,11 @@ internal sealed partial class RuntimeCoordinator
                 if (versions.TargetChangeProblem(document) is not null)
                 { throw new ApplicationRejectedException(code); }
                 code = "runtime.commitFailed";
-                versions.Commit(revision, new AuditEntry(AuditActions.SnapshotApplied, AuditResults.Success, account, sourceIp,
-                    Target(revision), $"应用已确认的草稿版本 {expectedDraftVersion}。"), markRunning: true);
+                var replaced = versions.Commit(revision, new AuditEntry(targetRevision is null ? AuditActions.SnapshotApplied : AuditActions.SnapshotRolledBack,
+                    AuditResults.Success, account, sourceIp, Target(revision), targetRevision is null
+                        ? $"应用已确认的草稿版本 {expectedDraftVersion}。" : $"回滚到版本 r{targetRevision}，生成新版本；已发送数据不撤回。"),
+                    markRunning: true, replaceDraftVersion: targetRevision is null ? null : expectedDraftVersion);
+                draftReplaced = targetRevision is null ? null : replaced;
                 committed = true;
                 lock (_lock)
                 {
@@ -80,7 +104,7 @@ internal sealed partial class RuntimeCoordinator
                     _reason = null;
                     ResetStabilityClock();
                 }
-                return new(revision, true, true, "runtime.applied");
+                return new(revision, true, true, targetRevision is null ? "runtime.applied" : "runtime.rolledBack", DraftReplaced: draftReplaced);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
@@ -103,7 +127,7 @@ internal sealed partial class RuntimeCoordinator
                         _activeIsStable = false;
                     }
                     Fail("新版本已提交，但运行时激活未完成；请检查运行单元，不自动回滚。");
-                    return new(revision, true, false, "runtime.activationFailed");
+                    return new(revision, true, false, "runtime.activationFailed", DraftReplaced: draftReplaced);
                 }
                 if (exception is ApplicationRejectedException rejected)
                 { code = rejected.Code; }

@@ -1,0 +1,72 @@
+using SqlSugar;
+using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Connections;
+using TenonEdge.Host.Features.Credentials;
+using TenonEdge.Host.Storage;
+
+namespace TenonEdge.Host.Features.Runtime;
+
+internal sealed record RuntimeRollbackPreparation(long Revision, RuntimePlanDocument Document);
+
+internal sealed partial class RuntimeVersionStore
+{
+    public RuntimeRollbackPreparation FreezeManualRollback(long targetRevision, string expectedDraftVersion, string account)
+    {
+        var captured = database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, expectedDraftVersion);
+            var state = State(client);
+            var effective = state.EffectiveRevision is { } revision ? RequiredSnapshot(client, revision)
+                : throw new InvalidOperationException("尚无有效配置，不能回滚。");
+            var target = RequiredSnapshot(client, targetRevision);
+            if (target.State is not (RuntimeSnapshotStates.Effective or RuntimeSnapshotStates.History))
+            { throw new InvalidOperationException("只有生效过的版本可以回滚。"); }
+            return (Effective: effective, Target: target, Draft: ConfigurationCheckpoint.Read(client, expectedDraftVersion));
+        });
+        if (ConfigurationDiff.Between(RequiredDraft(captured.Effective), captured.Draft).Length != 0)
+        { throw new DraftWriteException("configuration.unappliedChanges"); }
+        var draft = RequiredDraft(captured.Target);
+        var document = RuntimeSnapshotDocument.ReadPlan(captured.Target);
+        var revision = FreezeCore(new(captured.Target.SchemaVersion, captured.Target.Content, captured.Target.ContentHash),
+            RuntimeSnapshotOrigins.Rollback, $"r{targetRevision}", account, expectedDraftVersion, client =>
+            {
+                if (State(client).EffectiveRevision != captured.Effective.Revision ||
+                    RequiredSnapshot(client, targetRevision).ContentHash != captured.Target.ContentHash)
+                { throw new RuntimeVersionConflictException("runtime.versionChanged", targetRevision); }
+                ValidateRollbackReferences(client, draft);
+            });
+        return new(revision, document);
+    }
+
+    private void ValidateRollbackReferences(SqlSugarClient client, ConfigurationCheckpoint draft)
+    {
+        if (draft.CredentialConnections is null && draft.Connections.Any(connection => connection.Kind is ConnectionKind.Mqtt or ConnectionKind.Http))
+        { throw new NotSupportedException("该旧检查点没有凭证引用记录，不能确认安全回滚；请通过草稿重新配置并应用。"); }
+        var requiredCredentials = draft.CredentialConnections?.ToHashSet() ?? [];
+        foreach (var connection in draft.Connections)
+        {
+            var current = ConnectionDraftStore.Read(client, connection.Id);
+            if (current is null || current.Kind != connection.Kind || current.Key != connection.Key)
+            { throw new DraftWriteException("configuration.rollbackConnectionMissing"); }
+            if (!requiredCredentials.Contains(connection.Id))
+            { continue; }
+            var available = connection.Kind switch
+            {
+                ConnectionKind.Http => client.Queryable<HttpCredentialRecord>().InSingle(connection.Id) is { ProtectedSecret: not null } http &&
+                    http.Recipient == connection.Http!.BaseAddress && httpCredentials.ResolveHttp(connection.Id, http.Recipient) is not null,
+                ConnectionKind.Mqtt => client.Queryable<MqttCredentialRecord>().InSingle(connection.Id) is { ProtectedPassword: not null } mqtt &&
+                    mqtt.Recipient == new MqttConnectionSettings
+                    {
+                        ConnectionId = connection.Id,
+                        Host = connection.Mqtt!.Host,
+                        Port = connection.Mqtt.Port,
+                        Tls = connection.Mqtt.Tls
+                    }.Recipient && credentials.ResolveMqtt(connection.Id, mqtt.Recipient) is not null,
+                _ => false,
+            };
+            if (!available)
+            { throw new DraftWriteException("configuration.rollbackCredentialMissing"); }
+        }
+    }
+}

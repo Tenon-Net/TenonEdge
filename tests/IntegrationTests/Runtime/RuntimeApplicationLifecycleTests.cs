@@ -40,6 +40,8 @@ public sealed class RuntimeApplicationLifecycleTests
             Assert.Null(versions.ReadPointers().EffectiveRevision);
             await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
                 await coordinator.ApplyDraftAsync(saved.Version, "other", null, Token));
+            await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
+                await coordinator.RollbackAsync(1, saved.Version, "other", null, Token));
             var drafts = factory.Services.GetRequiredService<RouteDraftStore>();
             var edited = drafts.Write(saved.Route.Id, new(saved.Version, saved.Route.Key, saved.Route.Name, false, saved.Route.Graph), "editor", null);
             cancellation.Cancel();
@@ -103,6 +105,48 @@ public sealed class RuntimeApplicationLifecycleTests
         Assert.Equal("runtime.targetChangeBlocked", rejected.Code);
         Assert.Equal(1, input.Runs); // First target check rejects without interrupting old collection.
         Assert.Equal(1, coordinator.Runtime.ActiveRevision);
+    }
+
+    [Fact]
+    public async Task ManualRollbackSharesOwnershipPreservesConcurrentDraftAndKeepsOldPendingRecords()
+    {
+        using var data = TemporaryDirectory.Create();
+        using var input = new ControlledInput();
+        await using var factory = Create(data.Path, input);
+        var saved = Seed(factory);
+        var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
+        Assert.True((await coordinator.ApplyDraftAsync(saved.Version, "operator", null, Token)).Activated);
+        await OutputPipelineTests.UntilAsync(() => input.Runs == 1 && coordinator.Runtime.Deliveries.GetStatus().CommittedRecords > 0);
+        var devices = factory.Services.GetRequiredService<DeviceDraftStore>();
+        var device = Assert.Single(devices.Read().Devices);
+        var edited = devices.Write(device.Id, new(saved.Version, device.Key, "Applied second", DeviceKind.Simulator), "operator", null);
+        Assert.True((await coordinator.ApplyDraftAsync(edited.Version, "operator", null, Token)).Activated);
+        await OutputPipelineTests.UntilAsync(() => input.Runs == 2);
+        input.BlockPreparation = true;
+        var rollback = coordinator.RollbackAsync(1, edited.Version, "operator", null, Token);
+        try
+        {
+            await input.Preparing.Task.WaitAsync(Deadline, Token);
+            Assert.Equal(2, input.Runs);
+            Assert.Equal(2, coordinator.Runtime.ActiveRevision);
+            await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
+                await coordinator.ApplyDraftAsync(edited.Version, "other", null, Token));
+            await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
+                await coordinator.RollbackAsync(1, edited.Version, "other", null, Token));
+            var concurrent = devices.Write(device.Id, new(edited.Version, device.Key, "Concurrent draft", DeviceKind.Simulator), "editor", null);
+            input.ReleasePreparation.Set();
+            var result = await rollback.WaitAsync(Deadline, Token);
+            Assert.True(result.Committed && result.Activated);
+            Assert.False(result.DraftReplaced);
+            Assert.Equal(concurrent.Version, devices.Read().Version);
+            Assert.Equal("Concurrent draft", Assert.Single(devices.Read().Devices).Name);
+            Assert.Equal(3, coordinator.Runtime.ActiveRevision);
+            var connection = saved.Route.Graph.Nodes.Single(node => node.Type == "output.http").Config.GetProperty("connectionId").GetInt64();
+            await OutputPipelineTests.UntilAsync(() => coordinator.Runtime.Deliveries.ReadPending(connection, 0, 100).Any(row => row.Revision == 3));
+            Assert.Contains(coordinator.Runtime.Deliveries.ReadPending(connection, 0, 100), row => row.Revision == 1);
+            Assert.Equal(3, input.Runs);
+        }
+        finally { input.ReleasePreparation.Set(); }
     }
 
     [Fact]
@@ -205,7 +249,7 @@ public sealed class RuntimeApplicationLifecycleTests
     {
         private readonly SimulatorInputFactory _source = new();
         public string Kind => _source.Kind;
-        public bool BlockPreparation { get; init; }
+        public bool BlockPreparation { get; set; }
         public bool RejectPreparation { get; set; }
         public bool BlockFirstStop { get; init; }
         public bool ProduceOnlyOnFirstStop { get; init; }
