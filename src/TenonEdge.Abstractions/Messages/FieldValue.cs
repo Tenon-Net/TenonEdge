@@ -133,7 +133,9 @@ public sealed class FieldValue : IEquatable<FieldValue>
     }
 
     /// <summary>写出 JSON 值。</summary>
-    public void WriteTo(Utf8JsonWriter writer)
+    public void WriteTo(Utf8JsonWriter writer) => WriteValue(writer, flushSegments: false);
+
+    private void WriteValue(Utf8JsonWriter writer, bool flushSegments)
     {
         ArgumentNullException.ThrowIfNull(writer);
         switch (_representation)
@@ -164,11 +166,60 @@ public sealed class FieldValue : IEquatable<FieldValue>
                 {
                     writer.WriteStringValueSegment(remaining[..segmentLength], isFinalSegment: false);
                     remaining = remaining[segmentLength..];
+                    if (flushSegments)
+                    { writer.Flush(); }
                 }
 
                 writer.WriteStringValueSegment(remaining, isFinalSegment: true);
                 break;
         }
+    }
+
+    /// <summary>
+    /// 写出诊断快照 [内部表示, 值]，不同于业务 JSON。显式类型标签保证整数符号、
+    /// decimal 小数位数及 float32/float64 在重放时不被 JSON 推断改写。
+    /// </summary>
+    public void WriteSnapshot(Utf8JsonWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteStartArray();
+        writer.WriteStringValue(_representation switch
+        {
+            Representation.Boolean => "boolean",
+            Representation.Int64 => "int64",
+            Representation.UInt64 => "uint64",
+            Representation.Decimal => "decimal",
+            Representation.Double => "float64",
+            Representation.Single => "float32",
+            _ => "string",
+        });
+        WriteValue(writer, flushSegments: true);
+        writer.WriteEndArray();
+    }
+
+    /// <summary>读取内部诊断快照；不猜测类型，不接受非有限浮点或未知标签。</summary>
+    public static FieldValue ReadSnapshot(JsonElement snapshot)
+    {
+        if (snapshot.ValueKind != JsonValueKind.Array || snapshot.GetArrayLength() != 2 ||
+            snapshot[0].ValueKind != JsonValueKind.String)
+        { throw new JsonException("字段快照格式无效。"); }
+        var value = snapshot[1];
+        try
+        {
+            return snapshot[0].GetString() switch
+            {
+                "boolean" => FromBoolean(value.GetBoolean()),
+                "int64" => FromInt64(value.GetInt64()),
+                "uint64" => FromUInt64(value.GetUInt64()),
+                "decimal" => FromDecimal(value.GetDecimal()),
+                "float64" => FromDouble(value.GetDouble()),
+                "float32" => FromSingle(value.GetSingle()),
+                "string" => FromString(value.GetString() ?? throw new JsonException("字段快照不能为 null。")),
+                _ => throw new JsonException("未知的字段快照表示。"),
+            };
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException or ArgumentException)
+        { throw new JsonException("字段快照值无效。"); }
     }
 
     /// <summary>

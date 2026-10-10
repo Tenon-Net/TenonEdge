@@ -2801,6 +2801,25 @@ Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故�
 
 本批未执行集成或浏览器回归；未修改前端或现有运行路径，因此不把此前报告重新计作新增覆盖。未推送、发布或部署。下一步继续完成输入消息编码与真实捕获链路，最近消息预览仍标记未接入。
 
+### 2.142 T3-05 最近消息预览前置：有界无损输入快照（2026-10-10）
+
+接续 §2.141，只完成消息编码/解码与类型化缓存捕获入口，仍未注册运行时输入捕获或开放最近消息 API/UI。本子项属于 AT-29/功能 §4.2—§4.3 的样本保存基础，不代表完整 T3-05/T3-07 验收。
+
+- FieldValue 增加显式表示标签的诊断快照接口，不改业务 JSON 输出格式。int64/uint64、decimal 小数位数、float32/float64、浮点负零、布尔和文本不靠 JSON 数字推断恢复。未知标签、类型不符、越界整数/decimal 和非有限浮点均拒绝。
+- InputMessageSnapshot 内部格式带版本，保存原消息 GUID、输入/设备键、两种时间及时间来源、完整类型字段、稀疏质量和可选原始 JSON；原始 JSON 的数字文本和定位结构不被重新推断。
+- 编码使用计数流，只保留 64 KiB 前缀并计算完整编码字节数；长字段、键和原始 JSON 文本分段写入/Flush，不先创建完整转义后的快照。大小指的是 **内部诊断快照编码**，不是网络报文字节数。原始 JSON 获取文本有现有 1 MiB 上界，缓存不持有该临时文本或消息对象。
+- RuntimeMessageCache.CaptureInput 校验输入对象与消息设备/输入身份、运行版本；编码在同一个缓存锁内串行执行，限制同时存活的工作缓冲。预裁剪入口保留原始大小，截断记录仍不能取作执行样本。当前版本/运行中状态的外部门禁仍须接入，不能仅凭本入口认为输入正在运行。
+- 新增 40 项单元用例覆盖所有表示、数值极值/小数位数/负零、跨段代理对、上游时间与文档释放后的原始 JSON、身份错误、未知快照版本、截断拒绝、完整编码长度，以及 2 MiB 长字段/长键编码的当前线程分配小于 512 KiB。后者为软件分配回归检查，不是全系统堆/设备容量验收。
+
+环境：Linux x64、.NET SDK 10.0.401，Debug 配置。实际验证：
+- 初轮定向 54 通过/1 失败：JSON 解析抛出 JsonException 派生类型，测试错误地要求精确基类；改用 ThrowsAny<JsonException>，仍要求截断样本解析失败，不放宽业务条件。日志 `/tmp/tenonedge-snapshot-focused.log`。
+- `dotnet test tests/UnitTests --no-restore --logger trx --results-directory /tmp/tenonedge-snapshot-unit-results -v minimal`：**1240 单元通过，0 失败/跳过**（`/tmp/tenonedge-snapshot-unit.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-snapshot-unit-results --require TenonEdge.UnitTests` 核对通过（`/tmp/tenonedge-snapshot-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-snapshot-format-verify.log`）。
+- `dotnet test tests/IntegrationTests --no-restore --logger trx --results-directory /tmp/tenonedge-snapshot-integration-results -v minimal`：**1092 集成通过，0 失败/跳过**（`/tmp/tenonedge-snapshot-integration.log`）；同一 TRX 脚本以 `--require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-snapshot-integration-trx.log`）。本轮后端合计 **2332 通过**，不以既往测试结果代替本轮执行。
+
+尚未修改前端，浏览器未重跑；真实输入捕获、运行生命周期门禁、最近消息 API/UI、输出/映射/入队诊断仍未实现。未部署、推送、发布或实物验证。下一步接入真实输入通道，覆盖无输出来源，并验证诊断失败不改变原有在途预算或持久接管语义。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

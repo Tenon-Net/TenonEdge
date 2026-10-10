@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Unicode;
+using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 
 namespace TenonEdge.Runtime.Diagnostics;
@@ -52,10 +53,28 @@ public sealed class RuntimeMessageCache
     }
 
     internal long Capture(RuntimeUnitId objectId, long revision, Guid sourceMessageId, ReadOnlySpan<byte> body)
+        => Capture(objectId, revision, sourceMessageId, body, body.Length);
+
+    internal long CaptureInput(RuntimeUnitId objectId, long revision, EdgeMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(objectId);
+        ArgumentNullException.ThrowIfNull(message);
+        if (!objectId.Kind.StartsWith("input.", StringComparison.Ordinal) ||
+            objectId.Key != $"{message.DeviceKey}/{message.InputId}" || revision <= 0)
+        { throw new ArgumentException("输入诊断样本身份无效。"); }
+        // 同一个缓存只允许一次编码，工作缓冲不会按输入数量无限放大。
+        lock (_lock)
+        {
+            var snapshot = InputMessageSnapshot.Encode(message);
+            return Capture(objectId, revision, message.SourceMessageId, snapshot.Prefix, snapshot.OriginalBytes);
+        }
+    }
+
+    internal long Capture(RuntimeUnitId objectId, long revision, Guid sourceMessageId, ReadOnlySpan<byte> body, int originalBytes)
     {
         ArgumentNullException.ThrowIfNull(objectId);
         if (!(objectId.Kind.StartsWith("input.", StringComparison.Ordinal) || objectId.Kind.StartsWith("output.", StringComparison.Ordinal)) ||
-            revision <= 0 || sourceMessageId == Guid.Empty || !Utf8.IsValid(body))
+            revision <= 0 || sourceMessageId == Guid.Empty || originalBytes < body.Length || !Utf8.IsValid(body))
         { throw new ArgumentException("调试记录身份、版本或 UTF-8 内容无效。"); }
         var length = Math.Min(_recordLimit, body.Length);
         // length is the first excluded byte. Retreat to a rune boundary if it points into a sequence.
@@ -75,7 +94,7 @@ public sealed class RuntimeMessageCache
             // Eviction may have removed the now-empty bucket, including during global eviction.
             if (!_objects.TryGetValue(objectId, out bucket))
             { _objects.Add(objectId, bucket = new Bucket()); }
-            var entry = new Entry(sequence, objectId, revision, sourceMessageId, _time.GetUtcNow(), body.Length, body[..length].ToArray());
+            var entry = new Entry(sequence, objectId, revision, sourceMessageId, _time.GetUtcNow(), originalBytes, body[..length].ToArray());
             entry.GlobalNode = _ordered.AddLast(entry);
             entry.ObjectNode = bucket.Records.AddLast(entry);
             bucket.Charged += charge;
