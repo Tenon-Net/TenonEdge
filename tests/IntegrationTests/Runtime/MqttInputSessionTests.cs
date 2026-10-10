@@ -308,9 +308,10 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput(bool restore)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput(bool restore, bool blockedOtherGroup)
     {
         var broker = fixture.Require();
         using var data = TemporaryDirectory.Create();
@@ -347,8 +348,12 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             topic = topic + "/out",
             inputs = PlanInputKeys,
         }));
-        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, planAdapters: [adapters]);
-        await using var plan = runtime.Prepare(OutputPipelineTests.Plan(Input("one"), Input("two"), output));
+        using var blocked = new RecoveryBlockedInputFactory();
+        await using var runtime = RuntimeTesting.CreateRuntime([blocked], data.Path, planAdapters: [adapters],
+            options: new RuntimeOptions { UnitStopTimeout = blockedOtherGroup ? TimeSpan.FromSeconds(1) : TimeSpan.FromSeconds(5) });
+        RuntimeUnitPlan[] extra = blockedOtherGroup
+            ? [new(RuntimeUnitId.Create("input.blocked", "other/input"), JsonSerializer.SerializeToElement(new { }))] : [];
+        await using var plan = runtime.Prepare(OutputPipelineTests.Plan([Input("one"), Input("two"), output, .. extra]));
         Assert.Empty(plan.Failures);
         Assert.Equal(0, connector.Connections);
         var (peer, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewId()), Token);
@@ -380,9 +385,11 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             Assert.Equal(1, connector.Connections);
             if (restore)
             {
-                Assert.True((await runtime.QuiesceInputsAsync(Token)).Succeeded);
+                if (blockedOtherGroup)
+                { await blocked.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), Token); }
+                Assert.Equal(!blockedOtherGroup, (await runtime.QuiesceInputsAsync(Token)).Succeeded);
                 var recovery = await runtime.RestoreInputsAsync();
-                Assert.True(recovery.Succeeded);
+                Assert.Equal(!blockedOtherGroup, recovery.Succeeded);
                 Assert.True(recovery.Restarted);
                 Assert.Equal(1, recovery.Revision);
                 await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref subscriptions) == 4);
@@ -393,6 +400,12 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
                 Assert.Equal(99, payload.RootElement.GetProperty("values").GetProperty("value").GetInt64());
                 await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref confirmations) == 3 && runtime.Deliveries.ReadPending(1, 0, 10).Count == 0);
                 Assert.Equal(2, connector.Connections);
+            }
+            if (blockedOtherGroup)
+            {
+                Assert.Equal(1, Volatile.Read(ref blocked.Runs)); // MQTT resumed while the unrelated old loop was still alive.
+                blocked.Release.TrySetResult();
+                await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref blocked.Runs) == 2);
             }
             await runtime.StopAsync(Token);
             Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);

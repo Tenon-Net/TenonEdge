@@ -53,4 +53,6 @@ public interface IOutputAdapterFactory
 {
     string Kind { get; }
     IOutputTarget Build(RuntimeUnitPlan plan);
+    /// <summary>可能共享输入会话的稳定恢复组；只有计划存在同组输入时才共同恢复。只读静态配置，不做 I/O。</summary>
+    RuntimeUnitId? RecoveryGroup(RuntimeUnitPlan plan) => null;
 }

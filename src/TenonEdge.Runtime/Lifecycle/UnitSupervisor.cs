@@ -155,11 +155,11 @@ internal sealed class UnitSupervisor
     }
 
     /// <summary>丢弃已完整退出且没有待启动登记的旧状态；切换时不能隐藏活跃或停止超时的实例。</summary>
-    public void ForgetStopped()
+    public void ForgetStopped(Func<RuntimeUnitId, bool>? predicate = null)
     {
         lock (_lock)
         {
-            foreach (var id in _units.Where(pair => !pair.Value.IsAlive && !_pending.ContainsKey(pair.Key)).Select(pair => pair.Key).ToArray())
+            foreach (var id in _units.Where(pair => !pair.Value.IsAlive && !_pending.ContainsKey(pair.Key) && (predicate is null || predicate(pair.Key))).Select(pair => pair.Key).ToArray())
             { _units.Remove(id); }
         }
     }

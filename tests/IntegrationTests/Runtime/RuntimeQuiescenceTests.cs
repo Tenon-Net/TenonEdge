@@ -91,16 +91,17 @@ public sealed class RuntimeQuiescenceTests
             Assert.NotNull(blocked.BlockedBy);
             Assert.Equal(1, input.Builds);
             input.Release.TrySetResult();
-            await UntilAsync(() => runtime.GetStatus().Units.Single(unit => unit.Id == Input().Id).State == RuntimeUnitState.Stopped);
-            Assert.True((await runtime.RestoreInputsAsync()).Succeeded);
+            // 不再调用恢复入口：旧实例退出后应由运行时拥有的恢复任务重新构建。
             await UntilAsync(() => input.Runs == 2);
             Assert.Equal(2, input.Builds);
         }
         finally { input.Release.TrySetResult(); }
     }
 
-    [Fact]
-    public async Task CoupledSenderRecoveryDeletesPreviouslyAcknowledgedRecordWithoutResendingIt()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CoupledSenderRecoveryDeletesPreviouslyAcknowledgedRecordWithoutResendingIt(bool rebuildFails)
     {
         using var data = TemporaryDirectory.Create();
         var output = new OutputFactory { SendStatus = OutputSendStatus.Ack };
@@ -119,6 +120,13 @@ public sealed class RuntimeQuiescenceTests
         Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
         command.CommandText = "DROP TRIGGER fail_recovery_delete";
         command.ExecuteNonQuery();
+        if (rebuildFails)
+        {
+            output.RejectBuild = true;
+            Assert.False((await runtime.RestoreInputsAsync()).Succeeded);
+            Assert.Equal(1, output.Sends);
+            output.RejectBuild = false;
+        }
         Assert.True((await runtime.RestoreInputsAsync()).Succeeded);
         await UntilAsync(() => output.Sends >= 2 && runtime.Deliveries.ReadPending(1, 0, 10).Count == 0);
         Assert.Equal(2, output.Sends); // One ACK in each input generation, never a third send for the old record.
@@ -283,7 +291,9 @@ public sealed class RuntimeQuiescenceTests
         public int Sends;
         public ConcurrentBag<long> Disposed { get; } = [];
         public ConcurrentBag<long> Created { get; } = [];
-        public IOutputTarget Build(RuntimeUnitPlan plan) => new Target(this, plan);
+        public bool RejectBuild { get; set; }
+        public IOutputTarget Build(RuntimeUnitPlan plan) => RejectBuild ? throw new InvalidOperationException("injected-build-failure") : new Target(this, plan);
+        public RuntimeUnitId? RecoveryGroup(RuntimeUnitPlan plan) => plan.Configuration.GetProperty("coupled").GetBoolean() ? Input().Id : null;
         private sealed class Target(OutputFactory factory, RuntimeUnitPlan plan) : IOutputTarget
         {
             public RuntimeUnitId Id => plan.Id;

@@ -90,6 +90,7 @@ internal sealed record PreparedUnit(
     string? Error,
     Func<IRuntimeUnit>? Rebuild,
     Channel<EdgeMessage>? Channel,
-    InputReadStatus? Reads);
+    InputReadStatus? Reads,
+    RuntimeUnitId? RecoveryGroup = null);
 
-internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Mapping.FieldMappingPipeline? Mapping, TenonEdge.Runtime.Outputs.OutputSenderState State);
+internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Mapping.FieldMappingPipeline? Mapping, TenonEdge.Runtime.Outputs.OutputSenderState State, RuntimeUnitId? RecoveryGroup);

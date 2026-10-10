@@ -2981,6 +2981,24 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 本批不新增依赖、不更改常驻部署、不推送或发布；README 继续明确网页应用与回滚未完成。
 
+### 2.152 T3-06 共享会话分组恢复与超时后自动恢复（2026-10-10）
+
+承接 §2.151，补齐其中明确留下的“某组超时时先恢复其他组，旧实例退出后自动恢复”运行时子场景，关联 GW-10、AT-28。仍只恢复原有效版本，不提交新版本、不读取新草稿，不把本批当成完整应用/回滚验收。
+
+- 输入/输出工厂可声明只读取静态配置的稳定恢复组；输入默认独立，MQTT 同一连接的输入及耦合输出属于同组。分组在构建之前取得，构建失败也保留可确定的分组；同一共享发送连接不接受互相矛盾的恢复组。工厂元数据不解密、不建实例、不联网。
+- Runtime 保留每个输入的分组和分发器身份。恢复时并行尝试各组的停止/排空，避免等待时间按组数累加；完整退出的组重新构建自己的通道和计划范围协议上下文，未退出组不创建新实例。同组 MQTT 输入和耦合发送者必须全部退出后才重建。
+- 局部恢复复用其他组的输出格式定义及独立发送者，跨组路线仍按原有效定义分发；恢复 A 不会再次停止已经恢复的 B。构建失败的输出不进入新分发器，但待提交 ACK/失败/隔离状态另存，修复后恢复也不能重复发送已确认记录。
+- 第一次尝试后仍有停止/排空超时的组，由 Runtime 持有、等待并回收的恢复任务继续尝试；该任务与其他生命周期操作共用互斥门，没有第二个 HostedService 或运行时实例。停机和新的静默请求撤销旧恢复任务并等待退出，旧实例迟到结束后不能私自复活旧一代采集。
+- 恢复期间的结构性构建故障保持按单元显示，不循环打断同组已经可用的单元；修复后显式重试只处理失败组，不停止已恢复的其他组。Runtime 方法目前是内部编排基础，尚无对应网页入口。
+
+针对性验证：两组输入中 A 的一个实例不可取消，B 先恢复且继续向两个输出入队；A 中已停止的兄弟输入仍等待共享组，释放旧实例后 A 自动恢复，全程记录保留 r1，独立发送者不重建；停机/再次静默均撤销恢复；自动恢复遇到构建故障后不反复重建，手工修复重试不打断 B。真实 Mosquitto 子场景在无关输入仍阻塞时，两个 MQTT 输入与共享输出已经重新订阅并继续发送；随后无关输入退出后自动恢复。另扩展 ACK 删库故障场景：恢复构建失败、再修复后仍不重发原 ACK 记录。
+
+首次新测试有 1 项失败：替身把“循环已进入”误当成“已进入不可取消闸门”，停止可能先取消它的 ProduceAsync；已增加闸门到达信号，不改变产品停止行为迎合测试（`/tmp/tenonedge-group-recovery-focused.log`）。修正后针对性 **18 通过、0 失败/跳过**（`/tmp/tenonedge-group-recovery-focused3.log`）。这是临时 SQLite、受控阻塞替身及真实软件 Broker 验证，不是实物或 §7.4 各事务边界的进程终止测试。首轮全量出现 1 项新分组测试等待计数超时（`/tmp/tenonedge-group-recovery-regression.log`，1258 单元通过；集成 1168 通过、1 失败）。检查用例发现仅等待了阻塞输入，未建立另外两路初始循环已经运行的前置，却直接等待 healthy 的第二次运行；补为先等待初始 6 条投递提交及两发送者创建，并增加失败时的计数/状态诊断。修正后针对性仍为 18 通过（`/tmp/tenonedge-group-recovery-focused4.log`）；4 个分组用例连续执行 10 轮，40 次执行全部通过、无跳过（`/tmp/tenonedge-group-recovery-repeat.log`）。这些复跑不改写前一次失败记录，也不把未捕获的旧运行计数当作已观测证据。
+
+最终命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-group-recovery-regression-final -v minimal`：**1258 单元 + 1169 集成 = 2427 项通过，0 失败/跳过**（`/tmp/tenonedge-group-recovery-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-group-recovery-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-group-recovery-trx.log`）；`dotnet format --verify-no-changes --no-restore`（`/tmp/tenonedge-group-recovery-format-final2.log`）与 `git diff --check` 通过。Linux x64、.NET SDK 10.0.401/runtime 10.0.12，未新增依赖。
+
+后续仍需：新有效版本在线切换、贯穿冻结至激活的应用/回滚锁、Host 编排及稳定计时更新、完整草稿检查点/历史/比较/回滚、变更清单和网页应用，以及 §7.4 进程中断矩阵。没有应用端点或页面，不能通过网页独立配置并启动采集路线。未改变常驻部署、推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

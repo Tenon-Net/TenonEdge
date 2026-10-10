@@ -29,7 +29,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     private readonly Dictionary<string, IInputUnitFactory> _inputFactories;
     private readonly Dictionary<string, IOutputAdapterFactory> _outputFactories;
     private readonly IRuntimePlanAdapterProvider[] _planAdapterProviders;
-    private readonly List<(Channel<EdgeMessage> Channel, InputDispatcherState State)> _dispatchers = [];
+    private readonly List<(RuntimeUnitId InputId, Channel<EdgeMessage> Channel, InputDispatcherState State)> _dispatchers = [];
     private readonly DeliveryCache _deliveries;
     private readonly IClockSyncStatus _clock;
     private readonly IRuntimeEventSink _events;
@@ -53,6 +53,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     private TaskCompletionSource? _operation;
     private IReadOnlyList<PreparedOutput> _activeOutputs = [];
     private RuntimePlan? _activeDefinition;
+    private readonly Dictionary<RuntimeUnitId, PreparedUnit> _activeInputs = [];
+    private readonly Dictionary<RuntimeUnitId, RuntimeUnitId> _outputRecoveryGroups = [];
 
     public RuntimeHost(
         IEnumerable<IInputUnitFactory> inputFactories,
@@ -148,7 +150,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     /// </summary>
     public PreparedPlan Prepare(RuntimePlan plan) => PrepareCore(plan, null);
 
-    private PreparedPlan PrepareCore(RuntimePlan plan, IReadOnlyDictionary<long, OutputSenderState>? senderStates)
+    private PreparedPlan PrepareCore(RuntimePlan plan, IReadOnlyDictionary<long, OutputSenderState>? senderStates,
+        HashSet<RuntimeUnitId>? selectedInputs = null, Dictionary<RuntimeUnitId, PreparedOutput>? retainedOutputs = null, HashSet<RuntimeUnitId>? selectedOutputs = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         var inputFactories = new Dictionary<string, IInputUnitFactory>(_inputFactories, StringComparer.Ordinal);
@@ -171,12 +174,20 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         var units = new List<PreparedUnit>(plan.Units.Length);
         foreach (var unit in plan.Units.Where(unit => !unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
         {
-            units.Add(PrepareUnit(unit, activation.Task, inputFactories, plan.Revision));
+            if (selectedInputs is null || selectedInputs.Contains(unit.Id))
+            { units.Add(PrepareUnit(unit, activation.Task, inputFactories, plan.Revision)); }
         }
 
         var outputs = new List<PreparedOutput>();
         foreach (var unit in plan.Units.Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
         {
+            if (selectedOutputs is not null && !selectedOutputs.Contains(unit.Id))
+            {
+                if (retainedOutputs?.TryGetValue(unit.Id, out var retained) == true)
+                { outputs.Add(retained); }
+                continue;
+            }
+            RuntimeUnitId? recoveryGroup = null;
             try
             {
                 if (!outputFactories.TryGetValue(unit.Id.Kind, out var factory))
@@ -184,8 +195,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new PlanValidationException("未注册输出模块。");
                 }
 
+                var candidateGroup = factory.RecoveryGroup(unit);
+                recoveryGroup = candidateGroup is not null && units.Any(input => input.RecoveryGroup == candidateGroup) ? candidateGroup : null;
                 var mapping = FieldMappingConfiguration.ParsePipeline(unit.Configuration);
                 var target = factory.Build(unit);
+                if (target.QuiesceWithInputs && recoveryGroup is null)
+                { throw new PlanValidationException("共用输入会话的输出必须声明对应的恢复分组。"); }
                 if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
                 { throw new PlanValidationException("输出格式化预算无效或超过全局在途预算。"); }
                 if (target.MinimumSerializationReservationBytes < 0 || target.MinimumSerializationReservationBytes > _options.InFlightBytes)
@@ -196,7 +211,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 }
 
                 var shared = outputs.FirstOrDefault(output => output.Target.ConnectionId == target.ConnectionId);
-                if (shared is not null && !shared.Target.CanShareSenderWith(target))
+                if (shared is not null && (shared.RecoveryGroup != recoveryGroup || !shared.Target.CanShareSenderWith(target)))
                 {
                     throw new PlanValidationException("同一连接的输出参数不一致或协议尚不支持共享发送者。");
                 }
@@ -208,7 +223,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
                 foreach (var input in target.Inputs)
                 {
-                    if (!units.Any(prepared => prepared.Id.Key == input && prepared.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
+                    if (!plan.Units.Any(definition => definition.Id.Key == input && definition.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
                     {
                         throw new PlanValidationException("输出引用了不存在的输入。");
                     }
@@ -222,13 +237,13 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var state = shared?.State ?? senderStates?.GetValueOrDefault(target.ConnectionId) ?? new OutputSenderState();
                 IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
                     new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
-                outputs.Add(new PreparedOutput(target, mapping, state));
+                outputs.Add(new PreparedOutput(target, mapping, state, recoveryGroup));
                 if (shared is null)
-                { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null)); }
+                { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null, recoveryGroup)); }
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                units.Add(new PreparedUnit(unit.Id, null, DescribeBuildFailure(exception), null, null, null));
+                units.Add(new PreparedUnit(unit.Id, null, DescribeBuildFailure(exception), null, null, null, recoveryGroup));
             }
         }
 
@@ -284,6 +299,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             _activeRevision = prepared.Revision;
             _activeOutputs = prepared.Outputs;
             _activeDefinition = prepared.Definition;
+            foreach (var input in prepared.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
+            { _activeInputs[input.Id] = input; }
+            foreach (var output in prepared.Outputs.Where(output => output.RecoveryGroup is not null))
+            { _outputRecoveryGroups[output.Target.Id] = output.RecoveryGroup!; }
+            foreach (var output in prepared.Units.Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal) && unit.RecoveryGroup is not null))
+            { _outputRecoveryGroups[output.Id] = output.RecoveryGroup!; }
         }
 
         try
@@ -302,7 +323,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     }
 
                     lock (_lock)
-                    { _activeRevision = null; _activeOutputs = []; _activeDefinition = null; }
+                    { _activeRevision = null; _activeOutputs = []; _activeDefinition = null; _activeInputs.Clear(); _outputRecoveryGroups.Clear(); }
                     throw new DeliveryStoreException("启动目标隔离未提交，运行计划没有启动；修复存储后重启以重新核对。");
                 }
             }
@@ -373,7 +394,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
                     .ToDictionary(output => output.Target.Id, output => output.Mapping!);
                 IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
-                _dispatchers.Add((unit.Channel, state));
+                _dispatchers.Add((unit.Id, unit.Channel, state));
                 _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
             }
         }
@@ -411,6 +432,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         {
             // 已开始的本地生命周期操作由运行时拥有；先等其退出，避免停机和激活/排空交错。
             await operation;
+            await CancelRecoveryAsync();
             await StopCoreAsync(cancellationToken);
             owner.SetResult();
         }
@@ -491,15 +513,17 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             return instance;
         }
 
+        var group = id;
         try
         {
-            return new PreparedUnit(id, Build(), null, Build, channel, reads);
+            group = factory.RecoveryGroup(unit) ?? throw new PlanValidationException("输入恢复分组不能为空。");
+            return new PreparedUnit(id, Build(), null, Build, channel, reads, group);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             if (exception is not RuntimeUnitBuildException and not PlanValidationException)
             { LogUnexpectedBuildError(_logger, id.ToString()); }
-            return Failed(id, DescribeBuildFailure(exception));
+            return new PreparedUnit(id, null, DescribeBuildFailure(exception), null, null, null, group);
         }
 
         static PreparedUnit Failed(RuntimeUnitId id, string error) => new(id, null, error, null, null, null);

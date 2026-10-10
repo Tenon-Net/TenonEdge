@@ -11,6 +11,7 @@ public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvi
     private readonly string _defaultClientPrefix = "tenon-" + (gatewayNodeId is null ? Guid.NewGuid() : Guid.Parse(gatewayNodeId)).ToString("N");
 
     public string Kind => "output.mqtt";
+    public RuntimeUnitId? RecoveryGroup(RuntimeUnitPlan plan) => MqttPlanAdapters.RecoveryGroup(plan.Configuration.GetProperty("connectionId").GetInt64());
 
     // 仅计划范围装配使用；默认输出独立路径不访问或修改输入组。
     internal Func<MqttOutputSettings, MqttConnectionGroup?>? InputGroups { get; init; }

@@ -35,6 +35,9 @@ internal sealed class MqttPlanAdapters
         { InputGroups = ResolveOutputGroup };
     }
 
+    internal static RuntimeUnitId RecoveryGroup(long connectionId) => RuntimeUnitId.Create("connection.mqtt",
+        connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     public IInputUnitFactory InputFactory { get; }
     public IOutputAdapterFactory OutputFactory { get; }
 
@@ -93,6 +96,7 @@ internal sealed class MqttPlanAdapters
     {
         public string Kind => "input.mqtt";
         public bool UsesDurableHandoff => true;
+        public RuntimeUnitId RecoveryGroup(RuntimeUnitPlan unit) => MqttPlanAdapters.RecoveryGroup(unit.Configuration.GetProperty("connectionId").GetInt64());
         public IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context)
         {
             try

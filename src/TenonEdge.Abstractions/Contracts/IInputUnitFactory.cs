@@ -22,6 +22,10 @@ public interface IInputUnitFactory
     /// <summary>需要持久接管结果的输入；没有输出时运行时也须消费并返回明确拒绝，不能让确认永久等待。</summary>
     bool UsesDurableHandoff => false;
 
+    /// <summary>必须共同停止/恢复的接收会话标识。默认每个输入独立；共享接收会话的协议返回稳定的组标识。
+    /// 只读取静态配置，不构建实例、不解密凭证、不做 I/O；即使随后 Build 失败，仍保留可确定的分组。</summary>
+    RuntimeUnitId RecoveryGroup(RuntimeUnitPlan unit) => unit.Id;
+
     /// <summary>构建一个尚未运行的输入单元。</summary>
     IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context);
 }

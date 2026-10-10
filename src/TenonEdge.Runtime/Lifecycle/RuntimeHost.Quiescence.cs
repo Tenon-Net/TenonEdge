@@ -28,7 +28,10 @@ public sealed partial class RuntimeHost
     private async Task<RuntimeQuiescenceResult> QuiesceOwnedAsync(TaskCompletionSource operation)
     {
         try
-        { return await QuiesceCoreAsync(); }
+        {
+            await CancelRecoveryAsync();
+            return await QuiesceCoreAsync();
+        }
         finally { CompleteOperation(operation); }
     }
 
@@ -39,6 +42,12 @@ public sealed partial class RuntimeHost
         try
         {
             _quiescenceRequested = _activeRevision is not null;
+            _recoveryGroups.Clear();
+            _waitingRecoveryGroups.Clear();
+            _recoveryFailures.Clear();
+            _recoveryGroups.UnionWith(_activeInputs.Values.Select(input => input.RecoveryGroup ?? input.Id));
+            foreach (var output in _activeOutputs)
+            { _recoverySenderStates[output.Target.ConnectionId] = output.State; }
             var timeout = _options.UnitStopTimeout;
             var stopped = await _supervisor.StopAsync(id => id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal), timeout, CancellationToken.None);
             if (stopped.Count != 0)
