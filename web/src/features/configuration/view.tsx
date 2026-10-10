@@ -1,11 +1,38 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ApiError } from '../../api/errors'
+import { ErrorMessage } from '../auth/error-message'
 import {
     fieldChanges,
     operationOutcome,
     type Operation,
     type Review,
 } from './api'
+
+export function ConfigurationError({ error }: { error: unknown }) {
+    const { t } = useTranslation()
+    const problem = error instanceof ApiError ? error.problem : null
+    const code =
+        problem &&
+        typeof problem === 'object' &&
+        'code' in problem &&
+        typeof problem.code === 'string' &&
+        /^[a-zA-Z][a-zA-Z0-9.]{0,99}$/.test(problem.code)
+            ? problem.code
+            : null
+    return (
+        <>
+            <ErrorMessage error={error} />
+            {code && (
+                <p role="alert">
+                    {t(`configuration.errors.${code.replaceAll('.', '_')}`, {
+                        defaultValue: code,
+                    })}
+                </p>
+            )}
+        </>
+    )
+}
 
 export function ReviewContents({ review }: { review: Review }) {
     const { t } = useTranslation()
@@ -116,7 +143,11 @@ export function OperationCard({ operation }: { operation: Operation }) {
     )
 }
 
-function ChangeDetails({ change }: { change: Review['changes'][number] }) {
+export function ChangeDetails({
+    change,
+}: {
+    change: Review['changes'][number]
+}) {
     const { t } = useTranslation()
     const [open, setOpen] = useState(false)
     const fields = useMemo(

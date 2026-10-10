@@ -5,7 +5,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { queryClient, useSession } from '../../lib/session'
 import { Button } from '../../components/ui/button'
-import { ErrorMessage } from '../auth/error-message'
 import { reviewIsCurrent, type Review } from './api'
 import {
     configuration,
@@ -13,7 +12,8 @@ import {
     summaryKey,
     useDraftSummary,
 } from './queries'
-import { OperationCard, ReviewContents } from './view'
+import { ConfigurationError, OperationCard, ReviewContents } from './view'
+import { ConfigurationHistory } from './history'
 
 type Form = {
     review: Review | null
@@ -62,7 +62,10 @@ export function ConfigurationPage() {
         !summary.isError &&
         reviewIsCurrent(form.review, summary.data)
     const review = useMutation({
-        mutationFn: () => configuration.review(summary.data!.version),
+        mutationFn: (target?: string) =>
+            target == null
+                ? configuration.review(summary.data!.version)
+                : configuration.reviewRollback(target, summary.data!.version),
         onSuccess: (value) =>
             store.setState({
                 review: value,
@@ -75,11 +78,11 @@ export function ConfigurationPage() {
         mutationFn: () => {
             if (!form.review || !fresh || busy)
                 throw new Error('configuration-review-stale')
-            return configuration.apply(
-                form.review,
-                form.description,
-                form.confirmed,
-            )
+            return (
+                form.review.targetRevision == null
+                    ? configuration.apply
+                    : configuration.rollback
+            )(form.review, form.description, form.confirmed)
         },
         onSuccess: (value) => {
             store.setState({
@@ -100,21 +103,34 @@ export function ConfigurationPage() {
     })
     const discard = useMutation({
         mutationFn: () => configuration.discard(summary.data!, true),
-        onSuccess: () => {
+        onSuccess: async () => {
             store.setState({
                 review: null,
                 confirmed: false,
                 notice: 'discarded',
                 uncertain: false,
             })
-            void queryClient.invalidateQueries()
+            await queryClient.invalidateQueries({ refetchType: 'none' })
+            await queryClient.refetchQueries({ queryKey: summaryKey })
+            await queryClient.refetchQueries({
+                predicate: (query) => query.queryKey[0] !== summaryKey[0],
+                type: 'active',
+            })
         },
         onError: () => store.setState({ uncertain: true }),
     })
     useEffect(() => {
         if (!operation.data?.finishedAt) return
-        void queryClient.invalidateQueries({ queryKey: summaryKey })
-        void queryClient.invalidateQueries({ queryKey: operationsKey })
+        // These reads share a bounded per-session budget. Finish the summary
+        // before refreshing detail/comparison, rather than starting all three together.
+        void queryClient.invalidateQueries({ queryKey: summaryKey }).then(() =>
+            Promise.all([
+                queryClient.invalidateQueries({ queryKey: operationsKey }),
+                queryClient.invalidateQueries({
+                    queryKey: ['configuration-history'],
+                }),
+            ]),
+        )
     }, [operation.data?.finishedAt])
     const waiting = apply.isPending || discard.isPending || review.isPending
     const unavailable =
@@ -132,6 +148,9 @@ export function ConfigurationPage() {
             operations.refetch(),
             ...(form.operationId ? [operation.refetch()] : []),
         ])
+        await queryClient.invalidateQueries({
+            queryKey: ['configuration-history'],
+        })
     }
     return (
         <div className="mx-auto max-w-6xl space-y-6">
@@ -141,7 +160,7 @@ export function ConfigurationPage() {
             <p className="text-sm text-muted-foreground">
                 {t('configuration.historyBoundary')}
             </p>
-            <ErrorMessage error={summary.error || operations.error} />
+            <ConfigurationError error={summary.error || operations.error} />
             <section className="space-y-3 rounded border p-4">
                 <p>
                     {summary.data?.changeCount == null || summary.isError
@@ -212,7 +231,7 @@ export function ConfigurationPage() {
                     )}
                 </div>
             </section>
-            <ErrorMessage
+            <ConfigurationError
                 error={review.error || apply.error || discard.error}
             />
             {form.uncertain && (
@@ -228,11 +247,21 @@ export function ConfigurationPage() {
             )}
             {form.review && canEdit && (
                 <section
-                    aria-label={t('configuration.reviewTitle')}
+                    aria-label={t(
+                        form.review.targetRevision == null
+                            ? 'configuration.reviewTitle'
+                            : 'configuration.rollbackTitle',
+                        { revision: form.review.targetRevision },
+                    )}
                     className="space-y-4 rounded border p-4"
                 >
                     <h2 className="text-xl font-semibold">
-                        {t('configuration.reviewTitle')}
+                        {t(
+                            form.review.targetRevision == null
+                                ? 'configuration.reviewTitle'
+                                : 'configuration.rollbackTitle',
+                            { revision: form.review.targetRevision },
+                        )}
                     </h2>
                     {!fresh && <p role="alert">{t('configuration.stale')}</p>}
                     <ReviewContents review={form.review} />
@@ -267,7 +296,11 @@ export function ConfigurationPage() {
                                 })
                             }
                         />
-                        {t('configuration.confirm')}
+                        {t(
+                            form.review.targetRevision == null
+                                ? 'configuration.confirm'
+                                : 'configuration.rollbackConfirm',
+                        )}
                     </label>
                     <Button
                         disabled={
@@ -280,7 +313,11 @@ export function ConfigurationPage() {
                         }
                         onClick={() => apply.mutate()}
                     >
-                        {t('configuration.apply')}
+                        {t(
+                            form.review.targetRevision == null
+                                ? 'configuration.apply'
+                                : 'configuration.rollback',
+                        )}
                     </Button>
                 </section>
             )}
@@ -294,7 +331,7 @@ export function ConfigurationPage() {
                     </h2>
                     {operation.error && (
                         <>
-                            <ErrorMessage error={operation.error} />
+                            <ConfigurationError error={operation.error} />
                             <p role="alert">
                                 {t('configuration.unavailableOperation')}
                             </p>
@@ -308,6 +345,27 @@ export function ConfigurationPage() {
                     )}
                 </section>
             )}
+            <ConfigurationHistory
+                summary={
+                    summary.isError || summary.isFetching
+                        ? undefined
+                        : summary.data
+                }
+                canEdit={canEdit}
+                rollbackDisabled={
+                    unavailable ||
+                    form.uncertain ||
+                    !summary.data?.comparisonAvailable ||
+                    summary.data?.changeCount == null ||
+                    Number(summary.data?.changeCount) !== 0
+                }
+                onReview={(target) => {
+                    apply.reset()
+                    discard.reset()
+                    store.setState({ confirmed: false })
+                    review.mutate(target)
+                }}
+            />
             <section className="space-y-3">
                 <h2 className="text-xl font-semibold">
                     {t('configuration.operations')}

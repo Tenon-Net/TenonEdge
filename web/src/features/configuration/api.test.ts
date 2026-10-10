@@ -6,6 +6,9 @@ import {
     fieldChanges,
     createConfigurationApi,
     decodeReview,
+    decodeVersion,
+    decodeComparison,
+    revisionId,
     operationOutcome,
     reviewIsCurrent,
     type DraftSummary,
@@ -275,5 +278,319 @@ describe('field-level differences', () => {
         expect(fieldChanges('{"__proto__":1}', '{}').items).toEqual([
             { path: '/__proto__', before: '1', after: '—' },
         ])
+    })
+})
+
+const largeRevision = '9223372036854775807'
+const versionMetadata = {
+    revision: largeRevision,
+    schemaVersion: 2,
+    state: 'history',
+    origin: 'apply',
+    originDetail: null,
+    createdBy: 'operator',
+    createdAt: 1791590400000,
+    activatedAt: 1791590401000,
+    isStable: true,
+    notEffectiveReason: null,
+    changeDescription: 'Exact retained version',
+}
+const versionBody = JSON.stringify({
+    version: versionMetadata,
+    contentHash: 'sha256:' + 'b'.repeat(64),
+    planHash: hash,
+    draft: { constant: 'EXACT' },
+    plan: { constant: 'EXACT' },
+    warnings: [],
+}).replaceAll('"EXACT"', '9223372036854775807')
+const comparisonBody =
+    '{"beforeRevision":9223372036854775807,"afterRevision":2,"draftVersion":null,"changes":' +
+    reviewBody.slice(
+        reviewBody.indexOf('"changes":') + 10,
+        reviewBody.indexOf(',"points":'),
+    ) +
+    ',"points":[]}'
+const rollbackReviewBody = reviewBody.replace(
+    '"effectiveRevision":null',
+    '"effectiveRevision":2,"targetRevision":9223372036854775807',
+)
+
+describe('persistent history and confirmed rollback', () => {
+    it('validates canonical positive Int64 revisions without rounding or accepting alternate encodings', () => {
+        expect(revisionId(1)).toBe('1')
+        expect(revisionId(largeRevision)).toBe(largeRevision)
+        for (const invalid of [
+            0,
+            -1,
+            1.2,
+            Number(largeRevision),
+            '',
+            '01',
+            '1e2',
+            '1.0',
+            '+1',
+            ' 1',
+            '9223372036854775808',
+        ]) {
+            expect(() => revisionId(invalid)).toThrow('configuration-revision')
+        }
+    })
+    it('preserves exact full checkpoint and compiled plan values while keeping their separate hashes', () => {
+        const detail = decodeVersion(versionBody)
+        expect(detail.version.revision).toBe(largeRevision)
+        expect(detail.draftText).toBe('{"constant":9223372036854775807}')
+        expect(detail.planText).toBe('{"constant":9223372036854775807}')
+        expect(detail.contentHash).toBe('sha256:' + 'b'.repeat(64))
+        expect(detail.planHash).toBe(hash)
+        expect(detail.version.changeDescription).toBe('Exact retained version')
+        const legacy = decodeVersion(
+            versionBody
+                .replace('"schemaVersion":2', '"schemaVersion":1')
+                .replace(
+                    '"draft":{"constant":9223372036854775807}',
+                    '"draft":null',
+                )
+                .replace(
+                    '"warnings":[]',
+                    '"warnings":["configuration.legacyComparisonUnavailable"]',
+                ),
+        )
+        expect(legacy.draftText).toBe('null')
+        expect(legacy.warnings).toEqual([
+            'configuration.legacyComparisonUnavailable',
+        ])
+    })
+    it('rejects malformed history contents and unavailable full objects instead of inventing them', () => {
+        expect(() =>
+            decodeVersion(versionBody.replace('"plan":', '"other":')),
+        ).toThrow()
+        expect(() =>
+            decodeVersion(
+                versionBody.replace(
+                    '"schemaVersion":2',
+                    '"schemaVersion":null',
+                ),
+            ),
+        ).toThrow()
+        expect(() =>
+            decodeVersion(
+                versionBody.replace('"warnings":[]', '"warnings":[1]'),
+            ),
+        ).toThrow()
+        expect(() =>
+            decodeVersion(
+                versionBody.replace(
+                    '"constant":9223372036854775807',
+                    '"constant":1,"constant":2',
+                ),
+            ),
+        ).toThrow()
+        expect(() =>
+            decodeComparison(
+                '{"beforeRevision":1,"afterRevision":2,"changes":[],"points":{}}',
+            ),
+        ).toThrow()
+    })
+    it('decodes comparison as read-only content rather than a fabricated preflight', () => {
+        const comparison = decodeComparison(comparisonBody)
+        expect(comparison.beforeRevision).toBe(largeRevision)
+        expect(comparison.afterRevision).toBe('2')
+        expect(comparison.changes[0].afterText).toContain(
+            '"constant":9223372036854775807',
+        )
+        expect(comparison).not.toHaveProperty('preflightPassed')
+        expect(comparison).not.toHaveProperty('version')
+    })
+    it('uses exact cursor and revision strings in real OpenAPI transport without loading contents in the list', async () => {
+        const requests: string[] = []
+        const f = fixture(async (input) => {
+            const url = new URL(new Request(input).url)
+            requests.push(url.pathname + url.search)
+            return new Response(
+                url.pathname.endsWith('/versions')
+                    ? JSON.stringify([versionMetadata])
+                    : versionBody,
+            )
+        })
+        const rows = await f.api.versions(largeRevision)
+        expect(rows[0].revision).toBe(largeRevision)
+        await f.api.version(largeRevision)
+        expect(requests).toEqual([
+            '/api/edge-admin/v1/configuration/versions?beforeRevision=9223372036854775807&limit=20',
+            '/api/edge-admin/v1/configuration/versions/9223372036854775807',
+        ])
+    })
+    it('binds comparison results to both requested versions or the precise draft version', async () => {
+        const requests: string[] = []
+        const f = fixture(async (input) => {
+            const url = new URL(new Request(input).url)
+            requests.push(url.pathname + url.search)
+            return new Response(
+                url.pathname.endsWith('/compare-draft')
+                    ? comparisonBody.replace(
+                          '"afterRevision":2,"draftVersion":null',
+                          '"afterRevision":null,"draftVersion":"draft-1"',
+                      )
+                    : comparisonBody,
+            )
+        })
+        await f.api.compare(largeRevision, 2)
+        await f.api.compareDraft(largeRevision, 'draft-1')
+        expect(requests).toEqual([
+            '/api/edge-admin/v1/configuration/versions/9223372036854775807/compare/2',
+            '/api/edge-admin/v1/configuration/versions/9223372036854775807/compare-draft?expectedVersion=draft-1',
+        ])
+    })
+    it.each(['detail', 'comparison', 'draft', 'review'] as const)(
+        'rejects a mismatched %s response instead of labelling it as the selected version',
+        async (kind) => {
+            const f = fixture(
+                async () =>
+                    new Response(
+                        kind === 'detail'
+                            ? versionBody
+                            : kind === 'review'
+                              ? rollbackReviewBody
+                              : comparisonBody,
+                    ),
+            )
+            const call =
+                kind === 'detail'
+                    ? f.api.version(1)
+                    : kind === 'comparison'
+                      ? f.api.compare(1, 2)
+                      : kind === 'draft'
+                        ? f.api.compareDraft(largeRevision, 'draft-1')
+                        : f.api.reviewRollback(1, 'draft-1')
+            await expect(call).rejects.toThrow('configuration-response')
+        },
+    )
+    it('freezes the reviewed target and routes the explicit confirmed request to rollback, with CSRF and the returned operation ID', async () => {
+        const requests: { path: string; body: unknown; csrf: string | null }[] =
+            []
+        const f = fixture(async (input) => {
+            const request = new Request(input)
+            const path = new URL(request.url).pathname
+            requests.push({
+                path,
+                body: JSON.parse(await request.text()),
+                csrf: request.headers.get('X-CSRF-Token'),
+            })
+            return new Response(
+                path.endsWith('/review')
+                    ? rollbackReviewBody
+                    : JSON.stringify({ ...operation, kind: 'rollback' }),
+                { status: path.endsWith('/rollback') ? 202 : 200 },
+            )
+        })
+        const review = await f.api.reviewRollback(largeRevision, 'draft-1')
+        const accepted = await f.api.rollback(
+            review,
+            'Restore retained configuration',
+            true,
+        )
+        expect(accepted.id).toBe(operation.id)
+        expect(requests).toEqual([
+            {
+                path: '/api/edge-admin/v1/configuration/versions/9223372036854775807/review',
+                body: { expectedVersion: 'draft-1' },
+                csrf: 'fixture-csrf',
+            },
+            {
+                path: '/api/edge-admin/v1/configuration/versions/9223372036854775807/rollback',
+                body: {
+                    expectedVersion: 'draft-1',
+                    expectedEffectiveRevision: '2',
+                    expectedPlanHash: hash,
+                    confirmed: true,
+                    changeDescription: 'Restore retained configuration',
+                },
+                csrf: 'fixture-csrf',
+            },
+        ])
+    })
+    it('cannot apply a rollback review or rollback a draft review, or write without explicit confirmation', async () => {
+        const fetcher = vi.fn(async () => new Response('{}'))
+        const f = fixture(fetcher)
+        const rollback = decodeReview(rollbackReviewBody)
+        await expect(f.api.apply(rollback, '', true)).rejects.toThrow(
+            'configuration-wrong-operation',
+        )
+        await expect(
+            f.api.rollback(decodeReview(reviewBody), '', true),
+        ).rejects.toThrow('configuration-wrong-operation')
+        await expect(f.api.rollback(rollback, '', false)).rejects.toThrow(
+            'configuration-confirmation',
+        )
+        expect(fetcher).not.toHaveBeenCalled()
+    })
+    it.each(['network', 'conflict'] as const)(
+        'never replays a rollback after %s failure',
+        async (kind) => {
+            const fetcher = vi.fn(async () => {
+                if (kind === 'network') throw new TypeError('response-lost')
+                return new Response(
+                    '{"code":"configuration.rollbackCredentialMissing"}',
+                    { status: 409 },
+                )
+            })
+            await expect(
+                fixture(fetcher).api.rollback(
+                    decodeReview(rollbackReviewBody),
+                    '',
+                    true,
+                ),
+            ).rejects.toThrow()
+            expect(fetcher).toHaveBeenCalledTimes(1)
+        },
+    )
+    it('rejects a late retained-version response after session replacement', async () => {
+        let release!: (response: Response) => void
+        const f = fixture(
+            () =>
+                new Promise<Response>((resolve) => {
+                    release = resolve
+                }),
+        )
+        const pending = f.api.version(largeRevision)
+        await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+        f.advance()
+        release(new Response(versionBody))
+        await expect(pending).rejects.toThrow('stale-session-response')
+    })
+    it('keeps summary, review and owned-operation revisions exact as well as configuration values', async () => {
+        const f = fixture(async (input) => {
+            const path = new URL(new Request(input).url).pathname
+            return new Response(
+                path.endsWith('/draft')
+                    ? JSON.stringify(summary).replace(
+                          '"effectiveRevision":null',
+                          '"effectiveRevision":9223372036854775807',
+                      )
+                    : JSON.stringify(operation).replace(
+                          '"revision":null',
+                          '"revision":9223372036854775807',
+                      ),
+            )
+        })
+        const current = await f.api.summary()
+        expect(current.effectiveRevision).toBe(largeRevision)
+        expect(
+            reviewIsCurrent(
+                decodeReview(
+                    reviewBody.replace(
+                        '"effectiveRevision":null',
+                        '"effectiveRevision":9223372036854775807',
+                    ),
+                ),
+                current,
+            ),
+        ).toBe(true)
+        expect((await f.api.operation(operation.id)).revision).toBe(
+            largeRevision,
+        )
+        await expect(f.api.operation('incorrect-id')).rejects.toThrow(
+            'configuration-response',
+        )
     })
 })

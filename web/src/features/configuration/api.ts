@@ -12,6 +12,47 @@ export type Review = Omit<Schema['ConfigurationReview'], 'changes'> & {
         afterText: string
     })[]
 }
+export type VersionSummary = Schema['RuntimeVersionSummary']
+export type VersionDetail = {
+    version: VersionSummary
+    contentHash: string
+    planHash: string
+    draftText: string
+    planText: string
+    warnings: string[]
+}
+export type Comparison = Omit<
+    Schema['ConfigurationVersionComparison'],
+    'changes'
+> & { changes: Review['changes'] }
+
+/** Generated integer metadata permits strings, so large revision numbers need not be rounded. */
+function metadata(value: RouteJson): unknown {
+    if (value instanceof RouteNumber) return value.text
+    if (Array.isArray(value)) return value.map(metadata)
+    if (value !== null && typeof value === 'object')
+        return Object.fromEntries(
+            Object.entries(value).map(([key, item]) => [key, metadata(item)]),
+        )
+    return value
+}
+export function revisionId(value: number | string): string {
+    if (typeof value === 'number' && !Number.isSafeInteger(value))
+        throw new Error('configuration-revision')
+    const text = String(value)
+    if (
+        !/^[1-9]\d*$/.test(text) ||
+        text.length > 19 ||
+        (text.length === 19 && text > '9223372036854775807')
+    )
+        throw new Error('configuration-revision')
+    return text
+}
+// OpenAPI emits numeric path parameters, but openapi-fetch serializes them as text.
+// Keep the validated Int64 decimal at this transport boundary rather than rounding it.
+function revisionPath(value: number | string): number {
+    return revisionId(value) as unknown as number
+}
 const maximumResponseBytes = 128 * 1024 * 1024
 
 /** Display configuration values without converting JSON numbers through IEEE-754. */
@@ -38,27 +79,99 @@ export function exactJson(value: RouteJson, depth = 0): string {
     )
 }
 
-export function decodeReview(body: string): Review {
-    // Metadata is bounded integers/strings. Only before/after carry arbitrary JSON numeric values.
-    const raw = routeObject(readRouteJson(body, maximumResponseBytes, 64))
-    const metadata: Schema['ConfigurationReview'] = JSON.parse(body)
-    if (
-        !Array.isArray(raw.changes) ||
-        !Array.isArray(metadata.changes) ||
-        typeof metadata.version !== 'string'
-    )
-        throw new Error('configuration-response')
-    const rawChanges = raw.changes
-    const changes = metadata.changes.map((change, index) => {
-        const values = routeObject(rawChanges[index])
-        const { before: _before, after: _after, ...fields } = change
+function decodeChanges(rawChanges: RouteJson): Review['changes'] {
+    if (!Array.isArray(rawChanges)) throw new Error('configuration-response')
+    return rawChanges.map((item) => {
+        const raw = routeObject(item)
+        const { before: _before, after: _after, ...rest } = raw
+        const fields = metadata(rest) as Omit<
+            Schema['ConfigurationChange'],
+            'before' | 'after'
+        >
         return {
             ...fields,
-            beforeText: exactJson(values.before ?? null),
-            afterText: exactJson(values.after ?? null),
+            beforeText: exactJson(raw.before ?? null),
+            afterText: exactJson(raw.after ?? null),
         }
     })
-    return { ...metadata, changes }
+}
+export function decodeReview(body: string): Review {
+    const raw = routeObject(readRouteJson(body, maximumResponseBytes, 64))
+    const { changes, ...fields } = raw
+    const envelope = metadata(fields) as Schema['ConfigurationReview']
+    if (
+        typeof envelope.version !== 'string' ||
+        typeof envelope.preflightPassed !== 'boolean' ||
+        typeof envelope.comparisonAvailable !== 'boolean' ||
+        !Array.isArray(envelope.points) ||
+        !Array.isArray(envelope.routeIssues) ||
+        !Array.isArray(envelope.targetBlocks) ||
+        !Array.isArray(envelope.warnings)
+    )
+        throw new Error('configuration-response')
+    if (envelope.effectiveRevision != null)
+        revisionId(envelope.effectiveRevision)
+    if (envelope.targetRevision != null) revisionId(envelope.targetRevision)
+    return { ...envelope, changes: decodeChanges(changes) }
+}
+export function decodeComparison(body: string): Comparison {
+    const raw = routeObject(readRouteJson(body, maximumResponseBytes, 64))
+    const { changes, ...fields } = raw
+    const envelope = metadata(
+        fields,
+    ) as Schema['ConfigurationVersionComparison']
+    revisionId(envelope.beforeRevision)
+    if (envelope.afterRevision != null) revisionId(envelope.afterRevision)
+    if (!Array.isArray(envelope.points))
+        throw new Error('configuration-response')
+    return { ...envelope, changes: decodeChanges(changes) }
+}
+function decodeVersionSummary(value: RouteJson): VersionSummary {
+    const version = metadata(routeObject(value)) as VersionSummary
+    revisionId(version.revision)
+    if (
+        typeof version.state !== 'string' ||
+        typeof version.origin !== 'string' ||
+        typeof version.createdBy !== 'string' ||
+        typeof version.isStable !== 'boolean' ||
+        !Number.isSafeInteger(Number(version.schemaVersion)) ||
+        Number(version.schemaVersion) < 1
+    )
+        throw new Error('configuration-response')
+    return version
+}
+export function decodeVersion(body: string): VersionDetail {
+    const raw = routeObject(readRouteJson(body, maximumResponseBytes, 64))
+    const version = decodeVersionSummary(raw.version)
+    if (
+        typeof raw.contentHash !== 'string' ||
+        typeof raw.planHash !== 'string' ||
+        !Array.isArray(raw.warnings) ||
+        !raw.warnings.every((item) => typeof item === 'string') ||
+        !Object.hasOwn(raw, 'draft') ||
+        !Object.hasOwn(raw, 'plan')
+    )
+        throw new Error('configuration-response')
+    return {
+        version,
+        contentHash: raw.contentHash,
+        planHash: raw.planHash,
+        warnings: raw.warnings,
+        draftText: exactJson(raw.draft),
+        planText: exactJson(raw.plan),
+    }
+}
+
+function decodeOperation(body: string, expectedId?: string): Operation {
+    const operation = metadata(
+        routeObject(readRouteJson(body, maximumResponseBytes, 64)),
+    ) as Operation
+    if (
+        typeof operation.id !== 'string' ||
+        (expectedId != null && operation.id !== expectedId)
+    )
+        throw new Error('configuration-response')
+    return operation
 }
 
 export function applicationRequest(
@@ -109,26 +222,44 @@ export function createConfigurationApi(
         async summary(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/configuration/draft',
-                { signal },
+                { signal, parseAs: 'text' },
             )
             if (!data) throw new Error('configuration-response')
-            return data
+            const summary = metadata(
+                routeObject(readRouteJson(data, maximumResponseBytes, 64)),
+            ) as DraftSummary
+            if (summary.effectiveRevision != null)
+                revisionId(summary.effectiveRevision)
+            if (summary.pendingRevision != null)
+                revisionId(summary.pendingRevision)
+            if (
+                typeof summary.version !== 'string' ||
+                typeof summary.comparisonAvailable !== 'boolean'
+            )
+                throw new Error('configuration-response')
+            return summary
         },
         async operations(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/configuration/operations',
-                { signal },
+                { signal, parseAs: 'text' },
             )
             if (!data) throw new Error('configuration-response')
-            return data
+            const raw = readRouteJson(data, maximumResponseBytes, 64)
+            if (!Array.isArray(raw)) throw new Error('configuration-response')
+            return metadata(raw) as Operation[]
         },
         async operation(id: string, signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/configuration/operations/{operationId}',
-                { params: { path: { operationId: id } }, signal },
+                {
+                    params: { path: { operationId: id } },
+                    signal,
+                    parseAs: 'text',
+                },
             )
             if (!data) throw new Error('configuration-response')
-            return data
+            return decodeOperation(data, id)
         },
         async review(version: string) {
             const { data } = await api.POST(
@@ -139,12 +270,142 @@ export function createConfigurationApi(
             return decodeReview(data)
         },
         async apply(review: Review, description: string, confirmed: boolean) {
+            if (review.targetRevision != null)
+                throw new Error('configuration-wrong-operation')
             const { data } = await api.POST(
                 '/api/edge-admin/v1/configuration/apply',
-                { body: applicationRequest(review, description, confirmed) },
+                {
+                    body: applicationRequest(review, description, confirmed),
+                    parseAs: 'text',
+                },
             )
             if (!data) throw new Error('configuration-response')
-            return data
+            return decodeOperation(data)
+        },
+        async versions(beforeRevision?: string, signal?: AbortSignal) {
+            if (beforeRevision != null) revisionId(beforeRevision)
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/configuration/versions',
+                {
+                    params: { query: { beforeRevision, limit: 20 } },
+                    signal,
+                    parseAs: 'text',
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            const raw = readRouteJson(data, maximumResponseBytes, 64)
+            if (!Array.isArray(raw)) throw new Error('configuration-response')
+            return raw.map(decodeVersionSummary)
+        },
+        async version(revision: number | string, signal?: AbortSignal) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/configuration/versions/{revision}',
+                {
+                    params: { path: { revision: revisionPath(revision) } },
+                    parseAs: 'text',
+                    signal,
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            const detail = decodeVersion(data)
+            if (revisionId(detail.version.revision) !== revisionId(revision))
+                throw new Error('configuration-response')
+            return detail
+        },
+        async compare(
+            before: number | string,
+            after: number | string,
+            signal?: AbortSignal,
+        ) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/configuration/versions/{revision}/compare/{otherRevision}',
+                {
+                    params: {
+                        path: {
+                            revision: revisionPath(before),
+                            otherRevision: revisionPath(after),
+                        },
+                    },
+                    parseAs: 'text',
+                    signal,
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            const comparison = decodeComparison(data)
+            if (
+                revisionId(comparison.beforeRevision) !== revisionId(before) ||
+                comparison.afterRevision == null ||
+                revisionId(comparison.afterRevision) !== revisionId(after) ||
+                comparison.draftVersion != null
+            )
+                throw new Error('configuration-response')
+            return comparison
+        },
+        async compareDraft(
+            revision: number | string,
+            version: string,
+            signal?: AbortSignal,
+        ) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/configuration/versions/{revision}/compare-draft',
+                {
+                    params: {
+                        path: { revision: revisionPath(revision) },
+                        query: { expectedVersion: version },
+                    },
+                    parseAs: 'text',
+                    signal,
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            const comparison = decodeComparison(data)
+            if (
+                revisionId(comparison.beforeRevision) !==
+                    revisionId(revision) ||
+                comparison.afterRevision != null ||
+                comparison.draftVersion !== version
+            )
+                throw new Error('configuration-response')
+            return comparison
+        },
+        async reviewRollback(revision: number | string, version: string) {
+            const target = revisionId(revision)
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/configuration/versions/{revision}/review',
+                {
+                    params: { path: { revision: revisionPath(target) } },
+                    body: { expectedVersion: version },
+                    parseAs: 'text',
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            const review = decodeReview(data)
+            if (
+                review.targetRevision == null ||
+                revisionId(review.targetRevision) !== target
+            )
+                throw new Error('configuration-response')
+            return review
+        },
+        async rollback(
+            review: Review,
+            description: string,
+            confirmed: boolean,
+        ) {
+            if (review.targetRevision == null)
+                throw new Error('configuration-wrong-operation')
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/configuration/versions/{revision}/rollback',
+                {
+                    params: {
+                        path: { revision: revisionPath(review.targetRevision) },
+                    },
+                    body: applicationRequest(review, description, confirmed),
+                    parseAs: 'text',
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            return decodeOperation(data)
         },
         async discard(summary: DraftSummary, confirmed: boolean) {
             if (!confirmed || !summary.comparisonAvailable)

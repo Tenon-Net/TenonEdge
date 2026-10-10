@@ -47,7 +47,56 @@ export const configurationStrings = {
     revision: '配置版本 {{revision}}',
     errorCode: '结果代码：{{code}}',
     historyBoundary:
-        '本页先交付真实应用与放弃流程；持久版本查看、比较与回滚页面仍在接入，操作记录不能代替历史。',
+        '应用、放弃及历史回滚均操作真实配置。操作记录仅保留于本进程，持久版本请查看下方历史。',
+    history: '持久配置历史',
+    appliedAt: '提交生效时间：{{time}}',
+    versionStates: {
+        effective: '生效中',
+        history: '历史',
+        pending: '待提交',
+        notEffective: '未生效',
+    },
+    origins: {
+        apply: '人工应用',
+        rollback: '人工回滚',
+        autoRollback: '启动保护自动回滚',
+        seed: '种子导入',
+    },
+    errors: {
+        configuration_rollbackCredentialMissing:
+            '目标版本需要的当前凭证不存在；不能恢复历史秘密，请先配置凭证。',
+        configuration_rollbackConnectionMissing:
+            '目标版本引用的连接已不存在，不能回滚。',
+        configuration_rollbackTargetNotEffective:
+            '目标版本从未生效，不能作为回滚目标。',
+        configuration_unappliedChanges: '请先应用或放弃未应用修改，再回滚。',
+        configuration_unsupportedSnapshot:
+            '旧版快照缺少完整草稿，不能进行对象比较或正常回滚。',
+        configuration_invalidSnapshot:
+            '配置快照无效，不能安全读取、比较或确认回滚。',
+        configuration_versionNotFound: '版本不存在或已清理，请刷新历史。',
+        configuration_reviewChanged: '确认清单已变化，请重新预检。',
+    },
+    historyHelp:
+        '按版本倒序，每页 20 项。回滚须先处理未应用修改；失败版本可查看，但不能作为回滚目标。',
+    loading: '正在读取…',
+    viewVersion: '查看 r{{revision}}',
+    versionDetail: '版本 r{{revision}}',
+    noVersions: '尚无持久版本',
+    previous: '上一页',
+    next: '下一页',
+    hashes: '完整检查点 {{content}} · 编译计划 {{plan}}',
+    draftText: '完整草稿（精确 JSON）',
+    planText: '运行计划（精确 JSON）',
+    reviewRollback: '检查回滚到 r{{revision}}',
+    rollbackTitle: '回滚到 r{{revision}} 前确认',
+    rollbackConfirm: '我已检查目标版本及影响，确认回滚并创建新版本',
+    rollback: '确认回滚配置',
+    compareWith: '比较到',
+    currentDraft: '当前草稿',
+    comparison: '版本差异',
+    comparisonDirection: 'r{{before}} → {{after}}（仅比较，不执行预检或应用）',
+    sameContents: '没有对象内容差异。',
     kinds: { connection: '连接', device: '设备', input: '来源', route: '路线' },
     changeKinds: { added: '新增', modified: '修改', removed: '删除' },
     stages: {
