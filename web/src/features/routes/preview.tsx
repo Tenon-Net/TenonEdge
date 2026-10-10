@@ -14,6 +14,8 @@ import {
     type PreviewDraft,
 } from './preview-model'
 
+import { RecentSamples, type RecentMessage } from './recent-samples'
+
 const routes = createRouteApi(api)
 type Response = Awaited<ReturnType<typeof routes.preview>>
 type Result = {
@@ -24,6 +26,7 @@ type Result = {
     signal: AbortSignal
     pending: boolean
     onsite: boolean
+    recent: boolean
     data?: Response
     error?: unknown
 }
@@ -101,12 +104,12 @@ export function RoutePreview({
                 : null
     const invalid =
         bytes > 65536 || !sample.trim() || !selected || options.overLimit
-    async function preview(onsite = false) {
+    async function preview(onsite = false, recent?: RecentMessage) {
         if (
             disabled ||
             !selected ||
             options.overLimit ||
-            (onsite ? !acquisition : invalid)
+            (recent ? !recent.executable : onsite ? !acquisition : invalid)
         )
             return
         if (
@@ -124,21 +127,29 @@ export function RoutePreview({
             sample,
             signal: controller.signal,
             onsite,
+            recent: !!recent,
         }
         setResult({ ...captured, pending: true })
         try {
-            const data = onsite
-                ? await acquisition!.run(
+            const data = recent
+                ? await routes.previewRecent(
                       { ...newRoute(version), document },
-                      selected!.id,
+                      selected.id,
+                      recent,
                       controller.signal,
                   )
-                : await routes.preview(
-                      { ...newRoute(version), document },
-                      selected!.id,
-                      sample,
-                      controller.signal,
-                  )
+                : onsite
+                  ? await acquisition!.run(
+                        { ...newRoute(version), document },
+                        selected!.id,
+                        controller.signal,
+                    )
+                  : await routes.preview(
+                        { ...newRoute(version), document },
+                        selected!.id,
+                        sample,
+                        controller.signal,
+                    )
             if (!controller.signal.aborted)
                 setResult({ ...captured, pending: false, data })
         } catch (error) {
@@ -258,6 +269,20 @@ export function RoutePreview({
                     </span>
                 </label>
             </div>
+            {selected && (
+                <RecentSamples
+                    document={document}
+                    version={version}
+                    sourceId={selected.id}
+                    disabled={disabled || options.overLimit}
+                    busy={!!current?.pending}
+                    onInvalidate={() => {
+                        request.current?.abort()
+                        setResult(undefined)
+                    }}
+                    onPreview={(record) => void preview(false, record)}
+                />
+            )}
             <div className="flex flex-wrap gap-2">
                 <Button
                     type="button"
@@ -313,9 +338,11 @@ export function RoutePreview({
             current.error.status === 409 ? (
                 <p role="alert">
                     {t(
-                        code === 'connection.inUse'
-                            ? 'routes.preview.connectionBusy'
-                            : 'routes.conflict',
+                        code === 'preview.recent.unavailable'
+                            ? 'routes.preview.recentUnavailable'
+                            : code === 'connection.inUse'
+                              ? 'routes.preview.connectionBusy'
+                              : 'routes.conflict',
                     )}
                 </p>
             ) : current?.onsite &&
@@ -334,11 +361,13 @@ export function RoutePreview({
                 >
                     <p>
                         {t(
-                            current.onsite
-                                ? 'routes.preview.' +
-                                      acquisition?.key +
-                                      'Result'
-                                : 'routes.preview.manualResult',
+                            current.recent
+                                ? 'routes.preview.recentResult'
+                                : current.onsite
+                                  ? 'routes.preview.' +
+                                    acquisition?.key +
+                                    'Result'
+                                  : 'routes.preview.manualResult',
                         )}
                     </p>
                     {data.mqtt && (

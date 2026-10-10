@@ -1626,6 +1626,210 @@
         }
       }
     },
+    "/api/edge-admin/v1/routes/preview/recent/messages": {
+      "post": {
+        "tags": [
+          "Routes"
+        ],
+        "summary": "列出图内来源的最近运行输入记录元数据；不返回正文、不触发采集",
+        "description": "最多 100 条，按捕获顺序倒序。Executable 仅为列表时刻提示；执行时重新检查状态、版本、截断及淘汰。",
+        "operationId": "listRouteRecentMessages",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouteRecentMessagesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteRecentMessagesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/routes/preview/recent": {
+      "post": {
+        "tags": [
+          "Routes"
+        ],
+        "summary": "使用明确选中的完整运行输入记录预览当前图；不采集、不连接输出、不保存、不入队",
+        "description": "要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；上游时间解析告警未知时 InvalidUpstreamTime 为 null，MQTT 标志不在当前缓存中。",
+        "operationId": "previewRouteRecentSample",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouteRecentPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutePreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
       "post": {
         "tags": [
@@ -7805,7 +8009,10 @@
             "type": "boolean"
           },
           "invalidUpstreamTime": {
-            "type": "boolean"
+            "type": [
+              "null",
+              "boolean"
+            ]
           },
           "result": {
             "oneOf": [
@@ -7867,6 +8074,158 @@
             "type": "boolean"
           }
         }
+      },
+      "RouteRecentMessageInfo": {
+        "required": [
+          "sequence",
+          "revision",
+          "sourceMessageId",
+          "capturedAt",
+          "originalBytes",
+          "storedBytes",
+          "truncated",
+          "executable"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "sourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "originalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "storedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "executable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RouteRecentMessagesRequest": {
+        "required": [
+          "expectedVersion",
+          "graph",
+          "sourceId"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/RouteGraph"
+          },
+          "sourceId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RouteRecentMessagesResponse": {
+        "required": [
+          "version",
+          "sourceId",
+          "running",
+          "activeRevision",
+          "records"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "sourceId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "activeRevision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteRecentMessageInfo"
+            }
+          }
+        }
+      },
+      "RouteRecentPreviewRequest": {
+        "required": [
+          "expectedVersion",
+          "graph",
+          "sourceId",
+          "sequence",
+          "revision",
+          "sourceMessageId"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/RouteGraph"
+          },
+          "sourceId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "sequence": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "sourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
       },
       "RouteSamplePreviewResult": {
         "required": [

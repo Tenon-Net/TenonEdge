@@ -23,7 +23,7 @@ public sealed class RoutePreviewTests
 {
     private const string Endpoint = "/api/edge-admin/v1/routes/preview";
     private static CancellationToken Token => TestContext.Current.CancellationToken;
-    private static RoutePreviewRequest Seed(IServiceProvider services, int port)
+    internal static RoutePreviewRequest Seed(IServiceProvider services, int port)
     {
         var connection = services.GetRequiredService<ConnectionDraftStore>().Write(null,
             new("0", "http", "HTTP", ConnectionKind.Http, Http: new($"http://127.0.0.1:{port}/")), "test", null);
@@ -214,7 +214,7 @@ public sealed class RoutePreviewTests
         Assert.Equal(0, factory.Connector.Calls);
     }
 
-    private sealed class DeadlineTimeProvider : TimeProvider
+    internal sealed class DeadlineTimeProvider : TimeProvider
     {
         internal bool ExpireNext { get; set; }
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
@@ -229,7 +229,7 @@ public sealed class RoutePreviewTests
         }
     }
 
-    private sealed class NoOutboundFactory(TimeProvider? time = null) : TenonEdgeApplicationFactory
+    internal sealed class NoOutboundFactory(TimeProvider? time = null) : TenonEdgeApplicationFactory
     {
         internal NoOutboundConnector Connector { get; } = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -243,7 +243,7 @@ public sealed class RoutePreviewTests
             });
         }
     }
-    private sealed class NoOutboundConnector : IOutboundConnector
+    internal sealed class NoOutboundConnector : IOutboundConnector
     {
         private int _calls;
         internal int Calls => Volatile.Read(ref _calls);

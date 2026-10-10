@@ -316,3 +316,54 @@ it.each(['http', 'mqtt', 'modbus'] as const)(
         await rejected
     },
 )
+
+it('recent sample requests preserve graph constants and record identities as strings without manual data', async () => {
+    const bodies: string[] = []
+    const requests: Request[] = []
+    const f = fixture(async (input) => {
+        const request = new Request(input)
+        requests.push(request)
+        bodies.push(await request.text())
+        return Response.json({
+            version: 'v1',
+            records: [],
+            previewed: true,
+            issues: [],
+        })
+    })
+    const form = newRoute('v1')
+    form.document = decodeGraph(graph)
+    const record = {
+        sequence: '9007199254740993',
+        revision: '9223372036854775807',
+        sourceMessageId: '00000000-0000-4000-8000-000000000001',
+    }
+    await f.api.recentMessages(form, 42)
+    await f.api.previewRecent(form, 42, record)
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+        '/api/edge-admin/v1/routes/preview/recent/messages',
+        '/api/edge-admin/v1/routes/preview/recent',
+    ])
+    for (const body of bodies) {
+        expect(body).toContain('"config":' + config)
+        expect(body).not.toContain('sampleJson')
+    }
+    expect(bodies[1]).toContain('"sequence":"9007199254740993"')
+    expect(bodies[1]).toContain('"revision":"9223372036854775807"')
+    expect(requests[1].headers.get('X-CSRF-Token')).toBe('csrf')
+})
+
+it('an unavailable recent record is not retried or replaced with another acquisition', async () => {
+    const fetcher = vi.fn(async () =>
+        Response.json({ code: 'preview.recent.unavailable' }, { status: 409 }),
+    )
+    const f = fixture(fetcher)
+    await expect(
+        f.api.previewRecent(newRoute('v1'), 42, {
+            sequence: '1',
+            revision: '7',
+            sourceMessageId: '00000000-0000-4000-8000-000000000001',
+        }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+})

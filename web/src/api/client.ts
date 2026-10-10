@@ -8,7 +8,7 @@ function managementDeadline(request: Request) {
     const path = new URL(request.url).pathname
     if (request.method === 'POST') {
         if (
-            /^\/api\/edge-admin\/v1\/routes\/preview(?:\/(?:http|mqtt|modbus))?$/.test(
+            /^\/api\/edge-admin\/v1\/routes\/preview(?:\/(?:http|mqtt|modbus|recent(?:\/messages)?))?$/.test(
                 path,
             )
         )

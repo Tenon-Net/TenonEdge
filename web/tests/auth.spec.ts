@@ -4566,3 +4566,151 @@ test('route Modbus onsite preview reads exact uint64 and bad quality, cancels an
         await new Promise<void>((resolve) => peer.close(() => resolve()))
     }
 })
+
+test('route recent samples use real empty-list API and explicit metadata fixtures without fallback or persistence', async ({
+    page,
+}) => {
+    const { saved } = await openFieldAnalysisRoute(page, 'recent-ui')
+    const panel = page.getByRole('region', {
+        name: '路线样本预览',
+        exact: true,
+    })
+    await panel
+        .getByLabel('预览数据来源', { exact: true })
+        .selectOption({ index: 1 })
+    const sample = panel.getByLabel('手工 JSON 样本（不保存）', { exact: true })
+    await sample.fill('{"f000":9223372036854775807}')
+    const recent = panel.getByLabel('最近运行输入样本', { exact: true })
+    const load = recent.getByRole('button', {
+        name: '读取最近记录列表',
+        exact: true,
+    })
+    await load.click()
+    await expect(recent).toContainText('当前没有缓存记录')
+    await expect(recent).toContainText('该来源目前未运行')
+    // T3-06 application is not implemented. Browser-only records below are explicit UI fixtures;
+    // backend integration tests separately exercise a real RuntimeHost capture and preview.
+    const endpoint = '**/api/edge-admin/v1/routes/preview/recent'
+    const listEndpoint = endpoint + '/messages'
+    const record = {
+        sequence: '9007199254740993',
+        revision: '7',
+        sourceMessageId: '00000000-0000-4000-8000-000000000001',
+        capturedAt: '2026-10-10T00:00:00Z',
+        originalBytes: 400,
+        storedBytes: 400,
+        truncated: false,
+        executable: true,
+    }
+    await page.route(listEndpoint, (route) =>
+        route.fulfill({
+            json: {
+                version: saved.version,
+                sourceId: saved.route.graph.nodes.find(
+                    (node: { id: string }) => node.id === 'in',
+                ).config.sourceIds[0],
+                running: true,
+                activeRevision: '7',
+                records: [
+                    {
+                        ...record,
+                        sequence: '2',
+                        originalBytes: 70000,
+                        storedBytes: 65536,
+                        truncated: true,
+                        executable: false,
+                    },
+                    record,
+                ],
+            },
+        }),
+    )
+    await load.click()
+    const select = recent.getByLabel('选择最近运行记录', { exact: true })
+    const run = recent.getByRole('button', {
+        name: '用所选最近记录预览',
+        exact: true,
+    })
+    await expect(select).toHaveValue('')
+    await expect(run).toBeDisabled()
+    await select.selectOption('2')
+    await expect(run).toBeDisabled()
+    await expect(recent).toContainText('已截断/淘汰')
+    await select.selectOption(record.sequence)
+    let calls = 0
+    await page.route(endpoint, async (route) => {
+        calls++
+        const body = route.request().postDataJSON()
+        expect(body.sequence).toBe(record.sequence)
+        expect(body.revision).toBe('7')
+        expect(body.sourceMessageId).toBe(record.sourceMessageId)
+        expect(body).not.toHaveProperty('sampleJson')
+        await route.fulfill({
+            status: 409,
+            json: { code: 'preview.recent.unavailable' },
+        })
+    })
+    await run.click()
+    await expect(panel).toContainText('不会自动换用其他记录')
+    expect(calls).toBe(1)
+    await expect(sample).toHaveValue('{"f000":9223372036854775807}')
+    await page.unroute(endpoint)
+    let release!: () => void
+    let observed!: () => void
+    const held = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    const received = new Promise<void>((resolve) => {
+        observed = resolve
+    })
+    await page.route(endpoint, async (route) => {
+        observed()
+        await held
+        await route
+            .fulfill({
+                json: {
+                    version: saved.version,
+                    previewed: true,
+                    invalidUpstreamTime: null,
+                    result: null,
+                    issues: [],
+                },
+            })
+            .catch(() => {})
+    })
+    await run.click()
+    await received
+    await panel.getByLabel('预览数据来源', { exact: true }).selectOption('')
+    release()
+    await expect(panel.getByLabel('样本预览结果', { exact: true })).toHaveCount(
+        0,
+    )
+    await expect(recent).toHaveCount(0)
+    await panel
+        .getByLabel('预览数据来源', { exact: true })
+        .selectOption({ index: 1 })
+    await expect(
+        recent.getByLabel('选择最近运行记录', { exact: true }),
+    ).toHaveCount(0)
+    await load.click()
+    await expect(select).toHaveValue('')
+    await page.unroute(endpoint)
+    await page.route(endpoint, (route) =>
+        route.fulfill({
+            json: {
+                version: saved.version,
+                previewed: true,
+                invalidUpstreamTime: null,
+                result: null,
+                issues: [],
+            },
+        }),
+    )
+    await select.selectOption(record.sequence)
+    await run.click()
+    await expect(
+        panel.getByLabel('样本预览结果', { exact: true }),
+    ).toContainText('当前缓存不含 MQTT retained/DUP 标志')
+    await expect(sample).toHaveValue('{"f000":9223372036854775807}')
+    expect(await page.evaluate(() => localStorage.length)).toBe(0)
+})

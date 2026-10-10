@@ -191,6 +191,60 @@ export function createRouteApi(api: ReturnType<typeof createGatewayClient>) {
             // Field values and output JSON are text in the preview contract, not JS numbers.
             return data
         },
+        async recentMessages(
+            form: RouteForm,
+            sourceId: number,
+            signal?: AbortSignal,
+        ) {
+            encodeGraph(form.document)
+            const body = {
+                expectedVersion: form.version,
+                graph: graphRequest(form.document),
+                sourceId: checkedId(sourceId),
+            }
+            const serialized = writeRouteJson(body)
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/routes/preview/recent/messages',
+                {
+                    body,
+                    bodySerializer: () => serialized,
+                    signal,
+                },
+            )
+            if (!data) throw new Error('route-response')
+            return data
+        },
+        async previewRecent(
+            form: RouteForm,
+            sourceId: number,
+            record: {
+                sequence: string
+                revision: string
+                sourceMessageId: string
+            },
+            signal?: AbortSignal,
+        ) {
+            encodeGraph(form.document)
+            const body = {
+                expectedVersion: form.version,
+                graph: graphRequest(form.document),
+                sourceId: checkedId(sourceId),
+                sequence: record.sequence,
+                revision: record.revision,
+                sourceMessageId: record.sourceMessageId,
+            }
+            const serialized = writeRouteJson(body)
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/routes/preview/recent',
+                {
+                    body,
+                    bodySerializer: () => serialized,
+                    signal,
+                },
+            )
+            if (!data) throw new Error('route-response')
+            return data
+        },
         async previewHttp(
             form: RouteForm,
             sourceId: number,

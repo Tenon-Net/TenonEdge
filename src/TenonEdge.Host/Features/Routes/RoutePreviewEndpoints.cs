@@ -14,7 +14,7 @@ namespace TenonEdge.Host.Features.Routes;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record RoutePreviewRequest(string ExpectedVersion, RouteGraph Graph, long SourceId, string SampleJson);
 internal sealed record RouteMqttSampleInfo(bool Retained, bool Duplicate, int? Qos);
-internal sealed record RoutePreviewResponse(string Version, bool Previewed, bool InvalidUpstreamTime, RouteSamplePreviewResult? Result, RouteTopologyIssue[] Issues, RouteMqttSampleInfo? Mqtt = null)
+internal sealed record RoutePreviewResponse(string Version, bool Previewed, bool? InvalidUpstreamTime, RouteSamplePreviewResult? Result, RouteTopologyIssue[] Issues, RouteMqttSampleInfo? Mqtt = null)
 {
     public override string ToString() => "Route preview response (body omitted)";
 }
@@ -31,6 +31,7 @@ internal static partial class RoutePreviewEndpoints
         MapHttpSamplePreview(api);
         MapMqttSamplePreview(api);
         MapModbusSamplePreview(api);
+        MapRecentSamplePreview(api);
         return api;
     }
 

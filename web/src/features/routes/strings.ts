@@ -30,6 +30,22 @@ export const routeStrings = {
             '将访问所选 HTTP 输入的已保存地址，读取一次后计算当前路线（不访问输出、不入队）。继续？',
         httpResult:
             '本次结果来自现场 HTTP 读取，不使用手工文本框；不代表真实设备或输出已验收。',
+        recentTitle: '最近运行输入样本',
+        recentNotice:
+            '仅列出已进入运行输入通道的记录，不触发现场采集；大小为内部诊断快照编码，不是网络报文字节数。须明确选择完整记录，停止、退避、版本不符或淘汰后不可执行；预览不发送、不保存、不入队。',
+        recentLoad: '读取最近记录列表',
+        recentLoading: '正在读取记录元数据…',
+        recentStopped: '该来源目前未运行，已有记录仅供查看。',
+        recentEmpty: '当前没有缓存记录；不会自动改用现场采集或手工样本。',
+        recentSelect: '选择最近运行记录',
+        recentChoose: '请选择一条记录，不自动选取最新消息',
+        recentRevision: '运行版本 {{revision}}',
+        recentTruncated: '已截断',
+        recentUnavailable:
+            '所选记录不可执行：输入可能已停止或退避、版本已变化，或记录已截断/淘汰。请重新读取列表并明确选择；不会自动换用其他记录。',
+        recentRun: '用所选最近记录预览',
+        recentResult:
+            '使用所选运行记录的原始解码字段与时间，不按当前来源配置重解析报文。当前缓存不含 MQTT retained/DUP 标志和上游时间解析告警详情，不能据此认定未发生这些情况。',
         manualResult: '本次结果来自手工 JSON，不代表现场读取。',
         source: '预览数据来源',
         choose: '请选择图内来源',

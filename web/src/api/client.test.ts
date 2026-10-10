@@ -111,6 +111,8 @@ describe('single same-origin API client', () => {
         ['POST', '/api/edge-admin/v1/routes/preview/http', 35000],
         ['POST', '/api/edge-admin/v1/routes/preview/mqtt', 35000],
         ['POST', '/api/edge-admin/v1/routes/preview/modbus', 35000],
+        ['POST', '/api/edge-admin/v1/routes/preview/recent', 35000],
+        ['POST', '/api/edge-admin/v1/routes/preview/recent/messages', 35000],
         ['GET', '/api/edge-admin/v1/routes/preview/http', 15000],
         ['POST', '/api/edge-admin/v1/devices/42/preview/mqtt', 35000],
         ['POST', '/api/edge-admin/v1/devices/42/preview/http', 35000],

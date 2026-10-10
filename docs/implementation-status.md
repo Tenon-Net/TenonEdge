@@ -2842,6 +2842,28 @@ Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故�
 
 未修改前端，浏览器未重跑；没有更新常驻调试部署，没有推送或发布。下一步将运行中完整样本接到路线预览 API/UI，并分别验证授权、版本冲突、淘汰/截断和无运行来源；输出/映射/入队调试仍未完成。
 
+### 2.144 T3-05 最近运行记录到路线预览 API/UI（2026-10-10）
+
+接续 §2.143，在现有真实缓存和运行取样门禁上连接 API 与画布。对应 AT-29/功能 §4.2—§4.3 的最近样本子场景；**仍未实现 T3-06 应用/回滚，不能通过网页独立创建并启动采集路线**。不以测试中直接激活运行计划代替应用验收。
+
+- 新增 `POST /routes/preview/recent/messages`：按当前图、原编辑版本及图内来源返回最多 100 条元数据，无正文；序号/运行版本为十进制字符串，防止 JavaScript 大整数精度丢失。标明运行状态、截断、原始/存储编码大小与列表时刻的可执行提示。
+- 新增 `POST /routes/preview/recent`：明确提交所选记录的序号、运行版本与消息 GUID；重新验证运行中输入、版本、完整性和缓存存在性，再把保精度消息交给现有纯路线预览。不可用时 409 `preview.recent.unavailable`，不选另一条记录、不触发现场采集、不采用手工文本。两个端点复用配置员/管理员、会话/CSRF、1 MiB 请求上限、共享准入、30 秒操作期限；客户端 35 秒。
+- 运行记录沿用捕获时字段/质量/时间及可选原始 JSON，不按新来源配置重解析；当前缓存缺少 MQTT retained/DUP/QoS 与上游时间解析告警详情。新增端点的 `invalidUpstreamTime` 为 null 表示未知，页面明确提示缺口；其他预览保留已知的布尔值。OpenAPI 从实际 Development Host 导出并重新生成客户端。
+- 页面显式读取列表并选择，不默认选最新记录。停止/截断记录不能执行，刷新列表清除选择；来源、图、编辑版本及未确认属性变化使旧请求取消、旧列表/结果隐藏。选择新记录清除旧结果，409 保留手工样本、不自动重试。记录不进入草稿、撤销历史、持久化浏览器存储或 TanStack 查询缓存。
+- 更新路线契约与项目/Web README，区分当前 API/UI、未实现的应用生命周期、HTTP/MQTT 大报文桥接和完整调试元数据。
+
+测试新增 9 项 API 场景：真实 RuntimeHost 的模拟输入持续捕获/元数据/预览、三种角色、匿名与 CSRF、陈旧草稿/图外来源、共享准入、截止时间释放配额、空记录、错误身份/版本、截断/淘汰/停止拒绝和无输出/保存/入队副作用；另用显式类型化软件夹具核对完整 uint64，不声称模拟适配器真实采得 uint64。首轮端点清单有两处新路径排序错误（13 通过/2 失败），按实际字典序修正后定向 15 通过（`/tmp/tenonedge-recent-focused.log`、`/tmp/tenonedge-recent-focused2.log`），最终回归另列。
+
+后端最终 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-recent-regression -v minimal`：**1249 单元 + 1102 集成 = 2351 通过，0 失败/跳过**（`/tmp/tenonedge-recent-regression.log`）。TRX 门禁 `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-recent-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-recent-trx.log`）。`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-recent-format-verify.log`）。Linux x64、SDK 10.0.401，Debug 回归；实际 OpenAPI 导出前另行构建 Release Host。
+
+前端新增 4 项单元场景（两条期限路由、精确字符串身份/图常量传输、409 不回退）：**219 Vitest 通过，0 失败/跳过**，日志 `/tmp/tenonedge-recent-web-final.log`、`web/reports/unit.json`。构建、lint 通过；最后文案/浏览器断言补充后再次构建及 `format:check` 通过（`/tmp/tenonedge-recent-web-build-last.log`、`/tmp/tenonedge-recent-web-format.log`）。Node 22.23.2/npm 11.21.0。
+
+浏览器以真实临时 Production Host/Kestrel 执行手工/HTTP/MQTT/Modbus 预览回归及新增最近记录场景，**7 通过，0 失败/跳过**（`/tmp/tenonedge-recent-browser-final.log`）。命令：`TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route recent samples|route manual preview|route Modbus onsite|route MQTT onsite|route HTTP onsite'`。新增场景的未运行来源空列表走真实 API；记录列表、不可用/延迟/成功响应采用明确的 UI 夹具，验证显式选择、截断禁用、精确序号、409 不回退、迟到响应隔离、未知元数据提示和不持久化。它不是“浏览器应用草稿后真实运行并取样”的端到端验收，后者须在 T3-06 后补齐。
+
+最终以同一筛选加 `--reporter=list,json` 和 `PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json` 再跑 7 项通过（`/tmp/tenonedge-recent-browser-verified.log`），并再次通过 lint（`/tmp/tenonedge-recent-lint-last.log`）。`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 核对两份当前前端报告均非零、全通过且无跳过（`/tmp/tenonedge-recent-web-verified.log`）。
+
+未更新常驻调试部署，未推送、发布或进行真实设备验收。最近输入子场景已接通，但跨版本应用/清理、HTTP/MQTT 完整大报文桥接、MQTT/上游时间诊断元数据、完整输出/映射/入队调试与 T3 总体验收仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

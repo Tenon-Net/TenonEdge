@@ -430,6 +430,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/preview/recent/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 列出图内来源的最近运行输入记录元数据；不返回正文、不触发采集
+         * @description 最多 100 条，按捕获顺序倒序。Executable 仅为列表时刻提示；执行时重新检查状态、版本、截断及淘汰。
+         */
+        post: operations["listRouteRecentMessages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/routes/preview/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 使用明确选中的完整运行输入记录预览当前图；不采集、不连接输出、不保存、不入队
+         * @description 要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；上游时间解析告警未知时 InvalidUpstreamTime 为 null，MQTT 标志不在当前缓存中。
+         */
+        post: operations["previewRouteRecentSample"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -1653,7 +1693,7 @@ export interface components {
         RoutePreviewResponse: {
             version: string;
             previewed: boolean;
-            invalidUpstreamTime: boolean;
+            invalidUpstreamTime: null | boolean;
             result: null | components["schemas"]["RouteSamplePreviewResult"];
             issues: components["schemas"]["RouteTopologyIssue"][];
             mqtt?: null | components["schemas"]["RouteMqttSampleInfo"];
@@ -1664,6 +1704,44 @@ export interface components {
             fields: components["schemas"]["RoutePreviewField"][];
             issues: components["schemas"]["FieldMappingIssue"][];
             truncated: boolean;
+        };
+        RouteRecentMessageInfo: {
+            sequence: string;
+            revision: string;
+            /** Format: uuid */
+            sourceMessageId: string;
+            /** Format: date-time */
+            capturedAt: string;
+            /** Format: int32 */
+            originalBytes: number | string;
+            /** Format: int32 */
+            storedBytes: number | string;
+            truncated: boolean;
+            executable: boolean;
+        };
+        RouteRecentMessagesRequest: {
+            expectedVersion: string;
+            graph: components["schemas"]["RouteGraph"];
+            /** Format: int64 */
+            sourceId: number | string;
+        };
+        RouteRecentMessagesResponse: {
+            version: string;
+            /** Format: int64 */
+            sourceId: number | string;
+            running: boolean;
+            activeRevision: null | string;
+            records: components["schemas"]["RouteRecentMessageInfo"][];
+        };
+        RouteRecentPreviewRequest: {
+            expectedVersion: string;
+            graph: components["schemas"]["RouteGraph"];
+            /** Format: int64 */
+            sourceId: number | string;
+            sequence: string;
+            revision: string;
+            /** Format: uuid */
+            sourceMessageId: string;
         };
         RouteSamplePreviewResult: {
             version: string;
@@ -3120,6 +3198,180 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    listRouteRecentMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteRecentMessagesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRecentMessagesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    previewRouteRecentSample: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteRecentPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutePreviewResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };
