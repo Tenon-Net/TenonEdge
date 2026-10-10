@@ -372,9 +372,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 continue;
             }
 
-            if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads))
+            var senderOutput = prepared.Outputs.FirstOrDefault(output => output.Target.Id == unit.Id);
+            var senderGroup = senderOutput is null ? null : RuntimeUnitId.Create("sender.connection",
+                senderOutput.Target.ConnectionId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads, senderGroup))
             {
-                const string reason = "同一单元的上一个实例仍在运行，没有启动新实例（单实例规则）。";
+                const string reason = "同一单元或发送连接的上一个实例仍在运行或等待重建，没有启动新实例（单实例规则）。";
                 RecordNotStarted(unit.Id, reason, unit.Reads);
                 _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), reason);
                 await unit.Instance.DisposeAsync();

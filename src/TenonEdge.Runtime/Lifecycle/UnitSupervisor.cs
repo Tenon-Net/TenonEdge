@@ -13,6 +13,7 @@ internal sealed class UnitSupervisor
 {
     private readonly Dictionary<RuntimeUnitId, SupervisedUnit> _units = [];
     private readonly Dictionary<RuntimeUnitId, PendingRestart> _pending = [];
+    private readonly Dictionary<RuntimeUnitId, RuntimeUnitId> _exclusiveGroups = [];
     private readonly Lock _lock = new();
     private readonly RestartBackoff _backoff;
     private readonly TimeProvider _time;
@@ -31,19 +32,21 @@ internal sealed class UnitSupervisor
     /// 登记并启动一个单元。同一标识的上一个实例仍存活时不启动，返回 false，调用方负责释放传入的实例。
     /// </summary>
     /// <param name="rebuild">故障后用同一计划与上下文构建新实例。</param>
-    public bool TryStart(IRuntimeUnit instance, Func<IRuntimeUnit> rebuild, InputReadStatus? reads)
+    /// <param name="exclusiveGroup">可选的互斥资源标识；输出使用 connectionId，不因路线路径改名而释放占用。</param>
+    public bool TryStart(IRuntimeUnit instance, Func<IRuntimeUnit> rebuild, InputReadStatus? reads, RuntimeUnitId? exclusiveGroup = null)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(rebuild);
         lock (_lock)
         {
-            if (_pending.ContainsKey(instance.Id) || (_units.TryGetValue(instance.Id, out var existing) && existing.IsAlive))
+            if (HasPendingConflict(instance.Id, exclusiveGroup) || ConflictingUnits(instance.Id, exclusiveGroup).Any(unit => unit.IsAlive))
             {
                 return false;
             }
 
             var unit = new SupervisedUnit(instance, rebuild, _backoff, _time, _events, _logger, reads);
             _units[instance.Id] = unit;
+            SetExclusiveGroup(instance.Id, exclusiveGroup);
             unit.Start();
             return true;
         }
@@ -51,8 +54,9 @@ internal sealed class UnitSupervisor
 
     /// <summary>为已请求停止的单元登记当前有效计划的重建工厂。旧循环、取消回调及释放全部结束后才构建。
     /// 返回 true 表示已登记，不表示已启动；等待期间重复登记只更新为最新工厂。仍正常运行的单元不接受替换。
-    /// StopAsync 同时撤销尚未启动的登记，停机后不会由本登记复活单元。</summary>
-    public bool TryRestartStopped(RuntimeUnitId id, Func<IRuntimeUnit> rebuild, InputReadStatus? reads)
+    /// 同时等待同 ID 及同互斥资源的全部旧实例；不同 ID 的待启动登记占用同一资源时拒绝，调用方须先撤销旧登记。
+    /// StopAsync 按待启动单元的 ID 撤销登记，停机后不会由本登记复活单元。</summary>
+    public bool TryRestartStopped(RuntimeUnitId id, Func<IRuntimeUnit> rebuild, InputReadStatus? reads, RuntimeUnitId? exclusiveGroup = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(rebuild);
@@ -60,33 +64,56 @@ internal sealed class UnitSupervisor
         {
             if (_pending.TryGetValue(id, out var pending))
             {
+                // 改变互斥资源必须先撤销旧登记，再按新的全部前驱登记，不能沿用旧等待任务。
+                if (pending.ExclusiveGroup != exclusiveGroup)
+                { return false; }
                 pending.Rebuild = rebuild;
                 pending.Reads = reads;
                 return true;
             }
-            if (_units.TryGetValue(id, out var previous) && previous.Snapshot().State is not
-                (RuntimeUnitState.Stopped or RuntimeUnitState.Stopping or RuntimeUnitState.StopTimedOut))
+            if (HasPendingConflict(id, exclusiveGroup))
+            { return false; }
+            var previous = ConflictingUnits(id, exclusiveGroup).ToArray();
+            if (previous.Any(unit => unit.Snapshot().State is not
+                (RuntimeUnitState.Stopped or RuntimeUnitState.Stopping or RuntimeUnitState.StopTimedOut)))
             { return false; }
 
-            if (previous is null || previous.Completion.IsCompleted)
+            if (previous.All(unit => unit.Completion.IsCompleted))
             {
-                StartDeferred(id, rebuild, reads);
+                StartDeferred(id, rebuild, reads, exclusiveGroup);
                 return true;
             }
 
-            pending = new PendingRestart(rebuild, reads);
+            pending = new PendingRestart(rebuild, reads, exclusiveGroup);
             _pending.Add(id, pending);
-            pending.Completion = Task.Run(() => RestartAfterExitAsync(id, previous.Completion, pending));
+            pending.Completion = Task.Run(() => RestartAfterExitAsync(id, Task.WhenAll(previous.Select(unit => unit.Completion)), pending));
             return true;
         }
     }
 
     // 调用方持有监督者锁；此处只登记，适配器工厂在 SupervisedUnit 的受监督循环中运行。
-    private void StartDeferred(RuntimeUnitId id, Func<IRuntimeUnit> rebuild, InputReadStatus? reads)
+    private void StartDeferred(RuntimeUnitId id, Func<IRuntimeUnit> rebuild, InputReadStatus? reads, RuntimeUnitId? exclusiveGroup)
     {
         var unit = new SupervisedUnit(id, rebuild, _backoff, _time, _events, _logger, reads);
         _units[id] = unit;
+        SetExclusiveGroup(id, exclusiveGroup);
         unit.Start();
+    }
+
+    // 单元 ID 与物理资源分别互斥：输出路径可改名，同一路径也可改用另一个连接。
+    private IEnumerable<SupervisedUnit> ConflictingUnits(RuntimeUnitId id, RuntimeUnitId? group) =>
+        _units.Where(pair => pair.Key == id || (group is not null && _exclusiveGroups.GetValueOrDefault(pair.Key) == group))
+            .Select(pair => pair.Value);
+
+    private bool HasPendingConflict(RuntimeUnitId id, RuntimeUnitId? group) =>
+        _pending.Any(pair => pair.Key == id || (group is not null && pair.Value.ExclusiveGroup == group));
+
+    private void SetExclusiveGroup(RuntimeUnitId id, RuntimeUnitId? group)
+    {
+        if (group is null)
+        { _exclusiveGroups.Remove(id); }
+        else
+        { _exclusiveGroups[id] = group; }
     }
 
     private async Task RestartAfterExitAsync(RuntimeUnitId id, Task previous, PendingRestart pending)
@@ -101,7 +128,7 @@ internal sealed class UnitSupervisor
                 if (!_pending.TryGetValue(id, out var current) || !ReferenceEquals(current, pending))
                 { return; }
                 _pending.Remove(id);
-                StartDeferred(id, pending.Rebuild, pending.Reads);
+                StartDeferred(id, pending.Rebuild, pending.Reads, pending.ExclusiveGroup);
             }
         }
         finally
@@ -116,8 +143,9 @@ internal sealed class UnitSupervisor
         }
     }
 
-    private sealed class PendingRestart(Func<IRuntimeUnit> rebuild, InputReadStatus? reads) : IDisposable
+    private sealed class PendingRestart(Func<IRuntimeUnit> rebuild, InputReadStatus? reads, RuntimeUnitId? exclusiveGroup) : IDisposable
     {
+        public RuntimeUnitId? ExclusiveGroup { get; } = exclusiveGroup;
         public Func<IRuntimeUnit> Rebuild { get; set; } = rebuild;
         public InputReadStatus? Reads { get; set; } = reads;
         public CancellationTokenSource Cancel { get; } = new();
@@ -160,7 +188,7 @@ internal sealed class UnitSupervisor
         lock (_lock)
         {
             foreach (var id in _units.Where(pair => !pair.Value.IsAlive && !_pending.ContainsKey(pair.Key) && (predicate is null || predicate(pair.Key))).Select(pair => pair.Key).ToArray())
-            { _units.Remove(id); }
+            { _units.Remove(id); _exclusiveGroups.Remove(id); }
         }
     }
 

@@ -3016,6 +3016,21 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 后续仍按 §2.152 的未完成项推进，优先处理新版本发送者按 connectionId 的所有权、别名改变和迟到 ACK，再接入在线激活。未新增依赖、修改常驻部署、推送或发布。
 
+### 2.154 T3-06 输出别名切换的连接互斥与迟到 ACK（2026-10-10）
+
+承接 §2.153，关联 GW-10、AT-28、AT-11 的发送者交接子场景。`RoutePlanCompiler` 按路线与节点链生成输出路径 ID；同一 connectionId 可以因路径改名而得到不同 ID，同一个路径 ID 也可以改用其他连接。因此，仅按单元 ID 等待旧实例退出不足以实现在线切换。
+
+- 监督者增加可选的互斥资源标识；Runtime 初次激活及分组恢复的输出发送者均实际登记 `sender.connection/{connectionId}`，不改变路径 ID、诊断标识或投递标签。正常启动同时检查单元 ID 与资源占用，不能绕过尚在运行或等待重建的发送者。
+- 延迟重建同时等待同 ID 及同资源的全部旧实例完整退出，包括取消回调与释放；可以处理“新路径替换同连接旧路径”及“同路径改连接、另一旧路径仍占用该连接”两类交叉。不同连接仍独立，不变成全局串行发送。
+- 等待期间同 ID、同资源的新工厂替换旧工厂；改变资源或别名须先按旧待启动 ID 撤销登记，再登记当前有效计划。资源被另一待启动别名占用时明确拒绝，不默默覆盖或同时启动。停止撤销待启动登记；清理已退出状态时一并回收互斥元数据。
+- 新增两个真实 `OutputSenderUnit` + 临时 SQLite 用例：旧发送忽略取消，超时之后才返回 ACK，并继续阻塞在释放中；替换发送者在完整退出前不构建，接续同一发送状态后只删除已 ACK 记录、不再次发送。另测撤销等待中的旧别名，最终只构建最新别名。这里验证的是受控适配器和监督交接，不是已完成的配置提交/在线版本切换或真实设备确认。
+
+新增 7 项场景（5 项监督者资源/身份/撤销组合 + 2 项真实发送循环与 SQLite ACK 交接）。针对性命令 `dotnet test tests/IntegrationTests --no-restore --filter 'FullyQualifiedName~DeferredRestartTests|FullyQualifiedName~RuntimeQuiescenceTests|FullyQualifiedName~GroupedRecoveryTests' -v minimal`：29 通过（`/tmp/tenonedge-sender-ownership-focused-final.log`）；改用 `--filter 'FullyQualifiedName~SenderOwnershipTests|FullyQualifiedName~DeferredRestartTests'` 的新增 ACK 用例及延迟重建用例合计 13 通过（`/tmp/tenonedge-sender-ownership-ack.log`）。后者使用相同过滤器加 `--no-build --no-restore` 连续执行 10 轮，**130 次执行全部通过、无跳过**（`/tmp/tenonedge-sender-ownership-repeat.log`）。
+
+全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-sender-ownership-regression -v minimal`：**1258 单元 + 1179 集成 = 2437 项通过，0 失败/跳过**（`/tmp/tenonedge-sender-ownership-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-sender-ownership-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-sender-ownership-trx.log`）。`dotnet format --verify-no-changes --no-restore` 首次指出测试中的多语句换行（`/tmp/tenonedge-sender-ownership-format.log`），只修正空白后通过（`/tmp/tenonedge-sender-ownership-format-final.log`）；`git diff --check` 通过。环境 Linux x64、.NET SDK 10.0.401/runtime 10.0.12。
+
+仍需接入 Runtime 的新有效版本激活、按连接保留/替换/排空发送者和发送状态、Host 提交所有者与稳定计时，再完成网页及中断矩阵。不能把本批的延迟重建原语称为产品在线应用功能。未新增依赖、修改常驻部署、推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
