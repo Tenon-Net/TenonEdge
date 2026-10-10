@@ -3,6 +3,7 @@ using SqlSugar;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
@@ -77,12 +78,34 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
     /// <summary>
     /// 冻结（总设计 §7.4 第 1 步）：分配新版本号（大于已有版本与下限，不复用），写入快照与 pendingRevision。
     /// </summary>
-    public long Freeze(RuntimePlanDocument document, string origin, string? originDetail, string createdBy) =>
+    public long Freeze(RuntimePlanDocument document, string origin, string? originDetail, string createdBy)
+    {
+        if (origin is not (RuntimeSnapshotOrigins.Seed or RuntimeSnapshotOrigins.AutoRollback))
+        { throw new ArgumentException("在线应用必须使用带草稿版本检查的冻结入口。", nameof(origin)); }
+        return FreezeCore(document, origin, originDetail, createdBy, expectedDraftVersion: null);
+    }
+
+    /// <summary>在线应用的冻结入口：编译在事务外完成；确认草稿版本、分配版本、写快照和 pending 在同一事务。
+    /// 冻结之后的草稿编辑不影响本快照；本方法不准备、停止或启动运行单元。</summary>
+    public long FreezeDraft(RuntimePlanDocument document, string expectedDraftVersion, string createdBy)
+    {
+        if (string.IsNullOrEmpty(expectedDraftVersion) || expectedDraftVersion.Length > 64)
+        { throw new ArgumentException("须提供已确认的草稿版本。", nameof(expectedDraftVersion)); }
+        return FreezeCore(document, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion);
+    }
+
+    private long FreezeCore(RuntimePlanDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion) =>
         database.InTransaction(client =>
         {
+            ArgumentNullException.ThrowIfNull(document);
+            ArgumentException.ThrowIfNullOrWhiteSpace(createdBy);
+            if (expectedDraftVersion is not null)
+            { ConfigurationDraft.CheckVersion(client, expectedDraftVersion); }
             var state = State(client);
+            if (state.PendingRevision is { } pending)
+            { throw new RuntimeVersionConflictException("runtime.applicationInProgress", pending); }
             var highest = client.Ado.GetLong("SELECT COALESCE(MAX(revision), 0) FROM runtime_snapshot");
-            var revision = Math.Max(state.RevisionFloor, highest) + 1;
+            var revision = checked(Math.Max(state.RevisionFloor, highest) + 1);
             client.Insertable(new RuntimeSnapshotRecord
             {
                 Revision = revision,
@@ -109,12 +132,12 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
     /// </summary>
     public void Abandon(long revision, string reason, string? seedHash = null) => database.InTransaction(client =>
     {
-        MarkNotEffective(client, revision, reason);
         var state = State(client);
-        if (state.PendingRevision == revision)
-        {
-            state.PendingRevision = null;
-        }
+        var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision);
+        if (state.PendingRevision != revision || snapshot?.State != RuntimeSnapshotStates.Pending)
+        { throw new RuntimeVersionConflictException("runtime.pendingMismatch", revision); }
+        MarkNotEffective(client, revision, reason);
+        state.PendingRevision = null;
 
         state.SeedHash = seedHash ?? state.SeedHash;
         client.Updateable(state).UpdateColumns(record => new { record.PendingRevision, record.SeedHash }).ExecuteCommand();
@@ -175,10 +198,8 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
         var state = State(client);
         var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
             ?? throw new InvalidOperationException($"版本 r{revision} 不存在。");
-        if (snapshot.State != RuntimeSnapshotStates.Pending)
-        {
-            throw new InvalidOperationException($"版本 r{revision} 的状态为 {snapshot.State}，不能提交。");
-        }
+        if (state.PendingRevision != revision || snapshot.State != RuntimeSnapshotStates.Pending)
+        { throw new RuntimeVersionConflictException("runtime.pendingMismatch", revision); }
 
         if (state.EffectiveRevision is { } old && old != revision)
         {
@@ -251,6 +272,8 @@ internal sealed class RuntimeVersionStore(ConfigDatabase database, AuditTrail au
     public void SetRunningMarker(long revision) => database.InTransaction(client =>
     {
         var state = State(client);
+        if (state.EffectiveRevision != revision)
+        { throw new RuntimeVersionConflictException("runtime.effectiveMismatch", revision); }
         state.RunningRevision = revision;
         client.Updateable(state).UpdateColumns(record => new { record.RunningRevision }).ExecuteCommand();
         return true;
@@ -300,3 +323,10 @@ internal sealed record RuntimeVersionPointers(
 
 /// <summary>处理“运行中”标记的结果：上次运行的版本、是否计入了非正常退出及计入后的次数。</summary>
 internal sealed record RunningMarkerOutcome(long Revision, bool Counted, int AbnormalExitCount);
+
+/// <summary>版本操作的并发/归属冲突；不含快照内容或凭证。</summary>
+internal sealed class RuntimeVersionConflictException(string code, long revision) : InvalidOperationException(code)
+{
+    public string Code { get; } = code;
+    public long Revision { get; } = revision;
+}

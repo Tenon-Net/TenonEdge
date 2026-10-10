@@ -2934,6 +2934,22 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 未部署、推送、发布或实物验证。应用/回滚仍未实现，不能宣称普通浏览器可独立创建并启动运行路线；下一步继续按 T3-06 实现生命周期切换与 API/UI。
 
+### 2.149 T3-06 应用冻结与版本归属事务基础（2026-10-10）
+
+开始 T3-06，先补在线应用必须具备的持久事务约束，关联 GW-10、AT-10/13/28 的冻结/提交子场景。前置为既有全局草稿版本、图编译、运行快照与启动恢复；本次停止点是存储方法和集成验证，不引入第二套运行时，不在事务中联网，不暴露一个尚不能正确静默/激活的“应用”按钮。
+
+- 新增 FreezeDraft：接受服务端已编译的运行文档和确认时的草稿版本，在同一个配置库事务中检查全局草稿版本、拒绝已有 pending、分配单调版本并写快照/pending。编译本身仍在事务外；之后的草稿编辑不改变被冻结内容，提交不会覆盖这些后续编辑。apply 来源不能通过种子/自动回滚的旧入口跳过草稿版本检查。
+- 旧 Freeze 同样不能覆盖已有 pending；Commit/Abandon 必须仍拥有该 pending 指针且快照仍为 Pending。过期回调不能提交旧快照、变更另一操作的 pending 或覆盖 seedHash。版本号递增采用 checked，达到 long 上限时拒绝，不绕回负数。
+- 运行中标记只允许当前 effectiveRevision 设置，过期的清除仍按原有版本匹配规则处理。未增加提交后的自动回滚。
+
+先写的两项回归实际失败：旧实现允许第二次冻结覆盖 pending，且过期 Abandon 未拒绝（`/tmp/tenonedge-apply-store-red.log`，2 失败、0 通过）。扩展测试最初误把 ISqlSugarClient 传给要求 SqlSugarClient 的草稿读取 helper，编译失败（`/tmp/tenonedge-apply-store-focused.log`），改为独立客户端读取；未为了测试更改产品 helper。修正后冻结、协调者启动保护、目标变更与凭证回归 **121 集成通过，0 失败/跳过**（`/tmp/tenonedge-apply-store-focused2.log`）。格式门禁发现一处新测试 try 换行（`/tmp/tenonedge-apply-store-format.log`），已修正；最终门禁通过（`/tmp/tenonedge-apply-store-format-final.log`）。
+
+本子项新增 9 个存储集成场景：pending 覆盖拒绝、过期放弃拒绝、草稿冲突/冻结后编辑、并发冻结唯一赢家、失去指针的快照不能提交、冻结事务故障回滚、审计与提交同成同败、版本下限/溢出、运行中标记归属。故障通过测试库的 SQLite trigger 注入，是数据库事务验证，不是 §7.4 的进程终止/断电验证。
+
+最终全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-apply-store-regression -v minimal`：**1258 单元 + 1145 集成 = 2403 项通过，0 失败/跳过**（`/tmp/tenonedge-apply-store-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-apply-store-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过（`/tmp/tenonedge-apply-store-trx.log`）；`dotnet format --verify-no-changes --no-restore` 与 `git diff --check` 通过。Linux x64、.NET SDK 10.0.401/runtime 10.0.12，数据库故障注入仅作用于各测试的临时配置库。
+
+尚未实现：应用全程互斥及进度、完整草稿历史/还原、全部输入静默与排空、失败恢复、发送者协调、新版本激活、版本清单/比较/人工回滚及网页操作。这些仍按 T3-06 后续子场景继续；pending 事务保护不等于全程应用锁，数据库提交成功也不等于运行激活成功。没有新增管理端点或前端代码，本子项不重复跑浏览器来冒充应用验收。未部署、推送、发布或实物验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
