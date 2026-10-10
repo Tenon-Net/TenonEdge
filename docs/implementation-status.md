@@ -2950,6 +2950,20 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 尚未实现：应用全程互斥及进度、完整草稿历史/还原、全部输入静默与排空、失败恢复、发送者协调、新版本激活、版本清单/比较/人工回滚及网页操作。这些仍按 T3-06 后续子场景继续；pending 事务保护不等于全程应用锁，数据库提交成功也不等于运行激活成功。没有新增管理端点或前端代码，本子项不重复跑浏览器来冒充应用验收。未部署、推送、发布或实物验证。
 
+### 2.150 T3-06 旧版本输入静默与排空基础（2026-10-10）
+
+承接 §2.149，按总设计 §7.4 第 3 步补运行时本地生命周期操作，关联 GW-10、AT-28 的旧版本排空与单实例子场景。本次只涉及 Runtime、输出契约、MQTT 目标及测试；不提交配置、不恢复输入、不启动新版本，不新增应用 API 或网页按钮。
+
+- `QuiesceInputsAsync` 先停止全部输入，再完成输入通道并等待旧版本分发入库，最后停止分发器及与输入共用会话的发送者。MQTT 目标声明其输入会话耦合；独立发送者和发送缓存写者保持运行，不调用队列 CompleteAdding，不改变 effectiveRevision 或已冻结记录。
+- 输入停止超时不关闭通道、不释放仍活跃的旧实例；分发排空超时保留分发器、在途工作和预约字节，解阻后可再次排空。结果中的成功仅代表本地静默，不代表配置应用成功；失败不允许进入提交。
+- 激活和静默共用生命周期互斥门；停机等待已开始的操作退出，再执行原停机顺序。调用前取消没有副作用，开始后的调用方取消只取消等待，不打断运行时拥有的清理。正常操作异常在运行时转为失败结果和不含原始异常内容的事件，互斥门在 finally 释放。该门不替代未来贯穿冻结至激活的应用/回滚全程锁。
+
+新增 6 个运行时集成场景：旧版本 20 条投递排空/仅释放耦合发送者/写者仍可提交；格式化阻塞超时及注入诊断故障后的预算保留/重试（两例）；无有效计划及预取消；取消等待后继续清理/并发拒绝/停机等待；输入超时不重建旧实例。真实 Mosquitto 的既有 SQLite 写锁测试扩为整机停止与只静默输入两例：入库解锁前不确认上游，提交确认后停止共享发送者，冻结记录保留，静默后队列仍可提交。这是软件 Broker 和临时数据库验证，不是实物、浏览器或进程中断验收。
+
+首次构建发现新分部文件缺少 RuntimeEventSeverity 所在 Contracts 命名空间，已修正；未把编译失败记为通过。针对性命令 `dotnet test tests/IntegrationTests --no-restore --filter 'FullyQualifiedName~RuntimeQuiescenceTests|FullyQualifiedName~RuntimeStopKeepsMixedConnection' -v minimal`：8 通过、0 失败/跳过（`/tmp/tenonedge-quiescence-focused-final.log`）。最终全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-quiescence-regression-final -v minimal`：**1258 单元 + 1152 集成 = 2410 项通过，0 失败/跳过**（`/tmp/tenonedge-quiescence-regression-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-quiescence-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过（`/tmp/tenonedge-quiescence-trx.log`）；`dotnet format --verify-no-changes --no-restore`（`/tmp/tenonedge-quiescence-format-final2.log`）与 `git diff --check` 通过。环境 Linux x64、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖。
+
+剩余：停止失败后的旧版本恢复、发送者变更协调和新版本激活、全程应用锁、完整草稿检查点/历史/比较/回滚、Host 编排及网页入口，以及 §7.4 各边界的进程中断验证。当前仍不能通过网页独立配置并启动采集路线。未更改部署、推送、发布或安装前端依赖。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

@@ -21,6 +21,9 @@ public interface IOutputTarget
     IOutputAdapter CreateAdapter();
     /// <summary>两个路径能否安全共用同一发送者；协议须核对全部连接参数，发送必须使用各记录冻结的地址与 QoS。</summary>
     bool CanShareSenderWith(IOutputTarget other) => false;
+    /// <summary>发送者与本计划输入共用接收会话；输入排空后必须释放它，才能切换/恢复新计划范围的会话。
+    /// 独立输出默认继续发送，不随输入静默停止。</summary>
+    bool QuiesceWithInputs => false;
 }
 
 /// <summary>由一个被监督的发送者独占；循环结束之后才释放。协议类型不越过适配器边界。</summary>

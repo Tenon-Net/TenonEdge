@@ -441,8 +441,10 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         }
     }
 
-    [Fact]
-    public async Task RuntimeStopKeepsMixedConnectionUntilBlockedSqliteHandoffIsCommittedAndAcknowledged()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RuntimeStopKeepsMixedConnectionUntilBlockedSqliteHandoffIsCommittedAndAcknowledged(bool inputsOnly)
     {
         var broker = fixture.Require();
         using var data = TemporaryDirectory.Create();
@@ -493,7 +495,7 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             using (publisher)
             { await MqttProbe.PublishAsync(publisher, topic + "/in", "{\"v\":42}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, deadline.Token); }
             await OutputPipelineTests.UntilAsync(() => runtime.GetStatus().Units.Single(unit => unit.Id == inputId).Reads?.ReadsCompleted == 1);
-            stopped = runtime.StopAsync(Token);
+            stopped = inputsOnly ? QuiesceAsync() : runtime.StopAsync(Token);
             await quiescing.Task.WaitAsync(deadline.Token);
             Assert.False(stopped.IsCompleted);
             Assert.False(confirmed.Task.IsCompleted);
@@ -505,6 +507,20 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal(1, connector.Connections);
         Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
         Assert.DoesNotContain(runtime.GetStatus().Units, unit => unit.State == RuntimeUnitState.StopTimedOut);
+        Assert.Equal(RuntimeUnitState.Stopped, runtime.GetStatus().Units.Single(unit => unit.Id == output.Id).State);
+        if (inputsOnly)
+        {
+            Assert.Equal(RuntimeUnitState.Running, runtime.GetStatus().Units.Single(unit => unit.Id.Kind == "delivery.writer").State);
+            var reconciled = await runtime.Deliveries.ReconcileAsync(new Dictionary<long, string>(), false, Token);
+            Assert.True(reconciled.Committed);
+        }
+
+        async Task QuiesceAsync()
+        {
+            var result = await runtime.QuiesceInputsAsync(Token);
+            Assert.True(result.Succeeded);
+            Assert.Equal(1, result.Revision);
+        }
     }
 
     [Fact]

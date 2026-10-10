@@ -39,6 +39,7 @@ internal sealed class MqttOutputTarget(
     public bool CanShareSenderWith(IOutputTarget other) => other is MqttOutputTarget mqtt &&
         ConnectionId == mqtt.ConnectionId && ConnectionSettings == mqtt.ConnectionSettings && ReferenceEquals(inputGroup, mqtt.InputGroup);
 
+    public bool QuiesceWithInputs => inputGroup is not null;
     private MqttConnectionGroup? InputGroup => inputGroup;
 
     public IOutputAdapter CreateAdapter() => inputGroup?.CreateOutputAdapter(settings, ClientId) ?? new MqttOutputAdapter(

@@ -50,6 +50,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     private bool _coreStarted;
     private long? _activeRevision;
     private Task? _stopping;
+    private TaskCompletionSource? _operation;
+    private IReadOnlyList<PreparedOutput> _activeOutputs = [];
 
     public RuntimeHost(
         IEnumerable<IInputUnitFactory> inputFactories,
@@ -257,6 +259,14 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     /// </summary>
     public async Task ActivateAsync(PreparedPlan prepared)
     {
+        var operation = EnterOperation();
+        try
+        { await ActivateCoreAsync(prepared); }
+        finally { CompleteOperation(operation); }
+    }
+
+    private async Task ActivateCoreAsync(PreparedPlan prepared)
+    {
         ArgumentNullException.ThrowIfNull(prepared);
         lock (_lock)
         {
@@ -269,6 +279,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             // 已释放或已激活过的计划在这里被拒绝，不改变运行时的状态。
             prepared.HandOver();
             _activeRevision = prepared.Revision;
+            _activeOutputs = prepared.Outputs;
         }
 
         try
@@ -287,7 +298,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     }
 
                     lock (_lock)
-                    { _activeRevision = null; }
+                    { _activeRevision = null; _activeOutputs = []; }
                     throw new DeliveryStoreException("启动目标隔离未提交，运行计划没有启动；修复存储后重启以重新核对。");
                 }
             }
@@ -361,6 +372,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     {
         TaskCompletionSource? owner = null;
         Task stopping;
+        Task operation;
         lock (_lock)
         {
             if (_stopping is null)
@@ -370,6 +382,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             }
 
             stopping = _stopping;
+            operation = _operation?.Task ?? Task.CompletedTask;
         }
 
         if (owner is null)
@@ -380,6 +393,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
         try
         {
+            // 已开始的本地生命周期操作由运行时拥有；先等其退出，避免停机和激活/排空交错。
+            await operation;
             await StopCoreAsync(cancellationToken);
             owner.SetResult();
         }
