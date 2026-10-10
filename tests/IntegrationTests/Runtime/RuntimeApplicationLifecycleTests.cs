@@ -38,18 +38,31 @@ public sealed class RuntimeApplicationLifecycleTests
             await input.Preparing.Task.WaitAsync(Deadline, Token);
             Assert.Equal(1, versions.ReadPointers().PendingRevision);
             Assert.Null(versions.ReadPointers().EffectiveRevision);
-            await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
+            var progress = coordinator.ApplicationStatus!;
+            Assert.Equal(("apply", "operator", saved.Version, (long?)1, RuntimeApplicationStage.Preparing),
+                (progress.Kind, progress.Account, progress.DraftVersion, progress.Revision, progress.Stage));
+            Assert.Null(progress.FinishedAt);
+            Assert.False(progress.Committed);
+            var busy = await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
                 await coordinator.ApplyDraftAsync(saved.Version, "other", null, Token));
+            Assert.Equal(progress.Id, busy.Application.Id);
+            Assert.Equal("operator", busy.Application.Account);
             await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
                 await coordinator.RollbackAsync(1, saved.Version, "other", null, Token));
             var drafts = factory.Services.GetRequiredService<RouteDraftStore>();
             var edited = drafts.Write(saved.Route.Id, new(saved.Version, saved.Route.Key, saved.Route.Name, false, saved.Route.Graph), "editor", null);
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => application);
+            Assert.Equal(progress, coordinator.ReadApplication(progress.Id));
             var stopping = coordinator.StopAsync(Token);
             Assert.False(stopping.IsCompleted);
             input.ReleasePreparation.Set();
             await stopping.WaitAsync(Deadline, Token);
+            var completed = coordinator.ReadApplication(progress.Id)!;
+            Assert.Equal(RuntimeApplicationStage.Completed, completed.Stage);
+            Assert.True(completed.Committed);
+            Assert.NotNull(completed.FinishedAt);
+            Assert.True(completed.Result!.Activated);
             Assert.Equal(1, versions.ReadPointers().EffectiveRevision);
             Assert.Null(versions.ReadPointers().RunningRevision);
             Assert.Null(versions.ReadPointers().PendingRevision);
@@ -129,6 +142,9 @@ public sealed class RuntimeApplicationLifecycleTests
             await input.Preparing.Task.WaitAsync(Deadline, Token);
             Assert.Equal(2, input.Runs);
             Assert.Equal(2, coordinator.Runtime.ActiveRevision);
+            var progress = coordinator.ApplicationStatus!;
+            Assert.Equal(("rollback", (long?)1, (long?)3, RuntimeApplicationStage.Preparing),
+                (progress.Kind, progress.TargetRevision, progress.Revision, progress.Stage));
             await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
                 await coordinator.ApplyDraftAsync(edited.Version, "other", null, Token));
             await Assert.ThrowsAsync<RuntimeApplicationBusyException>(async () =>
@@ -138,6 +154,10 @@ public sealed class RuntimeApplicationLifecycleTests
             var result = await rollback.WaitAsync(Deadline, Token);
             Assert.True(result.Committed && result.Activated);
             Assert.False(result.DraftReplaced);
+            var completed = coordinator.ReadApplication(progress.Id)!;
+            Assert.Equal(RuntimeApplicationStage.Completed, completed.Stage);
+            Assert.Equal(result, completed.Result);
+            Assert.True(completed.Committed);
             Assert.Equal(concurrent.Version, devices.Read().Version);
             Assert.Equal("Concurrent draft", Assert.Single(devices.Read().Devices).Name);
             Assert.Equal(3, coordinator.Runtime.ActiveRevision);
@@ -147,6 +167,35 @@ public sealed class RuntimeApplicationLifecycleTests
             Assert.Equal(3, input.Runs);
         }
         finally { input.ReleasePreparation.Set(); }
+    }
+
+    [Fact]
+    public async Task ProgressReportsQuiescingUntilTheOriginalInputReleasesOwnership()
+    {
+        using var data = TemporaryDirectory.Create();
+        using var input = new ControlledInput { BlockFirstStop = true };
+        await using var factory = Create(data.Path, input, Deadline);
+        var saved = Seed(factory);
+        var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
+        await coordinator.ApplyDraftAsync(saved.Version, "operator", null, Token);
+        await OutputPipelineTests.UntilAsync(() => input.Runs == 1);
+        var application = coordinator.ApplyDraftAsync(saved.Version, "operator", null, Token);
+        try
+        {
+            await input.Stopping.Task.WaitAsync(Deadline, Token);
+            var progress = coordinator.ApplicationStatus!;
+            Assert.Equal(RuntimeApplicationStage.Quiescing, progress.Stage);
+            Assert.Equal(2, progress.Revision);
+            Assert.False(progress.Committed);
+            Assert.Equal(1, coordinator.Runtime.ActiveRevision);
+            Assert.False(application.IsCompleted);
+            input.ReleaseStop.TrySetResult();
+            var result = await application.WaitAsync(Deadline, Token);
+            Assert.True(result.Activated);
+            Assert.Equal(result, coordinator.ReadApplication(progress.Id)!.Result);
+            Assert.Equal(RuntimeApplicationStage.Completed, coordinator.ApplicationStatus!.Stage);
+        }
+        finally { input.ReleaseStop.TrySetResult(); }
     }
 
     [Fact]
@@ -212,7 +261,7 @@ public sealed class RuntimeApplicationLifecycleTests
         }
     }
 
-    private static FixedDataDirectoryApplicationFactory Create(string path, ControlledInput input) => new(path, configureServices: services =>
+    private static FixedDataDirectoryApplicationFactory Create(string path, ControlledInput input, TimeSpan? stopTimeout = null) => new(path, configureServices: services =>
     {
         services.RemoveAll<IInputUnitFactory>();
         services.AddSingleton<IInputUnitFactory>(input);
@@ -222,7 +271,7 @@ public sealed class RuntimeApplicationLifecycleTests
         {
             // 只有专门验证停止超时的场景缩短期限；正常排空使用产品默认值。
             services.RemoveAll<RuntimeOptions>();
-            services.AddSingleton(new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(100) });
+            services.AddSingleton(new RuntimeOptions { UnitStopTimeout = stopTimeout ?? TimeSpan.FromMilliseconds(100) });
         }
     });
 
@@ -257,6 +306,7 @@ public sealed class RuntimeApplicationLifecycleTests
         public TaskCompletionSource Preparing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ManualResetEventSlim ReleasePreparation { get; } = new();
         public TaskCompletionSource ReleaseStop { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Stopping { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Runs;
         public IRuntimeUnit Build(RuntimeUnitPlan plan, InputUnitContext context)
         {
@@ -297,7 +347,10 @@ public sealed class RuntimeApplicationLifecycleTests
                     }, CancellationToken.None);
                 }
                 if (generation == 1 && owner.BlockFirstStop)
-                { await owner.ReleaseStop.Task; }
+                {
+                    owner.Stopping.TrySetResult();
+                    await owner.ReleaseStop.Task;
+                }
             }
             public ValueTask DisposeAsync() => inner.DisposeAsync();
         }

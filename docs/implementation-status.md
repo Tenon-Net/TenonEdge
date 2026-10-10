@@ -3147,6 +3147,25 @@ Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖、迁移、�
 
 Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖或配置库迁移，没有推送/发布。HTTP 出站在生命周期用例中被测试连接器拒绝，MQTT 凭证用例只校验本地接收方/解密，不是 Broker 或设备联调；SQL 故障和同进程宿主测试不代替 §7.4 逐点强杀/断电矩阵。后续继续完整确认清单、变更说明和操作进度、旧版本/损坏有效快照恢复边界、鉴权端点及浏览器配置→应用→回滚验证。
 
+### 2.160 T3-06 操作进度与只读查询（2026-10-10）
+
+承接 §2.159，补齐 T3-06 / GW-10 / 功能 §6.3 的应用所有权与进度查询子场景。**应用/回滚写端点和网页按钮仍未开放，不代表完整应用交互、实物或进程中断矩阵验收通过。**
+
+- 应用与回滚共用进程内操作记录：操作 ID、操作人、确认的草稿版本、目标/新版本、开始/结束时间，以及校验、准备、静默、提交、激活、恢复和终态。不保存请求上下文、来源 IP、异常对象、凭证或草稿正文；异常只公布固定错误码。
+- `Committed` 在提交前为 false，提交结果尚不确定时为 null，确认提交后为 true，不把存储异常误称为未提交。后台操作把原异常封装为内部结果，只向仍等待的调用方重抛；请求取消不会留下无人观察的故障任务。终态在释放操作互斥之前记录，忙冲突带当前操作 ID 和操作人；停机仍等待操作所有者。
+- 只保留本进程最近 20 次操作，与配置库版本历史分开。新增认证后的 `GET /configuration/operations/` 和 `GET /configuration/operations/{operationId}`（共同前缀 `/api/edge-admin/v1`），三种角色均可读取非秘密状态，响应 `Cache-Control: no-store`。缺失、清理或重启后查不到的记录返回 404，并提示核对持久化历史、不要自动重试应用；未新增后台服务或重复运行时。
+- 新增 10 项测试：校验失败及后续操作、预取消、20 条上限、三种非法版本形状、异常脱敏、三角色/匿名 API 权限、404/缓存，以及受控输入的静默阶段。已有请求取消/停机与回滚测试补查阶段、终态和操作 ID 关联。停止阶段用信号控制，不以固定延迟猜测阶段。
+
+验证经过与证据：
+
+- 初版构建通过，0 警告/错误（`/tmp/tenonedge-operation-build.log`）；阶段针对性 27 项通过（`/tmp/tenonedge-operation-focused.log`）。初次 API 针对性 **35 通过、2 失败**，均为访问清单遗漏根路由尾斜杠；修正后 **37 项通过**（`/tmp/tenonedge-operation-api-final.log`）。最后补入的 3 项版本形状测试纳入全量回归。
+- 初次格式检查只报告操作记录文件的空白排版（`/tmp/tenonedge-operation-format.log`），经限定文件的 whitespace 修正；最终 `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-operation-format-final.log`）。
+- OpenAPI 从独立临时目录的真实 Development Host 导出。首轮使用动态 HTTP 端口及系统 npm 10.9.8，发现无关 server URL 差异后重新执行：Node 22.23.2、固定 npm 11.21.0、HTTP `127.0.0.1:18081`、HTTPS 动态回环端口、openapi-typescript 7.13.0。最终 JSON 和 TypeScript 均由 `npm run api:generate` 生成，无手写契约或临时端口改动；Host SIGTERM 后退出 0，临时数据目录清理（`/tmp/tenonedge-operation-export-final.log`）。未修改持久部署。
+- 最终 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-operation-regression --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1243 集成 = 2501 项通过，0 失败/跳过**（`/tmp/tenonedge-operation-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-operation-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-operation-trx.log`）。环境 Linux x64、.NET SDK 10.0.401/runtime 10.0.12；`git diff --check` 通过。
+- 前端使用缓存中的固定 npm CLI：`node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js`。`run typecheck`、`run lint`、`test`（15 文件、219 项）和 `run format:check` 均通过，最终结果见 `/tmp/tenonedge-operation-web-final.log`；未增加页面，未把这些检查算作浏览器应用验证。
+
+本批无新依赖或数据库迁移，不推送/发布。下一步仍为完整确认清单、变更说明、公开写入口及应用/回滚页面；旧快照与损坏有效快照的恢复边界、逐点进程中断和完整浏览器流程仍待验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

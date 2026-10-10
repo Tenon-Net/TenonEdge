@@ -2172,6 +2172,92 @@
         }
       }
     },
+    "/api/edge-admin/v1/configuration/operations": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "查看本进程最近 20 次应用/回滚的脱敏进度；不代替持久化版本历史",
+        "operationId": "listConfigurationOperations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuntimeApplicationStatus"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/configuration/operations/{operationId}": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "查看指定应用/回滚的进度和结果；重启或超出保留范围后返回 404",
+        "operationId": "getConfigurationOperation",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeApplicationStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
       "get": {
         "tags": [
@@ -8350,6 +8436,142 @@
           }
         }
       },
+      "RuntimeApplicationResult": {
+        "required": [
+          "revision",
+          "committed",
+          "activated",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "committed": {
+            "type": "boolean"
+          },
+          "activated": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "recoveryPending": {
+            "type": "boolean",
+            "default": false
+          },
+          "draftReplaced": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        }
+      },
+      "RuntimeApplicationStage": {
+        "enum": [
+          "validating",
+          "preparing",
+          "quiescing",
+          "committing",
+          "activating",
+          "restoring",
+          "completed",
+          "failed"
+        ]
+      },
+      "RuntimeApplicationStatus": {
+        "required": [
+          "id",
+          "kind",
+          "account",
+          "draftVersion",
+          "targetRevision",
+          "revision",
+          "stage",
+          "startedAt",
+          "finishedAt",
+          "committed",
+          "result",
+          "errorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "draftVersion": {
+            "type": "string"
+          },
+          "targetRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/RuntimeApplicationStage"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "committed": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RuntimeApplicationResult"
+              }
+            ]
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "RuntimeCoordinatorState": {
         "enum": [
           "starting",
@@ -9063,6 +9285,9 @@
     },
     {
       "name": "Inputs"
+    },
+    {
+      "name": "Configuration"
     },
     {
       "name": "Credentials"

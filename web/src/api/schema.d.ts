@@ -530,6 +530,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/configuration/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看本进程最近 20 次应用/回滚的脱敏进度；不代替持久化版本历史 */
+        get: operations["listConfigurationOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/operations/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看指定应用/回滚的进度和结果；重启或超出保留范围后返回 404 */
+        get: operations["getConfigurationOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -1770,6 +1804,37 @@ export interface components {
             /** Format: int32 */
             edgeIndex?: null | number | string;
             fieldKey?: null | string;
+        };
+        RuntimeApplicationResult: {
+            /** Format: int64 */
+            revision: number | string;
+            committed: boolean;
+            activated: boolean;
+            code: string;
+            /** @default false */
+            recoveryPending: boolean;
+            draftReplaced?: null | boolean;
+        };
+        /** @enum {unknown} */
+        RuntimeApplicationStage: "validating" | "preparing" | "quiescing" | "committing" | "activating" | "restoring" | "completed" | "failed";
+        RuntimeApplicationStatus: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            account: string;
+            draftVersion: string;
+            /** Format: int64 */
+            targetRevision: null | number | string;
+            /** Format: int64 */
+            revision: null | number | string;
+            stage: components["schemas"]["RuntimeApplicationStage"];
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt: null | string;
+            committed: null | boolean;
+            result: null | components["schemas"]["RuntimeApplicationResult"];
+            errorCode: null | string;
         };
         /** @enum {unknown} */
         RuntimeCoordinatorState: "starting" | "blocked" | "idle" | "active" | "runFailed" | "stopping" | "stopped";
@@ -3658,6 +3723,75 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    listConfigurationOperations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeApplicationStatus"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConfigurationOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeApplicationStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
