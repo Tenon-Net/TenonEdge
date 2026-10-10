@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Diagnostics;
 
@@ -10,6 +12,35 @@ public sealed class RuntimeMessageCacheTests
     private static readonly RuntimeUnitId B = RuntimeUnitId.Create("input.modbus", "device/b");
     private static long Put(RuntimeMessageCache cache, RuntimeUnitId id, string text, long revision = 1) =>
         cache.Capture(id, revision, Guid.NewGuid(), Encoding.UTF8.GetBytes(text));
+
+    [Theory]
+    [InlineData(DiagnosticSampleAccess.Unknown, false)]
+    [InlineData(DiagnosticSampleAccess.Redacted, false)]
+    [InlineData(DiagnosticSampleAccess.Safe, true)]
+    public void JsonPrivacyGateRetainsOnlyCheckedSafeBodies(DiagnosticSampleAccess access, bool allowed)
+    {
+        var cache = new RuntimeMessageCache(TimeProvider.System);
+        using var json = JsonDocument.Parse("{\"echo\":\"fixture-secret\"}");
+        var now = DateTimeOffset.UtcNow;
+        var message = new EdgeMessage(Guid.NewGuid(), "a", "device", now, TimeSource.Gateway, now,
+            new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromString("fixture-secret") },
+            rawJson: RawJsonPayload.CopyFrom(json.RootElement), diagnosticAccess: access);
+        var sequence = cache.CaptureInput(A, 1, message);
+        var record = Assert.Single(cache.Read(A, true));
+        Assert.Equal(!allowed, record.PrivacyBlocked);
+        Assert.False(record.Truncated);
+        Assert.Equal(allowed, cache.TryReadComplete(A, sequence, 1, message.SourceMessageId, out _));
+        Assert.Equal(InputMessageSnapshot.Encode(message).OriginalBytes, record.OriginalBytes);
+        if (!allowed)
+        {
+            Assert.Null(record.Body);
+            Assert.Equal(0, record.StoredBytes);
+            Assert.Equal(RuntimeMessageCache.MetadataCharge, cache.Status.ChargedBytes);
+        }
+        else
+        { Assert.Contains("fixture-secret", record.Body!, StringComparison.Ordinal); }
+        Assert.DoesNotContain("diagnosticAccess", JsonSerializer.Serialize(message), StringComparison.OrdinalIgnoreCase);
+    }
 
     [Fact]
     public void CaptureOwnsOnlyItsPrefixAndNeverExposesItsStoredArray()

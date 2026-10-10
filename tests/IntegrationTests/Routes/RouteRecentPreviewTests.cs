@@ -73,6 +73,32 @@ public sealed class RouteRecentPreviewTests
     }
 
     [Fact]
+    public async Task PrivacyBlockedSampleHasMetadataButCannotBeReplayed()
+    {
+        await using var factory = new RoutePreviewTests.NoOutboundFactory();
+        var request = RoutePreviewTests.Seed(factory.Services, 1);
+        var runtime = await StartAsync(factory.Services);
+        var now = DateTimeOffset.UtcNow;
+        var message = new EdgeMessage(Guid.NewGuid(), "values", "sim", now, TimeSource.Gateway, now,
+            new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromString("fixture-secret") },
+            diagnosticAccess: DiagnosticSampleAccess.Redacted);
+        runtime.Messages.CaptureInput(Source, 7, message);
+        var record = runtime.Messages.Read(Source, true)[0];
+        Assert.Null(record.Body);
+        TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
+        using var client = await factory.CreateLoggedInClientAsync("operator", Token);
+        using var listing = await client.PostJsonAsync(Endpoint + "/messages", Listing(request), Token);
+        var entry = (await listing.ReadJsonAsync(Token)).GetProperty("records")[0];
+        Assert.True(entry.GetProperty("privacyBlocked").GetBoolean());
+        Assert.False(entry.GetProperty("executable").GetBoolean());
+        Assert.False(entry.GetProperty("truncated").GetBoolean());
+        using var response = await client.PostJsonAsync(Endpoint, Selection(request, record), Token);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.DoesNotContain("fixture-secret", await response.Content.ReadAsStringAsync(Token), StringComparison.Ordinal);
+        Assert.Equal(0, factory.Connector.Calls);
+    }
+
+    [Fact]
     public async Task ExactTypedFixtureReplaysWithoutManualJsonReinterpretation()
     {
         await using var factory = new RoutePreviewTests.NoOutboundFactory();

@@ -55,12 +55,13 @@ internal sealed class HttpInputUnit(RuntimeUnitId id, HttpInputSettings settings
                         using var requestToken = CancellationTokenSource.CreateLinkedTokenSource(token, requestDeadline.Token);
                         try
                         {
-                            using var document = await lease.ExecuteAsync((session, cancel) => session.ReadInputAsync(settings, credentials, cancel), requestToken.Token);
+                            var captured = await lease.ExecuteAsync((session, cancel) => session.ReadDiagnosticInputAsync(settings, credentials, cancel), requestToken.Token);
+                            using var document = captured.Document;
                             var receivedAt = context.Time.GetUtcNow();
                             var fields = decoder.Decode(document.RootElement, receivedAt, context.ClockState, requestToken.Token);
                             requestToken.Token.ThrowIfCancellationRequested();
                             var message = new EdgeMessage(Guid.CreateVersion7(receivedAt), context.InputKey, context.DeviceKey,
-                                fields.CollectedAt, fields.TimeSource, receivedAt, fields.Values, fields.Quality, RawJsonPayload.CopyFrom(document.RootElement));
+                                fields.CollectedAt, fields.TimeSource, receivedAt, fields.Values, fields.Quality, RawJsonPayload.CopyFrom(document.RootElement), captured.Access);
                             if (fields.InvalidUpstreamTime)
                             { context.Reads.UpstreamTimeInvalid(); }
                             context.Reads.ReadCompleted(receivedAt, fields.Quality.Count);

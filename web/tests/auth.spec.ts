@@ -4603,6 +4603,7 @@ test('route recent samples use real empty-list API and explicit metadata fixture
         storedBytes: 400,
         truncated: false,
         executable: true,
+        privacyBlocked: false,
     }
     await page.route(listEndpoint, (route) =>
         route.fulfill({
@@ -4614,6 +4615,13 @@ test('route recent samples use real empty-list API and explicit metadata fixture
                 running: true,
                 activeRevision: '7',
                 records: [
+                    {
+                        ...record,
+                        sequence: '3',
+                        storedBytes: 0,
+                        executable: false,
+                        privacyBlocked: true,
+                    },
                     {
                         ...record,
                         sequence: '2',
@@ -4635,6 +4643,9 @@ test('route recent samples use real empty-list API and explicit metadata fixture
     })
     await expect(select).toHaveValue('')
     await expect(run).toBeDisabled()
+    await select.selectOption('3')
+    await expect(run).toBeDisabled()
+    await expect(recent).toContainText('未缓存正文')
     await select.selectOption('2')
     await expect(run).toBeDisabled()
     await expect(recent).toContainText('已截断/淘汰')

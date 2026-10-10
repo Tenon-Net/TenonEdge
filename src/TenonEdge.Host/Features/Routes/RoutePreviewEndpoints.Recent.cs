@@ -19,7 +19,7 @@ internal sealed record RouteRecentMessagesRequest(string ExpectedVersion, RouteG
 internal sealed record RouteRecentPreviewRequest(string ExpectedVersion, RouteGraph Graph, long SourceId,
     string Sequence, string Revision, Guid SourceMessageId);
 internal sealed record RouteRecentMessageInfo(string Sequence, string Revision, Guid SourceMessageId,
-    DateTimeOffset CapturedAt, int OriginalBytes, int StoredBytes, bool Truncated, bool Executable);
+    DateTimeOffset CapturedAt, int OriginalBytes, int StoredBytes, bool Truncated, bool Executable, bool PrivacyBlocked);
 internal sealed record RouteRecentMessagesResponse(string Version, long SourceId, bool Running,
     string? ActiveRevision, RouteRecentMessageInfo[] Records);
 
@@ -57,7 +57,7 @@ internal static partial class RoutePreviewEndpoints
             var records = runtime.Messages.Read(id, includeBody: false).Select(record => new RouteRecentMessageInfo(
                 record.Sequence.ToString(CultureInfo.InvariantCulture), record.Revision.ToString(CultureInfo.InvariantCulture),
                 record.SourceMessageId, record.CapturedAt, record.OriginalBytes, record.StoredBytes, record.Truncated,
-                running && record.Revision == status.ActiveRevision && !record.Truncated)).ToArray();
+                running && record.Revision == status.ActiveRevision && !record.Truncated && !record.PrivacyBlocked, record.PrivacyBlocked)).ToArray();
             operation.Token.ThrowIfCancellationRequested();
             return TypedResults.Ok(new RouteRecentMessagesResponse(snapshot.Version, request.SourceId, running,
                 status.ActiveRevision?.ToString(CultureInfo.InvariantCulture), records));
@@ -89,7 +89,7 @@ internal static partial class RoutePreviewEndpoints
             { throw new ArgumentException("记录身份无效。"); }
             operation.Token.ThrowIfCancellationRequested();
             if (!runtime.TryReadInputSample(id, sequence, revision, request.SourceMessageId, out var sample))
-            { return ApiProblems.Problem(409, "preview.recent.unavailable", "所选记录已不可执行：请核对输入运行状态、版本、截断或淘汰；未替换样本或触发采集。"); }
+            { return ApiProblems.Problem(409, "preview.recent.unavailable", "所选记录已不可执行：请核对输入运行状态、版本、敏感内容限制、截断或淘汰；未替换样本或触发采集。"); }
             var result = RouteSamplePreview.Run(snapshot, request.SourceId, sample, operation.Token);
             return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, null, result, []));
         }

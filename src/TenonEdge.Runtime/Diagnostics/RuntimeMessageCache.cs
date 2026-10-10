@@ -7,7 +7,7 @@ using TenonEdge.Abstractions.Plans;
 namespace TenonEdge.Runtime.Diagnostics;
 
 public sealed record RuntimeMessageRecord(long Sequence, RuntimeUnitId ObjectId, long Revision, Guid SourceMessageId,
-    DateTimeOffset CapturedAt, int OriginalBytes, int StoredBytes, bool Truncated, string? Body)
+    DateTimeOffset CapturedAt, int OriginalBytes, int StoredBytes, bool Truncated, string? Body, bool PrivacyBlocked = false)
 {
     public override string ToString() => $"Runtime message {Sequence} ({StoredBytes}/{OriginalBytes} bytes; body omitted)";
 }
@@ -65,18 +65,22 @@ public sealed class RuntimeMessageCache
         // 同一个缓存只允许一次编码，工作缓冲不会按输入数量无限放大。
         lock (_lock)
         {
-            var snapshot = InputMessageSnapshot.Encode(message);
-            return Capture(objectId, revision, message.SourceMessageId, snapshot.Prefix, snapshot.OriginalBytes);
+            var privacyBlocked = message.DiagnosticAccess == DiagnosticSampleAccess.Redacted ||
+                (message.DiagnosticAccess != DiagnosticSampleAccess.Safe &&
+                    (message.RawJson is not null || objectId.Kind is "input.http" or "input.mqtt"));
+            // 敏感/未检查消息只计完整编码长度，不分配或保存载荷前缀。
+            var snapshot = InputMessageSnapshot.Encode(message, retainBody: !privacyBlocked);
+            return Capture(objectId, revision, message.SourceMessageId, snapshot.Prefix, snapshot.OriginalBytes, privacyBlocked);
         }
     }
 
-    internal long Capture(RuntimeUnitId objectId, long revision, Guid sourceMessageId, ReadOnlySpan<byte> body, int originalBytes)
+    internal long Capture(RuntimeUnitId objectId, long revision, Guid sourceMessageId, ReadOnlySpan<byte> body, int originalBytes, bool privacyBlocked = false)
     {
         ArgumentNullException.ThrowIfNull(objectId);
         if (!(objectId.Kind.StartsWith("input.", StringComparison.Ordinal) || objectId.Kind.StartsWith("output.", StringComparison.Ordinal)) ||
             revision <= 0 || sourceMessageId == Guid.Empty || originalBytes < body.Length || !Utf8.IsValid(body))
         { throw new ArgumentException("调试记录身份、版本或 UTF-8 内容无效。"); }
-        var length = Math.Min(_recordLimit, body.Length);
+        var length = privacyBlocked ? 0 : Math.Min(_recordLimit, body.Length);
         // length is the first excluded byte. Retreat to a rune boundary if it points into a sequence.
         while (length > 0 && length < body.Length && (body[length] & 0xc0) == 0x80)
         { length--; }
@@ -86,7 +90,7 @@ public sealed class RuntimeMessageCache
             var sequence = checked(_sequence + 1);
             // 在修改索引前分配载荷与两个节点。诊断分配失败可被输入通道降级，
             // 因此不能在只挂入一条链表后才申请另一节点，留下半插入记录。
-            var entry = new Entry(sequence, objectId, revision, sourceMessageId, _time.GetUtcNow(), originalBytes, body[..length].ToArray());
+            var entry = new Entry(sequence, objectId, revision, sourceMessageId, _time.GetUtcNow(), originalBytes, body[..length].ToArray(), privacyBlocked);
             entry.GlobalNode = new LinkedListNode<Entry>(entry);
             entry.ObjectNode = new LinkedListNode<Entry>(entry);
             if (_objects.TryGetValue(objectId, out var bucket))
@@ -118,7 +122,7 @@ public sealed class RuntimeMessageCache
             { return []; }
             return bucket.Records.Reverse().Select(entry => new RuntimeMessageRecord(entry.Sequence, entry.ObjectId,
                 entry.Revision, entry.SourceMessageId, entry.At, entry.OriginalBytes, entry.Payload.Length,
-                entry.Truncated, includeBody ? Encoding.UTF8.GetString(entry.Payload) : null)).ToArray();
+                entry.Truncated, includeBody && !entry.PrivacyBlocked ? Encoding.UTF8.GetString(entry.Payload) : null, entry.PrivacyBlocked)).ToArray();
         }
     }
 
@@ -128,7 +132,7 @@ public sealed class RuntimeMessageCache
         lock (_lock)
         {
             var entry = _objects.GetValueOrDefault(objectId)?.Records.FirstOrDefault(item => item.Sequence == sequence);
-            if (entry is null || entry.Truncated || entry.Revision != revision || entry.SourceMessageId != sourceMessageId)
+            if (entry is null || entry.PrivacyBlocked || entry.Truncated || entry.Revision != revision || entry.SourceMessageId != sourceMessageId)
             { body = null; return false; }
             body = entry.Payload.ToArray();
             return true;
@@ -182,7 +186,7 @@ public sealed class RuntimeMessageCache
         internal long Charged;
     }
     private sealed class Entry(long sequence, RuntimeUnitId objectId, long revision, Guid sourceMessageId,
-        DateTimeOffset at, int originalBytes, byte[] payload)
+        DateTimeOffset at, int originalBytes, byte[] payload, bool privacyBlocked)
     {
         internal long Sequence { get; } = sequence;
         internal RuntimeUnitId ObjectId { get; } = objectId;
@@ -191,7 +195,8 @@ public sealed class RuntimeMessageCache
         internal DateTimeOffset At { get; } = at;
         internal int OriginalBytes { get; } = originalBytes;
         internal byte[] Payload { get; } = payload;
-        internal bool Truncated => Payload.Length != OriginalBytes;
+        internal bool PrivacyBlocked { get; } = privacyBlocked;
+        internal bool Truncated => !PrivacyBlocked && Payload.Length != OriginalBytes;
         internal LinkedListNode<Entry>? GlobalNode;
         internal LinkedListNode<Entry>? ObjectNode;
     }

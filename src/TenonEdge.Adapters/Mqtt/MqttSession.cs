@@ -77,6 +77,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     lock (_receiveLock)
                     { _receiveCancellation = generation; }
                     var receiveToken = generation.Token;
+                    // 回调捕获连接建立时的凭证；轮换后的解析器不能替代旧代次的诊断检查。
                     receive = async (args, transportToken) =>
                     {
                         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(receiveToken, transportToken);
@@ -88,7 +89,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                             { generation.Cancel(); }
                             catch (ObjectDisposedException) { }
                             client!.Dispose();
-                        }, lifetime.Token);
+                        }, credential, lifetime.Token);
                     };
                     if (input.BufferBudget is not null)
                     { _receiveBuffer = new MqttReceiveBuffer(input.BufferBudget, 100, receive, input.ReportBuffer, time); }

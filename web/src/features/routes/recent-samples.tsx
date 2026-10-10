@@ -148,6 +148,12 @@ export function RecentSamples({
                                     {' · '}
                                     {record.storedBytes}/{record.originalBytes}{' '}
                                     B
+                                    {record.privacyBlocked
+                                        ? ' · ' +
+                                          t(
+                                              'routes.preview.recentPrivacyBlocked',
+                                          )
+                                        : ''}
                                     {record.truncated
                                         ? ' · ' +
                                           t('routes.preview.recentTruncated')

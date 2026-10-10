@@ -6,8 +6,13 @@ using TenonEdge.Abstractions.Contracts;
 namespace TenonEdge.Adapters.Mqtt;
 
 internal sealed record MqttInputBinding(string Filter, int Qos,
-    Func<MqttApplicationMessage, CancellationToken, Task<InputHandoffStatus>> Receive,
-    bool ProcessRetained = false);
+    Func<MqttApplicationMessage, MqttCredential?, CancellationToken, Task<InputHandoffStatus>> Receive,
+    bool ProcessRetained = false)
+{
+    internal MqttInputBinding(string filter, int qos,
+        Func<MqttApplicationMessage, CancellationToken, Task<InputHandoffStatus>> receive, bool processRetained = false)
+        : this(filter, qos, (message, _, token) => receive(message, token), processRetained) { }
+}
 
 /// <summary>一个连接的已编译订阅集合；MQTTnet 依次调用回调，绝不把接管等待转为无界后台任务。</summary>
 internal sealed class MqttInputReceiver
@@ -126,7 +131,10 @@ internal sealed class MqttInputReceiver
         }
     }
 
-    internal async Task ReceiveAsync(MqttApplicationMessageReceivedEventArgs args, Action abort, CancellationToken generation)
+    internal Task ReceiveAsync(MqttApplicationMessageReceivedEventArgs args, Action abort, CancellationToken generation) =>
+        ReceiveAsync(args, abort, null, generation);
+
+    internal async Task ReceiveAsync(MqttApplicationMessageReceivedEventArgs args, Action abort, MqttCredential? credential, CancellationToken generation)
     {
         args.AutoAcknowledge = false;
         if (generation.IsCancellationRequested)
@@ -139,7 +147,7 @@ internal sealed class MqttInputReceiver
             { _drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); }
         }
         try
-        { await ReceiveAcceptedAsync(args, abort, generation); }
+        { await ReceiveAcceptedAsync(args, abort, credential, generation); }
         finally
         {
             lock (_receiveLock)
@@ -150,7 +158,7 @@ internal sealed class MqttInputReceiver
         }
     }
 
-    private async Task ReceiveAcceptedAsync(MqttApplicationMessageReceivedEventArgs args, Action abort, CancellationToken generation)
+    private async Task ReceiveAcceptedAsync(MqttApplicationMessageReceivedEventArgs args, Action abort, MqttCredential? credential, CancellationToken generation)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5), _time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(generation, deadline.Token);
@@ -172,7 +180,7 @@ internal sealed class MqttInputReceiver
                     matched = true;
                     if (message.Retain && !binding.ProcessRetained)
                     { _report("retainedIgnored"); continue; }
-                    handoff = binding.Receive(message, operation.Token);
+                    handoff = binding.Receive(message, credential, operation.Token);
                     var result = await handoff.WaitAsync(operation.Token);
                     handoff = null;
                     if (result is not (InputHandoffStatus.Committed or InputHandoffStatus.Rejected) &&

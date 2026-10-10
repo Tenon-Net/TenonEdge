@@ -5,6 +5,7 @@ using MQTTnet;
 using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Mqtt;
 
@@ -15,7 +16,10 @@ internal sealed class MqttInputHandoff(InputUnitContext context, IJsonInputDecod
     internal const long ReservationBytes = 48L * 1024 * 1024;
     internal const long MessageBytes = 4 * 1024 * 1024 + 8192 + RawJsonPayload.MaximumBudgetBytes;
 
-    public async Task<InputHandoffStatus> ReceiveAsync(MqttApplicationMessage message, CancellationToken cancellationToken)
+    public Task<InputHandoffStatus> ReceiveAsync(MqttApplicationMessage message, CancellationToken cancellationToken) =>
+        ReceiveAsync(message, null, cancellationToken);
+
+    public async Task<InputHandoffStatus> ReceiveAsync(MqttApplicationMessage message, MqttCredential? credential, CancellationToken cancellationToken)
     {
         var receivedAt = context.Time.GetUtcNow();
         if (message.QualityOfServiceLevel == MqttQualityOfServiceLevel.AtMostOnce)
@@ -45,11 +49,14 @@ internal sealed class MqttInputHandoff(InputUnitContext context, IJsonInputDecod
                 if (!Utf8.IsValid(bytes))
                 { throw new JsonException(); }
                 using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 64 });
+                var secrets = credential is null ? Array.Empty<string>() : new[] { credential.Password, Uri.EscapeDataString(credential.Password) };
+                var access = JsonReadPreview.IsSensitive(document.RootElement, null, token, secrets)
+                    ? DiagnosticSampleAccess.Redacted : DiagnosticSampleAccess.Safe;
                 var fields = decoder.Decode(document.RootElement, receivedAt, context.ClockState, token);
                 token.ThrowIfCancellationRequested();
                 var edge = new EdgeMessage(Guid.CreateVersion7(receivedAt), context.InputKey, context.DeviceKey,
                     fields.CollectedAt, fields.TimeSource, receivedAt, fields.Values, fields.Quality,
-                    RawJsonPayload.CopyFrom(document.RootElement));
+                    RawJsonPayload.CopyFrom(document.RootElement), access);
                 if (fields.InvalidUpstreamTime)
                 { context.Reads.UpstreamTimeInvalid(); }
                 context.Reads.ReadCompleted(receivedAt, fields.Quality.Count);

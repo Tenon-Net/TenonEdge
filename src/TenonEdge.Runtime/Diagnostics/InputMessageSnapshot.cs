@@ -9,13 +9,14 @@ namespace TenonEdge.Runtime.Diagnostics;
 /// </summary>
 internal static class InputMessageSnapshot
 {
-    internal static (byte[] Prefix, int OriginalBytes) Encode(EdgeMessage message)
+    internal static (byte[] Prefix, int OriginalBytes) Encode(EdgeMessage message, bool retainBody = true)
     {
-        using var stream = new PrefixStream();
+        using var stream = new PrefixStream(retainBody);
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
             writer.WriteNumber("version", 1);
+            writer.WriteNumber("diagnosticAccess", (int)message.DiagnosticAccess);
             writer.WriteString("sourceMessageId", message.SourceMessageId);
             writer.WriteString("inputId", message.InputId);
             writer.WriteString("deviceKey", message.DeviceKey);
@@ -81,7 +82,7 @@ internal static class InputMessageSnapshot
                 new KeyValuePair<string, FieldValue>(item[0].GetString()!, FieldValue.ReadSnapshot(item[1]))),
             root.GetProperty("quality").EnumerateArray().Select(item =>
                 new KeyValuePair<string, QualityCode>(item[0].GetString()!, (QualityCode)item[1].GetInt32())),
-            raw);
+            raw, (DiagnosticSampleAccess)root.GetProperty("diagnosticAccess").GetInt32());
     }
 
     private static void WriteText(Utf8JsonWriter writer, string text)
@@ -97,9 +98,9 @@ internal static class InputMessageSnapshot
     }
 
     // 默认 JSON 编码器将非 ASCII 转义，前缀始终为有效 UTF-8（但可能不是完整 JSON）。
-    private sealed class PrefixStream : Stream
+    private sealed class PrefixStream(bool retainBody) : Stream
     {
-        private readonly byte[] _prefix = new byte[RuntimeMessageCache.MaximumRecordBytes];
+        private readonly byte[] _prefix = new byte[retainBody ? RuntimeMessageCache.MaximumRecordBytes : 0];
         private long _length;
         internal byte[] Prefix() => _prefix.AsSpan(0, (int)Math.Min(_length, _prefix.Length)).ToArray();
         public override void Write(ReadOnlySpan<byte> buffer)

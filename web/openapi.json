@@ -8084,7 +8084,8 @@
           "originalBytes",
           "storedBytes",
           "truncated",
-          "executable"
+          "executable",
+          "privacyBlocked"
         ],
         "type": "object",
         "properties": {
@@ -8122,6 +8123,9 @@
             "type": "boolean"
           },
           "executable": {
+            "type": "boolean"
+          },
+          "privacyBlocked": {
             "type": "boolean"
           }
         }

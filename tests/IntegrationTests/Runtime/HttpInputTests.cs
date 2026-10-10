@@ -25,6 +25,55 @@ public sealed class HttpInputTests
     private static readonly object[] Fields = [new { key = "value", path = "/v", type = "integer" }];
     private static readonly string[] Inputs = ["device/http"];
 
+    [Theory]
+    [InlineData("safe", false)]
+    [InlineData("echo", true)]
+    [InlineData("key", true)]
+    [InlineData("encoded", true)]
+    public async Task RuntimeCacheUsesRequestCredentialEvenWhenItRotatesBeforeResponse(string kind, bool blocked)
+    {
+        using var server = Listen();
+        using var data = TemporaryDirectory.Create();
+        var credentials = new RotatingCredential();
+        var oldSecret = credentials.Current.Secret;
+        var shared = new SharedConnections();
+        await using var runtime = RuntimeTesting.CreateRuntime(
+            [new HttpInputFactory(credentials, new OutboundConnector(new Loopback()), shared, new JsonInputDecoderFactory())], data.Path);
+        var plan = Plan(server);
+        await runtime.ActivateAsync(runtime.Prepare(new RuntimePlan(7, [plan])));
+        using var socket = await server.AcceptTcpClientAsync(Token).AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token);
+        var headers = await ReadHeadersAsync(socket.GetStream());
+        Assert.Contains("Authorization: Bearer " + oldSecret, headers, StringComparison.Ordinal);
+        credentials.Current = new(credentials.Current.Identity with { Version = "2" }, "new-fixture-secret");
+        var payload = kind switch
+        {
+            "echo" => JsonSerializer.Serialize(new { v = 42, echo = oldSecret }),
+            "encoded" => JsonSerializer.Serialize(new { v = 42, echo = Uri.EscapeDataString(oldSecret) }),
+            "key" => "{\"v\":42,\"password\":\"fixture-password\"}",
+            _ => "{\"v\":9223372036854775807}"
+        };
+        await ReplyAsync(socket.GetStream(), payload, close: true);
+        await OutputPipelineTests.UntilAsync(() => runtime.Messages.Read(plan.Id, false).Count > 0);
+        var record = runtime.Messages.Read(plan.Id, true)[0];
+        Assert.Equal(blocked, record.PrivacyBlocked);
+        Assert.Equal(!blocked, runtime.TryReadInputSample(plan.Id, record.Sequence, 7, record.SourceMessageId, out var sample));
+        if (blocked)
+        {
+            Assert.Null(record.Body);
+            Assert.Equal(0, record.StoredBytes);
+            Assert.False(record.Truncated);
+        }
+        else
+        { Assert.Equal(long.MaxValue.ToString(CultureInfo.InvariantCulture), sample!.Values["value"].ToString()); }
+    }
+
+    private sealed class RotatingCredential : IHttpCredentialResolver
+    {
+        internal HttpCredential Current = new(new(HttpCredentialKind.Bearer, null, null, "fixture", "1"), "old/fixture+secret");
+        public HttpCredentialIdentity? DescribeHttp(long connectionId) => Current.Identity;
+        public HttpCredential? ResolveHttp(long connectionId, string recipient) => Current;
+    }
+
     [Fact]
     public async Task RealGetProducesExactTypedValuesAndReleasesTheBudget()
     {

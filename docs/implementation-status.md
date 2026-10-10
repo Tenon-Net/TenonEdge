@@ -2884,6 +2884,24 @@ Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故�
 
 未部署、推送、发布或实物验收。后续仍须完成 MQTT 完整消息桥接、最近缓存样本的敏感内容准入与诊断元数据，以及 T3-06 应用/回滚；现场 HTTP 的敏感扫描证据不能代替运行缓存取样的安全验证。
 
+### 2.146 T3-05 最近记录的敏感内容准入（2026-10-10）
+
+接续 §2.145 的安全缺口。EdgeMessage 增加不参与普通 JSON/业务信封的诊断准入枚举；HTTP 在实际请求凭证仍可用时检查完整文档，MQTT 从连接回调捕获当前连接代次的凭证，传递到持久接管解码，不在回放时查询已轮换的新凭证。检查复用既有敏感键和凭证形式规则，不留存凭证到消息或缓存。
+
+敏感或未知 JSON 样本只保存元数据及完整编码字节计数，不分配/保存编码前缀，完整取样拒绝；安全 JSON 仍正常提供完整样本，不禁用 HTTP/MQTT 协议。新增 privacyBlocked 与截断分开，API 列表不回正文、不可执行，UI 显示未缓存正文；敏感原文和字段仍按正式采集规则进入业务通道，不以诊断脱敏修改业务数据或 MQTT 接管结果。
+
+新增测试覆盖：缓存 Unknown/Redacted/Safe 三态；真实 HTTP + RuntimeHost 捕获敏感键、原请求凭证明文/URL 编码回显、请求期间轮换与安全 int64；最近预览 API 拒绝敏感样本且不采集；MQTT 接管对 QoS 0/1 的业务正文和完成状态不变；真实本机 Mosquitto 的直接及有界接收路径均传递连接代次旧凭证。浏览器以明确标注的元数据夹具验证安全限制选项，不冒充真实运行来源/应用。
+
+初轮测试编译发现测试夹具误将 SharedConnections 当作 IDisposable，修正；第二轮漏引用 InFlightBudget 命名空间，修正。第三轮 59 单元通过、48 集成通过、1 集成失败：新 MQTT 有界接收夹具未预约 buffer 子预算导致超时，按正式有界接收测试配置补齐 8 MiB 子预算。日志分别为 `/tmp/tenonedge-privacy-focused.log`、`/tmp/tenonedge-privacy-focused2.log`、`/tmp/tenonedge-privacy-focused3.log`，失败轮不计为验收通过。格式门禁另发现 3 处新测试的换行格式（`/tmp/tenonedge-privacy-format.log`），按格式器修正。最终结果见下。
+
+最终全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-privacy-regression -v minimal`：**1252 单元 + 1123 集成 = 2375 项通过，0 失败/跳过**（`/tmp/tenonedge-privacy-regression.log`）。TRX 门禁 `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-privacy-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-privacy-trx.log`）。`dotnet format --verify-no-changes --no-restore` 最终通过（`/tmp/tenonedge-privacy-format-final.log`）。
+
+从实际 Release Host 重新生成 OpenAPI（`/tmp/tenonedge-privacy-api.log`）。前端 build、lint、format:check、**219 Vitest** 通过（`/tmp/tenonedge-privacy-web.log`）；`PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json --grep 'route recent samples|route HTTP onsite|route MQTT onsite'`：**3 浏览器场景通过，0 失败/跳过**（`/tmp/tenonedge-privacy-browser.log`），`node scripts/verify-results.mjs reports/unit.json reports/browser.json` 门禁通过。环境同 §2.145；Mosquitto 为本机软件 Broker，不是客户现场设备。
+
+反向验证：临时旁路缓存安全门禁，真实 HTTP 捕获用例中 3 个敏感场景失败、1 个安全场景仍通过（`/tmp/tenonedge-privacy-mutation.log`）；恢复原代码后重新构建并运行相关测试，**59 单元 + 49 集成全部通过**（`/tmp/tenonedge-privacy-restored.log`）。临时变异已撤销，不进入提交。`git diff --check` 通过。
+
+尚未部署、推送或实物验证；本子项不宣称 MQTT 完整现场样本桥接、诊断元数据、T3-06 应用/回滚已经完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

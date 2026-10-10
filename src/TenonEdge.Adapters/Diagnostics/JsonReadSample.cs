@@ -25,7 +25,7 @@ internal static class JsonReadSample
         var sample = new EdgeMessage(Guid.CreateVersion7(receivedAt), inputKey, deviceKey,
             decoded.CollectedAt, decoded.TimeSource,
             receivedAt, decoded.Values, decoded.Quality,
-            RawJsonPayload.CopyFrom(root));
+            RawJsonPayload.CopyFrom(root), DiagnosticSampleAccess.Safe);
         return new("success", sample, decoded.InvalidUpstreamTime);
     }
 }

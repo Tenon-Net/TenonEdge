@@ -28,7 +28,8 @@ public sealed class EdgeMessage
         DateTimeOffset receivedAt,
         IEnumerable<KeyValuePair<string, FieldValue>> values,
         IEnumerable<KeyValuePair<string, QualityCode>>? quality = null,
-        RawJsonPayload? rawJson = null)
+        RawJsonPayload? rawJson = null,
+        DiagnosticSampleAccess diagnosticAccess = DiagnosticSampleAccess.Unknown)
     {
         if (sourceMessageId == Guid.Empty)
         {
@@ -73,6 +74,9 @@ public sealed class EdgeMessage
         Values = valueMap;
         Quality = qualityMap;
         RawJson = rawJson;
+        if (!Enum.IsDefined(diagnosticAccess))
+        { throw new ArgumentOutOfRangeException(nameof(diagnosticAccess)); }
+        DiagnosticAccess = diagnosticAccess;
     }
 
     /// <summary>本次采样或接收的本地稳定编号（建议 UUIDv7），发往多个目标时不变。</summary>
@@ -101,6 +105,10 @@ public sealed class EdgeMessage
     /// <summary>协议原始 JSON，仅供显式字段定位；默认输出与普通 JSON 序列化均不包含它。</summary>
     [JsonIgnore]
     public RawJsonPayload? RawJson { get; }
+
+    /// <summary>采集时检查的诊断准入；不包含凭证，不进入业务信封。</summary>
+    [JsonIgnore]
+    public DiagnosticSampleAccess DiagnosticAccess { get; }
 
     /// <summary>解析后消息的预算大小，含原始 JSON、文本、值与字典节点的保守开销。</summary>
     public long BudgetBytes => 256L + 2L * (InputId.Length + DeviceKey.Length)

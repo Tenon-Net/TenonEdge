@@ -102,6 +102,22 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         return await HttpInputResponse.ReadAsync(response, cancellationToken);
     }
 
+    internal async Task<(JsonDocument Document, DiagnosticSampleAccess Access)> ReadDiagnosticInputAsync(
+        HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken)
+    {
+        var (message, credential) = CreateInputRequest(settings, credentials);
+        using var request = message;
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
+        try
+        {
+            var access = JsonReadPreview.IsSensitive(document.RootElement, credential, cancellationToken)
+                ? DiagnosticSampleAccess.Redacted : DiagnosticSampleAccess.Safe;
+            return (document, access);
+        }
+        catch { document.Dispose(); throw; }
+    }
+
     internal async Task<JsonReadPreviewResult> ReadPreviewAsync(HttpInputSettings settings, IHttpCredentialResolver credentials,
         IJsonInputDecoder? decoder, ClockSyncState clockState, TimeProvider time, int maximumDisplayBytes, CancellationToken cancellationToken)
     {

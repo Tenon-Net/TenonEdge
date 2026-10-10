@@ -41,8 +41,9 @@ export const routeStrings = {
         recentChoose: '请选择一条记录，不自动选取最新消息',
         recentRevision: '运行版本 {{revision}}',
         recentTruncated: '已截断',
+        recentPrivacyBlocked: '敏感内容或尚未完成安全检查：未缓存正文',
         recentUnavailable:
-            '所选记录不可执行：输入可能已停止或退避、版本已变化，或记录已截断/淘汰。请重新读取列表并明确选择；不会自动换用其他记录。',
+            '所选记录不可执行：输入可能已停止或退避、版本已变化，或记录受敏感内容限制、已截断/淘汰。请重新读取列表并明确选择；不会自动换用其他记录。',
         recentRun: '用所选最近记录预览',
         recentResult:
             '使用所选运行记录的原始解码字段与时间，不按当前来源配置重解析报文。当前缓存不含 MQTT retained/DUP 标志和上游时间解析告警详情，不能据此认定未发生这些情况。',

@@ -128,8 +128,8 @@ internal sealed class MqttPlanAdapters
         public Connection Connection { get; } = connection;
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Receiving;
-        public Task<InputHandoffStatus> ReceiveAsync(MQTTnet.MqttApplicationMessage message, CancellationToken token) =>
-            Volatile.Read(ref Receiving) == 1 ? handoff.ReceiveAsync(message, token) : Task.FromResult(InputHandoffStatus.Stopped);
+        public Task<InputHandoffStatus> ReceiveAsync(MQTTnet.MqttApplicationMessage message, MqttCredential? credential, CancellationToken token) =>
+            Volatile.Read(ref Receiving) == 1 ? handoff.ReceiveAsync(message, credential, token) : Task.FromResult(InputHandoffStatus.Stopped);
     }
 
     private sealed class Unit(Input input) : IRuntimeUnit

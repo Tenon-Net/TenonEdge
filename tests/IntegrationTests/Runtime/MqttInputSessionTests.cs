@@ -12,6 +12,7 @@ using TenonEdge.Host.Features.Runtime;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
+using TenonEdge.Runtime.Diagnostics;
 using TenonEdge.Runtime.Lifecycle;
 using TenonEdge.Runtime.Mapping;
 
@@ -23,6 +24,40 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     private static readonly string[] PlanInputKeys = ["device/one", "device/two"];
     private static readonly string[] InputKeys = ["device/input"];
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReceiveUsesConnectedGenerationCredentialAfterResolverRotates(bool buffered)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("credential-generation");
+        var received = new TaskCompletionSource<MqttCredential?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var input = new MqttInputReceiver([new(topic, 1, (_, credential, _) =>
+        {
+            received.TrySetResult(credential);
+            return Task.FromResult(InputHandoffStatus.Committed);
+        })], TimeProvider.System, _ => { }, bufferBudget: buffered ? new InFlightBudget(64L * 1024 * 1024, 8L * 1024 * 1024) : null);
+        var credentials = new RotatingCredentials();
+        var original = credentials.Current;
+        await using var session = new MqttSession(Settings(broker), NewId(), credentials, TimeProvider.System, new CountingConnector(), input);
+        using var deadline = MqttProbe.Timeout(Token);
+        Assert.Equal(OutputSendStatus.Ack, (await session.MaintainAsync(deadline.Token)).Status);
+        credentials.Current = original with { Password = "not-the-connected-password", Version = "v2" };
+        using var publisher = new MqttClientFactory().CreateMqttClient();
+        await publisher.ConnectAsync(new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", broker.Port)
+            .WithClientId(NewId()).WithCleanSession().WithCredentials(MosquittoBroker.UserName, MosquittoBroker.Password).Build(), deadline.Token);
+        await publisher.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(topic).WithPayload("{\"value\":42}")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(), deadline.Token);
+        Assert.Equal(original, await received.Task.WaitAsync(TimeSpan.FromSeconds(10), Token));
+    }
+
+    private sealed class RotatingCredentials : ICredentialResolver
+    {
+        internal MqttCredential Current = new(MosquittoBroker.UserName, MosquittoBroker.Password, "account", "v1");
+        public MqttCredentialIdentity? DescribeMqtt(long connectionId) => new(Current.Username, Current.AccountMarker, Current.Version);
+        public MqttCredential? ResolveMqtt(long connectionId, string recipient) => Current;
+    }
 
     [Fact]
     public async Task OneSessionSubscribesAndPublishesWithoutAnotherClientOrCallbackDeadlock()

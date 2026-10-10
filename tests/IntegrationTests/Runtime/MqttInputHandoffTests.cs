@@ -5,6 +5,7 @@ using MQTTnet;
 using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Diagnostics;
@@ -15,6 +16,34 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class MqttInputHandoffTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    public async Task PrivacyBlockedCacheDoesNotChangeBusinessHandoff(bool sensitive, int qos)
+    {
+        var harness = new Harness();
+        var credential = new MqttCredential("fixture", "fixture/secret", "account", "old-generation");
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new { value = 42, echo = sensitive ? credential.Password : "safe" });
+        var pending = harness.Receive(payload, (MqttQualityOfServiceLevel)qos, credential);
+        var edge = await harness.Channel.HoldingReader.ReadAsync(Token);
+        Assert.Equal("42", edge.Values["value"].ToString());
+        Assert.Equal(sensitive ? DiagnosticSampleAccess.Redacted : DiagnosticSampleAccess.Safe, edge.DiagnosticAccess);
+        Assert.Equal(sensitive ? credential.Password : "safe", edge.RawJson!.Root.GetProperty("echo").GetString());
+        var cache = new RuntimeMessageCache(TimeProvider.System);
+        var id = RuntimeUnitId.Create("input.mqtt", "device/mqtt");
+        var sequence = cache.CaptureInput(id, 1, edge);
+        var record = Assert.Single(cache.Read(id, true));
+        Assert.Equal(sensitive, record.PrivacyBlocked);
+        Assert.Equal(!sensitive, cache.TryReadComplete(id, sequence, 1, edge.SourceMessageId, out _));
+        if (sensitive)
+        { Assert.Null(record.Body); Assert.Equal(0, record.StoredBytes); }
+        harness.Channel.Release(edge, InputHandoffStatus.Committed);
+        Assert.Equal(qos == 0 ? InputHandoffStatus.Buffered : InputHandoffStatus.Committed, await pending);
+        Assert.Equal(0, harness.Budget.Status.ReservedBytes);
+    }
 
     [Fact]
     public async Task DecodesExactFieldsAndOwnsRawAfterSourceBufferChangesButStillWaitsForCommit()
@@ -151,7 +180,7 @@ public sealed class MqttInputHandoffTests
             _handoff = new(context, new JsonInputDecoderFactory().Build(JsonSerializer.Deserialize<JsonElement>(
                 """[{"key":"value","path":"/value","type":"integer"}]"""), upstreamTime));
         }
-        public Task<InputHandoffStatus> Receive(byte[] payload, MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtLeastOnce) =>
-            _handoff.ReceiveAsync(new MqttApplicationMessageBuilder().WithTopic("input").WithPayload(payload).WithQualityOfServiceLevel(qos).Build(), Token);
+        public Task<InputHandoffStatus> Receive(byte[] payload, MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtLeastOnce, MqttCredential? credential = null) =>
+            _handoff.ReceiveAsync(new MqttApplicationMessageBuilder().WithTopic("input").WithPayload(payload).WithQualityOfServiceLevel(qos).Build(), credential, Token);
     }
 }

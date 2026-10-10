@@ -1718,6 +1718,7 @@ export interface components {
             storedBytes: number | string;
             truncated: boolean;
             executable: boolean;
+            privacyBlocked: boolean;
         };
         RouteRecentMessagesRequest: {
             expectedVersion: string;

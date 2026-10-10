@@ -186,6 +186,6 @@ public sealed class InputMessageSnapshotTests
         var received = new DateTimeOffset(2026, 10, 10, 1, 2, 3, TimeSpan.Zero).AddTicks(1234);
         return new(Guid.NewGuid(), "input", "device", source == TimeSource.Upstream ? received.AddMinutes(-2) : received,
             source, received, new Dictionary<string, FieldValue> { ["value"] = value },
-            new Dictionary<string, QualityCode> { ["missing"] = QualityCode.ReadTimeout, ["invalid"] = QualityCode.NonFinite }, raw);
+            new Dictionary<string, QualityCode> { ["missing"] = QualityCode.ReadTimeout, ["invalid"] = QualityCode.NonFinite }, raw, DiagnosticSampleAccess.Safe);
     }
 }
