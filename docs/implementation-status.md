@@ -3310,6 +3310,30 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 未执行网页/真实设备验收，未修改其他仓库或持久部署，未推送/发布。下一步继续全局草稿摘要/放弃边界与应用、历史、回滚页面；旧有效快照恢复和逐点进程中断矩阵仍须补齐。
 
+### 2.167 T3-06 全局草稿摘要与事务性放弃（2026-10-10）
+
+承接 §2.166，补齐功能 §6.1、§6.6 的草稿摘要/放弃后端入口，关联 T3-06 / GW-10。**本批不是网页按钮或完整浏览器验收；未将后端清空/恢复草稿称为运行配置回滚。**
+
+- `GET /api/edge-admin/v1/configuration/draft/`：全部已登录角色可读，事务内捕获草稿/有效快照/待提交版本，事务外比较；返回草稿版本、有效版本、pending、对象修改总数、按种类的增改删数和按设备的 Modbus 点位汇总，不回传完整字段值或触发编译、采集。总数按连接/设备/来源/路线对象计，点位另行汇总。尚无有效版本时相对空草稿计算；schema 1 缺完整草稿时返回不可比较且总数 null，不把未知显示为零；快照损坏明确报错。
+- `POST /api/edge-admin/v1/configuration/draft/discard`：仅本地配置人员/管理员会话，CSRF、`confirmed=true`、已确认草稿及有效版本均必需，正文上限 4096 字节，拒绝未知属性/伪造作者。摘要与放弃复用现有预览预算，响应 `Cache-Control: no-store`。
+- 有完整有效版本时还原其非秘密配置、引用索引和已知编辑元数据；无有效版本时恢复空草稿。事务外准备替换行，事务内再次核对草稿/有效版本、pending 与快照哈希，再一起替换、推进全局草稿版本、写 `configuration.discardDraft` 审计。审计失败全部回退；重复旧确认返回冲突，客户端不得自动重试。有效版本是旧格式、缺失或损坏时拒绝，不静默清空。
+- 有 pending 冻结时拒绝放弃；若应用仅完成准入尚未冻结，放弃推进草稿版本后，该应用按既有乐观版本检查失败，不会把被放弃的内容应用。应用提交与放弃替换同在配置事务边界串行核对有效版本。没有修改运行指针、生成运行版本、停止采集或操作 queue.db。
+- 当前凭证不随放弃恢复/删除，返回明确警告；变更凭证仍是即时操作。不会把放弃操作者覆盖为所有历史字段的作者，旧元数据未知仍保留未知。
+- 共用的完整替换逻辑在删除配置行前，先同事务把四类草稿行的最大 ID 推进到 `system_state.id_floor`，包括缺少编辑元数据的旧对象；保留原编辑表 ID 下限保护。此保护同时用于既有人工回滚，审计/替换失败时一起回退，避免删除后重启复用 ID。
+- 新增 **13 项**集成测试：三种角色的摘要/放弃权限；恢复四类配置、引用、元数据且保留即时凭证及运行/队列状态；审计故障的配置/版本/元数据/ID 下限原子回退；无旧元数据时保留已删除对象 ID；两次并发确认只有一次成功/审计；匿名/CSRF/未确认/伪造作者；草稿/有效版本冲突与 pending 拒绝；旧/损坏有效快照两个场景；全局配额；真实 Kestrel 请求体限制。恢复用例同时核对摘要的增改删计数与重复确认冲突。
+
+验证经过：`dotnet build TenonEdge.sln --no-restore -v minimal` 通过，0 警告/错误（`/tmp/tenonedge-draft-api-build.log`）。草稿、回滚、OpenAPI 和访问清单针对性 **33 项通过，0 失败/跳过**（`/tmp/tenonedge-draft-api-focused.log`）；随后补入恢复场景的摘要计数与实际持久化待发记录的 ID/版本/目标/载荷不变断言，草稿类 **13 项再验证通过，0 失败/跳过**（`/tmp/tenonedge-draft-api-focused-updated.log`），并纳入最终全量。为避免 §2.166 的并行重负载干扰短超时协议探针，本批先完成格式及前端门禁，再单独运行完整后端回归，不改变探针超时或断言。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2、固定 npm 11.21.0）：
+
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-draft-api-format-final.log`）；`git diff --check` 通过。
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-draft-api-regression --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1331 集成 = 2589 项通过，0 失败/跳过**（`/tmp/tenonedge-draft-api-regression.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-draft-api-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-draft-api-trx.log`）。
+- `python3 /tmp/tenonedge-operation-export.py` 从独立临时 Development Host 生成 OpenAPI/TypeScript；HTTP 回环端口 18081、HTTPS 动态回环端口，Host SIGTERM 后退出 0，临时数据清理（`/tmp/tenonedge-draft-api-export.log`）。
+- 在 `web/` 使用固定 npm CLI `node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js` 执行 `run typecheck`、`run lint`、`test`（15 文件、219 项）、`run format:check` 全部通过（`/tmp/tenonedge-draft-api-web.log`）。
+
+没有新增依赖、数据库迁移或后台单例；未修改其他仓库/持久部署，未推送或发布。后续接入页头摘要、应用确认/进度、历史比较、回滚及放弃页面，并按浏览器与中断子场景继续验收。旧有效快照恢复交互仍未完成，不能宣称 T3-06 全部通过。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

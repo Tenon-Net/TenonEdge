@@ -41,6 +41,12 @@ internal sealed class ConfigurationReplacement(ConfigurationCheckpoint draft)
         if (ConfigurationDraft.ReadVersion(client) != expectedVersion)
         { return false; }
         client.Ado.ExecuteCommand("""
+            UPDATE system_state SET id_floor = MAX(id_floor, (
+                SELECT COALESCE(MAX(id), 0) FROM (
+                    SELECT id FROM connection_draft UNION ALL SELECT id FROM device_draft
+                    UNION ALL SELECT id FROM input_draft UNION ALL SELECT id FROM route_draft
+                )
+            )) WHERE id = 1;
             DELETE FROM route_draft_reference;
             DELETE FROM route_draft;
             DELETE FROM input_draft;

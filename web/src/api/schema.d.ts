@@ -530,6 +530,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/configuration/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看全局草稿相对有效配置的对象修改数；不编译或应用，旧版本无法比较时数量为未知 */
+        get: operations["getConfigurationDraftSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/draft/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 二次确认后放弃全部未应用修改；不改变运行配置、队列或当前凭证，不自动重试 */
+        post: operations["discardConfigurationDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/configuration/operations": {
         parameters: {
             query?: never;
@@ -1056,6 +1090,31 @@ export interface components {
             credentialConnections?: null | (number | string)[];
             edits?: null | components["schemas"]["ConfigurationEdit"][];
         };
+        ConfigurationDiscardRequest: {
+            expectedVersion: string;
+            /** Format: int64 */
+            expectedEffectiveRevision: null | number | string;
+            confirmed: boolean;
+        };
+        ConfigurationDiscardResult: {
+            version: string;
+            /** Format: int64 */
+            effectiveRevision: null | number | string;
+            warnings: string[];
+        };
+        ConfigurationDraftSummary: {
+            version: string;
+            /** Format: int64 */
+            effectiveRevision: null | number | string;
+            /** Format: int64 */
+            pendingRevision: null | number | string;
+            comparisonAvailable: boolean;
+            /** Format: int32 */
+            changeCount: null | number | string;
+            objects: components["schemas"]["ConfigurationObjectCount"][];
+            points: components["schemas"]["ConfigurationPointSummary"][];
+            warnings: string[];
+        };
         ConfigurationEdit: {
             kind: string;
             /** Format: int64 */
@@ -1065,6 +1124,15 @@ export interface components {
             /** Format: int64 */
             updatedAt: null | number | string;
             deleted: boolean;
+        };
+        ConfigurationObjectCount: {
+            kind: string;
+            /** Format: int32 */
+            added: number | string;
+            /** Format: int32 */
+            modified: number | string;
+            /** Format: int32 */
+            removed: number | string;
         };
         ConfigurationPointSummary: {
             /** Format: int64 */
@@ -3944,6 +4012,149 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConfigurationDraftSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationDraftSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    discardConfigurationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationDiscardRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationDiscardResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

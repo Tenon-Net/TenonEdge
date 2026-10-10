@@ -111,6 +111,8 @@ internal static class AuditActions
     public const string SnapshotApplied = "runtime.apply";
 
     public const string SnapshotRolledBack = "runtime.rollback";
+
+    public const string DraftDiscarded = "configuration.discardDraft";
 }
 
 internal static class AuditResults
