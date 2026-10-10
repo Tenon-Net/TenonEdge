@@ -190,12 +190,12 @@ public sealed class RouteDraftTests
         store.Initialize(ConfigMigrations.All.Where(migration => migration.Version <= 14).ToArray());
         store.Database.Client.Ado.ExecuteCommand("UPDATE configuration_draft SET version = 'existing-draft' WHERE id = 1");
         store.Database.Client.Ado.ExecuteCommand("INSERT INTO device_draft(id,business_key,content) VALUES (123,'kept','{}')");
-        Assert.Equal(15, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         Assert.Equal("existing-draft", store.Database.Client.Ado.GetString("SELECT version FROM configuration_draft WHERE id = 1"));
         Assert.Equal("kept", store.Database.Client.Ado.GetString("SELECT business_key FROM device_draft WHERE id = 123"));
         Assert.Equal(0, store.Database.Client.Queryable<RouteDraftRecord>().Count());
         Assert.Equal(0, store.Database.Client.Queryable<RouteDraftReferenceRecord>().Count());
-        Assert.Equal(15, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
     }
 
     [Fact]

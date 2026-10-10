@@ -3166,6 +3166,27 @@ Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖或配置库�
 
 本批无新依赖或数据库迁移，不推送/发布。下一步仍为完整确认清单、变更说明、公开写入口及应用/回滚页面；旧快照与损坏有效快照的恢复边界、逐点进程中断和完整浏览器流程仍待验证。
 
+### 2.161 T3-06 版本变更说明持久化（2026-10-10）
+
+承接 §2.160，补齐 T3-06 / GW-10 / 功能 §6.2、§6.4 中“可选变更说明”的内部持久化链路。**尚未开放应用/回滚写端点或变更清单页面，不能据此宣称完整配置交互完成。**
+
+- 人工应用、人工回滚接收可选说明，经统一校验后随操作所有者传入冻结入口；说明与新快照、pending 指针及版本号分配在同一事务中写入。已经冻结而后来未生效的版本仍保留本次说明，冻结事务失败不留下孤立说明或半版本。
+- 说明属于版本元数据，不计入配置内容哈希；人工回滚保留目标配置内容，但写入本次回滚说明，不覆盖或复制历史操作说明。种子导入和自动回滚保持说明为空。历史投影增加说明字段，重启后仍可读取；进程内进度列表不增加自由文本说明。
+- 新增配置库迁移 **16 `runtime_change_description`**，只在 `runtime_snapshot` 追加可空文本列和长度约束，不改旧迁移、已有内容/哈希或指针。说明最多 1000 个 UTF-16 代码单元（与既有路线说明上限一致），去首尾空白，空白归 null，允许换行/制表但拒绝其他控制字符。说明不是凭证存储入口，后续表单须提示不要填写秘密。
+- 新增 **11 项**软件用例：应用/回滚各自说明与配置内容不变、未生效版本保留与自动回滚不复制、null/空串/纯空白、1000 字符及 SQL 特殊字符按数据保存、超长/NUL 在操作准入及冻结前拒绝、宿主重开后的历史、冻结 SQL 故障整体回退与后续重试、schema 15 升到 16 时旧记录保留且迁移不重复执行。
+
+验证经过：初版测试编译失败，原因是测试误用不存在的运行计划构造函数，以及常量数组触发 CA1861（`/tmp/tenonedge-description-focused.log`）；已改为实际 `RuntimePlanDocument.Parse` 入口和集合表达式。随后说明、迁移与历史针对性 **28 项通过，0 失败/跳过**（`/tmp/tenonedge-description-focused-final.log`）；最后补入的重启、冻结 SQL 故障两项纳入全量回归。没有引入依赖、复制参考源码、修改其他仓库或持久调试部署。
+
+首轮全量回归 **2511 通过、1 失败、0 跳过**（`/tmp/tenonedge-description-regression.log`）：既有 `RouteDraftTests.UpgradeFromSchemaFourteenPreservesTheExistingDraftAndAddsEmptyRouteTables` 把最新版本写死为 15，实际已升级到 16。改为断言 `ConfigMigrations.All[^1].Version`，保留原草稿版本、设备记录及新路线表为空的所有断言，不跳过测试。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12）：
+
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-description-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1254 集成 = 2512 项通过，0 失败/跳过**（`/tmp/tenonedge-description-regression-final.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-description-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-description-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-description-format-final.log`），`git diff --check` 通过。未改公开 API 契约或前端，本批未重新运行浏览器/前端门禁，不沿用为本批新增验证。
+
+本批仍只是软件/同进程宿主验证，不替代逐点强杀/断电、真实设备或网页确认→应用→回滚流程。接下来继续确认清单的修改人/时间、点位汇总、错误及目标变更影响，随后连接公开写入口和页面。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

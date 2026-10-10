@@ -88,13 +88,13 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
 
     /// <summary>在线应用的冻结入口：编译在事务外完成；确认草稿版本、分配版本、写快照和 pending 在同一事务。
     /// 冻结之后的草稿编辑不影响本快照；本方法不准备、停止或启动运行单元。</summary>
-    public long FreezeDraft(RuntimePlanDocument document, string expectedDraftVersion, string createdBy)
+    public long FreezeDraft(RuntimePlanDocument document, string expectedDraftVersion, string createdBy, string? changeDescription = null)
     {
         if (string.IsNullOrEmpty(expectedDraftVersion) || expectedDraftVersion.Length > 64)
         { throw new ArgumentException("须提供已确认的草稿版本。", nameof(expectedDraftVersion)); }
         var draft = database.InTransaction(client => ConfigurationCheckpoint.Read(client, expectedDraftVersion));
         var snapshot = RuntimeSnapshotDocument.Create(document, draft);
-        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion);
+        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, changeDescription: changeDescription);
     }
 
     public long FreezeRollback(RuntimeSnapshotRecord target, string createdBy)
@@ -106,9 +106,10 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             $"r{target.Revision}", createdBy, expectedDraftVersion: null);
     }
 
-    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion, Action<SqlSugarClient>? validate = null) =>
+    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion, Action<SqlSugarClient>? validate = null, string? changeDescription = null) =>
         database.InTransaction(client =>
         {
+            var description = ConfigurationChangeDescription.Normalize(changeDescription);
             ArgumentNullException.ThrowIfNull(document);
             ArgumentException.ThrowIfNullOrWhiteSpace(createdBy);
             if (expectedDraftVersion is not null)
@@ -127,6 +128,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
                 ContentHash = document.ContentHash,
                 Origin = origin,
                 OriginDetail = originDetail,
+                ChangeDescription = description,
                 State = RuntimeSnapshotStates.Pending,
                 CreatedAt = time.GetUtcNow().ToUnixTimeMilliseconds(),
                 CreatedBy = createdBy,

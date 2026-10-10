@@ -34,6 +34,10 @@ internal sealed class RuntimeSnapshotRecord
     [SugarColumn(ColumnName = "origin_detail", IsNullable = true)]
     public string? OriginDetail { get; set; }
 
+    /// <summary>本次人工应用或回滚的可选说明，不属于配置内容，不随回滚复制。</summary>
+    [SugarColumn(ColumnName = "change_description", IsNullable = true)]
+    public string? ChangeDescription { get; set; }
+
     /// <summary>取值见 <see cref="RuntimeSnapshotStates"/>。</summary>
     [SugarColumn(ColumnName = "state")]
     public string State { get; set; } = string.Empty;

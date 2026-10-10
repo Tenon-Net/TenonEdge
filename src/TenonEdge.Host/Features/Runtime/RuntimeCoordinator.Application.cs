@@ -1,4 +1,5 @@
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Runtime.Lifecycle;
 
@@ -16,21 +17,22 @@ internal sealed partial class RuntimeCoordinator
 
     /// <summary>拥有完整在线应用操作；只接收确认过的草稿版本及已解析的操作人，不接收 HttpContext 或任意运行计划。
     /// 取消只结束调用方等待。冻结之后，即使请求断开也完成提交或放弃/恢复；停机先等本操作结束。</summary>
-    public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken) =>
-        StartApplication(null, expectedDraftVersion, account, sourceIp, cancellationToken);
+    public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null) =>
+        StartApplication(null, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription);
 
-    public Task<RuntimeApplicationResult> RollbackAsync(long targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken)
+    public Task<RuntimeApplicationResult> RollbackAsync(long targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
-        return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, cancellationToken);
+        return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription);
     }
 
-    private Task<RuntimeApplicationResult> StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken)
+    private Task<RuntimeApplicationResult> StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(account);
         if (string.IsNullOrWhiteSpace(expectedDraftVersion) || expectedDraftVersion.Length > 64)
         { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
+        changeDescription = ConfigurationChangeDescription.Normalize(changeDescription);
         TaskCompletionSource operation;
         var operationId = Guid.NewGuid();
         lock (_lock)
@@ -49,17 +51,17 @@ internal sealed partial class RuntimeCoordinator
         Task<ApplicationOutcome> task;
         // 不把请求的 AsyncLocal/HttpContextAccessor 或数据库客户端上下文带入所拥有的后台流程。
         using (ExecutionContext.SuppressFlow())
-        { task = Task.Run(() => RunApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, operation)); }
+        { task = Task.Run(() => RunApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, operation, changeDescription)); }
         return AwaitApplicationAsync(task, cancellationToken);
     }
 
-    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId)
+    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId, string? changeDescription)
     {
         RuntimePlanDocument document;
         long revision;
         if (targetRevision is { } target)
         {
-            var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account);
+            var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account, changeDescription);
             document = rollback.Document;
             revision = rollback.Revision;
         }
@@ -67,7 +69,7 @@ internal sealed partial class RuntimeCoordinator
         {
             var snapshot = drafts.ReadCompilation(expectedDraftVersion, CancellationToken.None);
             document = RoutePlanCompiler.Compile(snapshot, CancellationToken.None).Document;
-            revision = versions.FreezeDraft(document, expectedDraftVersion, account);
+            revision = versions.FreezeDraft(document, expectedDraftVersion, account, changeDescription);
         }
         AdvanceApplication(operationId, RuntimeApplicationStage.Preparing, revision);
         PreparedPlan? prepared = null;

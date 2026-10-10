@@ -11,7 +11,7 @@ internal sealed record RuntimeRollbackPreparation(long Revision, RuntimePlanDocu
 
 internal sealed partial class RuntimeVersionStore
 {
-    public RuntimeRollbackPreparation FreezeManualRollback(long targetRevision, string expectedDraftVersion, string account)
+    public RuntimeRollbackPreparation FreezeManualRollback(long targetRevision, string expectedDraftVersion, string account, string? changeDescription = null)
     {
         var captured = database.InTransaction(client =>
         {
@@ -35,7 +35,7 @@ internal sealed partial class RuntimeVersionStore
                     RequiredSnapshot(client, targetRevision).ContentHash != captured.Target.ContentHash)
                 { throw new RuntimeVersionConflictException("runtime.versionChanged", targetRevision); }
                 ValidateRollbackReferences(client, draft);
-            });
+            }, changeDescription);
         return new(revision, document);
     }
 

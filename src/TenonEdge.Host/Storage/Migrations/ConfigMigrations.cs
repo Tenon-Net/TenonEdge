@@ -243,5 +243,8 @@ internal static class ConfigMigrations
             """,
             "CREATE INDEX ix_route_draft_reference_target ON route_draft_reference (kind, target_id)",
         ]),
+        new(16, "runtime_change_description", [
+            "ALTER TABLE runtime_snapshot ADD COLUMN change_description TEXT CHECK (change_description IS NULL OR length(change_description) <= 1000)",
+        ]),
     ];
 }

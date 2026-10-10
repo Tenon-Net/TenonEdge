@@ -5,7 +5,7 @@ using TenonEdge.Host.Storage;
 namespace TenonEdge.Host.Features.Runtime;
 
 internal sealed record RuntimeVersionSummary(long Revision, int SchemaVersion, string State, string Origin, string? OriginDetail,
-    string CreatedBy, long CreatedAt, long? ActivatedAt, bool IsStable, string? NotEffectiveReason);
+    string CreatedBy, long CreatedAt, long? ActivatedAt, bool IsStable, string? NotEffectiveReason, string? ChangeDescription);
 
 internal sealed partial class RuntimeVersionStore
 {
@@ -33,10 +33,11 @@ internal sealed partial class RuntimeVersionStore
                 row.CreatedAt,
                 row.ActivatedAt,
                 row.IsStable,
-                row.NotEffectiveReason
+                row.NotEffectiveReason,
+                row.ChangeDescription
             })
             .ToList().Select(row => new RuntimeVersionSummary(row.Revision, row.SchemaVersion, row.State, row.Origin, row.OriginDetail,
-                row.CreatedBy, row.CreatedAt, row.ActivatedAt, row.IsStable, row.NotEffectiveReason)).ToArray();
+                row.CreatedBy, row.CreatedAt, row.ActivatedAt, row.IsStable, row.NotEffectiveReason, row.ChangeDescription)).ToArray();
     }
 
     public ConfigurationChange[] CompareVersions(long beforeRevision, long afterRevision)
