@@ -3,7 +3,14 @@ export const routeStrings = {
     references: '来源 / 输出连接',
     preview: {
         title: '路线样本预览',
-        notice: '使用当前图已确认配置计算所选来源的路径，不访问输出、不入队、不应用。手工模式不采集；HTTP/MQTT 现场采样须另行确认。样本只留在内存，不写入草稿。最近消息及 Modbus 现场样本尚未接入。',
+        notice: '使用当前图已确认配置计算所选来源的路径，不访问输出、不入队、不应用。手工模式不采集；HTTP/MQTT/Modbus 现场采样须另行确认。样本只留在内存，不写入草稿。运行中最近消息尚未接入。',
+        modbusRun: '现场读取 Modbus 一次并预览',
+        modbusConfirm:
+            '将按所选采集组已保存的点表、UnitId 和字节序读取一次，复用共享串行连接。不访问输出、不入队、不应用。继续？',
+        modbusResult:
+            '本次结果来自 Modbus 现场读取，保留真实解码值与失败字段质量，不使用手工文本框。',
+        modbusUnavailable:
+            'Modbus 整组未取得可用采集消息，不能预览。请在设备读取面板核对失败块；本地手工样本仍保留。',
         mqttRun: '抓取 MQTT 一条消息并预览',
         mqttConfirm:
             '将使用独立随机 ClientId/CleanSession 诊断订阅，等待所选 Topic Filter 的一条消息（最多 30 秒，可能是保留消息）。不改变正式订阅、不发布、不入队。继续？',
@@ -18,7 +25,7 @@ export const routeStrings = {
         httpUnavailable:
             'HTTP 读取失败，或样本已截断/脱敏，不能用于路线预览。请在设备的一次读取面板核对原因；本地手工样本仍保留。',
         connectionBusy:
-            'HTTP 共享连接参数不匹配、正在释放或容量不足，未创建第二会话。请核对连接后重试；本地修改仍保留。',
+            '共享连接参数不匹配、正在释放或容量不足，未创建第二会话。请核对连接后重试；本地修改仍保留。',
         httpConfirm:
             '将访问所选 HTTP 输入的已保存地址，读取一次后计算当前路线（不访问输出、不入队）。继续？',
         httpResult:

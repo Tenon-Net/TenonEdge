@@ -17,7 +17,7 @@ internal sealed record ModbusCycleResult(bool Overrun, ImmutableArray<ModbusRead
 internal static class ModbusCycleReader
 {
     internal static async Task<ModbusCycleResult> ReadAsync(IConnectionLease<ModbusConnectionSession> lease,
-        byte unit, ImmutableArray<ModbusReadBlock> blocks, TimeSpan remaining, TimeProvider time, CancellationToken stoppingToken)
+        byte unit, ImmutableArray<ModbusReadBlock> blocks, TimeSpan remaining, TimeProvider time, CancellationToken stoppingToken, bool diagnostic = false)
     {
         ArgumentNullException.ThrowIfNull(lease);
         ArgumentNullException.ThrowIfNull(time);
@@ -48,7 +48,8 @@ internal static class ModbusCycleReader
                     continue;
                 }
                 var result = await lease.ExecuteAsync((session, token) =>
-                    session.ReadAsync(unit, block.FunctionCode, block.Start, block.Count, token), operation.Token);
+                    diagnostic ? session.ReadPreviewAsync(unit, block.FunctionCode, block.Start, block.Count, token)
+                        : session.ReadAsync(unit, block.FunctionCode, block.Start, block.Count, token), operation.Token);
                 results.Add(result);
                 if (result.Outcome is ModbusRequestOutcome.Timeout or ModbusRequestOutcome.ConnectionError)
                 { fastFailure = result.Outcome; }

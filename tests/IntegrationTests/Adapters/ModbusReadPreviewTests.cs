@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Abstractions.Messages;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.IntegrationTests.Probes.Modbus;
 using TenonEdge.Runtime.Connections;
@@ -240,6 +241,124 @@ public sealed class ModbusReadPreviewTests
             [new("a", [Point("one", 0)]), new("b", [Point("two", 65535, "uint64", "ABCD")])], Token));
         Assert.Equal(0, slave.ConnectionCount);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RouteSampleUsesFullTypedMessageAndBorrowsRuntimeConnectionWithoutChangingMembers(bool rtu)
+    {
+        await using var slave = ModbusTestSlave.Start(rtu ? ModbusFraming.RtuOverTcp : ModbusFraming.Tcp);
+        var settings = Settings(slave, rtu);
+        var shared = new SharedConnections();
+        await using var lease = shared.Acquire(1, "modbus", settings.Identity,
+            () => new ModbusConnectionSession(settings, [1], Connector(), TimeProvider.System));
+        await lease.ExecuteAsync((session, token) => session.ReadAsync(1, 3, 0, 1, token), Token);
+        var preview = new ModbusReadPreview(shared, new ForbiddenConnector(), TimeProvider.System);
+        var result = await preview.ReadSampleAsync(SampleSettings(slave, rtu) with { UnitId = 2 },
+            "input", "device", ClockSyncState.NotSynchronized, Token);
+        Assert.Equal("success", result.Code);
+        var message = Assert.IsType<EdgeMessage>(result.Message);
+        Assert.Null(message.RawJson);
+        Assert.Equal(TimeSource.GatewayUnsynced, message.TimeSource);
+        Assert.Equal(0x1000100110021003UL.ToString(CultureInfo.InvariantCulture), message.Values["value"].ToString());
+        Assert.Equal(message.ReceivedAt, message.CollectedAt);
+        Assert.Equal(1, slave.ConnectionCount);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => lease.ExecuteAsync((session, token) =>
+            session.ReadAsync(2, 3, 0, 1, token), Token));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RouteSamplePreservesFailedFieldQualityOrRejectsEntirelyFailedCycle(bool allFail)
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp,
+            request => allFail || request.Address == 10 ? new SlaveReply { ExceptionCode = 2 } : SlaveReply.Normal);
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), TimeProvider.System);
+        var settings = SampleSettings(slave) with { Points = [Point("good", 0), Point("bad", 10)] };
+        var result = await preview.ReadSampleAsync(settings, "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal(2, slave.RequestCount);
+        if (allFail)
+        {
+            Assert.Equal("readFailed", result.Code);
+            Assert.Null(result.Message);
+        }
+        else
+        {
+            var message = Assert.IsType<EdgeMessage>(result.Message);
+            Assert.Equal("4096", message.Values["good"].ToString());
+            Assert.False(message.Values.ContainsKey("bad"));
+            Assert.Equal(QualityCode.DeviceException, message.Quality["bad"]);
+        }
+    }
+
+    [Fact]
+    public async Task RouteSampleDoesNotStopAtTheDiagnosticDisplayBudget()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), TimeProvider.System);
+        var settings = SampleSettings(slave) with { Points = Enumerable.Range(0, 1000).Select(i => Point("p" + i, i)).ToImmutableArray() };
+        var result = await preview.ReadSampleAsync(settings, "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal(1000, result.Message!.Values.Count);
+        Assert.Equal("5095", result.Message.Values["p999"].ToString());
+        Assert.Equal(8, slave.RequestCount);
+    }
+
+    [Fact]
+    public async Task RouteSampleDeadlineDiscardsPartialCycle()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, request => new SlaveReply { Silent = request.Sequence == 2 });
+        var time = new FakeTimeProvider();
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), time);
+        var pending = preview.ReadSampleAsync(SampleSettings(slave) with { ReadTimeoutMs = 30000, Points = [Point("a", 0), Point("b", 10)] },
+            "input", "device", ClockSyncState.Unknown, Token, timeoutMs: 1000);
+        await slave.WaitForRequestsAsync(2, TimeSpan.FromSeconds(5), Token);
+        time.Advance(TimeSpan.FromSeconds(1));
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5), Token);
+        Assert.Equal("deadline", result.Code);
+        Assert.Null(result.Message);
+    }
+
+    [Fact]
+    public async Task RouteSampleCancellationWaitsForReadExitAndAllowsNextSample()
+    {
+        var silent = true;
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, _ => new SlaveReply { Silent = Volatile.Read(ref silent) });
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), TimeProvider.System);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        var pending = preview.ReadSampleAsync(SampleSettings(slave) with { ReadTimeoutMs = 30000 },
+            "input", "device", ClockSyncState.Unknown, stop.Token);
+        await slave.WaitForRequestsAsync(1, TimeSpan.FromSeconds(5), Token);
+        stop.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending.WaitAsync(TimeSpan.FromSeconds(5), Token));
+        Volatile.Write(ref silent, false);
+        var next = await preview.ReadSampleAsync(SampleSettings(slave), "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("success", next.Code);
+    }
+
+    [Fact]
+    public async Task RouteSampleKeepsNonFiniteAsBadQualityRatherThanFabricatingZero()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp);
+        var preview = new ModbusReadPreview(new SharedConnections(), Connector(), TimeProvider.System);
+        var result = await preview.ReadSampleAsync(SampleSettings(slave) with { Points = [Point("nan", 0x6ff0, "float64", "ABCD")] },
+            "input", "device", ClockSyncState.Unknown, Token);
+        Assert.Equal("success", result.Code);
+        Assert.Empty(result.Message!.Values);
+        Assert.Equal(QualityCode.NonFinite, result.Message.Quality["nan"]);
+    }
+
+    private static ModbusInputSettings SampleSettings(ModbusTestSlave slave, bool rtu = false) => new()
+    {
+        ConnectionId = 1,
+        Host = "127.0.0.1",
+        Port = slave.Endpoint.Port,
+        FrameFormat = rtu ? "rtu-over-tcp" : "tcp",
+        ReadTimeoutMs = 500,
+        RtuSilenceMs = 100,
+        UnitId = 1,
+        Points = [Point("value", 0, "uint64", "ABCD")]
+    };
 
     private static ModbusPointSettings Point(string key, int address, string type = "uint16", string? order = null) =>
         new() { Key = key, FunctionCode = 3, Address = address, Type = type, ByteOrder = order };

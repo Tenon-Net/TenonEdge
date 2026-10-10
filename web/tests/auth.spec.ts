@@ -4335,3 +4335,234 @@ test('route MQTT onsite preview confirms diagnostic capture and marks retained v
         await new Promise<void>((resolve) => peer.close(() => resolve()))
     }
 })
+
+test('route Modbus onsite preview reads exact uint64 and bad quality, cancels and never sends output', async ({
+    page,
+}) => {
+    let mode: 'partial' | 'failed' | 'silent' = 'partial'
+    let requests = 0
+    const sockets = new Set<Socket>()
+    const peer = createTcpServer((socket) => {
+        sockets.add(socket)
+        socket.on('close', () => sockets.delete(socket))
+        socket.on('error', () => {})
+        let pending = Buffer.alloc(0)
+        socket.on('data', (chunk) => {
+            pending = Buffer.concat([pending, chunk])
+            while (pending.length >= 12) {
+                const request = pending.subarray(0, 12)
+                pending = pending.subarray(12)
+                expect(request.readUInt16BE(4)).toBe(6)
+                expect(request[6]).toBe(255)
+                expect(request[7]).toBe(3)
+                requests++
+                if (mode === 'silent') continue
+                const failed =
+                    mode === 'failed' || request.readUInt16BE(8) === 10
+                const count = request.readUInt16BE(10)
+                expect(count).toBeLessThanOrEqual(4)
+                const reply = Buffer.alloc(failed ? 9 : 9 + count * 2, 0xff)
+                request.copy(reply, 0, 0, 4)
+                reply.writeUInt16BE(failed ? 3 : 3 + count * 2, 4)
+                reply[6] = request[6]
+                reply[7] = failed ? 0x83 : 3
+                reply[8] = failed ? 2 : count * 2
+                socket.write(reply)
+            }
+        })
+    })
+    await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
+    const address = peer.address()
+    if (!address || typeof address === 'string') throw new Error('listener')
+    try {
+        const { headers, saved } = await openFieldAnalysisRoute(
+            page,
+            'onsite-modbus',
+        )
+        const policyUrl = '/api/edge-admin/v1/system/outbound-policy'
+        const policy = await (await page.request.get(policyUrl)).json()
+        expect(
+            (
+                await page.request.put(policyUrl, {
+                    headers,
+                    data: {
+                        expectedVersion: policy.version,
+                        networks: policy.networks,
+                        localPorts: [...policy.localPorts, address.port],
+                    },
+                })
+            ).status(),
+        ).toBe(200)
+        const connectionResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: saved.version,
+                    key: 'onsite-modbus',
+                    name: 'Modbus',
+                    kind: 'modbus',
+                    modbus: {
+                        host: '127.0.0.1',
+                        port: address.port,
+                        readTimeoutMs: 30000,
+                    },
+                },
+            },
+        )
+        expect(connectionResponse.status()).toBe(200)
+        const connection = await connectionResponse.json()
+        const outputResponse = await page.request.post(
+            '/api/edge-admin/v1/connections',
+            {
+                headers,
+                data: {
+                    expectedVersion: connection.version,
+                    key: 'modbus-output',
+                    name: 'Output',
+                    kind: 'http',
+                    http: {
+                        baseAddress: 'http://127.0.0.1:' + address.port + '/',
+                    },
+                },
+            },
+        )
+        expect(outputResponse.status()).toBe(200)
+        const output = await outputResponse.json()
+        const deviceResponse = await page.request.post(
+            '/api/edge-admin/v1/devices',
+            {
+                headers,
+                data: {
+                    expectedVersion: output.version,
+                    key: 'onsite-modbus-device',
+                    name: 'Modbus',
+                    kind: 'modbus',
+                    connectionId: connection.connection.id,
+                    unitId: 255,
+                },
+            },
+        )
+        expect(deviceResponse.status()).toBe(200)
+        const device = await deviceResponse.json()
+        const inputResponse = await page.request.post(
+            '/api/edge-admin/v1/devices/' + device.device.id + '/inputs',
+            {
+                headers,
+                data: {
+                    expectedVersion: device.version,
+                    key: 'values',
+                    name: 'Values',
+                    modbus: {
+                        periodMs: 5000,
+                        points: [
+                            {
+                                key: 'f000',
+                                functionCode: 3,
+                                address: 0,
+                                type: 'uint64',
+                                byteOrder: 'ABCD',
+                            },
+                            {
+                                key: 'bad',
+                                functionCode: 3,
+                                address: 10,
+                                type: 'uint16',
+                            },
+                        ],
+                    },
+                },
+            },
+        )
+        expect(inputResponse.status()).toBe(200)
+        const input = await inputResponse.json()
+        const graph = saved.route.graph
+        graph.nodes.find((node: { id: string }) => node.id === 'in').type =
+            'input.modbus'
+        graph.nodes.find(
+            (node: { id: string }) => node.id === 'in',
+        ).config.sourceIds = [input.input.id]
+        graph.nodes.find(
+            (node: { id: string }) => node.id === 'out',
+        ).config.connectionId = output.connection.id
+        expect(
+            (
+                await page.request.put(
+                    '/api/edge-admin/v1/routes/' + saved.route.id,
+                    {
+                        headers,
+                        data: {
+                            expectedVersion: input.version,
+                            key: saved.route.key,
+                            name: saved.route.name,
+                            enabled: false,
+                            graph,
+                        },
+                    },
+                )
+            ).status(),
+        ).toBe(200)
+        await page.reload()
+        await page
+            .getByRole('button', { name: '打开 onsite-modbus', exact: true })
+            .click()
+        const panel = page.getByRole('region', {
+            name: '路线样本预览',
+            exact: true,
+        })
+        await panel
+            .getByLabel('预览数据来源', { exact: true })
+            .selectOption('input.modbus:' + input.input.id)
+        const sample = panel.getByLabel('手工 JSON 样本（不保存）', {
+            exact: true,
+        })
+        await sample.fill('not a physical sample')
+        const run = panel.getByRole('button', {
+            name: '现场读取 Modbus 一次并预览',
+            exact: true,
+        })
+        page.once('dialog', (dialog) => dialog.dismiss())
+        await run.click()
+        expect(requests).toBe(0)
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        const body = panel.getByLabel('将要发送的 JSON（仅预览）', {
+            exact: true,
+        })
+        await expect(body).toHaveText('{"result":18446744073709551615}')
+        await expect(
+            panel.getByRole('cell', {
+                name: '18446744073709551615',
+                exact: true,
+            }),
+        ).toHaveCount(2)
+        await expect(
+            panel.getByRole('cell', {
+                name: 'bad deviceException',
+                exact: true,
+            }),
+        ).toBeVisible()
+        await expect(sample).toHaveValue('not a physical sample')
+        expect(requests).toBe(2)
+        mode = 'failed'
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        await expect(panel.getByRole('alert')).toContainText(
+            '整组未取得可用采集消息',
+        )
+        await expect(body).toHaveCount(0)
+        expect(requests).toBe(4)
+        mode = 'silent'
+        page.once('dialog', (dialog) => dialog.accept())
+        await run.click()
+        await expect.poll(() => requests).toBe(5)
+        await panel
+            .getByRole('button', { name: '取消预览', exact: true })
+            .click()
+        await expect.poll(() => sockets.size).toBe(0)
+        await expect(sample).toHaveValue('not a physical sample')
+    } finally {
+        for (const socket of sockets) socket.destroy()
+        await new Promise<void>((resolve) => peer.close(() => resolve()))
+    }
+})

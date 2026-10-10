@@ -249,7 +249,7 @@ describe('route API lossless transport', () => {
     })
 })
 
-it.each(['http', 'mqtt'] as const)(
+it.each(['http', 'mqtt', 'modbus'] as const)(
     '%s onsite preview sends only versioned graph and source, preserving constants',
     async (protocol) => {
         let body = ''
@@ -266,11 +266,13 @@ it.each(['http', 'mqtt'] as const)(
         form.document = decodeGraph(graph)
         const original = JSON.stringify(form)
         const controller = new AbortController()
-        await (protocol === 'http' ? f.api.previewHttp : f.api.previewMqtt)(
-            form,
-            123,
-            controller.signal,
-        )
+        await (
+            protocol === 'http'
+                ? f.api.previewHttp
+                : protocol === 'mqtt'
+                  ? f.api.previewMqtt
+                  : f.api.previewModbus
+        )(form, 123, controller.signal)
         expect(sent?.url).toBe(
             'http://gateway.test/api/edge-admin/v1/routes/preview/' + protocol,
         )
@@ -282,7 +284,7 @@ it.each(['http', 'mqtt'] as const)(
     },
 )
 
-it.each(['http', 'mqtt'] as const)(
+it.each(['http', 'mqtt', 'modbus'] as const)(
     '%s onsite preview propagates cancellation while a request is active',
     async (protocol) => {
         let started!: () => void
@@ -302,7 +304,11 @@ it.each(['http', 'mqtt'] as const)(
         })
         const controller = new AbortController()
         const pending = (
-            protocol === 'http' ? f.api.previewHttp : f.api.previewMqtt
+            protocol === 'http'
+                ? f.api.previewHttp
+                : protocol === 'mqtt'
+                  ? f.api.previewMqtt
+                  : f.api.previewModbus
         )(newRoute('v1'), 123, controller.signal)
         const rejected = expect(pending).rejects.toThrow('cancelled')
         await received

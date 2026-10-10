@@ -91,8 +91,14 @@ export function RoutePreview({
         () => new TextEncoder().encode(sample).length,
         [sample],
     )
-    const mqtt = selected?.kind === 'input.mqtt'
-    const canAcquire = selected?.kind === 'input.http' || mqtt
+    const acquisition =
+        selected?.kind === 'input.http'
+            ? { key: 'http', run: routes.previewHttp }
+            : selected?.kind === 'input.mqtt'
+              ? { key: 'mqtt', run: routes.previewMqtt }
+              : selected?.kind === 'input.modbus'
+                ? { key: 'modbus', run: routes.previewModbus }
+                : null
     const invalid =
         bytes > 65536 || !sample.trim() || !selected || options.overLimit
     async function preview(onsite = false) {
@@ -100,18 +106,12 @@ export function RoutePreview({
             disabled ||
             !selected ||
             options.overLimit ||
-            (onsite ? !canAcquire : invalid)
+            (onsite ? !acquisition : invalid)
         )
             return
         if (
             onsite &&
-            !window.confirm(
-                t(
-                    mqtt
-                        ? 'routes.preview.mqttConfirm'
-                        : 'routes.preview.httpConfirm',
-                ),
-            )
+            !window.confirm(t('routes.preview.' + acquisition?.key + 'Confirm'))
         )
             return
         request.current?.abort()
@@ -128,7 +128,7 @@ export function RoutePreview({
         setResult({ ...captured, pending: true })
         try {
             const data = onsite
-                ? await (mqtt ? routes.previewMqtt : routes.previewHttp)(
+                ? await acquisition!.run(
                       { ...newRoute(version), document },
                       selected!.id,
                       controller.signal,
@@ -266,7 +266,7 @@ export function RoutePreview({
                 >
                     {t('routes.preview.run')}
                 </Button>
-                {canAcquire && (
+                {acquisition && (
                     <Button
                         type="button"
                         variant="outline"
@@ -275,11 +275,7 @@ export function RoutePreview({
                         }
                         onClick={() => void preview(true)}
                     >
-                        {t(
-                            mqtt
-                                ? 'routes.preview.mqttRun'
-                                : 'routes.preview.httpRun',
-                        )}
+                        {t('routes.preview.' + acquisition?.key + 'Run')}
                     </Button>
                 )}
                 {current?.pending && (
@@ -326,11 +322,7 @@ export function RoutePreview({
               current.error instanceof ApiError &&
               current.error.status === 422 ? (
                 <p role="alert">
-                    {t(
-                        mqtt
-                            ? 'routes.preview.mqttUnavailable'
-                            : 'routes.preview.httpUnavailable',
-                    )}
+                    {t('routes.preview.' + acquisition?.key + 'Unavailable')}
                 </p>
             ) : (
                 <ErrorMessage error={current?.error} />
@@ -343,9 +335,9 @@ export function RoutePreview({
                     <p>
                         {t(
                             current.onsite
-                                ? mqtt
-                                    ? 'routes.preview.mqttResult'
-                                    : 'routes.preview.httpResult'
+                                ? 'routes.preview.' +
+                                      acquisition?.key +
+                                      'Result'
                                 : 'routes.preview.manualResult',
                         )}
                     </p>

@@ -2761,6 +2761,27 @@ web/ 执行 `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:che
 
 最近消息与 Modbus 样本继续按 T3-05 推进；完整显示预算之外的原始消息桥接、MQTT 新端点配额/截止时间专项故障注入、DUP 浏览器专项仍需补齐。已覆盖的底层服务测试不等于新端点各故障路径都经专项验证。未推送、发布或更新常驻调试实例。
 
+### 2.140 T3-05 Modbus 完整现场消息到路线预览（2026-10-10）
+
+接续 §2.139，接通功能 §4.2 的 Modbus 现场样本子场景；**运行中最近消息、JSON 协议大报文完整消息桥接及完整 T3-05 验收仍未完成**。
+
+- 新增 `POST /routes/preview/modbus`：当前图、原编辑版本、图内 sourceId；点表、UnitId、字节序与连接来自同一版本快照，不接受客户端伪装的寄存器结果。共享串行租约及出站规则不变，不创建正式运行单元、不访问输出、不保存或入发送队列。
+- 在既有 ModbusReadPreview 增加 `ReadSampleAsync`，调用 ModbusCycleReader 的诊断模式并复用 ModbusPointTable 正式解码，直接返回 EdgeMessage，不从展示文字反向解析、不把诊断报告截断后的字段当作完整消息。正式周期调用仍默认非诊断模式；预览不会添加正式健康成员或记正式轮询统计。
+- 完整读取受点数（最多 10000）、协议块和总期限约束；部分失败的字段保留稀疏质量且没有假零/历史值，NaN/Infinity 保留 nonFinite。采集时间为实际周期完成时间，Modbus 没有 RawJson。整组无成功读取为 422，期限到达丢弃整个未完成周期并返回 504，请求取消等待实际 I/O 退出；最终路线显示仍按 64 KiB 限制。
+- 界面为 Modbus 增加独立联网确认/读取按钮和结果来源提示；真实样本不使用、不覆盖手工文本。三种现场协议按钮现在按所选来源选择 API 与文案；共享连接冲突提示不再限定为 HTTP。前端 Modbus 路线请求期限 35 秒。
+- 新增 8 项适配器场景：TCP/RTU over TCP 复用运行租约、禁止第二连接并保持正式 UnitId 集合；部分/全部异常块的值与质量；1000 点完整读取而非展示预算提前停止；截止时间丢弃已读部分；取消后下一次采样可用；非有限值不伪造成 0。与已有设备诊断读取一同回归。
+- 新增 6 项 API 场景：三角色、TCP 255 与 RTU over TCP 1、精确 uint64 与输出监听器无连接/草稿不变、部分失败字段质量和整组失败、匿名/CSRF/陈旧版本/外来源无联网。
+- 浏览器新增真实 TCP 模拟从站场景：取消确认没有请求；uint64 最大值 `18446744073709551615` 在输入、映射和输出 JSON 中保持精确；失败字段明确 bad/deviceException；整组失败清除旧结果；进行中取消关闭 socket；手工文本保留，只有预期 Modbus 读取帧，无输出 HTTP 请求。**模拟从站不是现场 PLC，未据此宣称实物验证通过。**
+
+环境沿用 §2.139。OpenAPI、端点权限/operationId 登记和客户端已更新，无依赖变更。验证证据：
+
+- `dotnet test tests/IntegrationTests --no-restore -c Release --filter 'FullyQualifiedName~RouteModbusPreviewTests|FullyQualifiedName~ModbusReadPreviewTests'`：**29 通过，0 失败/跳过**，其中包含既有适配器用例（`/tmp/tenonedge-route-modbus-tests.log`）。
+- web/ `npx --yes npm@11.21.0 run typecheck`、`run lint`、`run format:check`、`run build` 通过，`run test -- --reporter=json --outputFile=reports/unit.json` **215 通过，0 失败/跳过**（`/tmp/tenonedge-route-modbus-web.log`、`web/reports/unit.json`）。OpenAPI 导出见 `/tmp/tenonedge-route-modbus-openapi.log`。
+- `dotnet test --no-restore -c Release --logger trx --results-directory /tmp/tenonedge-route-modbus-regression --blame-hang-timeout 5m --blame-hang-dump-type none`：**1184 单元 + 1092 集成 = 2276 通过，0 失败/跳过**（`/tmp/tenonedge-route-modbus-regression.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-route-modbus-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-route-modbus-trx.log`）。`dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-route-modbus-format-verify.log`）。
+- `TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --grep 'route Modbus onsite|Modbus device preview|route MQTT onsite|MQTT capture marks|route HTTP onsite|route manual preview|upstream fields|mapping rule table|output forms|route drafts|route reference|canvas|real setup|switching output nodes'`：**20 通过，0 失败/跳过**（`/tmp/tenonedge-route-modbus-browser-final.log`，1.4 分钟）。README 更新后的前端格式复核通过（`/tmp/tenonedge-route-modbus-format-web-final.log`）。
+
+Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故障组合的端到端 UI 验收仍需补齐，不能把底层已有覆盖写成新端点全场景均已验收。下一步继续运行中最近消息和完整样本桥接，不提前声明应用/回滚或 T3-05 完成。未推送、发布或部署到常驻调试实例。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

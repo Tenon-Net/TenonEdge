@@ -30,6 +30,7 @@ internal static partial class RoutePreviewEndpoints
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(429).ProducesProblem(504);
         MapHttpSamplePreview(api);
         MapMqttSamplePreview(api);
+        MapModbusSamplePreview(api);
         return api;
     }
 

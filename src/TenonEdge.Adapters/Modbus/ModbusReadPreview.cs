@@ -24,6 +24,34 @@ public sealed class ModbusReadPreview(ISharedConnections connections, IOutboundC
     private static readonly (string Name, ModbusByteOrder Order)[] Orders =
         [("ABCD", ModbusByteOrder.Abcd), ("CDAB", ModbusByteOrder.Cdab), ("BADC", ModbusByteOrder.Badc), ("DCBA", ModbusByteOrder.Dcba)];
 
+    /// <summary>完整的一次采集消息，不经过展示文本。沿用正式点表解码与质量语义，但不记正式轮询健康状态。</summary>
+    public async Task<ModbusSampleReadResult> ReadSampleAsync(ModbusInputSettings settings, string inputKey, string deviceKey,
+        ClockSyncState clock, CancellationToken cancellationToken, int timeoutMs = 30000)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        BusinessKeys.Validate(inputKey, nameof(inputKey));
+        BusinessKeys.Validate(deviceKey, nameof(deviceKey));
+        var connection = settings.Connection.Validate();
+        if (settings.UnitId is null || connection.Format == ModbusFrameFormat.RtuOverTcp && settings.UnitId is < 1 or > 247 ||
+            timeoutMs is < 1 or > 30000 || !Enum.IsDefined(clock))
+        { throw new ArgumentException("Modbus 样本参数无效。"); }
+        var table = new ModbusPointTable(settings.Points, settings.MaxRegisters, settings.MaxBits);
+        cancellationToken.ThrowIfCancellationRequested();
+        IConnectionLease<ModbusConnectionSession> lease;
+        try
+        { lease = connections.Acquire(connection.ConnectionId, "modbus", connection.Identity, () => new ModbusConnectionSession(connection, null, connector, time)); }
+        catch (InvalidOperationException) { throw new ModbusConnectionUnavailableException(); }
+        await using var ownership = lease;
+        var cycle = await ModbusCycleReader.ReadAsync(lease, settings.UnitId.Value, table.Blocks,
+            TimeSpan.FromMilliseconds(timeoutMs), time, cancellationToken, diagnostic: true);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (cycle.Overrun)
+        { return new("deadline", null); }
+        var message = table.Decode(cycle, inputKey, deviceKey, time.GetUtcNow(),
+            clock == ClockSyncState.NotSynchronized ? TimeSource.GatewayUnsynced : TimeSource.Gateway);
+        return new(message is null ? "readFailed" : "success", message);
+    }
+
     public async Task<ModbusReadPreviewResult> RunAsync(ModbusConnectionSettings settings, byte unit,
         ImmutableArray<ModbusPointSettings> points, CancellationToken cancellationToken,
         int timeoutMs = 30000, int maxRegisters = 125, int maxBits = 2000, int maximumDisplayBytes = MaximumDisplayBytes)
@@ -195,3 +223,8 @@ public sealed record ModbusPreviewGroup(string Key, ImmutableArray<ModbusPointSe
 public sealed record ModbusPreviewGroupResult(string Key, ModbusReadPreviewResult Preview);
 public sealed record ModbusDevicePreviewResult(int TotalGroups, bool Truncated, bool DeadlineExceeded,
     double ElapsedMs, ModbusPreviewGroupResult[] Groups);
+
+public sealed record ModbusSampleReadResult(string Code, EdgeMessage? Message)
+{
+    public override string ToString() => $"Modbus sample ({Code}; body omitted)";
+}
