@@ -47,6 +47,8 @@ public sealed class GroupedRecoveryTests
         Assert.Equal(1, outputs.Disposed.Count(id => id == 11));
         Assert.All(runtime.Deliveries.ReadPending(11, 0, 20), record => Assert.Equal(1, record.Revision));
         Assert.All(runtime.Deliveries.ReadPending(12, 0, 20), record => Assert.Equal(1, record.Revision));
+        // 提交计数先于请求完成通知；分发器恢复执行后才释放消息预算。
+        await UntilAsync(() => runtime.InFlight.Status.ReservedBytes == 0);
         Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
         Assert.Equal(9, runtime.GetStatus().Units.Count);
     }

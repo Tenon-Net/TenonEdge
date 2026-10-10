@@ -11,6 +11,9 @@ internal sealed class RuntimeApplicationBusyException(RuntimeApplicationStatus a
     public RuntimeApplicationStatus Application { get; } = application;
 }
 
+internal sealed record RuntimeApplicationExpectation(long? EffectiveRevision, string PlanHash);
+internal sealed class RuntimeApplicationUnavailableException : InvalidOperationException;
+
 internal sealed partial class RuntimeCoordinator
 {
     private TaskCompletionSource? _application;
@@ -18,15 +21,27 @@ internal sealed partial class RuntimeCoordinator
     /// <summary>拥有完整在线应用操作；只接收确认过的草稿版本及已解析的操作人，不接收 HttpContext 或任意运行计划。
     /// 取消只结束调用方等待。冻结之后，即使请求断开也完成提交或放弃/恢复；停机先等本操作结束。</summary>
     public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null) =>
-        StartApplication(null, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription);
+        AwaitApplicationAsync(StartApplication(null, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription).Completion, cancellationToken);
 
     public Task<RuntimeApplicationResult> RollbackAsync(long targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
-        return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription);
+        return AwaitApplicationAsync(StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription).Completion, cancellationToken);
     }
 
-    private Task<RuntimeApplicationResult> StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null)
+    // 返回在准入锁内创建的不可变操作标识，不通过“读取最近操作”猜测本请求的 ID。
+    public RuntimeApplicationStatus BeginApplyDraft(string expectedDraftVersion, RuntimeApplicationExpectation expectation,
+        string account, string? sourceIp, string? changeDescription, CancellationToken token) =>
+        StartApplication(null, expectedDraftVersion, account, sourceIp, token, changeDescription, expectation).Status;
+
+    public RuntimeApplicationStatus BeginRollback(long targetRevision, string expectedDraftVersion, RuntimeApplicationExpectation expectation,
+        string account, string? sourceIp, string? changeDescription, CancellationToken token)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
+        return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, token, changeDescription, expectation).Status;
+    }
+
+    private ApplicationStart StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null, RuntimeApplicationExpectation? expectation = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(account);
@@ -34,16 +49,18 @@ internal sealed partial class RuntimeCoordinator
         { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
         changeDescription = ConfigurationChangeDescription.Normalize(changeDescription);
         TaskCompletionSource operation;
+        RuntimeApplicationStatus initial;
         var operationId = Guid.NewGuid();
         lock (_lock)
         {
             if (_stopping is not null || _state is RuntimeCoordinatorState.Starting or RuntimeCoordinatorState.Blocked or RuntimeCoordinatorState.Stopping or RuntimeCoordinatorState.Stopped)
-            { throw new InvalidOperationException("当前运行状态不允许应用配置。"); }
+            { throw new RuntimeApplicationUnavailableException(); }
             if (_application is not null)
             { throw new RuntimeApplicationBusyException(_applications[^1]); }
             operation = NewSignal();
-            _applications.Add(new(operationId, targetRevision is null ? "apply" : "rollback", account, expectedDraftVersion, targetRevision,
-                null, RuntimeApplicationStage.Validating, time.GetUtcNow(), null, false, null, null));
+            initial = new(operationId, targetRevision is null ? "apply" : "rollback", account, expectedDraftVersion, targetRevision,
+                null, RuntimeApplicationStage.Validating, time.GetUtcNow(), null, false, null, null);
+            _applications.Add(initial);
             if (_applications.Count > MaximumRecentApplications)
             { _applications.RemoveAt(0); }
             _application = operation;
@@ -51,17 +68,17 @@ internal sealed partial class RuntimeCoordinator
         Task<ApplicationOutcome> task;
         // 不把请求的 AsyncLocal/HttpContextAccessor 或数据库客户端上下文带入所拥有的后台流程。
         using (ExecutionContext.SuppressFlow())
-        { task = Task.Run(() => RunApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, operation, changeDescription)); }
-        return AwaitApplicationAsync(task, cancellationToken);
+        { task = Task.Run(() => RunApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, operation, changeDescription, expectation)); }
+        return new(initial, task);
     }
 
-    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId, string? changeDescription)
+    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation)
     {
         RuntimePlanDocument document;
         long revision;
         if (targetRevision is { } target)
         {
-            var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account, changeDescription);
+            var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account, changeDescription, expectation);
             document = rollback.Document;
             revision = rollback.Revision;
         }
@@ -69,7 +86,7 @@ internal sealed partial class RuntimeCoordinator
         {
             var snapshot = drafts.ReadCompilation(expectedDraftVersion, CancellationToken.None);
             document = RoutePlanCompiler.Compile(snapshot, CancellationToken.None).Document;
-            revision = versions.FreezeDraft(document, expectedDraftVersion, account, changeDescription);
+            revision = versions.FreezeDraft(document, expectedDraftVersion, account, changeDescription, expectation);
         }
         AdvanceApplication(operationId, RuntimeApplicationStage.Preparing, revision);
         PreparedPlan? prepared = null;
@@ -175,6 +192,8 @@ internal sealed partial class RuntimeCoordinator
             { await prepared.DisposeAsync(); }
         }
     }
+
+    private sealed record ApplicationStart(RuntimeApplicationStatus Status, Task<ApplicationOutcome> Completion);
 
     private sealed class ApplicationRejectedException(string code) : Exception
     {

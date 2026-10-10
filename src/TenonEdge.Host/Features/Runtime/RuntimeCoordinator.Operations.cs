@@ -36,11 +36,11 @@ internal sealed partial class RuntimeCoordinator
     // 拥有的任务把异常转换为内部结果，不因请求取消而留下无人观察的故障任务。
     // 最近操作列表只保留脱敏状态，原异常只交给仍在等待的调用方。
     private async Task<ApplicationOutcome> RunApplicationAsync(long? targetRevision, string expectedDraftVersion,
-        string account, string? sourceIp, Guid operationId, TaskCompletionSource completion, string? changeDescription)
+        string account, string? sourceIp, Guid operationId, TaskCompletionSource completion, string? changeDescription, RuntimeApplicationExpectation? expectation)
     {
         try
         {
-            var result = await ExecuteApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, changeDescription);
+            var result = await ExecuteApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, changeDescription, expectation);
             lock (_lock)
             {
                 var current = _applications[^1];

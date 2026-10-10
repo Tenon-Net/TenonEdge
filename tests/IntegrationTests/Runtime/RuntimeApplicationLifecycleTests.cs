@@ -10,6 +10,7 @@ using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Connections;
@@ -21,6 +22,46 @@ public sealed class RuntimeApplicationLifecycleTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(20);
+
+    [Fact]
+    public async Task ApiReturnsBeforePreparationCompletesAndBusyResponseIdentifiesTheOwningOperation()
+    {
+        using var data = TemporaryDirectory.Create();
+        using var input = new ControlledInput { BlockPreparation = true };
+        await using var factory = Create(data.Path, input);
+        var saved = Seed(factory);
+        TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
+        TestAccounts.Create(factory.Services, "other", ApiRequests.StrongPassword, UserRole.Configurator);
+        var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
+        var request = ConfigurationApplicationEndpointTests.Request(versions.ReviewDraft(saved.Version, Token));
+        var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
+        using var caller = new CancellationTokenSource();
+        Guid id;
+        try
+        {
+            using (var client = await factory.CreateLoggedInClientAsync("operator", Token))
+            using (var accepted = await client.PostJsonAsync("/api/edge-admin/v1/configuration/apply", request, caller.Token))
+            {
+                Assert.Equal(System.Net.HttpStatusCode.Accepted, accepted.StatusCode);
+                id = (await accepted.ReadJsonAsync(Token)).GetProperty("id").GetGuid();
+            }
+            await input.Preparing.Task.WaitAsync(Deadline, Token);
+            caller.Cancel();
+            using var other = await factory.CreateLoggedInClientAsync("other", Token);
+            using var busy = await other.PostJsonAsync("/api/edge-admin/v1/configuration/apply", request, Token);
+            await ProblemAssert.HasStatusAsync(busy, System.Net.HttpStatusCode.Conflict, Token);
+            var conflict = await busy.ReadJsonAsync(Token);
+            Assert.Equal(id, conflict.GetProperty("operationId").GetGuid());
+            Assert.Equal("operator", conflict.GetProperty("account").GetString());
+            Assert.Null(coordinator.ReadApplication(id)!.FinishedAt);
+            input.ReleasePreparation.Set();
+            await OutputPipelineTests.UntilAsync(() => coordinator.ReadApplication(id)?.FinishedAt is not null);
+            Assert.Equal(RuntimeApplicationStage.Completed, coordinator.ReadApplication(id)!.Stage);
+            Assert.Equal(1, versions.ReadPointers().EffectiveRevision);
+            Assert.Single(coordinator.ReadApplications());
+        }
+        finally { input.ReleasePreparation.Set(); }
+    }
 
     [Fact]
     public async Task RequestCancellationDoesNotReleaseApplicationOwnershipAndShutdownWaitsForIt()
@@ -69,7 +110,7 @@ public sealed class RuntimeApplicationLifecycleTests
             Assert.Equal(1, coordinator.Runtime.ActiveRevision);
             Assert.Equal(edited.Version, drafts.Read().Version);
             Assert.NotEmpty(RuntimeSnapshotDocument.ReadPlan(versions.Load(1)!).Units);
-            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await Assert.ThrowsAsync<RuntimeApplicationUnavailableException>(async () =>
                 await coordinator.ApplyDraftAsync(edited.Version, "operator", null, Token));
         }
         finally { input.ReleasePreparation.Set(); }

@@ -3259,6 +3259,32 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 后续继续应用/回滚写入口、版本页面与完整浏览器流程；历史未知字段须在界面明确显示未知，不能用本批数据补造旧作者。当前同进程及重开宿主测试不替代 §7.4 逐点强杀/断电矩阵或真实设备验收。
 
+### 2.165 T3-06 应用/回滚确认写 API 与后台操作接管（2026-10-10）
+
+承接 §2.164，开放配置确认后的写入口，复用既有冻结/准备/静默/提交/激活协调者。关联 T3-06 / GW-10 / AT-28 / 功能 §6；**本批为后端 API 与软件测试，不代表应用/回滚网页、完整中断矩阵或实物验收完成。**
+
+- 新增 `POST /api/edge-admin/v1/configuration/apply` 与 `POST /api/edge-admin/v1/configuration/versions/{revision}/rollback`。仅本地会话配置人员/管理员可调用，要求 CSRF、明确 `confirmed`、已查看的草稿版本、有效版本与计划哈希；修改说明沿用最多 1000 字符规则。不接受客户端伪造操作人，未知 JSON 字段拒绝；操作人及来源地址由服务端解析。
+- 重新执行预检，错误路线、目标阻断、不可比较快照或过期确认不进入操作。冻结时再次检查计划哈希，并在事务内核对草稿及有效版本，阻止预检与冻结之间的竞争。计划哈希仍是编译计划哈希，不冒充完整检查点内容哈希。
+- 在协调者准入锁内分配并捕获操作 ID，立即返回 **202 Accepted**、初始状态、操作查询 `Location` 和 `Cache-Control: no-store`。202 仅表示已接管，不表示配置已生效；客户端必须查询操作，不得自动重试。第二个操作返回 409 和当前操作 ID/账号；不允许应用的运行状态返回安全错误。
+- 已接管任务不携带请求上下文或请求取消令牌。断开请求不会取消后台应用；原内部等待接口仍保持兼容。后台故障由操作查询安全呈现，不泄露底层异常；停机仍等待拥有的操作结束。操作列表仍仅保留进程内最近 20 项，重启后不能凭未知 ID 盲目重试，须核对持久版本历史。
+- 两个端点复用预览准入预算，仅覆盖预检/准入阶段；请求正文上限 **8192 字节**，容纳 JSON 转义后的合法说明。补齐 OpenAPI/访问策略清单，并从独立临时 Host 生成前端类型，没有实现占位按钮。
+- 新增 17 项集成用例：六组角色与应用/回滚成功及审计、两组匿名/CSRF、无确认/非法说明/过期确认/伪造作者、错误路线、两组配额、接管后存储故障脱敏、两组冻结复核、真实 Kestrel 请求体限制、准备阻塞时提前返回/调用方离开/第二操作者冲突/原操作唯一完成。冻结复核使用独立工厂，避免把终态发布与准入锁释放之间的合法窗口误判为失败。
+
+验证经过：初版产品构建通过，0 警告/错误（`/tmp/tenonedge-application-api-build.log`）。首轮针对性测试因 xUnit2031 编译失败，改用 `Assert.Single(collection, predicate)` 后 **48 项通过，0 失败/跳过**（`/tmp/tenonedge-application-api-focused-final.log`）；最后冻结复核拆为两个独立用例并纳入全量。没有把编译失败写为测试通过。
+
+首轮全量 **2563 通过、1 失败、0 跳过**：既有 `GroupedRecoveryTests.HealthyGroupRestartsWhileTimedOutGroupWaitsThenAutomaticallyRecoversTogether` 在提交数达到 12 后立即断言在途预算为 0，实际观察到 1176548 字节（`/tmp/tenonedge-application-api-regression.log`）。单独重跑该类 4 项通过。检查 `DeliveryWriterUnit` 可见提交计数先更新，再完成入队请求；`InputDispatcherUnit` 等请求完成后才释放消息预算，因此此计数不是释放屏障。仅修改测试为有界等待预算归零后再断言，不延迟或改动产品释放逻辑，真实泄漏仍会超时失败。修改后恢复/应用针对性 **33 项通过，0 失败/跳过**（`/tmp/tenonedge-application-api-focused-updated.log`），保留首轮失败记录，不以单独重跑代替最终全量。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2、固定 npm 11.21.0）：
+
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-application-api-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1306 集成 = 2564 项通过，0 失败/跳过**（`/tmp/tenonedge-application-api-regression-final.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-application-api-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-application-api-trx.log`）。
+- `dotnet test tests/IntegrationTests --no-build --no-restore --filter FullyQualifiedName~GroupedRecoveryTests -v quiet` 连续执行 10 次，每次 4 项通过、0 失败/跳过（`/tmp/tenonedge-application-api-recovery-repeat.log`）；不增加独立用例总数。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-application-api-format-final.log`），`git diff --check` 通过。
+- `python3 /tmp/tenonedge-operation-export.py` 从独立临时 Development Host 导出 OpenAPI/TypeScript；HTTP 回环端口 18081、HTTPS 动态回环端口，Host SIGTERM 后退出 0，临时数据清理（`/tmp/tenonedge-application-api-export.log`）。
+- 在 `web/` 使用固定 npm CLI `node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js` 执行 `run typecheck`、`run lint`、`test`（15 文件、219 项）、`run format:check` 全部通过（`/tmp/tenonedge-application-api-web.log`）。
+
+未新增依赖、修改其他仓库或持久部署，未推送/发布。后续继续版本历史/比较 API、应用/回滚页面及浏览器流程；旧快照/损坏有效版本恢复和逐点进程中断验收仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

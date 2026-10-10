@@ -11,11 +11,13 @@ internal sealed record RuntimeRollbackPreparation(long Revision, RuntimePlanDocu
 
 internal sealed partial class RuntimeVersionStore
 {
-    public RuntimeRollbackPreparation FreezeManualRollback(long targetRevision, string expectedDraftVersion, string account, string? changeDescription = null)
+    public RuntimeRollbackPreparation FreezeManualRollback(long targetRevision, string expectedDraftVersion, string account, string? changeDescription = null, RuntimeApplicationExpectation? expectation = null)
     {
         var captured = ReadManualRollback(targetRevision, expectedDraftVersion);
         var draft = RequiredDraft(captured.Target);
         var document = RuntimeSnapshotDocument.ReadPlan(captured.Target);
+        if (expectation is not null && document.ContentHash != expectation.PlanHash)
+        { throw new DraftWriteException("configuration.reviewChanged"); }
         var revision = FreezeCore(new(captured.Target.SchemaVersion, captured.Target.Content, captured.Target.ContentHash),
             RuntimeSnapshotOrigins.Rollback, $"r{targetRevision}", account, expectedDraftVersion, client =>
             {
@@ -23,7 +25,7 @@ internal sealed partial class RuntimeVersionStore
                     RequiredSnapshot(client, targetRevision).ContentHash != captured.Target.ContentHash)
                 { throw new RuntimeVersionConflictException("runtime.versionChanged", targetRevision); }
                 ValidateRollbackReferences(client, draft);
-            }, changeDescription, draft.Edits);
+            }, changeDescription, draft.Edits, expectation);
         return new(revision, document);
     }
 

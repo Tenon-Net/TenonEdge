@@ -21,6 +21,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
     private static readonly string[] ExpectedOperationIds =
     [
         "analyzeRouteFields",
+        "applyConfigurationDraft",
         "changePassword",
         "clearHttpCredential",
         "clearMqttCredential",
@@ -72,6 +73,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "previewRouteSample",
         "reviewConfigurationDraft",
         "reviewConfigurationRollback",
+        "rollbackConfigurationVersion",
         "testHttpConnection",
         "testModbusConnection",
         "testMqttConnection",
