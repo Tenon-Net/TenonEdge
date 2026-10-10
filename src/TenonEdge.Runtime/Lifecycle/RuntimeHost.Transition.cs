@@ -16,7 +16,15 @@ public sealed partial class RuntimeHost
     /// 调用方必须持有完整应用/回滚锁，完成静态校验和静默后的目标变更检查（含禁止删除尚有待发数据的目标）。
     /// 此方法不提交配置，也不能证明配置已提交；进入后不接受请求取消、不自动回滚有效版本。
     /// 停止超时的独立发送者保留原实例，替换者等其完整退出后才构建；输入按新版本启动。</summary>
-    public async Task ActivateCommittedAsync(PreparedPlan prepared, RuntimeQuiescenceResult quiescence)
+    public Task ActivateCommittedAsync(PreparedPlan prepared, RuntimeQuiescenceResult quiescence) =>
+        ActivateCommittedCoreAsync(prepared, quiescence, retryEffective: false);
+
+    /// <summary>宿主已验证并重新标记当前有效快照后人工重试；仍须完整静默并遵守单实例规则。
+    /// 允许相同版本重新激活，不生成新版本；不能通过普通应用入口复用版本号。</summary>
+    public Task RetryEffectiveAsync(PreparedPlan prepared, RuntimeQuiescenceResult quiescence) =>
+        ActivateCommittedCoreAsync(prepared, quiescence, retryEffective: true);
+
+    private async Task ActivateCommittedCoreAsync(PreparedPlan prepared, RuntimeQuiescenceResult quiescence, bool retryEffective)
     {
         ArgumentNullException.ThrowIfNull(prepared);
         ArgumentNullException.ThrowIfNull(quiescence);
@@ -26,8 +34,12 @@ public sealed partial class RuntimeHost
             lock (_lock)
             {
                 if (!ReferenceEquals(_currentQuiescence, quiescence) || quiescence.Revision != _activeRevision ||
-                    prepared.Revision <= _activeRevision)
+                    prepared.Revision < _activeRevision || !retryEffective && prepared.Revision == _activeRevision)
                 { throw new InvalidOperationException("必须先完成当前有效版本的完整静默，并提交一个递增的新版本。"); }
+                if (retryEffective && prepared.Revision == _activeRevision && (_activeDefinition is null ||
+                    !prepared.Definition.Units.Select(unit => (unit.Id, unit.ConfigurationHash))
+                        .SequenceEqual(_activeDefinition.Units.Select(unit => (unit.Id, unit.ConfigurationHash)))))
+                { throw new InvalidOperationException("人工重试不能在相同版本号下替换计划内容。"); }
                 // 失效/重复计划在改变任何运行状态之前拒绝。
                 prepared.HandOver();
                 _currentQuiescence = null;

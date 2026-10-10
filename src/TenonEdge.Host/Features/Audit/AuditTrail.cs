@@ -112,6 +112,8 @@ internal static class AuditActions
 
     public const string SnapshotRolledBack = "runtime.rollback";
 
+    public const string RuntimeRetried = "runtime.retry";
+
     public const string DraftDiscarded = "configuration.discardDraft";
 }
 

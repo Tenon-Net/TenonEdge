@@ -9,11 +9,13 @@ import { reviewIsCurrent, type Review } from './api'
 import {
     configuration,
     operationsKey,
+    runtimeKey,
     summaryKey,
     useDraftSummary,
 } from './queries'
 import { ConfigurationError, OperationCard, ReviewContents } from './view'
 import { ConfigurationHistory } from './history'
+import { ConfigurationRuntime } from './runtime'
 
 type Form = {
     review: Review | null
@@ -44,6 +46,7 @@ export function ConfigurationPage() {
         })),
     )
     const form = useStore(store)
+    const [retryPending, setRetryPending] = useState(false)
     const operation = useQuery({
         queryKey: ['configuration-operation', form.operationId],
         queryFn: ({ signal }) =>
@@ -53,6 +56,9 @@ export function ConfigurationPage() {
             query.state.data?.finishedAt ? false : 1000,
     })
     const activeOperation = operations.data?.find((item) => !item.finishedAt)
+    const completedOperationId = operations.data?.find(
+        (item) => item.finishedAt,
+    )?.id
     const busy =
         operations.data?.some((item) => !item.finishedAt) ||
         summary.data?.pendingRevision != null
@@ -120,19 +126,23 @@ export function ConfigurationPage() {
         onError: () => store.setState({ uncertain: true }),
     })
     useEffect(() => {
-        if (!operation.data?.finishedAt) return
+        // The list also observes an admitted operation whose POST response was lost;
+        // there may be no local operationId to poll in that case.
+        if (!completedOperationId) return
         // These reads share a bounded per-session budget. Finish the summary
         // before refreshing detail/comparison, rather than starting all three together.
         void queryClient.invalidateQueries({ queryKey: summaryKey }).then(() =>
             Promise.all([
                 queryClient.invalidateQueries({ queryKey: operationsKey }),
+                queryClient.invalidateQueries({ queryKey: runtimeKey }),
                 queryClient.invalidateQueries({
                     queryKey: ['configuration-history'],
                 }),
             ]),
         )
-    }, [operation.data?.finishedAt])
-    const waiting = apply.isPending || discard.isPending || review.isPending
+    }, [completedOperationId])
+    const waiting =
+        apply.isPending || discard.isPending || review.isPending || retryPending
     const unavailable =
         !canEdit ||
         waiting ||
@@ -149,6 +159,9 @@ export function ConfigurationPage() {
             ...(form.operationId ? [operation.refetch()] : []),
         ])
         await queryClient.invalidateQueries({
+            queryKey: runtimeKey,
+        })
+        await queryClient.invalidateQueries({
             queryKey: ['configuration-history'],
         })
     }
@@ -161,6 +174,30 @@ export function ConfigurationPage() {
                 {t('configuration.historyBoundary')}
             </p>
             <ConfigurationError error={summary.error || operations.error} />
+            <ConfigurationRuntime
+                ready={!summary.isFetching && !summary.isPending}
+                canEdit={canEdit}
+                unavailable={
+                    waiting ||
+                    operations.isPending ||
+                    operations.isError ||
+                    !!busy
+                }
+                onBusy={setRetryPending}
+                onAccepted={(value) => {
+                    store.setState({
+                        operationId: value.id,
+                        review: null,
+                        confirmed: false,
+                        notice: 'accepted',
+                        uncertain: false,
+                    })
+                    queryClient.setQueryData(
+                        ['configuration-operation', value.id],
+                        value,
+                    )
+                }}
+            />
             <section className="space-y-3 rounded border p-4">
                 <p>
                     {summary.data?.changeCount == null || summary.isError
@@ -172,9 +209,11 @@ export function ConfigurationPage() {
                 <p>
                     {t('configuration.effective', {
                         revision:
-                            summary.data?.effectiveRevision == null
-                                ? t('configuration.none')
-                                : `r${summary.data.effectiveRevision}`,
+                            !summary.data || summary.isError
+                                ? t('configuration.unknown')
+                                : summary.data.effectiveRevision == null
+                                  ? t('configuration.none')
+                                  : `r${summary.data.effectiveRevision}`,
                     })}
                 </p>
                 {busy && (

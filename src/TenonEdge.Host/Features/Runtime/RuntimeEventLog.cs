@@ -153,4 +153,6 @@ internal static class RuntimeEventTypes
 
     /// <summary>进入“运行失败”：输入不启动，发送缓存照常运行。</summary>
     public const string RunFailed = "runtime.runFailed";
+
+    public const string RuntimeRetried = "runtime.retried";
 }

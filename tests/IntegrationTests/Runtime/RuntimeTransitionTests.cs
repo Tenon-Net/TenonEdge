@@ -15,6 +15,35 @@ public sealed class RuntimeTransitionTests
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public async Task ExplicitRetryCanReactivateSameRevisionButOrdinaryApplicationCannotReuseIt()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var input = new OneShotInputFactory();
+        var output = new Factory();
+        await using var runtime = RuntimeTesting.CreateRuntime([input], directory.Path, outputs: [output]);
+        runtime.StartCore();
+        var definition = Revision(1, Output("same", "same"));
+        await using var first = runtime.Prepare(definition);
+        await runtime.ActivateAsync(first);
+        await UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 1 && output.Created.Count == 1);
+        var quiet = await runtime.QuiesceInputsAsync(Token);
+        await using var changed = runtime.Prepare(Revision(1, Output("same", "changed")));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RetryEffectiveAsync(changed, quiet));
+        Assert.True(runtime.IsCurrentQuiescence(quiet));
+        await using var retry = runtime.Prepare(definition);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ActivateCommittedAsync(retry, quiet));
+        Assert.True(runtime.IsCurrentQuiescence(quiet));
+        await runtime.RetryEffectiveAsync(retry, quiet);
+        await UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 2);
+        Assert.Equal(1, runtime.ActiveRevision);
+        Assert.Equal(2, input.Started);
+        Assert.Single(output.Created); // Unchanged independent sender was not duplicated.
+        Assert.Equal(new long[] { 1, 1 }, runtime.Deliveries.ReadPending(1, 0, 10).Select(record => record.Revision));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RetryEffectiveAsync(retry, quiet));
+        Assert.Equal(2, input.Started);
+    }
+
+    [Fact]
     public async Task PreparedRevisionDoesNotRunAndUnchangedSenderSurvivesAliasChangeAndRecovery()
     {
         using var directory = TemporaryDirectory.Create();

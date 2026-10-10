@@ -4,6 +4,7 @@ import { createConfigurationApi } from './api'
 export const configuration = createConfigurationApi(api)
 export const summaryKey = ['configuration-summary']
 export const operationsKey = ['configuration-operations']
+export const runtimeKey = ['configuration-runtime']
 export function useDraftSummary() {
     return useQuery({
         queryKey: summaryKey,

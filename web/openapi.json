@@ -3196,6 +3196,138 @@
         }
       }
     },
+    "/api/edge-admin/v1/configuration/runtime": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "查看持久有效版本与运行失败状态；损坏快照不视为无配置，不改变配置或运行时",
+        "operationId": "getConfigurationRuntimeState",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRuntimeState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/configuration/runtime/retry": {
+      "post": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "确认后清零启动保护次数并重试当前有效快照；不应用草稿或生成版本，按操作 ID 查询且禁止自动重试",
+        "operationId": "retryConfigurationRuntime",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeApplicationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
       "get": {
         "tags": [
@@ -5840,6 +5972,31 @@
           }
         }
       },
+      "ConfigurationRetryRequest": {
+        "required": [
+          "expectedEffectiveRevision",
+          "expectedPlanHash",
+          "confirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedEffectiveRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "expectedPlanHash": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigurationReview": {
         "required": [
           "version",
@@ -5930,6 +6087,62 @@
           }
         },
         "additionalProperties": false
+      },
+      "ConfigurationRuntimeState": {
+        "required": [
+          "state",
+          "reason",
+          "effectiveRevision",
+          "pendingRevision",
+          "planHash",
+          "canRetry",
+          "errorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/RuntimeCoordinatorState"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effectiveRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "pendingRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "planHash": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "canRetry": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "ConfigurationVersionComparison": {
         "required": [

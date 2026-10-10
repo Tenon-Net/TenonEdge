@@ -1,5 +1,23 @@
 export const configurationStrings = {
     title: '配置应用',
+    runtimeTitle: '有效配置运行状态',
+    runtimeStates: {
+        starting: '启动判定中',
+        blocked: '运行启动条件不满足',
+        idle: '尚无有效配置',
+        active: '有效配置已激活（不代表所有单元健康）',
+        runFailed: '运行失败',
+        stopping: '正在停止',
+        stopped: '已停止',
+    },
+    retryBoundary:
+        '人工重试只清零启动保护的非正常退出次数，并尝试激活当前有效快照；不会应用草稿、生成版本或恢复历史凭证。单元故障仍须检查诊断。',
+    damagedRecoveryBoundary:
+        '有效快照缺失或损坏，不能重试，也不能当作空配置。请保留现有数据；专用损坏快照恢复入口尚未实现，普通回滚不能绕过草稿和目标保护。',
+    checkRetry: '检查当前有效版本重试',
+    retryVersion: '将重试已检查的有效版本 r{{revision}}，未应用草稿保持不变。',
+    retryConfirm: '我已检查运行失败原因，确认清零次数并重试当前有效版本',
+    retry: '确认重试有效配置',
     summary: '有 {{count}} 项未应用的对象修改',
     unknownSummary: '未应用修改数量未知，不能按零项处理',
     effective: '有效配置：{{revision}}',
@@ -110,6 +128,10 @@ export const configurationStrings = {
         failed: '失败',
     },
     outcomes: {
+        retrySuccessful:
+            '人工重试已激活原有效版本，未生成新配置版本。运行单元健康仍须检查诊断。',
+        retryFailed:
+            '人工重试未完成，不能当作配置已恢复。请检查结果代码、运行状态与持久有效版本，不自动重试。',
         running: '操作进行中，请勿重复提交。',
         unknown: '提交结果未知，须核对持久配置版本，不要重试。',
         successful: '配置已提交并激活。后续运行健康情况仍须查看诊断。',

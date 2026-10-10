@@ -48,6 +48,15 @@ internal sealed partial class RuntimeCoordinator
         if (string.IsNullOrWhiteSpace(expectedDraftVersion) || expectedDraftVersion.Length > 64)
         { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
         changeDescription = ConfigurationChangeDescription.Normalize(changeDescription);
+        return StartOperation(targetRevision is null ? "apply" : "rollback", expectedDraftVersion, targetRevision, account,
+            id => ExecuteApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, id, changeDescription, expectation), cancellationToken);
+    }
+
+    // 应用、回滚与人工重试共享唯一准入/停机所有权；后台任务不捕获请求上下文。
+    private ApplicationStart StartOperation(string kind, string draftVersion, long? targetRevision, string account,
+        Func<Guid, Task<RuntimeApplicationResult>> execute, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
         TaskCompletionSource operation;
         RuntimeApplicationStatus initial;
         var operationId = Guid.NewGuid();
@@ -57,8 +66,10 @@ internal sealed partial class RuntimeCoordinator
             { throw new RuntimeApplicationUnavailableException(); }
             if (_application is not null)
             { throw new RuntimeApplicationBusyException(_applications[^1]); }
+            if (kind == "retry" && _state != RuntimeCoordinatorState.RunFailed)
+            { throw new RuntimeApplicationUnavailableException(); }
             operation = NewSignal();
-            initial = new(operationId, targetRevision is null ? "apply" : "rollback", account, expectedDraftVersion, targetRevision,
+            initial = new(operationId, kind, account, draftVersion, targetRevision,
                 null, RuntimeApplicationStage.Validating, time.GetUtcNow(), null, false, null, null);
             _applications.Add(initial);
             if (_applications.Count > MaximumRecentApplications)
@@ -66,9 +77,8 @@ internal sealed partial class RuntimeCoordinator
             _application = operation;
         }
         Task<ApplicationOutcome> task;
-        // 不把请求的 AsyncLocal/HttpContextAccessor 或数据库客户端上下文带入所拥有的后台流程。
         using (ExecutionContext.SuppressFlow())
-        { task = Task.Run(() => RunApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, operationId, operation, changeDescription, expectation)); }
+        { task = Task.Run(() => RunOperationAsync(() => execute(operationId), operation)); }
         return new(initial, task);
     }
 

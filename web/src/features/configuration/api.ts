@@ -6,6 +6,7 @@ import { routeObject } from '../canvas/codec'
 type Schema = components['schemas']
 export type DraftSummary = Schema['ConfigurationDraftSummary']
 export type Operation = Schema['RuntimeApplicationStatus']
+export type RuntimeState = Schema['ConfigurationRuntimeState']
 export type Review = Omit<Schema['ConfigurationReview'], 'changes'> & {
     changes: (Omit<Schema['ConfigurationChange'], 'before' | 'after'> & {
         beforeText: string
@@ -206,8 +207,19 @@ export function reviewIsCurrent(
 }
 export function operationOutcome(
     operation: Operation,
-): 'running' | 'unknown' | 'successful' | 'committedFault' | 'notCommitted' {
+):
+    | 'running'
+    | 'unknown'
+    | 'successful'
+    | 'committedFault'
+    | 'notCommitted'
+    | 'retrySuccessful'
+    | 'retryFailed' {
     if (!operation.finishedAt) return 'running'
+    if (operation.kind === 'retry')
+        return operation.result?.activated === true
+            ? 'retrySuccessful'
+            : 'retryFailed'
     if (operation.committed === null) return 'unknown'
     if (!operation.committed) return 'notCommitted'
     return operation.result?.activated === true
@@ -219,6 +231,49 @@ export function createConfigurationApi(
     api: ReturnType<typeof createGatewayClient>,
 ) {
     return {
+        async runtime(signal?: AbortSignal) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/configuration/runtime',
+                { signal, parseAs: 'text' },
+            )
+            if (!data) throw new Error('configuration-response')
+            const state = metadata(
+                routeObject(readRouteJson(data, 16 * 1024, 16)),
+            ) as RuntimeState
+            if (
+                typeof state.state !== 'string' ||
+                typeof state.canRetry !== 'boolean' ||
+                (state.planHash !== null && typeof state.planHash !== 'string')
+            )
+                throw new Error('configuration-response')
+            if (state.effectiveRevision !== null)
+                revisionId(state.effectiveRevision)
+            return state
+        },
+        async retry(state: RuntimeState, confirmed: boolean) {
+            if (
+                !confirmed ||
+                !state.canRetry ||
+                state.state !== 'runFailed' ||
+                state.effectiveRevision == null ||
+                !state.planHash
+            )
+                throw new Error('configuration-confirmation')
+            revisionId(state.effectiveRevision)
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/configuration/runtime/retry',
+                {
+                    body: {
+                        expectedEffectiveRevision: state.effectiveRevision,
+                        expectedPlanHash: state.planHash,
+                        confirmed: true,
+                    },
+                    parseAs: 'text',
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            return decodeOperation(data)
+        },
         async summary(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/configuration/draft',

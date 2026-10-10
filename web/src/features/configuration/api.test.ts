@@ -13,6 +13,7 @@ import {
     reviewIsCurrent,
     type DraftSummary,
     type Operation,
+    type RuntimeState,
 } from './api'
 
 const hash = 'sha256:' + 'a'.repeat(64)
@@ -60,6 +61,92 @@ function fixture(fetcher: typeof fetch) {
 }
 
 describe('configuration confirmation and owned operations', () => {
+    it('retries only an explicitly confirmed failed effective checkpoint and keeps large revision metadata exact', async () => {
+        const state: RuntimeState = {
+            state: 'runFailed',
+            reason: 'Startup protection',
+            effectiveRevision: '9223372036854775807',
+            pendingRevision: null,
+            planHash: hash,
+            canRetry: true,
+            errorCode: null,
+        }
+        const sent: Request[] = []
+        const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+            const request =
+                input instanceof Request ? input : new Request(input)
+            sent.push(request.clone())
+            return new Response(
+                JSON.stringify(
+                    request.method === 'GET'
+                        ? state
+                        : { ...operation, kind: 'retry' },
+                ),
+                { status: request.method === 'GET' ? 200 : 202 },
+            )
+        })
+        const { api } = fixture(fetcher)
+        const read = await api.runtime()
+        expect(read.effectiveRevision).toBe('9223372036854775807')
+        for (const invalid of [
+            { ...read, canRetry: false },
+            { ...read, state: 'active' },
+            { ...read, planHash: null },
+            { ...read, effectiveRevision: null },
+        ] as RuntimeState[])
+            await expect(api.retry(invalid, true)).rejects.toThrow()
+        await expect(api.retry(read, false)).rejects.toThrow()
+        expect(fetcher).toHaveBeenCalledTimes(1)
+        const admitted = await api.retry(read, true)
+        expect(admitted.id).toBe(operation.id)
+        expect(await sent[1].json()).toEqual({
+            expectedEffectiveRevision: '9223372036854775807',
+            expectedPlanHash: hash,
+            confirmed: true,
+        })
+        expect(sent[1].headers.get('X-CSRF-Token')).toBe('fixture-csrf')
+        expect(sent[1].url).toMatch(/configuration\/runtime\/retry$/)
+    })
+    it('does not replay runtime retries after response loss and describes retry outcomes without claiming a new configuration commit', async () => {
+        const fetcher = vi.fn(async () => {
+            throw new Error('lost-retry-response')
+        })
+        const { api } = fixture(fetcher)
+        await expect(
+            api.retry(
+                {
+                    state: 'runFailed',
+                    reason: null,
+                    effectiveRevision: 1,
+                    pendingRevision: null,
+                    planHash: hash,
+                    canRetry: true,
+                    errorCode: null,
+                },
+                true,
+            ),
+        ).rejects.toThrow('lost-retry-response')
+        expect(fetcher).toHaveBeenCalledTimes(1)
+        const retry = {
+            ...operation,
+            kind: 'retry',
+            finishedAt: operation.startedAt,
+            committed: false,
+        }
+        expect(operationOutcome(retry)).toBe('retryFailed')
+        expect(
+            operationOutcome({
+                ...retry,
+                result: {
+                    revision: 1,
+                    committed: false,
+                    activated: true,
+                    code: 'runtime.retried',
+                    recoveryPending: false,
+                },
+            }),
+        ).toBe('retrySuccessful')
+    })
     it('keeps large integers, decimals and exponent tokens exact in change details', () => {
         const review = decodeReview(reviewBody)
         expect(review.changes[0].afterText).toBe(

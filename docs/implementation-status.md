@@ -42,6 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启和人工重试子场景软件验证；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.171 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3402,6 +3403,32 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 - `git diff --check` 通过。沿用 §2.169 已验证的 Release Host，未把本批前端构建称为重新执行后端构建或 2589 项后端用例；后端基线仍为 §2.167。未修改其他仓库、安装服务、推送或发布。
 
 本批只补上述正常重启子场景；损坏有效快照恢复/重试界面、准备/停止/提交/激活的强杀与断电矩阵、采集恢复连续性、最低浏览器/实物及 T3-11 全程配置流程仍未验证，不将整浏览器正常退出写成进行中应用的逐点中断验收。
+
+### 2.171 T3-06 运行失败人工重试与损坏快照的安全诊断（2026-10-10）
+
+承接 §2.170，在 T3-06 / GW-10 / AT-13、AT-28 / 功能 §6、§7.1 / FE-AT-03、FE-AT-04 范围交付**运行失败后的人工重试子场景**。本批不实施损坏快照的特殊回滚入口，也不宣称完整 T3-06、中断矩阵或无 JSON 配置流程验收通过。
+
+- 新增真实 `GET /configuration/runtime`：只读持久有效版本、pending、运行状态/失败原因、经完整哈希核验的计划哈希和是否允许重试；所有已登录角色可读。有效快照缺失、哈希不符或 schema 不支持时，保留有效版本指针并返回安全错误 `configuration.invalidSnapshot`，不把损坏当成尚无配置。草稿摘要失败时配置页显示有效版本未知，而不是错误显示“尚无有效版本”；独立运行状态仍说明持久版本及失败原因。
+- 新增 `POST /configuration/runtime/retry`：仅配置人员/管理员、真实会话和 CSRF；须明确确认有效 revision/计划哈希。只有协调者 RunFailed 接受，Active、Blocked、启动或停机状态不能借重试绕过保护。与应用/回滚共享唯一准入和停机等待，返回确切的 202 接管 ID；后台所有权不携带 HttpContext/请求数据库事务，客户端断开不取消已接管流程。两个端点沿用既有预览并发预算，写入体限制 4096 字节，没有放宽资源或权限。
+- 重试先校验不可变有效快照，在短事务内复核内容/指针/pending，将非正常退出次数清零、落盘“运行中”标记并记 `runtime.retry` 激活尝试审计，之后才构建单元；审计失败整事务回滚，不能已清零却无审计。准备/静默后再次核验当前快照，完整静默未通过时不启动第二个实例。重试不编译未应用草稿、不分配 revision、不替换草稿、不恢复历史凭证；仍由正常运行时核对队列目标指纹，不清空队列或改写冻结正文。
+- 初次激活失败及已有运行计划的重试分别复用初次激活/发送者协调路径。Runtime 的显式同版本重试入口只允许单元 ID/配置哈希与原计划完全一致；普通应用仍拒绝复用 revision，旧静默结果、重复/已释放计划不能重启。结构性单元失败按启动加载规则只降级该单元，不冒充所有单元健康。重试结果明确不表示提交新版本，页面不使用“新配置已提交”的成功文案。
+- 页面先显式读取当前失败版本和操作记录，再勾选确认。所有写入 retry=false；丢失响应时显示未知结果，按只读操作列表确认完成并刷新运行状态，不猜最近操作为当前请求的 ID、不重新发送 POST。已接管响应按原 ID 跟踪；成功后有效 revision 和草稿版本不变。原正常重启测试的 Host 所有权帮助代码提取为共享测试工具，不新增产品重启/故障注入开关。
+- 新增 16 个后端集成用例和 1 个 Runtime 同版本边界用例：三角色、匿名/CSRF、确认/伪造作者、过期 hash/revision、损坏/缺失/schema、草稿保留、审计回滚后显式修复重试、运行标记在构建前落盘、与应用/回滚互斥及停机等待、冻结后的再校验、全局/会话预算和真实 Kestrel 请求体上限。同版本场景核对已有发送者未重复创建、两批记录仍用原 revision，内容变化或重复静默不能冒用重试入口。健康模拟单元恢复采集，缺失测试模块只显示 BuildFailed。
+- 新增 2 项 Vitest：大 Int64 revision 保持十进制文本、真实生成客户端/CSRF/确认字段、非法/未确认重试不发请求、响应丢失只发一次及重试结果不冒充配置提交；新增 3 个真实 Production Host + Chromium 场景：正常接管重试、Host 已接管但仅丢失网页响应、损坏快照只保留管理访问并禁止重试/应用。前两项读到模拟输入恢复采集，草稿仍保留、持久 snapshot 仅 r1 且次数为 0；刷新/重新加载不重放。测试的计划通过种子准备，启动保护次数/损坏由宿主停止后的测试 SQLite 修改构造，**不是真实反复强杀、实物接入、输出恢复连续性或完整无 JSON 配置验收**。Node 内置 SQLite 只用于测试，没有加入产品依赖。
+
+验证经过与失败记录：首轮编译/类型检查发现缺少 Storage 引用、取消参数位置、public 测试签名中的 internal 枚举及 Fetch mock 参数类型，已按真实接口修正，没有 any 绕过。最早后端针对性运行 39 通过、2 失败，是模拟种子的周期误写 100ms（产品最小周期为 1000ms），修正测试而不放宽校验后 **41 项通过**（`/tmp/tenonedge-runtime-retry-targeted-final.log`）。第一轮全量为 **1258 单元通过、1342 集成通过/3 失败**：新增受保护端点和 operationId 未加入显式契约清单，清单补上后重跑（`/tmp/tenonedge-runtime-retry-backend-full.log`）；不把该轮写成全量通过。最早浏览器 1 通过/2 失败，发现 onMutate 将父页面置忙后误把自身视为冲突，导致未发 POST；修正后 2 通过/1 失败，发现响应丢失路径没有本地 operationId，虽已激活仍沿用旧运行状态。现在由操作列表的最新完成 ID 触发只读刷新，**43 项浏览器全量通过**（`/tmp/tenonedge-runtime-retry-browser-full.log`），未放宽业务前提或增加重放。首次 .NET format 的 import 排序失败已修正。第二轮全量 **1258 单元通过、1346 集成通过/2 失败**，失败为既有 Modbus 恢复和 HTTP 500ms 超时场景（`/tmp/tenonedge-runtime-retry-backend-final.log`）；同轮格式分析有明显 CPU 占用，但没有将此观察当作已证明的根因，也未修改这两个既有测试或产品超时。之后安排时限场景单独重复及无并行构建/格式分析的全量验证；本批保留这些失败日志，不合并为通过证据。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2、固定 npm 11.21.0）：
+
+- `dotnet build TenonEdge.sln -c Release --no-restore -v minimal`：通过，0 警告/错误（`/tmp/tenonedge-runtime-retry-solution-build-final.log`）。`dotnet format TenonEdge.sln --verify-no-changes --no-restore`：修正 import 后通过（`/tmp/tenonedge-runtime-retry-dotnet-format-final.log`）。
+- 在没有并行构建/格式分析的情况下，先对既有 Modbus 恢复（两种 alias）和 HTTP 超时的 **3 个用例单独重复 3 轮，9 次通过**（`/tmp/tenonedge-runtime-retry-timing-rechecks.log`）；未修改它们的源码或超时。然后 `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-runtime-retry-final-trx-QOHiCi --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1348 集成 = 2606 项通过，0 失败/跳过**，集成约 5 分 33 秒（`/tmp/tenonedge-runtime-retry-backend-isolated-final.log`）。之前两轮失败仍如实保留，不把最后通过作为已证明先前根因的证据。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-runtime-retry-final-trx-QOHiCi --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests`：两程序集均非零、无失败/中止/跳过，核对通过（`/tmp/tenonedge-runtime-retry-final-trx-verify.log`）。重复时限用例不重复计入 2606 个用例总数。
+- 使用自身临时数据目录的 Development Host（`http://127.0.0.1:18081`、HTTPS 回环动态端口）执行 `web/` 的固定 npm `run api:generate`，从真实 OpenAPI 重新生成契约；Host SIGTERM 退出 0，临时数据清理（`/tmp/tenonedge-runtime-retry-contract-final-host.log`）。新增两个稳定 operationId 和受保护端点已加入后端显式清单；无新增 NuGet/npm 包或数据库迁移。
+- 在 `web/` 使用 `node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js` 执行 `run typecheck`、`run lint`、`test`（**16 文件、250 项通过**）、`run build`、`run format:check`：通过（`/tmp/tenonedge-runtime-retry-web-gates-final2.log`；最终生成契约后 typecheck/format 再核对见 `/tmp/tenonedge-runtime-retry-contract-final-check.log`）。保留 Vite 主包约 508 kB 的警告，Node 测试 SQLite 也有实验性提示，不称为无警告或性能验收；61 个生产依赖许可文本保持登记。
+- 最新 Release Host 下固定 npm `run test:e2e`：**43 项通过，0 失败/跳过**，约 2.8 分钟（`/tmp/tenonedge-runtime-retry-browser-final.log`）。实际浏览器 **HeadlessChrome 156.0.8078.4**，非最低版本验收；全套共享 Host 为 `http://127.0.0.1:18082`，正常重启场景为独立 `http://127.0.0.1:40985`，两项重试场景为独立 `http://127.0.0.1:40453` / `http://127.0.0.1:37657`。所拥有的 Host、浏览器上下文与临时数据均按测试清理，未调整持久调试部署。
+- `git diff --check` 通过；本批仍为软件子场景待维护者验收，未推送或发布。
+
+损坏快照恢复的未确认边界：设计 §7.4 要求保留管理访问用于回滚/恢复，但功能 §6.4 普通回滚要求无未应用修改；损坏快照无法证明草稿干净，也不能安全完成旧目标比较。已向维护者提出独立恢复入口建议（明确确认放弃草稿、只用校验通过且生效过的完整历史版本、待发/失败区非空时拒绝、保留当前凭证检查），**尚未收到本项答复，不视为已批准**。本批不放开普通回滚按钮，不绕过队列/凭证保护，不提前实现 T5 备份恢复。完整准备/静默/提交/激活逐点强杀/断电矩阵、最低浏览器/实物、来源到输出的全程网页流程仍未验证；未推送、发布或修改其他仓库/持久部署。
 
 ## 3. 验收编号登记
 
