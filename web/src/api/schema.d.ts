@@ -564,6 +564,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/configuration/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按版本号降序查看持久化历史元数据；下一页使用本页最后的 revision 作为 beforeRevision */
+        get: operations["listConfigurationVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/versions/{revision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看校验哈希后的非秘密版本内容；旧版本缺失的完整草稿不补造 */
+        get: operations["getConfigurationVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/versions/{revision}/compare/{otherRevision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 只读比较两个保留版本；revision 为旧侧，otherRevision 为新侧，不校验是否可回滚 */
+        get: operations["compareConfigurationVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/versions/{revision}/compare-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 只读比较历史版本与指定版本号的当前全局草稿；草稿已变化时返回冲突 */
+        get: operations["compareConfigurationVersionToDraft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/configuration/review": {
         parameters: {
             query?: never;
@@ -979,6 +1047,25 @@ export interface components {
             /** Format: int64 */
             updatedAt?: null | number | string;
         };
+        ConfigurationCheckpoint: {
+            version: string;
+            connections: components["schemas"]["ConnectionDraft"][];
+            devices: components["schemas"]["DeviceDraft"][];
+            inputs: components["schemas"]["InputDraft"][];
+            routes: components["schemas"]["RouteDraft"][];
+            credentialConnections?: null | (number | string)[];
+            edits?: null | components["schemas"]["ConfigurationEdit"][];
+        };
+        ConfigurationEdit: {
+            kind: string;
+            /** Format: int64 */
+            id: number | string;
+            stamp: string;
+            updatedBy: null | string;
+            /** Format: int64 */
+            updatedAt: null | number | string;
+            deleted: boolean;
+        };
         ConfigurationPointSummary: {
             /** Format: int64 */
             deviceId: number | string;
@@ -1006,6 +1093,23 @@ export interface components {
         };
         ConfigurationReviewRequest: {
             expectedVersion: string;
+        };
+        ConfigurationVersionComparison: {
+            /** Format: int64 */
+            beforeRevision: number | string;
+            /** Format: int64 */
+            afterRevision: null | number | string;
+            draftVersion: null | string;
+            changes: components["schemas"]["ConfigurationChange"][];
+            points: components["schemas"]["ConfigurationPointSummary"][];
+        };
+        ConfigurationVersionDetail: {
+            version: components["schemas"]["RuntimeVersionSummary"];
+            contentHash: string;
+            planHash: string;
+            draft: null | components["schemas"]["ConfigurationCheckpoint"];
+            plan: components["schemas"]["JsonElement"];
+            warnings: string[];
         };
         ConnectionDraft: {
             /** Format: int64 */
@@ -2053,6 +2157,23 @@ export interface components {
             /** Format: date-time */
             nextRestartAt: null | string;
             reads: null | components["schemas"]["InputReadSnapshot"];
+        };
+        RuntimeVersionSummary: {
+            /** Format: int64 */
+            revision: number | string;
+            /** Format: int32 */
+            schemaVersion: number | string;
+            state: string;
+            origin: string;
+            originDetail: null | string;
+            createdBy: string;
+            /** Format: int64 */
+            createdAt: number | string;
+            /** Format: int64 */
+            activatedAt: null | number | string;
+            isStable: boolean;
+            notEffectiveReason: null | string;
+            changeDescription: null | string;
         };
         SessionResponse: {
             accountName: string;
@@ -3919,6 +4040,278 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    listConfigurationVersions: {
+        parameters: {
+            query?: {
+                beforeRevision?: number | string;
+                limit?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeVersionSummary"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConfigurationVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationVersionDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    compareConfigurationVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision: number;
+                otherRevision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationVersionComparison"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    compareConfigurationVersionToDraft: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationVersionComparison"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

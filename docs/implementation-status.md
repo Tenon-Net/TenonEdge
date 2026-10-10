@@ -3285,6 +3285,31 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 未新增依赖、修改其他仓库或持久部署，未推送/发布。后续继续版本历史/比较 API、应用/回滚页面及浏览器流程；旧快照/损坏有效版本恢复和逐点进程中断验收仍未完成。
 
+### 2.166 T3-06 持久化版本历史、内容与比较 API（2026-10-10）
+
+承接 §2.165，为配置网页提供持久化查询入口。关联 T3-06 / GW-10 / 功能 §6.4、§6.6；**仅完成 API 子场景，不代表版本页面、应用/回滚浏览器流程或完整中断验收完成。**
+
+- `GET /api/edge-admin/v1/configuration/versions/`：复用现有历史保留和按版本号降序的游标查询，默认 20、页大小 1—100，下一页以本页最后版本作为 `beforeRevision`。只读元数据，不加载/解析每行完整快照；包括未生效原因、说明、操作人和时间。损坏某个快照内容不妨碍定位历史列表。
+- `GET /configuration/versions/{revision}`（同一管理 API 前缀）：核对整个快照内容哈希，返回独立的版本 DTO、非秘密草稿、编译计划、完整内容哈希与计划哈希，二者不混称。不直接返回数据库记录、凭证密文或当前凭证。schema 1 仍可查看其实际计划，缺失草稿明确为 null 并返回旧版本警告，不编造空草稿。
+- `GET /configuration/versions/{revision}/compare/{otherRevision}` 与 `GET /configuration/versions/{revision}/compare-draft?expectedVersion=...`：前者按请求方向比较任意两个保留版本，后者事务内捕获指定历史与当前全局草稿并检查草稿版本；结果带双方版本身份、对象/字段差异、已知作者/时间和按设备汇总的 Modbus 点位增改删。比较不等于回滚预检，未生效版本可查看/比较但不会因此变成可回滚目标。
+- 按总设计 §10.3“查看配置”，全部已登录角色均可查询，不需要写权限或 GET 的 CSRF 头；不提供导出动作，不读取现场或更改草稿/运行配置。所有成功查询返回 `Cache-Control: no-store`。完整内容及比较共用既有每会话/全局预览配额，元数据列表仍可查询；请求结束/异常释放配额。
+- 非法版本/游标/页大小/草稿参数返回 400；不存在或已清理版本 404；过期草稿、不能比较的旧版本、损坏快照分别返回安全 409 代码，不透传底层内容或异常。没有新增数据库迁移、包依赖、后台循环或第二套历史保留策略。
+- 新增 **12 项**集成测试：三种角色的冻结内容与双向/相同版本/草稿比较；Modbus 点位设备汇总；四端点匿名拒绝；宿主重开后的元数据/失败说明/分页；参数与过期草稿及配额释放；清理/缺失版本与损坏内容隔离；旧计划可读但拒绝伪造比较；真实保存凭证后确认明文与密文均不出现在详情/比较；两组全局/会话配额及列表可用。只读测试同时核对指针、版本数、草稿与操作列表未被改变。
+
+验证经过：产品构建通过（`/tmp/tenonedge-version-api-build.log`）。测试初次编译因公开 theory 方法使用内部 `UserRole` 参数失败，改为字符串 InlineData 再解析；第二次编译缺少 `HttpCredentialKind` 所在命名空间，补齐引用（分别见 `/tmp/tenonedge-version-api-focused.log`、`/tmp/tenonedge-version-api-focused-import.log`）。随后针对性 **30 通过、1 失败、0 跳过**，仅 OpenAPI operationId 期望列表的字典序错误（`/tmp/tenonedge-version-api-focused-final.log`）；调整期望排序后 **31 项通过，0 失败/跳过**（`/tmp/tenonedge-version-api-focused-verified.log`），没有通过删除端点断言规避问题。
+
+首轮全量 **2574 通过、2 失败、0 跳过**（`/tmp/tenonedge-version-api-regression.log`）：既有 `ModbusReadAndTimeoutComparisonTests.BothFramingsReadKnownRegisterValues` 的 NModbus TCP/RTU over TCP 两组在同步读取阶段超过探针的 300 ms 超时。该组单独重跑 **12 项通过，0 失败/跳过**（`/tmp/tenonedge-version-api-modbus-focused.log`）。本批没有改动协议适配器/探针，也没有提高超时、跳过用例或宣称消除间歇故障；全量当时与格式检查、接口生成和前端门禁并行，但是否由调度竞争造成尚未证明，保留为待跟踪项。后续完整回归单独执行，不以针对性重跑冒充全量通过。首轮格式检查只报告新测试 using 顺序，已整理并通过最终格式校验。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Node 22.23.2、固定 npm 11.21.0）：
+
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-version-api-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1318 集成 = 2576 项通过，0 失败/跳过**（`/tmp/tenonedge-version-api-regression-final.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-version-api-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-version-api-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-version-api-format-final.log`），`git diff --check` 通过。
+- `python3 /tmp/tenonedge-operation-export.py` 从独立临时 Development Host 生成 OpenAPI/TypeScript，HTTP 回环端口 18081、HTTPS 动态回环端口；Host SIGTERM 后退出 0，临时数据清理（`/tmp/tenonedge-version-api-export.log`）。
+- 在 `web/` 使用固定 npm CLI `node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js` 执行 `run typecheck`、`run lint`、`test`（15 文件、219 项）、`run format:check` 全部通过（`/tmp/tenonedge-version-api-web.log`）。
+
+未执行网页/真实设备验收，未修改其他仓库或持久部署，未推送/发布。下一步继续全局草稿摘要/放弃边界与应用、历史、回滚页面；旧有效快照恢复和逐点进程中断矩阵仍须补齐。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
