@@ -169,22 +169,8 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             return null;
         }
 
-        var previous = RuntimeSnapshotDocument.ReadPlan(snapshot);
-        var current = OutputRecipients(next).ToHashSet();
-        foreach (var old in OutputRecipients(previous))
-        {
-            if (current.Contains(old))
-            {
-                continue;
-            }
-
-            if (deliveries.ReadPending(old.ConnectionId, 0, 1).Count > 0 || deliveries.ReadFailed(old.ConnectionId, 0, 1).Count > 0)
-            {
-                return "存在待发或失败区记录，不能删除目标或修改接收方/Topic/路径；须先发送完、显式清理或迁移。";
-            }
-        }
-
-        return null;
+        return TargetChangeBlocks(RuntimeSnapshotDocument.ReadPlan(snapshot), next, CancellationToken.None).Length == 0 ? null
+            : "存在待发或失败区记录，不能删除目标或修改接收方/Topic/路径；须先发送完、显式清理或迁移。";
     }
 
     private static IEnumerable<(long ConnectionId, string Kind, string Recipient, string Address)> OutputRecipients(RuntimePlanDocument document)

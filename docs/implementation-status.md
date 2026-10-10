@@ -3187,6 +3187,29 @@ Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖或配置库�
 
 本批仍只是软件/同进程宿主验证，不替代逐点强杀/断电、真实设备或网页确认→应用→回滚流程。接下来继续确认清单的修改人/时间、点位汇总、错误及目标变更影响，随后连接公开写入口和页面。
 
+### 2.162 T3-06 应用确认清单的静态预检（2026-10-10）
+
+承接 §2.161，实现 T3-06 / GW-10 / 功能 §6.2 的内部 `RuntimeVersionStore.ReviewDraft`。**尚未开放确认清单端点或页面；修改人/时间、回滚目标的确认清单、公开写入口及完整网页流程仍未完成，不宣称 T3-06 全项通过。**
+
+- 在同一配置事务读取确认版本的完整草稿、有效快照和 MQTT 凭证引用 ID，随后在事务外比较和静态编译。包括停用及未引用对象的新增/修改/删除、前后完整非秘密字段；结果带草稿版本和所比较的有效版本号。不会读取秘密、冻结或分配版本、准备/启动运行单元、修改草稿或队列。
+- Modbus 点位按设备汇总新增/修改/删除数量；身份为设备 ID、来源 ID 和点 key，重排不算修改，启用状态、单位等配置变化算修改。JSON 字段和模拟源仍通过来源对象的字段差异展示，不冒充 Modbus 点位统计。
+- 整体静态编译与正式应用复用 `RoutePlanCompiler`。整体遇到首错时逐条启用路线补查，去重并返回每条错误路线的结构化首错定位；停用的错误路线仍在草稿差异中，但不阻止编译。全局错误同样保留，不用逐路线成功覆盖整体失败。
+- 接收方检查与正式应用共用目标比较：列出所有有待发/失败区记录的被移除或改变的目标，包括连接、协议、接收方、路径/Topic，以及待发/失败区是否存在。隔离区仍按既有规则不阻断；提示先发送完、显式清理或迁移。预检只是当时状态，应用时仍执行准备前和静默后的目标检查，不能把预检当提交授权或队列锁。
+- 返回整体暂停、MQTT QoS 1 对持久会话/Broker 的前提、QoS 0/轮询缺口及旧待发报文不重算的提示码，供后续界面本地化。`PreflightPassed` 仅表示这些静态检查通过，不保证准备/静默/提交/激活一定成功。
+- 旧 schema 1 缺少完整草稿时明确 `ComparisonAvailable=false` 和旧版比较不可用提示，不把它当空配置或允许确认；有效快照损坏直接报告快照错误，不掩盖成全新增。旧版与损坏版本的恢复交互继续保留待实现。
+
+新增 **9 项**软件场景：完整停用草稿/无运行副作用；真实保存的模拟来源→HTTP 路线与已有编译入口哈希一致、但不启停或出站；有效检查点比较、并发编辑后的旧结果不变及旧版本拒绝；全部错误路线定位/停用排除；多目标待发与失败区列出、隔离不阻断；旧版本不伪造差异；损坏基准拒绝；取消/无效版本；Modbus 多来源按设备汇总及排序/单位/启用变化。
+
+初版测试编译报告三处常量数组 CA1861（`/tmp/tenonedge-review-focused.log`），改为固定只读夹具数组。随后预检及既有 MQTT/HTTP 目标规则的针对性 **25 项通过，0 失败/跳过**（`/tmp/tenonedge-review-focused-final.log`）；最后补入的完整路线用例及处理提示断言纳入全量回归。首次格式检查报告 try 排版、匿名对象换行和 using 顺序（`/tmp/tenonedge-review-format.log`），已限定文件 whitespace 调整并手动排序 using。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12）：
+
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-review-regression --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1263 集成 = 2521 项通过，0 失败/跳过**（`/tmp/tenonedge-review-regression.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-review-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-review-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-review-format-final.log`），`git diff --check` 通过。前端与公开契约未改，本批未运行浏览器/前端门禁。
+
+没有新增依赖、数据库迁移、公开 API 或前端页面，未推送/发布、未修改持久部署。这里只是静态/软件子场景；尚不能在网页确认并启动采集，不替代逐点强杀/断电或真实 Broker/设备验收。下一步继续修改人/时间的可靠记录、回滚预检，以及有权限/并发/取消边界的端点与页面。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
