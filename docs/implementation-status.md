@@ -2820,6 +2820,28 @@ Modbus 路线新端点的配额/截止时间专项注入、所有字节序/故�
 
 尚未修改前端，浏览器未重跑；真实输入捕获、运行生命周期门禁、最近消息 API/UI、输出/映射/入队诊断仍未实现。未部署、推送、发布或实物验证。下一步接入真实输入通道，覆盖无输出来源，并验证诊断失败不改变原有在途预算或持久接管语义。
 
+### 2.143 T3-05 最近消息预览前置：运行输入持续捕获与取样门禁（2026-10-10）
+
+接续 §2.142，消息快照已接入进程中唯一的 RuntimeHost；仍未开放最近消息 API/UI，不将本子项视为完整 T3-05/T3-07。
+
+- RuntimeHost 自有一份 RuntimeMessageCache，不额外注册第二套运行时。准备输入时绑定其对象标识与运行版本；所有输入通道的成功发布路径（TryWrite、WriteAsync、两种生产入口及持久确认入口）统一捕获，不依赖界面是否打开。捕获的是已进入通道的统一输入消息，不声称覆盖解析失败或尚未入通道的协议报文。
+- 捕获与预算释放用每通道的同步区保护。消息进入通道后，分发器可以处理不可变内容，但捕获结束前不能释放消息在途额度；不同输入等待全局缓存编码时仍持有各自消息预算，不能形成未计费的原消息积压。满通道、取消、关闭、无消息生产不伪造捕获，分发器重试不重复记录。
+- 缓存先分配记录及两个链表节点，再修改索引，避免分配失败留下半插入记录。诊断编码失败（包括可选诊断缓冲分配失败）只计入 InputCaptureFailures，不记录正文或异常内容，不把已发布消息改判失败，不提前释放业务预算，也不代替持久接管确认。
+- 无输出来源同样启动既有分发器持续排空，不再因为没有消费者而在通道满后停止更新最近消息；无投递路径仍不写发送缓存，也不向可重投上游伪报持久接管成功。删除原先供测试偷读运行输入通道的入口，相关测试改读真实缓存快照，适配器自身通道/背压测试保留。
+- TryReadInputSample 要求输入正在运行、运行版本相同，并校验缓存对象、序号、消息 GUID、完整记录及解码后的身份。停止开始后及退避中拒绝执行样本；旧记录仍可留作诊断查看。当前运行时仍只有进程启动激活，跨版本切换/删除对象释放须在 T3-06 应用生命周期中完成。
+
+新增 9 项通道单元场景覆盖各发布入口、满/取消/关闭/null、普通异常及诊断分配异常不改变持久确认、读取方不能在捕获期间提前释放预算。既有模拟输入集成测试改为容量 1、连续 20 周期、两个同种子来源读取真实快照；本地 TCP 行协议测试适配器实际经 loopback 套接字入站，验证准备不采集、消息内容、版本/GUID 门禁、停止后拒绝执行。另增退避拒绝取样场景。上述是软件/本地协议夹具，不是实物 Modbus/MQTT 设备验收。
+
+初轮单元编译被 xUnit 的取消令牌分析器拦截，已补传 TestContext.Current.CancellationToken，不计为通过；修正后定向/中间轮结果保留在 `/tmp/tenonedge-capture-unit2.log`（1248 单元）和 `/tmp/tenonedge-capture-focused.log`（40 集成），最终回归另行登记。
+
+补充诊断分配异常用例时，测试中的条件 throw 表达式写法及直接构造系统保留异常被编译器/分析器拦截（`/tmp/tenonedge-capture-final.log`）。改为显式分支及测试专用 OutOfMemoryException 派生异常，不制造真实内存耗尽，不关闭分析器。随后 `dotnet test tests/UnitTests --no-restore --logger trx --results-directory /tmp/tenonedge-capture-final -v minimal`：**1249 单元通过，0 失败/跳过**（`/tmp/tenonedge-capture-unit-final.log`）。
+
+同轮 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-capture-final -v minimal` 的集成程序集独立完成，**1093 集成通过，0 失败/跳过**（`/tmp/tenonedge-capture-final.log`）；该解决方案命令含上述单元编译错误，不能称其整条命令成功。最终单元重跑与集成报告由 `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-capture-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对：本轮最终两程序集 **2342 通过，0 失败/跳过**（`/tmp/tenonedge-capture-trx-verified.log`）。环境为 Linux x64、SDK 10.0.401、Debug。最后格式检查发现新增异常分支需换行，已仅调整该空白。
+
+`dotnet format --verify-no-changes --no-restore` 最终通过（`/tmp/tenonedge-capture-format-last.log`）。
+
+未修改前端，浏览器未重跑；没有更新常驻调试部署，没有推送或发布。下一步将运行中完整样本接到路线预览 API/UI，并分别验证授权、版本冲突、淘汰/截断和无运行来源；输出/映射/入队调试仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

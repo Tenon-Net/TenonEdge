@@ -16,6 +16,10 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     private readonly Channel<EdgeMessage> _inner;
     private readonly InFlightBudget _budget;
     private readonly int _capacity;
+    private readonly Action<EdgeMessage>? _capture;
+    private readonly Lock _captureGate = new();
+    private long _captureFailures;
+    internal long CaptureFailures => Interlocked.Read(ref _captureFailures);
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Exception? _completionError;
     private readonly ConcurrentDictionary<EdgeMessage, TaskCompletionSource<InputHandoffStatus>> _handoffs = new(ReferenceEqualityComparer.Instance);
@@ -25,8 +29,9 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     internal long MinimumSerializationReservationBytes { get; set; }
     internal long MappingWorkingReservationBytes { get; set; }
 
-    public BudgetedInputChannel(int capacity, InFlightBudget budget)
+    public BudgetedInputChannel(int capacity, InFlightBudget budget, Action<EdgeMessage>? capture = null)
     {
+        _capture = capture;
         _budget = budget;
         _capacity = capacity;
         _inner = Channel.CreateBounded<EdgeMessage>(new BoundedChannelOptions(capacity)
@@ -48,9 +53,40 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     internal bool HasHandoff(EdgeMessage message) => _handoffs.ContainsKey(message);
     internal void Release(EdgeMessage message, InputHandoffStatus status = InputHandoffStatus.Stopped)
     {
-        _budget.Release(Charge(message));
-        if (_handoffs.TryRemove(message, out var completion))
-        { completion.TrySetResult(status); }
+        lock (_captureGate)
+        {
+            _budget.Release(Charge(message));
+            if (_handoffs.TryRemove(message, out var completion))
+            { completion.TrySetResult(status); }
+        }
+    }
+
+    // 发布和诊断捕获期间禁止读取方释放消息预算；分发器仍可并行处理不可变消息。
+    // 所有写入路径都经过这里，满队列/取消/关闭不产生伪捕获，分发重试也不重复捕获。
+    private bool TryPublish(EdgeMessage message)
+    {
+        lock (_captureGate)
+        {
+            if (!_inner.Writer.TryWrite(message))
+            { return false; }
+            try
+            { _capture?.Invoke(message); }
+            // 消息已经发布；包括诊断分配失败在内，均不能把业务写入改判失败或提前释放预算。
+            catch (Exception)
+            { Interlocked.Increment(ref _captureFailures); }
+            return true;
+        }
+    }
+
+    private async ValueTask PublishAsync(EdgeMessage message, CancellationToken cancellationToken)
+    {
+        while (await _inner.Writer.WaitToWriteAsync(cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (TryPublish(message))
+            { return; }
+        }
+        throw new ChannelClosedException(_completionError);
     }
 
     private sealed class BudgetWriter(BudgetedInputChannel owner) : InputMessageWriter
@@ -96,7 +132,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
                 if (reserved > charge)
                 { owner._budget.Release(reserved - charge); }
                 reserved = charge;
-                if (!owner._inner.Writer.TryWrite(message))
+                if (!owner.TryPublish(message))
                 { return false; }
                 reserved = 0;
                 return true;
@@ -152,7 +188,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
                 if (completion is not null && !owner._handoffs.TryAdd(message, completion))
                 { throw new InvalidOperationException("同一消息对象不能同时等待两次接管。"); }
                 try
-                { await owner._inner.Writer.WriteAsync(message, cancellationToken); }
+                { await owner.PublishAsync(message, cancellationToken); }
                 catch
                 {
                     if (completion is not null)
@@ -184,7 +220,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             _requiredBytes = bytes;
             if (!owner._budget.TryReserve(bytes))
             { return false; }
-            if (owner._inner.Writer.TryWrite(item))
+            if (owner.TryPublish(item))
             { return true; }
             owner._budget.Release(bytes);
             return false;
@@ -195,7 +231,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             var bytes = owner.Charge(item);
             await ReserveAsync(bytes, cancellationToken);
             try
-            { await owner._inner.Writer.WriteAsync(item, cancellationToken); }
+            { await owner.PublishAsync(item, cancellationToken); }
             catch { owner._budget.Release(bytes); throw; }
         }
 

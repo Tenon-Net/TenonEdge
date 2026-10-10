@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using TenonEdge.Abstractions.Contracts;
@@ -40,9 +41,11 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     private readonly IOutputControl? _controls;
     private readonly Lock _lock = new();
     private readonly List<RuntimeUnitStatus> _notStarted = [];
-    private readonly Dictionary<RuntimeUnitId, ChannelReader<EdgeMessage>> _inputChannels = [];
+    private readonly Dictionary<RuntimeUnitId, BudgetedInputChannel> _inputChannels = [];
 
     public InFlightBudget InFlight { get; }
+    /// <summary>进程内唯一的诊断消息缓存，独立于界面订阅；不代表来源当前可取样。</summary>
+    public RuntimeMessageCache Messages { get; }
 
     private bool _coreStarted;
     private long? _activeRevision;
@@ -100,6 +103,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         _time = time;
         _options = options.Validate();
         InFlight = new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
+        Messages = new RuntimeMessageCache(time);
         _logger = logger;
         _supervisor = new UnitSupervisor(_options, time, events, logger, random);
     }
@@ -162,7 +166,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         var units = new List<PreparedUnit>(plan.Units.Length);
         foreach (var unit in plan.Units.Where(unit => !unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
         {
-            units.Add(PrepareUnit(unit, activation.Task, inputFactories));
+            units.Add(PrepareUnit(unit, activation.Task, inputFactories, plan.Revision));
         }
 
         var outputs = new List<PreparedOutput>();
@@ -325,19 +329,17 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 {
                     lock (_lock)
                     {
-                        _inputChannels[unit.Id] = unit.Channel.Reader;
+                        _inputChannels[unit.Id] = (BudgetedInputChannel)unit.Channel;
                     }
 
                     var targets = prepared.Outputs.Select(output => output.Target).Where(target => target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal)).ToArray();
-                    if (targets.Length > 0 || ((BudgetedInputChannel)unit.Channel).UsesDurableHandoff)
-                    {
-                        var state = new InputDispatcherState();
-                        var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
-                            .ToDictionary(output => output.Target.Id, output => output.Mapping!);
-                        IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
-                        _dispatchers.Add((unit.Channel, state));
-                        _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
-                    }
+                    // 无输出也持续排空：诊断捕获不应在 100 条后因无人消费而停止。
+                    var state = new InputDispatcherState();
+                    var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
+                        .ToDictionary(output => output.Target.Id, output => output.Mapping!);
+                    IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
+                    _dispatchers.Add((unit.Channel, state));
+                    _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
                 }
             }
 
@@ -398,16 +400,34 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
     public async ValueTask DisposeAsync() => await StopAsync(CancellationToken.None);
 
-    /// <summary>输入通道的读取端：供测试与 T1-04 的分发器使用。</summary>
-    internal ChannelReader<EdgeMessage>? GetInputChannel(RuntimeUnitId id)
+    /// <summary>诊断捕获失败次数（不含消息内容），不改变输入投递/确认结果。</summary>
+    public long InputCaptureFailures
     {
+        get { lock (_lock) { return _inputChannels.Values.Sum(channel => channel.CaptureFailures); } }
+    }
+
+    /// <summary>完整样本仅在对应版本的输入正在运行时可执行；停止/退避/截断/淘汰均拒绝。</summary>
+    public bool TryReadInputSample(RuntimeUnitId id, long sequence, long revision, Guid sourceMessageId,
+        [NotNullWhen(true)] out EdgeMessage? message)
+    {
+        ArgumentNullException.ThrowIfNull(id);
         lock (_lock)
         {
-            return _inputChannels.GetValueOrDefault(id);
+            message = null;
+            if (_stopping is not null || _activeRevision != revision || !id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal) ||
+                !_supervisor.Snapshot().Any(unit => unit.Id == id && unit.State == RuntimeUnitState.Running) ||
+                !Messages.TryReadComplete(id, sequence, revision, sourceMessageId, out var body))
+            { return false; }
+            var decoded = InputMessageSnapshot.Decode(body);
+            if (decoded.SourceMessageId != sourceMessageId || id.Key != $"{decoded.DeviceKey}/{decoded.InputId}" ||
+                !_supervisor.Snapshot().Any(unit => unit.Id == id && unit.State == RuntimeUnitState.Running))
+            { return false; }
+            message = decoded;
+            return true;
         }
     }
 
-    private PreparedUnit PrepareUnit(RuntimeUnitPlan unit, Task activation, Dictionary<string, IInputUnitFactory> factories)
+    private PreparedUnit PrepareUnit(RuntimeUnitPlan unit, Task activation, Dictionary<string, IInputUnitFactory> factories, long revision)
     {
         var id = unit.Id;
         if (!id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal))
@@ -426,7 +446,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             return Failed(id, "输入单元的业务标识应为 deviceKey/inputKey 两段。");
         }
 
-        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight) { UsesDurableHandoff = factory.UsesDurableHandoff };
+        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight, message => Messages.CaptureInput(id, revision, message)) { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
         var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation, _options.InputBufferBytes > 0 ? InFlight : null);
         IRuntimeUnit Build()
@@ -525,7 +545,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
             foreach (var reader in _inputChannels.Values)
             {
-                while (reader.TryRead(out _))
+                while (reader.Reader.TryRead(out _))
                 { }
             }
         }

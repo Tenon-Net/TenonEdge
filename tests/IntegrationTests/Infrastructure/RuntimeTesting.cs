@@ -11,6 +11,23 @@ namespace TenonEdge.IntegrationTests.Infrastructure;
 /// <summary>运行时测试的公共装配：每个运行时使用自己的临时目录中的 queue.db 与记录事件的替身。</summary>
 internal static class RuntimeTesting
 {
+    internal static async Task<TenonEdge.Abstractions.Messages.EdgeMessage> ReadCapturedAsync(
+        RuntimeHost runtime, TenonEdge.Abstractions.Plans.RuntimeUnitId id, long afterSequence = 0)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            var record = runtime.Messages.Read(id, false).LastOrDefault(item => item.Sequence > afterSequence);
+            if (record is not null)
+            {
+                Assert.True(runtime.Messages.TryReadComplete(id, record.Sequence, record.Revision, record.SourceMessageId, out var bytes));
+                return InputMessageSnapshot.Decode(bytes);
+            }
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
     public const string ConfigStoreId = "00000000-0000-4000-8000-000000000001";
 
     public static DeliveryCache CreateDeliveryCache(string directory, TimeProvider? time = null, Func<DeliveryCacheOptions, DeliveryCacheOptions>? configure = null)

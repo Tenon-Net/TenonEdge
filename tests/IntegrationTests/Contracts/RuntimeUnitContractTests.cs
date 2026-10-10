@@ -40,6 +40,7 @@ public sealed class RuntimeUnitContractTests
         await Task.WhenAny(firstConnection, Task.Delay(QuietPeriod, cancellationToken));
         Assert.False(firstConnection.IsCompleted, "准备阶段不应连接设备。");
         Assert.Null(runtime.ActiveRevision);
+        Assert.Equal(0, runtime.Messages.Status.Records);
 
         await runtime.ActivateAsync(prepared);
         using var first = await firstConnection.WaitAsync(Timeout, cancellationToken);
@@ -63,6 +64,30 @@ public sealed class RuntimeUnitContractTests
         });
         // 两个单元连接的先后不确定，只核对两条消息的值。
         Assert.Equal(["42", "43"], messages.Select(message => message.Values[TcpLineInput.ValueField].ToString()).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task BackoffInputCannotSupplyAnExecutableRecentSample()
+    {
+        var token = TestContext.Current.CancellationToken;
+        using var directory = TemporaryDirectory.Create();
+        using var device = StartDevice(out var port);
+        await using var runtime = RuntimeTesting.CreateRuntime([new TcpLineInputFactory()], directory.Path,
+            options: new RuntimeOptions { InitialRestartDelay = TimeSpan.FromSeconds(30), RestartJitter = 0 });
+        var id = RuntimeUnitId.Create(TcpLineInputFactory.UnitKind, "meter-1/line");
+        await runtime.ActivateAsync(runtime.Prepare(new RuntimePlan(1, [Unit("meter-1/line", port)])));
+        using var connection = await device.AcceptSocketAsync(token).AsTask().WaitAsync(Timeout, token);
+        await connection.SendAsync("9\n"u8.ToArray(), token);
+        await ReadAsync(runtime, "meter-1/line");
+        var record = Assert.Single(runtime.Messages.Read(id, false));
+        connection.Shutdown(SocketShutdown.Both);
+        connection.Close();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(Timeout);
+        while (!runtime.GetStatus().Units.Any(unit => unit.Id == id && unit.State == RuntimeUnitState.Backoff))
+        { await Task.Delay(10, deadline.Token); }
+        Assert.False(runtime.TryReadInputSample(id, record.Sequence, 1, record.SourceMessageId, out _));
+        Assert.Single(runtime.Messages.Read(id, false));
     }
 
     [Theory]
@@ -110,13 +135,21 @@ public sealed class RuntimeUnitContractTests
         await runtime.ActivateAsync(runtime.Prepare(new RuntimePlan(1, [Unit("meter-1/line", port)])));
         using var connection = await device.AcceptSocketAsync(cancellationToken).AsTask().WaitAsync(Timeout, cancellationToken);
         await connection.SendAsync("1\n"u8.ToArray(), cancellationToken);
-        await ReadAsync(runtime, "meter-1/line");
+        var captured = await ReadAsync(runtime, "meter-1/line");
+        var id = RuntimeUnitId.Create(TcpLineInputFactory.UnitKind, "meter-1/line");
+        var record = Assert.Single(runtime.Messages.Read(id, false));
+        Assert.True(runtime.TryReadInputSample(id, record.Sequence, 1, captured.SourceMessageId, out var replay));
+        Assert.Equal(captured.Values, replay.Values);
+        Assert.False(runtime.TryReadInputSample(id, record.Sequence, 2, captured.SourceMessageId, out _));
+        Assert.False(runtime.TryReadInputSample(id, record.Sequence, 1, Guid.NewGuid(), out _));
 
         // 单元已在循环中，下一次读取阻塞且不响应取消；停止须释放连接来打断它。
         var stopwatch = Stopwatch.StartNew();
         await runtime.StopAsync(cancellationToken);
         stopwatch.Stop();
 
+        Assert.False(runtime.TryReadInputSample(id, record.Sequence, 1, captured.SourceMessageId, out _));
+        Assert.Single(runtime.Messages.Read(id, false)); // stopped samples remain viewable, not executable
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"停止用了 {stopwatch.Elapsed}。");
         var status = Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == TcpLineInputFactory.UnitKind);
         Assert.Equal(RuntimeUnitState.Stopped, status.State);
@@ -191,12 +224,8 @@ public sealed class RuntimeUnitContractTests
         return new RuntimeUnitPlan(RuntimeUnitId.Create(TcpLineInputFactory.UnitKind, key), document.RootElement);
     }
 
-    private static async Task<EdgeMessage> ReadAsync(RuntimeHost runtime, string key)
-    {
-        var channel = runtime.GetInputChannel(RuntimeUnitId.Create(TcpLineInputFactory.UnitKind, key))
-            ?? throw new InvalidOperationException($"{key} 没有输入通道。");
-        return await channel.ReadAsync(TestContext.Current.CancellationToken).AsTask().WaitAsync(Timeout, TestContext.Current.CancellationToken);
-    }
+    private static Task<EdgeMessage> ReadAsync(RuntimeHost runtime, string key) =>
+        RuntimeTesting.ReadCapturedAsync(runtime, RuntimeUnitId.Create(TcpLineInputFactory.UnitKind, key));
 
     private sealed class RecordingReads : IInputReadReporter
     {

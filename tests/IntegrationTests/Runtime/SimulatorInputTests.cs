@@ -176,16 +176,18 @@ public sealed class SimulatorInputTests
     {
         using var directory = TemporaryDirectory.Create();
         var time = new FakeTimeProvider(Start);
-        await using var runtime = RuntimeTesting.CreateRuntime([new SimulatorInputFactory()], directory.Path, time: time);
+        await using var runtime = RuntimeTesting.CreateRuntime([new SimulatorInputFactory()], directory.Path, time: time, options: new RuntimeOptions { InputChannelCapacity = 1 });
         var plan = new RuntimePlan(1, [Unit("meter-001/a", """{"seed":7,"faults":{"invalidValue":0.3,"missingField":0.3}}"""), Unit("meter-002/b", """{"seed":7,"faults":{"invalidValue":0.3,"missingField":0.3}}""")]);
         await runtime.ActivateAsync(runtime.Prepare(plan));
-        var first = runtime.GetInputChannel(plan.Units[0].Id)!;
-        var second = runtime.GetInputChannel(plan.Units[1].Id)!;
+        long firstSequence = 0, secondSequence = 0;
 
         var pairs = new List<(EdgeMessage First, EdgeMessage Second)>();
         for (var cycle = 0; cycle < 20; cycle++)
         {
-            pairs.Add((await ReadAsync(first), await ReadAsync(second)));
+            pairs.Add((await RuntimeTesting.ReadCapturedAsync(runtime, plan.Units[0].Id, firstSequence),
+                await RuntimeTesting.ReadCapturedAsync(runtime, plan.Units[1].Id, secondSequence)));
+            firstSequence = runtime.Messages.Read(plan.Units[0].Id, false)[0].Sequence;
+            secondSequence = runtime.Messages.Read(plan.Units[1].Id, false)[0].Sequence;
             time.Advance(Period);
         }
 
@@ -195,6 +197,12 @@ public sealed class SimulatorInputTests
             Assert.NotEqual(pair.First.SourceMessageId, pair.Second.SourceMessageId);
         });
         Assert.Contains(pairs, pair => pair.First.Quality.Count > 0);
+        Assert.Equal(0, runtime.InputCaptureFailures);
+        Assert.All(runtime.Messages.Read(plan.Units[0].Id, false), record =>
+        {
+            Assert.Equal(1, record.Revision);
+            Assert.False(record.Truncated);
+        });
         Assert.All(runtime.GetStatus().Units.Where(unit => unit.Reads is not null), unit => Assert.Equal(RuntimeUnitState.Running, unit.State));
     }
 

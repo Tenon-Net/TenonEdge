@@ -84,6 +84,11 @@ public sealed class RuntimeMessageCache
         lock (_lock)
         {
             var sequence = checked(_sequence + 1);
+            // 在修改索引前分配载荷与两个节点。诊断分配失败可被输入通道降级，
+            // 因此不能在只挂入一条链表后才申请另一节点，留下半插入记录。
+            var entry = new Entry(sequence, objectId, revision, sourceMessageId, _time.GetUtcNow(), originalBytes, body[..length].ToArray());
+            entry.GlobalNode = new LinkedListNode<Entry>(entry);
+            entry.ObjectNode = new LinkedListNode<Entry>(entry);
             if (_objects.TryGetValue(objectId, out var bucket))
             {
                 while (bucket.Records.Count >= _countLimit || bucket.Charged + charge > _objectLimit)
@@ -94,9 +99,8 @@ public sealed class RuntimeMessageCache
             // Eviction may have removed the now-empty bucket, including during global eviction.
             if (!_objects.TryGetValue(objectId, out bucket))
             { _objects.Add(objectId, bucket = new Bucket()); }
-            var entry = new Entry(sequence, objectId, revision, sourceMessageId, _time.GetUtcNow(), originalBytes, body[..length].ToArray());
-            entry.GlobalNode = _ordered.AddLast(entry);
-            entry.ObjectNode = bucket.Records.AddLast(entry);
+            _ordered.AddLast(entry.GlobalNode);
+            bucket.Records.AddLast(entry.ObjectNode);
             bucket.Charged += charge;
             _charged += charge;
             _stored += length;
