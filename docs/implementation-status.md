@@ -2918,6 +2918,22 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 未部署、推送、发布或实物验证；T3-06 应用/回滚、最近缓存 MQTT/时间告警元数据及完整 T3 验收仍待继续。
 
+### 2.148 T3-05 最近样本诊断元数据（2026-10-10）
+
+接续 §2.147，补齐最近记录缺失的 MQTT retained/DUP/QoS 与上游时间告警；关联 T3-05、GW-15、AT-29 的最近样本子场景，不代替完整 T3-07 调试验收。EdgeMessage 增加不可变 InputSampleMetadata，HTTP/MQTT 在正式解码时赋值；未提供元数据的来源仍为 null/未知，不推断成无告警。诊断元数据以保守固定开销纳入消息在途预算，MQTT QoS 限 0/1，不包含主题、地址或凭证。
+
+内部缓存快照升至版本 2，显式编码并恢复 null/false/true 告警与 MQTT 标志；缓存仅在内存，不是持久化版本迁移。字段映射保留来源元数据和安全准入标记，不把 Redacted 来源重新标成未知或安全。普通 JSON 与业务信封不增加这些字段；敏感样本仍只保留既有元数据、不缓存正文、不允许回放。
+
+最近预览响应使用记录的采样元数据，不按当前配置重算告警；界面复用 MQTT 和时间告警展示，并明确未提供元数据仍是未知。新增快照三态/标志往返、预算、序列化排除、非法 QoS、映射保留、MQTT 接管→缓存与最近预览 API 的验证；扩充真实 HTTP 读取的上游时间测试。MQTT 接管的 retained/DUP 是明确构造的消息夹具，API 在真实 RuntimeHost 中使用元数据夹具，不冒充真实线上重投。浏览器元数据响应同样是夹具，不当作网页应用验收。
+
+定向命令 `dotnet test TenonEdge.sln --no-restore --filter 'FullyQualifiedName~InputMessageSnapshotTests|FullyQualifiedName~FieldMappingTests|FullyQualifiedName~MqttInputHandoffTests|FullyQualifiedName~HttpInputTests|FullyQualifiedName~RouteRecentPreviewTests' -v minimal`：58 单元 + 51 集成通过，0 失败/跳过（`/tmp/tenonedge-sample-metadata-focused.log`）。初次格式门禁发现快照编码的一处 else 换行（`/tmp/tenonedge-sample-metadata-format.log`），修正后 `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-sample-metadata-format-final.log`）。最终全量结果见下。
+
+最终全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-sample-metadata-regression -v minimal`：**1258 单元 + 1136 集成 = 2394 项通过，0 失败/跳过**（`/tmp/tenonedge-sample-metadata-regression.log`）。补充“带/不带元数据的标准业务信封逐字节相同”断言后，另跑全部单元测试，1258 项通过、0 失败/跳过（`/tmp/tenonedge-sample-metadata-unit-final.log`）；两轮 TRX 门禁均通过，见 `/tmp/tenonedge-sample-metadata-trx.log`、`/tmp/tenonedge-sample-metadata-unit-trx.log`。
+
+实际 Release Host 构建与 OpenAPI 重新导出通过（`/tmp/tenonedge-sample-metadata-release.log`、`/tmp/tenonedge-sample-metadata-api.log`）。前端 build、lint、format:check 与 **219 Vitest 通过**；`PLAYWRIGHT_JSON_OUTPUT_NAME=reports/browser.json TENONEDGE_TEST_URL=http://127.0.0.1:18084 npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json --grep 'route recent samples|route MQTT onsite|route HTTP onsite'`：**3 浏览器场景通过，0 失败/跳过**，报告门禁 `node scripts/verify-results.mjs reports/unit.json reports/browser.json` 通过（以上前端证据均在 `/tmp/tenonedge-sample-metadata-web.log`）。最近记录场景同时显示保留、DUP、QoS 1 与时间回退告警，并验证来源改变后旧结果消失；该元数据响应为明确的浏览器夹具。环境同 §2.145。
+
+未部署、推送、发布或实物验证。应用/回滚仍未实现，不能宣称普通浏览器可独立创建并启动运行路线；下一步继续按 T3-06 实现生命周期切换与 API/UI。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

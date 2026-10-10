@@ -208,6 +208,8 @@ public sealed class HttpInputTests
         Assert.Equal(1, harness.Reads.Snapshot().ReadsCompleted);
         Assert.Equal(0, harness.Reads.Snapshot().ReadsFailed);
         Assert.Equal(invalid, harness.Reads.Snapshot().InvalidUpstreamTimes);
+        Assert.Equal(invalid != 0, message.SampleMetadata!.InvalidUpstreamTime);
+        Assert.Null(message.SampleMetadata.Mqtt);
         Assert.Equal(InputReadHealth.Normal, harness.Reads.Snapshot().Health);
         await peer;
     }

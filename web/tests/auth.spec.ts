@@ -4723,7 +4723,8 @@ test('route recent samples use real empty-list API and explicit metadata fixture
             json: {
                 version: saved.version,
                 previewed: true,
-                invalidUpstreamTime: null,
+                invalidUpstreamTime: true,
+                mqtt: { retained: true, duplicate: true, qos: 1 },
                 result: null,
                 issues: [],
             },
@@ -4733,7 +4734,11 @@ test('route recent samples use real empty-list API and explicit metadata fixture
     await run.click()
     await expect(
         panel.getByLabel('样本预览结果', { exact: true }),
-    ).toContainText('当前缓存不含 MQTT retained/DUP 标志')
+    ).toContainText('已知的 MQTT retained/DUP/QoS')
+    await expect(panel).toContainText('MQTT QoS 1')
+    await expect(panel).toContainText('Broker 保留消息')
+    await expect(panel).toContainText('消息带 DUP 标记')
+    await expect(panel).toContainText('样本上游时间无效')
     await expect(sample).toHaveValue('{"f000":9223372036854775807}')
     expect(await page.evaluate(() => localStorage.length)).toBe(0)
 })

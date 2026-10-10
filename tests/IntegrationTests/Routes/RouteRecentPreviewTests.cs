@@ -98,6 +98,33 @@ public sealed class RouteRecentPreviewTests
         Assert.Equal(0, factory.Connector.Calls);
     }
 
+    [Theory]
+    [InlineData(false, false, false, 0)]
+    [InlineData(true, true, true, 1)]
+    public async Task RecentPreviewReturnsCapturedMetadataWithoutReinferring(bool invalid, bool retained, bool duplicate, int qos)
+    {
+        await using var factory = new RoutePreviewTests.NoOutboundFactory();
+        var request = RoutePreviewTests.Seed(factory.Services, 1);
+        var runtime = await StartAsync(factory.Services);
+        var now = DateTimeOffset.UtcNow;
+        var message = new EdgeMessage(Guid.NewGuid(), "values", "sim", now, TimeSource.Gateway, now,
+            new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(42) },
+            sampleMetadata: new(invalid, new(retained, duplicate, qos)));
+        runtime.Messages.CaptureInput(Source, 7, message); // metadata fixture, not a simulator MQTT acquisition claim
+        var record = runtime.Messages.Read(Source, false)[0];
+        TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
+        using var client = await factory.CreateLoggedInClientAsync("operator", Token);
+        using var response = await client.PostJsonAsync(Endpoint, Selection(request, record), Token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.ReadJsonAsync(Token);
+        Assert.Equal(invalid, result.GetProperty("invalidUpstreamTime").GetBoolean());
+        var mqtt = result.GetProperty("mqtt");
+        Assert.Equal(retained, mqtt.GetProperty("retained").GetBoolean());
+        Assert.Equal(duplicate, mqtt.GetProperty("duplicate").GetBoolean());
+        Assert.Equal(qos, mqtt.GetProperty("qos").GetInt32());
+        Assert.Equal(0, factory.Connector.Calls);
+    }
+
     [Fact]
     public async Task ExactTypedFixtureReplaysWithoutManualJsonReinterpretation()
     {

@@ -61,7 +61,7 @@ internal sealed class HttpInputUnit(RuntimeUnitId id, HttpInputSettings settings
                             var fields = decoder.Decode(document.RootElement, receivedAt, context.ClockState, requestToken.Token);
                             requestToken.Token.ThrowIfCancellationRequested();
                             var message = new EdgeMessage(Guid.CreateVersion7(receivedAt), context.InputKey, context.DeviceKey,
-                                fields.CollectedAt, fields.TimeSource, receivedAt, fields.Values, fields.Quality, RawJsonPayload.CopyFrom(document.RootElement), captured.Access);
+                                fields.CollectedAt, fields.TimeSource, receivedAt, fields.Values, fields.Quality, RawJsonPayload.CopyFrom(document.RootElement), captured.Access, new(fields.InvalidUpstreamTime));
                             if (fields.InvalidUpstreamTime)
                             { context.Reads.UpstreamTimeInvalid(); }
                             context.Reads.ReadCompleted(receivedAt, fields.Quality.Count);

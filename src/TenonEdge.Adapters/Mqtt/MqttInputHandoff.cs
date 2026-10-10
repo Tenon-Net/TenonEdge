@@ -56,7 +56,8 @@ internal sealed class MqttInputHandoff(InputUnitContext context, IJsonInputDecod
                 token.ThrowIfCancellationRequested();
                 var edge = new EdgeMessage(Guid.CreateVersion7(receivedAt), context.InputKey, context.DeviceKey,
                     fields.CollectedAt, fields.TimeSource, receivedAt, fields.Values, fields.Quality,
-                    RawJsonPayload.CopyFrom(document.RootElement), access);
+                    RawJsonPayload.CopyFrom(document.RootElement), access,
+                    new(fields.InvalidUpstreamTime, new(message.Retain, message.Dup, (int)message.QualityOfServiceLevel)));
                 if (fields.InvalidUpstreamTime)
                 { context.Reads.UpstreamTimeInvalid(); }
                 context.Reads.ReadCompleted(receivedAt, fields.Quality.Count);

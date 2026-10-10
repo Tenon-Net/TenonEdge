@@ -7,6 +7,19 @@ namespace TenonEdge.UnitTests.Mapping;
 public sealed class FieldMappingTests
 {
     [Fact]
+    public void MappingPreservesInputDiagnosticProvenance()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var metadata = new InputSampleMetadata(true, new(true, true, 1));
+        var source = new EdgeMessage(Guid.NewGuid(), "input", "device", now, TimeSource.Gateway, now,
+            new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(42) },
+            diagnosticAccess: DiagnosticSampleAccess.Redacted, sampleMetadata: metadata);
+        var mapped = new FieldMapping([new("copy", FieldType.Integer, SourceField: "value")]).Apply(source).Message!;
+        Assert.Same(metadata, mapped.SampleMetadata);
+        Assert.Equal(DiagnosticSampleAccess.Redacted, mapped.DiagnosticAccess);
+    }
+
+    [Fact]
     public void MappingExpansionHasABoundedResultBeforeOutputSerialization()
     {
         var at = DateTimeOffset.UnixEpoch;

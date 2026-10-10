@@ -29,7 +29,8 @@ public sealed class EdgeMessage
         IEnumerable<KeyValuePair<string, FieldValue>> values,
         IEnumerable<KeyValuePair<string, QualityCode>>? quality = null,
         RawJsonPayload? rawJson = null,
-        DiagnosticSampleAccess diagnosticAccess = DiagnosticSampleAccess.Unknown)
+        DiagnosticSampleAccess diagnosticAccess = DiagnosticSampleAccess.Unknown,
+        InputSampleMetadata? sampleMetadata = null)
     {
         if (sourceMessageId == Guid.Empty)
         {
@@ -77,6 +78,7 @@ public sealed class EdgeMessage
         if (!Enum.IsDefined(diagnosticAccess))
         { throw new ArgumentOutOfRangeException(nameof(diagnosticAccess)); }
         DiagnosticAccess = diagnosticAccess;
+        SampleMetadata = sampleMetadata;
     }
 
     /// <summary>本次采样或接收的本地稳定编号（建议 UUIDv7），发往多个目标时不变。</summary>
@@ -110,11 +112,16 @@ public sealed class EdgeMessage
     [JsonIgnore]
     public DiagnosticSampleAccess DiagnosticAccess { get; }
 
+    /// <summary>采集当时的诊断元数据，不进入业务输出或普通 JSON 序列化。</summary>
+    [JsonIgnore]
+    public InputSampleMetadata? SampleMetadata { get; }
+
     /// <summary>解析后消息的预算大小，含原始 JSON、文本、值与字典节点的保守开销。</summary>
     public long BudgetBytes => 256L + 2L * (InputId.Length + DeviceKey.Length)
         + Values.Sum(entry => 128L + 2L * entry.Key.Length + entry.Value.BudgetBytes)
         + Quality.Sum(entry => 128L + 2L * entry.Key.Length)
-        + (RawJson?.BudgetBytes ?? 0);
+        + (RawJson?.BudgetBytes ?? 0)
+        + (SampleMetadata is null ? 0 : 128L + (SampleMetadata.Mqtt is null ? 0 : 64L));
 
     private static void RequireUtc(DateTimeOffset value, string parameterName)
     {

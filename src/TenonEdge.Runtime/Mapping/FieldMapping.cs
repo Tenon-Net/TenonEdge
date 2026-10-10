@@ -85,7 +85,7 @@ public sealed class FieldMapping
         if (failed)
         { return new(null, issues.ToImmutable()); }
         return new(new EdgeMessage(source.SourceMessageId, source.InputId, source.DeviceKey, source.CollectedAt,
-            source.TimeSource, source.ReceivedAt, values, quality, source.RawJson), issues.ToImmutable());
+            source.TimeSource, source.ReceivedAt, values, quality, source.RawJson, source.DiagnosticAccess, source.SampleMetadata), issues.ToImmutable());
     }
 
     private sealed record CompiledRule(FieldMappingRule Rule, JsonFieldPointer? Location, FieldValueConversion Conversion);

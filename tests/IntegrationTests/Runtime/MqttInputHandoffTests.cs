@@ -45,6 +45,25 @@ public sealed class MqttInputHandoffTests
         Assert.Equal(0, harness.Budget.Status.ReservedBytes);
     }
 
+    [Theory]
+    [InlineData(false, false, false, 0)]
+    [InlineData(true, true, true, 1)]
+    public async Task CapturePreservesReceiveFlagsAndTimeWarning(bool invalid, bool retained, bool duplicate, int qos)
+    {
+        var harness = new Harness(JsonSerializer.Deserialize<JsonElement>("""{"path":"/at","format":"rfc3339"}"""));
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new { value = 42, at = invalid ? "invalid" : "2000-01-01T00:00:00Z" });
+        var pending = harness.Receive(payload, (MqttQualityOfServiceLevel)qos, retained: retained, duplicate: duplicate);
+        var edge = await harness.Channel.HoldingReader.ReadAsync(Token);
+        Assert.Equal(new InputSampleMetadata(invalid, new(retained, duplicate, qos)), edge.SampleMetadata);
+        var cache = new RuntimeMessageCache(TimeProvider.System);
+        var id = RuntimeUnitId.Create("input.mqtt", "device/mqtt");
+        var sequence = cache.CaptureInput(id, 7, edge);
+        Assert.True(cache.TryReadComplete(id, sequence, 7, edge.SourceMessageId, out var body));
+        Assert.Equal(edge.SampleMetadata, InputMessageSnapshot.Decode(body).SampleMetadata);
+        harness.Channel.Release(edge, InputHandoffStatus.Committed);
+        Assert.Equal(qos == 0 ? InputHandoffStatus.Buffered : InputHandoffStatus.Committed, await pending);
+    }
+
     [Fact]
     public async Task DecodesExactFieldsAndOwnsRawAfterSourceBufferChangesButStillWaitsForCommit()
     {
@@ -180,7 +199,12 @@ public sealed class MqttInputHandoffTests
             _handoff = new(context, new JsonInputDecoderFactory().Build(JsonSerializer.Deserialize<JsonElement>(
                 """[{"key":"value","path":"/value","type":"integer"}]"""), upstreamTime));
         }
-        public Task<InputHandoffStatus> Receive(byte[] payload, MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtLeastOnce, MqttCredential? credential = null) =>
-            _handoff.ReceiveAsync(new MqttApplicationMessageBuilder().WithTopic("input").WithPayload(payload).WithQualityOfServiceLevel(qos).Build(), credential, Token);
+        public Task<InputHandoffStatus> Receive(byte[] payload, MqttQualityOfServiceLevel qos = MqttQualityOfServiceLevel.AtLeastOnce,
+            MqttCredential? credential = null, bool retained = false, bool duplicate = false)
+        {
+            var message = new MqttApplicationMessageBuilder().WithTopic("input").WithPayload(payload).WithQualityOfServiceLevel(qos).WithRetainFlag(retained).Build();
+            message.Dup = duplicate;
+            return _handoff.ReceiveAsync(message, credential, Token);
+        }
     }
 }

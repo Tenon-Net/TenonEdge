@@ -15,8 +15,31 @@ internal static class InputMessageSnapshot
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
-            writer.WriteNumber("version", 1);
+            writer.WriteNumber("version", 2);
             writer.WriteNumber("diagnosticAccess", (int)message.DiagnosticAccess);
+            writer.WritePropertyName("sampleMetadata");
+            if (message.SampleMetadata is not { } metadata)
+            { writer.WriteNullValue(); }
+            else
+            {
+                writer.WriteStartObject();
+                if (metadata.InvalidUpstreamTime is { } invalid)
+                { writer.WriteBoolean("invalidUpstreamTime", invalid); }
+                else
+                { writer.WriteNull("invalidUpstreamTime"); }
+                writer.WritePropertyName("mqtt");
+                if (metadata.Mqtt is not { } mqtt)
+                { writer.WriteNullValue(); }
+                else
+                {
+                    writer.WriteStartObject();
+                    writer.WriteBoolean("retained", mqtt.Retained);
+                    writer.WriteBoolean("duplicate", mqtt.Duplicate);
+                    writer.WriteNumber("qos", mqtt.Qos);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndObject();
+            }
             writer.WriteString("sourceMessageId", message.SourceMessageId);
             writer.WriteString("inputId", message.InputId);
             writer.WriteString("deviceKey", message.DeviceKey);
@@ -63,7 +86,7 @@ internal static class InputMessageSnapshot
         { throw new JsonException("完整诊断样本超过记录预算。"); }
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement;
-        if (root.GetProperty("version").GetInt32() != 1)
+        if (root.GetProperty("version").GetInt32() != 2)
         { throw new JsonException("未知的诊断样本版本。"); }
         RawJsonPayload? raw = null;
         if (root.GetProperty("rawJson").ValueKind != JsonValueKind.Null)
@@ -82,7 +105,18 @@ internal static class InputMessageSnapshot
                 new KeyValuePair<string, FieldValue>(item[0].GetString()!, FieldValue.ReadSnapshot(item[1]))),
             root.GetProperty("quality").EnumerateArray().Select(item =>
                 new KeyValuePair<string, QualityCode>(item[0].GetString()!, (QualityCode)item[1].GetInt32())),
-            raw, (DiagnosticSampleAccess)root.GetProperty("diagnosticAccess").GetInt32());
+            raw, (DiagnosticSampleAccess)root.GetProperty("diagnosticAccess").GetInt32(), ReadMetadata(root.GetProperty("sampleMetadata")));
+    }
+
+    private static InputSampleMetadata? ReadMetadata(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Null)
+        { return null; }
+        var invalid = value.GetProperty("invalidUpstreamTime");
+        var mqtt = value.GetProperty("mqtt");
+        return new(invalid.ValueKind == JsonValueKind.Null ? null : invalid.GetBoolean(),
+            mqtt.ValueKind == JsonValueKind.Null ? null : new(mqtt.GetProperty("retained").GetBoolean(),
+                mqtt.GetProperty("duplicate").GetBoolean(), mqtt.GetProperty("qos").GetInt32()));
     }
 
     private static void WriteText(Utf8JsonWriter writer, string text)

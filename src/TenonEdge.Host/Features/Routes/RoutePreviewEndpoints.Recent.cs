@@ -34,7 +34,7 @@ internal static partial class RoutePreviewEndpoints
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(429).ProducesProblem(504);
         api.MapPost("/routes/preview/recent", PreviewRecent).WithTags("Routes").WithName("previewRouteRecentSample")
             .WithSummary("使用明确选中的完整运行输入记录预览当前图；不采集、不连接输出、不保存、不入队")
-            .WithDescription("要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；上游时间解析告警未知时 InvalidUpstreamTime 为 null，MQTT 标志不在当前缓存中。")
+            .WithDescription("要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；返回采集当时的上游时间告警与 MQTT retained/DUP/QoS；未提供告警元数据时 InvalidUpstreamTime 为 null（未知）。")
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithMetadata(new RequestBodyLimit(1024 * 1024))
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(429).ProducesProblem(504);
     }
@@ -91,7 +91,8 @@ internal static partial class RoutePreviewEndpoints
             if (!runtime.TryReadInputSample(id, sequence, revision, request.SourceMessageId, out var sample))
             { return ApiProblems.Problem(409, "preview.recent.unavailable", "所选记录已不可执行：请核对输入运行状态、版本、敏感内容限制、截断或淘汰；未替换样本或触发采集。"); }
             var result = RouteSamplePreview.Run(snapshot, request.SourceId, sample, operation.Token);
-            return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, null, result, []));
+            return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, sample.SampleMetadata?.InvalidUpstreamTime, result, [],
+                sample.SampleMetadata?.Mqtt is { } mqtt ? new(mqtt.Retained, mqtt.Duplicate, mqtt.Qos) : null));
         }
         catch (RouteTopologyException error)
         { return TypedResults.Ok(new RoutePreviewResponse(request.ExpectedVersion, false, false, null, [error.Issue])); }

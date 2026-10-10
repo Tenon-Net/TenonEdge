@@ -50,7 +50,33 @@ public sealed class InputMessageSnapshotTests
         Assert.Equal(before.TimeSource, after.TimeSource);
         Assert.Equal(before.Quality, after.Quality);
         Assert.Null(after.RawJson);
+        Assert.Null(after.SampleMetadata);
     }
+
+    [Theory]
+    [InlineData(null, false, false, 0)]
+    [InlineData(false, true, false, 1)]
+    [InlineData(true, false, true, 1)]
+    public void MetadataRoundTripsWithoutEnteringBusinessJson(bool? invalid, bool retained, bool duplicate, int qos)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var metadata = new InputSampleMetadata(invalid, new(retained, duplicate, qos));
+        var before = new EdgeMessage(Guid.NewGuid(), "input", "device", now, TimeSource.Gateway, now,
+            new Dictionary<string, FieldValue>(), diagnosticAccess: DiagnosticSampleAccess.Safe, sampleMetadata: metadata);
+        var after = InputMessageSnapshot.Decode(InputMessageSnapshot.Encode(before).Prefix);
+        Assert.Equal(metadata, after.SampleMetadata);
+        Assert.Equal(DiagnosticSampleAccess.Safe, after.DiagnosticAccess);
+        var without = new EdgeMessage(before.SourceMessageId, "input", "device", now, TimeSource.Gateway, now, before.Values);
+        Assert.Equal(without.BudgetBytes + 192, before.BudgetBytes);
+        Assert.Equal(StandardEnvelope.Serialize(without, before.SourceMessageId), StandardEnvelope.Serialize(before, before.SourceMessageId));
+        Assert.DoesNotContain("sampleMetadata", JsonSerializer.Serialize(before), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("retained", JsonSerializer.Serialize(before), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(2)]
+    public void MetadataRejectsUnsupportedQos(int qos) => Assert.Throws<ArgumentOutOfRangeException>(() => new MqttSampleMetadata(false, false, qos));
 
     [Fact]
     public void RawJsonAndUpstreamTimeSurviveIndependentDocumentDisposal()
@@ -161,7 +187,7 @@ public sealed class InputMessageSnapshotTests
     public void UnknownSnapshotVersionAndOversizeBodyAreRejected()
     {
         var snapshot = InputMessageSnapshot.Encode(Message(FieldValue.FromBoolean(true)));
-        var unknown = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(snapshot.Prefix).Replace("\"version\":1", "\"version\":2", StringComparison.Ordinal));
+        var unknown = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(snapshot.Prefix).Replace("\"version\":2", "\"version\":999", StringComparison.Ordinal));
         Assert.Throws<JsonException>(() => InputMessageSnapshot.Decode(unknown));
         Assert.Throws<JsonException>(() => InputMessageSnapshot.Decode(new byte[RuntimeMessageCache.MaximumRecordBytes + 1]));
     }

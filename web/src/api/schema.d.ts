@@ -461,7 +461,7 @@ export interface paths {
         put?: never;
         /**
          * 使用明确选中的完整运行输入记录预览当前图；不采集、不连接输出、不保存、不入队
-         * @description 要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；上游时间解析告警未知时 InvalidUpstreamTime 为 null，MQTT 标志不在当前缓存中。
+         * @description 要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；返回采集当时的上游时间告警与 MQTT retained/DUP/QoS；未提供告警元数据时 InvalidUpstreamTime 为 null（未知）。
          */
         post: operations["previewRouteRecentSample"];
         delete?: never;

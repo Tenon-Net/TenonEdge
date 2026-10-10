@@ -142,7 +142,7 @@ HTTP/MQTT 正式输入按请求/连接代次实际使用的凭证检查完整 JS
 - `POST /routes/preview/recent/messages` 接收 expectedVersion、graph、sourceId，读取图内来源的最多 100 条记录元数据（不返回正文），按捕获次序倒序。返回 running、activeRevision 与 records；每条包括 sequence、revision、sourceMessageId、capturedAt、originalBytes、storedBytes、truncated、executable、privacyBlocked。**序号和运行版本为十进制字符串**，不要经过 JavaScript number。大小是内部类型化快照编码字节数，不是网络报文大小。executable 是列表时刻提示，不是执行保证。
 - `POST /routes/preview/recent` 除三个图/版本/来源字段外，必须提供明确选中记录的 sequence、revision、sourceMessageId。服务端重新核对输入正在运行、当前运行版本、记录身份、通过敏感内容准入、未截断且未淘汰，并恢复保精度的 EdgeMessage。失败返回 409 `preview.recent.unavailable`，不自动改选较旧/最新完整记录，不回退现场读取或手工文本。
 - 两个端点均要求配置员/管理员、会话与 CSRF；共用全局 4/会话 2 准入，1 MiB 请求上限、30 秒操作期限，客户端保留 35 秒。草稿版本冲突仍是 409，与运行记录不可用分开处理。执行不连接来源/输出、不保存、不应用、不入队。
-- 使用记录当时的解码字段、质量、时间来源及原始 JSON（若协议提供），**不按当前来源配置重新解析原报文**；当前图的映射及组装仍按本地编辑内容计算。当前缓存尚未保存 MQTT retained/DUP/QoS 元数据及上游时间解析告警详情；最近记录预览返回 `invalidUpstreamTime:null`（未知），不是 false（确认无告警），mqtt 为 null，界面明确提示这一缺口。手工和现场模式仍返回其已知的布尔告警结果。
+- 使用记录当时的解码字段、质量、时间来源及原始 JSON（若协议提供），**不按当前来源配置重新解析原报文**；当前图的映射及组装仍按本地编辑内容计算。HTTP/MQTT 缓存保存采集当时的上游时间解析告警，MQTT 同时保存 retained/DUP/QoS 元数据，映射不改变这些来源信息。最近记录按实际元数据返回告警及 MQTT 标志；没有提供元数据的来源仍返回 `invalidUpstreamTime:null`（未知），不能当成 false（确认无告警），MQTT 不适用/未知时为 null。不把协议标志或诊断准入写入业务信封。
 - 页面先显式读取元数据，再明确选中一条记录；不自动选中最新记录。截断/停止记录可以看到元数据但不能执行。图、版本、来源或未确认编辑变化后，取消旧请求并隐藏旧列表/结果；刷新列表清除选择，选择变化清除旧预览。手工样本不被覆盖，记录不写入草稿、撤销历史、localStorage 或查询缓存。
 
 运行缓存已经独立于面板持续捕获输入；完整消息存储与生命周期证据见实施状态 §2.141—§2.143。本批 API 集成使用真实 RuntimeHost + 模拟来源，浏览器测试实测未运行来源空列表，并使用明确的元数据/响应夹具验证选择、拒绝、取消与状态失效；**不据此宣称浏览器已经把草稿应用成运行路线**。T3-06 的应用/回滚仍未实现，普通网页尚不能独立创建并启动此处所需的运行来源。停止/退避的取样门禁已实现；跨版本应用、对象删除清理及完整调试元数据仍须后续验证。
