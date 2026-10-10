@@ -14,6 +14,51 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class RuntimeQuiescenceTests
 {
     [Fact]
+    public async Task OnlyLatestSuccessfulQuiescenceFromThisRuntimeIsCurrent()
+    {
+        using var data = TemporaryDirectory.Create();
+        using var otherData = TemporaryDirectory.Create();
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path);
+        await using var other = RuntimeTesting.CreateRuntime([], otherData.Path);
+        await using var plan = runtime.Prepare(Plan());
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        var first = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
+        Assert.True(runtime.IsCurrentQuiescence(first));
+        Assert.False(other.IsCurrentQuiescence(first));
+        Assert.False(runtime.IsCurrentQuiescence(first with { }));
+        Assert.False(runtime.IsCurrentQuiescence(new(1, true, [])));
+        var latest = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
+        Assert.False(runtime.IsCurrentQuiescence(first));
+        Assert.True(runtime.IsCurrentQuiescence(latest));
+        await runtime.StopAsync(TestContext.Current.CancellationToken);
+        Assert.False(runtime.IsCurrentQuiescence(latest));
+        Assert.True(latest.Succeeded); // Historical result remains true, but cannot authorize a later commit.
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecoveryRevokesSuccessfulQuiescenceEvenWhenRebuildFails(bool rejectBuild)
+    {
+        using var data = TemporaryDirectory.Create();
+        var source = new OneShotInputFactory();
+        var factory = new RepairableInputFactory(source);
+        await using var runtime = RuntimeTesting.CreateRuntime([factory], data.Path);
+        await using var plan = runtime.Prepare(Plan(Input()));
+        runtime.StartCore();
+        await runtime.ActivateAsync(plan);
+        await source.Written.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        var result = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
+        Assert.True(runtime.IsCurrentQuiescence(result));
+        factory.Reject = rejectBuild;
+        var recovery = await runtime.RestoreInputsAsync();
+        Assert.Equal(!rejectBuild, recovery.Succeeded);
+        Assert.False(runtime.IsCurrentQuiescence(result));
+        Assert.Equal(1, runtime.ActiveRevision);
+    }
+
+    [Fact]
     public async Task RecoveryBuildFailureKeepsRevisionAndCanBeRetriedAfterRepair()
     {
         using var data = TemporaryDirectory.Create();
@@ -192,6 +237,7 @@ public sealed class RuntimeQuiescenceTests
             var result = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
             Assert.False(result.Succeeded);
             Assert.False(result.Drained);
+            Assert.False(runtime.IsCurrentQuiescence(result));
             Assert.Equal(diagnosticFault ? 1 : 0, events.OfType("runtime.quiesceFailed").Count);
             Assert.Equal(budget, runtime.InFlight.Status.ReservedBytes);
             Assert.Equal(RuntimeUnitState.Running, Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "delivery.dispatcher").State);
@@ -214,6 +260,7 @@ public sealed class RuntimeQuiescenceTests
         var idle = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
         Assert.True(idle.Succeeded);
         Assert.Null(idle.Revision);
+        Assert.False(runtime.IsCurrentQuiescence(idle));
         await using var plan = runtime.Prepare(Plan(Input()));
         runtime.StartCore();
         await runtime.ActivateAsync(plan);
@@ -221,6 +268,9 @@ public sealed class RuntimeQuiescenceTests
         Assert.Equal(1, input.Started);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runtime.QuiesceInputsAsync(cancelled.Token));
         Assert.Equal(RuntimeUnitState.Running, runtime.GetStatus().Units.Single(unit => unit.Id == Input().Id).State);
+        var quiet = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runtime.QuiesceInputsAsync(cancelled.Token));
+        Assert.True(runtime.IsCurrentQuiescence(quiet));
     }
 
     [Fact]
@@ -270,6 +320,7 @@ public sealed class RuntimeQuiescenceTests
             var result = await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken);
             Assert.False(result.Succeeded);
             Assert.Equal(Input().Id, Assert.Single(result.TimedOutUnits));
+            Assert.False(runtime.IsCurrentQuiescence(result));
             Assert.Equal(RuntimeUnitState.StopTimedOut, Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "input.test").State);
             Assert.Equal(RuntimeUnitState.Running, Assert.Single(runtime.GetStatus().Units, unit => unit.Id.Kind == "delivery.dispatcher").State);
             Assert.False((await runtime.QuiesceInputsAsync(TestContext.Current.CancellationToken)).Succeeded);

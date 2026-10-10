@@ -29,13 +29,35 @@ public sealed partial class RuntimeHost
     {
         try
         {
+            lock (_lock)
+            { _currentQuiescence = null; }
             await CancelRecoveryAsync();
-            return await QuiesceCoreAsync();
+            var result = await QuiesceCoreAsync();
+            lock (_lock)
+            {
+                if (_stopping is null && result.Succeeded && result.Revision is not null)
+                { _currentQuiescence = result; }
+            }
+            return result;
         }
         finally { CompleteOperation(operation); }
     }
 
     private bool _quiescenceRequested;
+    private RuntimeQuiescenceResult? _currentQuiescence;
+
+    /// <summary>核对本运行时最近一次完整静默的结果。恢复、新静默或停机会使旧结果失效；
+    /// Succeeded 只描述当时的结果，不能单独作为提交前置条件。
+    /// 此查询不持有应用锁、不证明配置已提交；宿主仍须串行拥有完整应用/回滚操作。</summary>
+    public bool IsCurrentQuiescence(RuntimeQuiescenceResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        lock (_lock)
+        {
+            return _stopping is null && _operation is null && ReferenceEquals(_currentQuiescence, result)
+                && result.Revision == _activeRevision;
+        }
+    }
 
     private async Task<RuntimeQuiescenceResult> QuiesceCoreAsync()
     {

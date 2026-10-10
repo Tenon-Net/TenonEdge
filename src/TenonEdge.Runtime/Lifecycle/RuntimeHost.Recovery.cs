@@ -29,6 +29,8 @@ public sealed partial class RuntimeHost
         var operation = EnterOperation();
         try
         {
+            lock (_lock)
+            { _currentQuiescence = null; }
             await CancelRecoveryAsync();
             try
             { return await RecoverGroupsCoreAsync(onlyWaiting: false); }

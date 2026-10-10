@@ -414,6 +414,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         {
             if (_stopping is null)
             {
+                _currentQuiescence = null;
                 owner = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _stopping = owner.Task;
             }

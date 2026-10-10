@@ -2999,6 +2999,23 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 后续仍需：新有效版本在线切换、贯穿冻结至激活的应用/回滚锁、Host 编排及稳定计时更新、完整草稿检查点/历史/比较/回滚、变更清单和网页应用，以及 §7.4 进程中断矩阵。没有应用端点或页面，不能通过网页独立配置并启动采集路线。未改变常驻部署、推送或发布。
 
+### 2.153 T3-06 静默结果的当前有效性（2026-10-10）
+
+承接 §2.152，关联 GW-10、AT-28 的应用前置子场景。`RuntimeQuiescenceResult.Succeeded` 只描述一次历史结果，不能证明当前仍已静默；`_quiescenceRequested` 在超时后也为真，更不能作为提交条件。本批增加 Runtime 的 `IsCurrentQuiescence` 查询：只接受本实例最近一次成功且具有有效版本的原始结果；复制/自行构造、其他运行时、已被新静默替代的结果均无效。恢复开始即撤销结果（包括恢复构建失败）；停机开始撤销结果，生命周期操作进行中也不报告当前有效。调用前已取消的请求没有副作用，不撤销已成功的静默。
+
+这是后续提交/激活编排使用的前置校验基础，**尚未接入配置提交，也不替代跨冻结—激活的应用锁**；查询与事务之间仍须由宿主串行拥有完整操作。没有新增应用端点或页面，不宣称已实现在线版本切换。
+
+新增 3 个测试场景，覆盖同值复制/伪造、跨实例、重复静默、停止后失效，以及恢复成功/失败后失效；扩展现有用例断言输入超时、分发排空超时、空闲静默无有效结果及预取消无副作用。使用临时 SQLite 和受控输入替身，不是设备或进程中断验证。
+
+实际命令与结果（Linux x64、.NET SDK 10.0.401/runtime 10.0.12）：
+
+- `dotnet test tests/IntegrationTests --no-restore --filter FullyQualifiedName~RuntimeQuiescenceTests -v minimal`：14 通过，0 失败/跳过（`/tmp/tenonedge-quiescence-guard-focused.log`）。
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-quiescence-guard-regression -v minimal`：**1258 单元 + 1172 集成 = 2430 项通过，0 失败/跳过**（`/tmp/tenonedge-quiescence-guard-regression.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-quiescence-guard-regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests`：通过（`/tmp/tenonedge-quiescence-guard-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore`：首次指出两个 lock 的换行（`/tmp/tenonedge-quiescence-guard-format.log`）；只修正空白后通过（`/tmp/tenonedge-quiescence-guard-format-final.log`）。`git diff --check` 通过。
+
+后续仍按 §2.152 的未完成项推进，优先处理新版本发送者按 connectionId 的所有权、别名改变和迟到 ACK，再接入在线激活。未新增依赖、修改常驻部署、推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
