@@ -19,7 +19,7 @@ namespace TenonEdge.Runtime.Lifecycle;
 /// <item><see cref="ActivateAsync"/>：启动输入、分发器与按目标划分的发送者；构建失败的只告警，单实例规则由监督者执行。</item>
 /// <item><see cref="StopAsync"/>：停止输入，排空分发器，写者最后提交，再取消在途发送并释放协议客户端。</item>
 /// </list>
-/// ActivateAsync 仅用于初次激活；输入静默后可恢复原版本，新有效版本的在线切换继续在 T3-06 实现。
+/// ActivateAsync 仅用于初次激活；在线应用由宿主提交配置之后调用 ActivateCommittedAsync。
 /// </summary>
 public sealed partial class RuntimeHost : IAsyncDisposable
 {
@@ -237,7 +237,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var state = shared?.State ?? senderStates?.GetValueOrDefault(target.ConnectionId) ?? new OutputSenderState();
                 IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
                     new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
-                outputs.Add(new PreparedOutput(target, mapping, state, recoveryGroup));
+                outputs.Add(new PreparedOutput(target, mapping, state, recoveryGroup, candidateGroup));
                 if (shared is null)
                 { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null, recoveryGroup)); }
             }
@@ -373,8 +373,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             }
 
             var senderOutput = prepared.Outputs.FirstOrDefault(output => output.Target.Id == unit.Id);
-            var senderGroup = senderOutput is null ? null : RuntimeUnitId.Create("sender.connection",
-                senderOutput.Target.ConnectionId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var senderGroup = senderOutput is null ? null : SenderGroup(senderOutput.Target.ConnectionId);
             if (!_supervisor.TryStart(unit.Instance, unit.Rebuild!, unit.Reads, senderGroup))
             {
                 const string reason = "同一单元或发送连接的上一个实例仍在运行或等待重建，没有启动新实例（单实例规则）。";
@@ -382,6 +381,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 _events.Record(RuntimeEventSeverity.Error, RuntimeEventTypes.UnitBuildFailed, unit.Id.ToString(), reason);
                 await unit.Instance.DisposeAsync();
                 continue;
+            }
+            if (senderOutput is not null)
+            {
+                _senders[senderOutput.Target.ConnectionId] = senderOutput;
+                _senderStates[senderOutput.Target.ConnectionId] = senderOutput.State;
+                RememberSenderConnection(senderOutput);
             }
 
             if (unit.Channel is not null)

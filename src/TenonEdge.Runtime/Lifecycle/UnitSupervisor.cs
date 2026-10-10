@@ -162,19 +162,37 @@ internal sealed class UnitSupervisor
         }
     }
 
+    public bool IsGroupOccupied(RuntimeUnitId group)
+    {
+        lock (_lock)
+        {
+            return _pending.Values.Any(pending => pending.ExclusiveGroup == group) ||
+                _units.Any(pair => _exclusiveGroups.GetValueOrDefault(pair.Key) == group && pair.Value.IsAlive);
+        }
+    }
+
+    public Task<IReadOnlyList<RuntimeUnitId>> StopGroupAsync(RuntimeUnitId group, TimeSpan timeout)
+        => StopSelectedAsync(null, group, timeout, CancellationToken.None);
+
     /// <summary>并行停止满足条件的单元并等待它们退出，返回在期限内没有退出的单元。</summary>
-    public async Task<IReadOnlyList<RuntimeUnitId>> StopAsync(Func<RuntimeUnitId, bool> predicate, TimeSpan timeout, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<RuntimeUnitId>> StopAsync(Func<RuntimeUnitId, bool> predicate, TimeSpan timeout, CancellationToken cancellationToken)
+        => StopSelectedAsync(predicate, null, timeout, cancellationToken);
+
+    private async Task<IReadOnlyList<RuntimeUnitId>> StopSelectedAsync(Func<RuntimeUnitId, bool>? predicate, RuntimeUnitId? group,
+        TimeSpan timeout, CancellationToken cancellationToken)
     {
         SupervisedUnit[] targets;
         PendingRestart[] pending;
         lock (_lock)
         {
-            pending = [.. _pending.Where(pair => predicate(pair.Key)).Select(pair => pair.Value)];
-            foreach (var id in _pending.Keys.Where(predicate).ToArray())
+            var pendingIds = _pending.Where(pair => group is null ? predicate!(pair.Key) : pair.Value.ExclusiveGroup == group).Select(pair => pair.Key).ToArray();
+            pending = [.. pendingIds.Select(id => _pending[id])];
+            foreach (var id in pendingIds)
             { _pending.Remove(id); }
             foreach (var restart in pending)
             { restart.Cancel.Cancel(); }
-            targets = [.. _units.Values.Where(unit => predicate(unit.Id))];
+            // 捕获实例而非先捕获 ID 再二次查找；同 ID 的下一代可能已改用另一资源。
+            targets = [.. _units.Values.Where(unit => group is null ? predicate!(unit.Id) : _exclusiveGroups.GetValueOrDefault(unit.Id) == group)];
         }
 
         await Task.WhenAll(pending.Select(restart => restart.Completion));

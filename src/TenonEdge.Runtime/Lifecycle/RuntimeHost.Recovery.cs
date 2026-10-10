@@ -35,16 +35,18 @@ public sealed partial class RuntimeHost
             try
             { return await RecoverGroupsCoreAsync(onlyWaiting: false); }
             finally
-            {
-                if (_waitingRecoveryGroups.Count != 0)
-                {
-                    _recoveryCancellation = new CancellationTokenSource();
-                    var token = _recoveryCancellation.Token;
-                    _recoveryWorker = Task.Run(() => RecoverWaitingGroupsAsync(token));
-                }
-            }
+            { StartRecoveryIfNeeded(); }
         }
         finally { CompleteOperation(operation); }
+    }
+
+    private void StartRecoveryIfNeeded()
+    {
+        if (_waitingRecoveryGroups.Count == 0)
+        { return; }
+        _recoveryCancellation = new CancellationTokenSource();
+        var token = _recoveryCancellation.Token;
+        _recoveryWorker = Task.Run(() => RecoverWaitingGroupsAsync(token));
     }
 
     // 仅在已拥有生命周期门或已开始停机时调用；后台恢复此时不能进入下一次尝试。
@@ -161,6 +163,9 @@ public sealed partial class RuntimeHost
     private async Task<RuntimeQuiescenceResult> QuiesceRecoveryGroupAsync(RuntimeUnitId group, HashSet<RuntimeUnitId> inputs)
     {
         var timeout = _options.UnitStopTimeout;
+        var retiring = await StopRetiringSendersAsync(group);
+        if (retiring.Count != 0)
+        { return new(_activeRevision, false, [.. retiring]); }
         var stopped = await _supervisor.StopAsync(inputs.Contains, timeout, CancellationToken.None);
         if (stopped.Count != 0)
         { return new(_activeRevision, false, [.. stopped]); }
@@ -174,7 +179,7 @@ public sealed partial class RuntimeHost
         var stoppedDispatchers = await _supervisor.StopAsync(dispatcherIds.Contains, timeout, CancellationToken.None);
         if (stoppedDispatchers.Count != 0)
         { return new(_activeRevision, true, [.. stoppedDispatchers]); }
-        var outputs = _outputRecoveryGroups.Where(pair => pair.Value == group).Select(pair => pair.Key).ToHashSet();
+        var outputs = _senders.Values.Where(output => output.RecoveryGroup == group).Select(output => output.Target.Id).ToHashSet();
         var stoppedOutputs = await _supervisor.StopAsync(outputs.Contains, timeout, CancellationToken.None);
         return new(_activeRevision, true, [.. stoppedOutputs]);
     }

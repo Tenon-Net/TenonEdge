@@ -308,10 +308,11 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput(bool restore, bool blockedOtherGroup)
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    public async Task PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput(bool restore, bool blockedOtherGroup, bool transition)
     {
         var broker = fixture.Require();
         using var data = TemporaryDirectory.Create();
@@ -387,11 +388,24 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
             {
                 if (blockedOtherGroup)
                 { await blocked.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), Token); }
-                Assert.Equal(!blockedOtherGroup, (await runtime.QuiesceInputsAsync(Token)).Succeeded);
-                var recovery = await runtime.RestoreInputsAsync();
-                Assert.Equal(!blockedOtherGroup, recovery.Succeeded);
-                Assert.True(recovery.Restarted);
-                Assert.Equal(1, recovery.Revision);
+                var quiet = await runtime.QuiesceInputsAsync(Token);
+                Assert.Equal(!blockedOtherGroup, quiet.Succeeded);
+                if (transition)
+                {
+                    await using var next = runtime.Prepare(new RuntimePlan(2, [Input("one"), Input("two"),
+                        new(RuntimeUnitId.Create("output.mqtt", "renamed"), output.Configuration)]));
+                    Assert.Empty(next.Failures);
+                    Assert.Equal(1, connector.Connections);
+                    await runtime.ActivateCommittedAsync(next, quiet);
+                    Assert.Equal(2, runtime.ActiveRevision);
+                }
+                else
+                {
+                    var recovery = await runtime.RestoreInputsAsync();
+                    Assert.Equal(!blockedOtherGroup, recovery.Succeeded);
+                    Assert.True(recovery.Restarted);
+                    Assert.Equal(1, recovery.Revision);
+                }
                 await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref subscriptions) == 4);
                 Assert.Equal(2, connector.Connections);
                 await MqttProbe.PublishAsync(peer, topic + "/one", "{\"v\":99}"u8.ToArray(), MqttQualityOfServiceLevel.AtLeastOnce, Token);

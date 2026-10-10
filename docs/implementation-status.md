@@ -3031,6 +3031,31 @@ Release Host 构建和实际 OpenAPI 导出通过（`/tmp/tenonedge-full-mqtt-re
 
 仍需接入 Runtime 的新有效版本激活、按连接保留/替换/排空发送者和发送状态、Host 提交所有者与稳定计时，再完成网页及中断矩阵。不能把本批的延迟重建原语称为产品在线应用功能。未新增依赖、修改常驻部署、推送或发布。
 
+### 2.155 T3-06 新有效版本的 Runtime 在线激活（2026-10-10）
+
+承接 §2.154，关联 GW-10、AT-28、AT-11 的运行时切换子场景。增加 `ActivateCommittedAsync(prepared, quiescence)`：只接受本 Runtime 当前完整静默的原始结果及递增版本，拒绝历史/复制结果，不提前消耗被拒绝的准备计划。进入后接管新版本，协调发送者，再启动新输入与分发；调用方取消不能打断已接管的生命周期操作，启动故障按单元退避，不自动恢复旧有效版本。应用事件不把等待旧实例退出的单元宣称为已经启动。
+
+**边界**：本方法供 Host 在配置事务提交之后调用，不操作 config.db，也不能自行证明提交发生。Host 仍须持有贯穿冻结—激活的应用/回滚锁，完成静态校验和两次目标变更检查；删除尚有待发或失败区数据的目标仍由该检查拦截。本批 Runtime 测试中的 r2/r3 是调用方传入的有效计划，不是配置事务或进程中断验证。Host 编排、端点及网页按钮尚未接入，不能通过网页独立配置并启动路线。
+
+- 实际发送者按连接登记，与当前路线格式定义分开；协议参数不变的独立发送者可以跨输出路径改名保留。路径 ID 改用于其他连接时不错误保留原占用；两个连接交换路径 ID 同样受单元 ID 和连接两重互斥。
+- 其余旧发送者请求停止；超时后保留旧实例，新发送者登记延迟重建。新版再次替换或停机时撤销旧待启动登记。未引用且已无待发数据的输出停止，写者始终保持可用。切换不重写旧记录、不作全局 missing-target 隔离，发送者继续检查各自冻结指纹。
+- 按连接接续同一发送状态引用；旧发送者完全退出后才重置配置相关的探测/退避状态，不丢弃尚未提交的 ACK、失败或隔离结果。管理员手动暂停仍由持久化控制读取，不因本次重置而清除。
+- 新输入将借用旧独立输出的物理连接时（包括新计划只有输入、不再输出），若旧实例未完整退出，该输入组和耦合输出暂不运行；其他组先启动，运行时继续等待并按**当前新有效版本**恢复。静默和停机继续撤销恢复任务，不复活旧版本。
+- 保留尚未退出的连接分组元数据，而不只保留当前路线定义：中间版本先移除输出、后续版本再加入同连接输入时，仍必须等原实例释放。完整退出且不再被新计划引用的连接状态可回收。按资源停止时在监督者锁内捕获具体实例，不能把同 ID 已改用其他连接的待启动替换者误撤销。
+
+新增 **13 项场景**：11 项 Runtime 切换、1 项真实 Mosquitto r1→r2 共享会话、1 项监督者资源选择。覆盖准备阶段不运行、独立发送者跨别名保留、恢复后记录仍按 r2、路径交换连接、排空后删除输出、迟到 ACK 不重发、共享输入等待完整释放、等待期间新版本替换/停机、无效静默拒绝、输入专用计划及跨中间删除版本的资源占用、输出启动故障不回滚。Mosquitto 用例真实重新订阅并把新输入经 SQLite 发回 Broker；它不是实物测试。
+
+验证经过与证据：
+
+- 最初新测试因常量数组触发 CA1861 而未能编译（`/tmp/tenonedge-transition-focused.log`），修正测试参数写法后，阶段针对性 6、30、32 项分别通过（`/tmp/tenonedge-transition-focused2.log`、`/tmp/tenonedge-transition-focused3.log`、`/tmp/tenonedge-transition-focused-final.log`）。增加中间删除版本场景后，Runtime 与监督者针对性 23 项通过（`/tmp/tenonedge-transition-retired.log`）。
+- 变异验证：临时让连接等待只检查当前 `_senders`，忽略被中间版本移除的旧连接；用例实际失败，记录到输入在旧连接释放前启动 1 次（预期 0）。随后恢复实现（`/tmp/tenonedge-transition-retired-mutation.log`）。没有用等待到最终状态正确替代重叠运行检查。
+- `dotnet test tests/IntegrationTests --no-build --no-restore --filter 'FullyQualifiedName~RuntimeTransitionTests|FullyQualifiedName~DeferredRestartTests|FullyQualifiedName~PlanFactoriesRunTwoRealMqttInputsThroughSqliteToSharedMqttOutput' -v minimal` 连续 10 轮：每轮 27 项，**270 次执行通过、0 失败/跳过**（`/tmp/tenonedge-transition-repeat.log`）。
+- 迭代中的两轮全量为 2449 项通过（`/tmp/tenonedge-transition-regression.log`、`/tmp/tenonedge-transition-regression-final.log`）；补齐中间删除版本场景后的全量出现 1 项既有 `RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison` 失败：冻结前首次发送预期 Ack、实际 Retry（`/tmp/tenonedge-transition-regression-complete.log`，1258 单元通过，1191 集成通过、1 失败）。同一失败用例使用 `--no-build --no-restore --filter FullyQualifiedName~RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison` 单独连续运行 3 次均通过（`/tmp/tenonedge-transition-mqtt-recheck.log`）。**原因尚未确认，未修改协议实现或放宽断言；复跑不改写此前失败，也不代表已修复偶发故障。**
+- 最终不并行启动额外复跑的全量命令 `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-transition-regression-verified -v minimal`：**1258 单元 + 1192 集成 = 2450 项通过，0 失败/跳过**（`/tmp/tenonedge-transition-regression-verified.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-transition-regression-verified --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-transition-trx.log`）。
+- `dotnet format --verify-no-changes --no-restore` 通过（`/tmp/tenonedge-transition-format-complete.log`），`git diff --check` 通过。Linux x64、.NET SDK 10.0.401/runtime 10.0.12；未新增依赖。
+
+下一步为 Host 的应用所有者/全局互斥、配置提交与运行标记、逐版本稳定计时，以及草稿检查点、历史/比较/回滚、网页和 §7.4 中断矩阵；本批未验证这些部分。未改变常驻部署、推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

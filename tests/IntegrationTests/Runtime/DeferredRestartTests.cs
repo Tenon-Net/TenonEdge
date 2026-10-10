@@ -14,6 +14,37 @@ public sealed class DeferredRestartTests
     private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public async Task StoppingOldResourceDoesNotRevokeSameIdReplacementForAnotherResource()
+    {
+        var supervisor = Create();
+        var oldGroup = RuntimeUnitId.Create("sender.connection", "1");
+        var newGroup = RuntimeUnitId.Create("sender.connection", "2");
+        var old = new GatedUnit();
+        var replacement = new WaitingUnit(Id);
+        Assert.True(supervisor.TryStart(old, () => old, null, oldGroup));
+        try
+        {
+            await old.Started.Task.WaitAsync(Deadline, Token);
+            Assert.Single(await supervisor.StopGroupAsync(oldGroup, TimeSpan.FromMilliseconds(50)));
+            Assert.True(supervisor.TryRestartStopped(Id, () => replacement, null, newGroup));
+            Assert.Single(await supervisor.StopGroupAsync(oldGroup, TimeSpan.FromMilliseconds(50)));
+            Assert.True(supervisor.IsGroupOccupied(newGroup));
+            old.Exit.TrySetResult();
+            old.Disposed.TrySetResult();
+            await replacement.Started.Task.WaitAsync(Deadline, Token);
+            Assert.Empty(await supervisor.StopGroupAsync(oldGroup, Deadline));
+            Assert.True(supervisor.IsAlive(Id));
+            Assert.False(supervisor.IsGroupOccupied(oldGroup));
+        }
+        finally
+        {
+            old.Exit.TrySetResult();
+            old.Disposed.TrySetResult();
+            Assert.Empty(await supervisor.StopAsync(_ => true, Deadline, Token));
+        }
+    }
+
+    [Fact]
     public async Task RenamedSenderWaitsForConnectionOwnerAndPreservesItsLateOutcome()
     {
         var supervisor = Create();

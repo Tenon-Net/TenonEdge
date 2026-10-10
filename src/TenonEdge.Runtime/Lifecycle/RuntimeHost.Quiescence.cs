@@ -71,6 +71,9 @@ public sealed partial class RuntimeHost
             foreach (var output in _activeOutputs)
             { _recoverySenderStates[output.Target.ConnectionId] = output.State; }
             var timeout = _options.UnitStopTimeout;
+            var retiring = await StopRetiringSendersAsync(null);
+            if (retiring.Count != 0)
+            { return new(_activeRevision, false, [.. retiring]); }
             var stopped = await _supervisor.StopAsync(id => id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal), timeout, CancellationToken.None);
             if (stopped.Count != 0)
             { return new(_activeRevision, false, [.. stopped]); }
@@ -91,7 +94,7 @@ public sealed partial class RuntimeHost
             var dispatchers = await _supervisor.StopAsync(id => id.Kind == "delivery.dispatcher", timeout, CancellationToken.None);
             if (dispatchers.Count != 0)
             { return new(_activeRevision, true, [.. dispatchers]); }
-            var coupled = _activeOutputs.Where(output => output.Target.QuiesceWithInputs).Select(output => output.Target.Id).ToHashSet();
+            var coupled = _senders.Values.Where(output => output.Target.QuiesceWithInputs).Select(output => output.Target.Id).ToHashSet();
             var outputs = await _supervisor.StopAsync(coupled.Contains, timeout, CancellationToken.None);
             return new(_activeRevision, true, [.. outputs]);
         }
