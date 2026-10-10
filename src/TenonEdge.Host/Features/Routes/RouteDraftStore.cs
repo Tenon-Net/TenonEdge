@@ -56,6 +56,7 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
         _ = ReadRoute(client, id);
         // 索引外键随图草稿删除；保留运行版本不改，现存投递不撤回。
         client.Deleteable<RouteDraftRecord>().In(id).ExecuteCommand();
+        ConfigurationEditJournal.Record(client, "route", id, account, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("route.draftDeleted", AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
             JsonSerializer.Serialize(new { previousVersion = expectedVersion, version })));
@@ -71,6 +72,7 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
 
     private RouteDraftResult Finish(SqlSugarClient client, RouteDraft route, string action, string previousVersion, string? account, string? sourceIp, long? copiedFrom = null)
     {
+        ConfigurationEditJournal.Record(client, "route", route.Id, account, time);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry(action, AuditResults.Success, account, sourceIp, route.Id.ToString(CultureInfo.InvariantCulture),
             JsonSerializer.Serialize(new { key = route.Key, previousVersion, version, copiedFrom })));

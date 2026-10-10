@@ -54,6 +54,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
             { client.Insertable(row).ExecuteCommand(); }
             else
             { client.Updateable(row).ExecuteCommand(); }
+            ConfigurationEditJournal.Record(client, "input", id, account, time);
             var version = ConfigurationDraft.Advance(client, time);
             audit.Append(client, new AuditEntry(existing is null ? "input.draftCreated" : "input.draftUpdated",
                 AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
@@ -74,6 +75,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         if (RouteDraftStore.HasReference(client, "input", id))
         { throw new DraftWriteException("input.routeReferenced"); }
         client.Deleteable(row).ExecuteCommand();
+        ConfigurationEditJournal.Record(client, "input", id, account, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("input.draftDeleted", AuditResults.Success, account, sourceIp,
             id.ToString(CultureInfo.InvariantCulture), JsonSerializer.Serialize(new { deviceId, previousVersion = expectedVersion, version })));
@@ -84,7 +86,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         client.Queryable<InputDraftRecord>().Where(row => row.DeviceId == deviceId).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
 
     // Caller owns the device-copy transaction, version and single batch audit.
-    internal static void CopyToDevice(SqlSugarClient client, InputDraft[] sources, long deviceId, SnowflakeIdGenerator ids)
+    internal static void CopyToDevice(SqlSugarClient client, InputDraft[] sources, long deviceId, SnowflakeIdGenerator ids, string? account, TimeProvider time)
     {
         foreach (var source in sources)
         {
@@ -96,6 +98,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
                 BusinessKey = input.Key,
                 Content = JsonSerializer.Serialize(input, Json),
             }).ExecuteCommand();
+            ConfigurationEditJournal.Record(client, "input", input.Id, account, time);
         }
     }
 

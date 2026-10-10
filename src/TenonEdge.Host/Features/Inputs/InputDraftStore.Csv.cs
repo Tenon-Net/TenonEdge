@@ -74,6 +74,7 @@ internal sealed partial class InputDraftStore
                     BusinessKey = input.Key,
                     Content = JsonSerializer.Serialize(input, Json),
                 }).ExecuteCommand();
+                ConfigurationEditJournal.Record(client, "input", input.Id, account, time);
             }
             // Even a wholly skipped import is an audited, version-fenced user operation.
             var version = ConfigurationDraft.Advance(client, time);

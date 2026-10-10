@@ -94,7 +94,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
         { throw new ArgumentException("须提供已确认的草稿版本。", nameof(expectedDraftVersion)); }
         var draft = database.InTransaction(client => ConfigurationCheckpoint.Read(client, expectedDraftVersion));
         var snapshot = RuntimeSnapshotDocument.Create(document, draft);
-        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, changeDescription: changeDescription);
+        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, changeDescription: changeDescription, edits: draft.Edits);
     }
 
     public long FreezeRollback(RuntimeSnapshotRecord target, string createdBy)
@@ -106,7 +106,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             $"r{target.Revision}", createdBy, expectedDraftVersion: null);
     }
 
-    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion, Action<SqlSugarClient>? validate = null, string? changeDescription = null) =>
+    private long FreezeCore(RuntimeSnapshotDocument document, string origin, string? originDetail, string createdBy, string? expectedDraftVersion, Action<SqlSugarClient>? validate = null, string? changeDescription = null, ConfigurationEdit[]? edits = null) =>
         database.InTransaction(client =>
         {
             var description = ConfigurationChangeDescription.Normalize(changeDescription);
@@ -133,6 +133,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
                 CreatedAt = time.GetUtcNow().ToUnixTimeMilliseconds(),
                 CreatedBy = createdBy,
             }).ExecuteCommand();
+            ConfigurationEditJournal.Retain(client, edits);
             state.PendingRevision = revision;
             state.RevisionFloor = revision;
             client.Updateable(state)
@@ -223,7 +224,8 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
                     .ExecuteCommand();
             }
 
-            var document = RuntimeSnapshotDocument.ReadPlan(snapshot);
+            var checkpoint = RuntimeSnapshotDocument.Read(snapshot);
+            var document = checkpoint.Plan;
             if (TargetChangeProblem(document) is { } problem)
             {
                 throw new InvalidOperationException(problem);
@@ -254,6 +256,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             }
 
             var replaced = replacement?.Apply(client, replaceDraftVersion!, time) ?? false;
+            ConfigurationEditJournal.PruneCommitted(client, checkpoint.Draft?.Edits);
             PruneHistory(client);
             return replaced;
         });

@@ -14,6 +14,11 @@ internal static class ConfigurationDiff
     public static ConfigurationChange[] Between(ConfigurationCheckpoint before, ConfigurationCheckpoint after)
     {
         var changes = new List<ConfigurationChange>();
+        var metadata = (after.Edits ?? []).ToDictionary(edit => (edit.Kind, edit.Id));
+        // 旧路线已保存可靠的作者/时间；其他旧对象没有元数据时保持未知，不使用当前时间补造。
+        foreach (var route in after.Routes)
+        { metadata.TryAdd(("route", route.Id), new("route", route.Id, "", route.UpdatedBy, route.UpdatedAt > 0 ? route.UpdatedAt : null, false)); }
+
         Compare("connection", before.Connections.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))),
             after.Connections.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))));
         Compare("device", before.Devices.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))),
@@ -37,7 +42,8 @@ internal static class ConfigurationDiff
                 { continue; }
                 var display = exists ? right : left;
                 changes.Add(new(kind, id, display.Key, display.DeviceId, !existed ? "added" : !exists ? "removed" : "modified",
-                    existed ? left.Value : null, exists ? right.Value : null));
+                    existed ? left.Value : null, exists ? right.Value : null,
+                    metadata.GetValueOrDefault((kind, id))?.UpdatedBy, metadata.GetValueOrDefault((kind, id))?.UpdatedAt));
             }
         }
     }
@@ -76,4 +82,4 @@ internal static class ConfigurationDiff
 }
 
 internal sealed record ConfigurationChange(string Kind, long Id, string Key, long? DeviceId, string Change,
-    JsonElement? Before, JsonElement? After);
+    JsonElement? Before, JsonElement? After, string? UpdatedBy = null, long? UpdatedAt = null);

@@ -3234,6 +3234,31 @@ Linux x64、.NET SDK 10.0.401/runtime 10.0.12；没有新增依赖或配置库�
 
 本批无新依赖或数据库迁移，未推送/发布。Production Host 仅验证请求体边界，不是应用中断矩阵或浏览器操作验收；下一步继续修改人/时间的可靠记录及确认/应用/回滚页面和写入口，不能把预检成功当作配置已生效。
 
+### 2.164 T3-06 确认清单的修改人/时间与删除记录（2026-10-10）
+
+承接 §2.163，补齐 T3-06 / GW-10 / 功能 §6.2 的最后编辑元数据。**尚未开放应用/回滚写端点或页面，不宣称网页配置流程完成；升级前没有记录的作者/时间仍明确为空，不凭当前用户、审计保留期或迁移时间推测。**
+
+- 配置库迁移 **17 `configuration_edit`** 新增每对象一行的最新编辑表。连接、设备、来源、路线的保存/复制/删除，设备复制的全部来源、设备级联删除及 CSV 改动的采集组，均在原草稿/版本/审计事务内登记实际操作账号、UTC 毫秒和独立编辑标识。完全跳过的 CSV 组不改作者；审计失败时草稿和编辑记录一起回退，不依赖审计日志的保留期。
+- 新完整检查点带可选编辑元数据，历史差异与当前确认清单增加 `updatedBy` / `updatedAt`；编辑元数据不参与业务配置差异判断，保存相同配置不会仅因作者/时间变化被视为有待应用修改。历史检查点仍保留当时元数据，不被当前编辑覆盖；此元数据属于非秘密检查点内容并受到完整内容哈希保护。
+- 删除记录只保留必要范围：从未冻结的新对象新建后删除，立即删除其编辑行，不积累无用删除记录。冻结在同一事务把对象标为已被快照保留，保证冻结后删除仍能显示删除人。删除配置真正提交后，仅清除与已提交检查点的编辑标识一致的删除行；历史快照中的删除作者仍保留，冻结后的并发变更不被清走。读取前的 16 MiB 预算加入编辑表字节估计，最终快照序列化仍检查实际大小。
+- 人工回滚条件替换草稿时同时恢复目标检查点的已知编辑元数据，不把回滚操作人伪装成历史字段作者（回滚操作人另在版本/审计记录）；草稿被并发修改而跳过替换时，连同最新编辑人一起保留。旧快照没有记录的部分保持未知。迁移只回填旧路线已有的可靠作者/时间，旧连接、设备、来源留 null；不补造历史删除人。
+- 新增 **13 项**用例：四种对象当前作者与冻结作者；四个删除入口（4 项）；相同内容不产生业务差异及审计故障回退；未冻结新增/删除不积累记录；冻结后删除直至提交的保留与历史作者；设备复制/级联删除；回滚恢复及并发作者保留；真实重开宿主后通过预检 API 返回原作者而非当前登录人；从 schema 16 升级只保留已知旧元数据；删除对象元数据的 ID 下限及清理后不复用。既有 CSV 增量/覆盖用例补查两个采集组的实际作者，未另算新增。
+
+验证经过：产品初版 `dotnet build TenonEdge.sln --no-restore -v minimal` 通过，0 警告/错误（`/tmp/tenonedge-edit-build.log`）。首次针对性测试编译失败：测试把 `ConfigDatabase.Client` 的 `ISqlSugarClient` 传给事务内 `SqlSugarClient` 入口；已改为使用既有 `ConfigDatabase.InTransaction`，未强制转换或另建数据库访问层（`/tmp/tenonedge-edit-focused.log`）。随后元数据、CSV、回滚及预检针对性 **36 项通过，0 失败/跳过**（`/tmp/tenonedge-edit-focused-final.log`）；最后补入四个删除入口及宿主重开/API 用例纳入全量。初版格式检查同时记录上述测试编译问题及对象初始化器空白，已修正并限定文件做 whitespace 排版。
+
+首轮全量 **2545 通过、1 失败、0 跳过**（`/tmp/tenonedge-edit-regression.log`）：`GatewayIdentityTests.EveryTableKeyedBySnowflakeIdIsRegisteredForTheFloor` 发现新表未分类。该表以种类和已有对象 ID 联合寻址，不生成独立 ID，现显式登记为引用元数据并验证联合主键形状；同时把 `MAX(object_id)` 纳入启动 ID 下限，而非仅放宽测试。删除及回滚清理编辑表前同事务推进 `system_state.id_floor`，避免记录清走后时钟回退复用编号；新增未来时间戳编号用例核对清理前后下限和新 ID。
+
+OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0.1:18081`、HTTPS 动态回环端口，Node 22.23.2、固定 npm 11.21.0、openapi-typescript 7.13.0；仅新增差异元数据字段，Host SIGTERM 后退出 0，临时数据清理（`/tmp/tenonedge-edit-export.log`）。没有新增依赖、推送/发布、修改其他仓库或持久部署。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12）：
+
+- `dotnet test TenonEdge.sln --no-restore --logger trx --results-directory /tmp/tenonedge-edit-regression-final --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1289 集成 = 2547 项通过，0 失败/跳过**（`/tmp/tenonedge-edit-regression-final.log`）。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-edit-regression-final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`/tmp/tenonedge-edit-trx.log`）。
+- 固定 npm CLI `node /home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js` 执行 `run typecheck`、`run lint`、`test`（15 文件、219 项）、`run format:check` 全部通过（`/tmp/tenonedge-edit-web.log`）。
+- `dotnet format --verify-no-changes --no-restore` 返回 0（`/tmp/tenonedge-edit-format-final.log`），`git diff --check` 通过；本批未执行浏览器页面验收。
+
+后续继续应用/回滚写入口、版本页面与完整浏览器流程；历史未知字段须在界面明确显示未知，不能用本批数据补造旧作者。当前同进程及重开宿主测试不替代 §7.4 逐点强杀/断电矩阵或真实设备验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

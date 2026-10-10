@@ -32,7 +32,8 @@ internal static class IdGeneration
             floor = Math.Max(floor, client.Ado.GetLong($"SELECT COALESCE(MAX(id), 0) FROM {table}"));
         }
 
-        return floor;
+        // 删除记录引用旧对象编号；它不分配自己的雪花 ID，但仍须阻止重启后复用。
+        return Math.Max(floor, client.Ado.GetLong("SELECT COALESCE(MAX(object_id), 0) FROM configuration_edit"));
     }
 
     private static DateTimeOffset ReadBuildTimestampFloor()

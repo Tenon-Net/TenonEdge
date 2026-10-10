@@ -933,6 +933,9 @@ export interface components {
             change: string;
             before: null | components["schemas"]["JsonElement"];
             after: null | components["schemas"]["JsonElement"];
+            updatedBy?: null | string;
+            /** Format: int64 */
+            updatedAt?: null | number | string;
         };
         ConfigurationPointSummary: {
             /** Format: int64 */

@@ -46,6 +46,9 @@ public sealed class PointCsvDraftTests
             var pOwner = inputs.Single(input => input.Modbus!.Points.Any(point => point.Key == "p"));
             Assert.Equal(mode == "Overwrite" ? "slow" : "fast", pOwner.Key);
             Assert.Equal(mode == "Overwrite" ? 10 : 0, pOwner.Modbus!.Points.Single(point => point.Key == "p").Address);
+            var edits = factory.Services.GetRequiredService<ConfigDatabase>().InTransaction(ConfigurationEditJournal.Read);
+            Assert.Equal("admin", edits.Single(edit => edit.Kind == "input" && edit.Id == inputs.Single(input => input.Key == "slow").Id).UpdatedBy);
+            Assert.Equal(mode == "Overwrite" ? "admin" : "fixture", edits.Single(edit => edit.Kind == "input" && edit.Id == inputs.Single(input => input.Key == "fast").Id).UpdatedBy);
             var state = factory.Services.GetRequiredService<ConfigDatabase>().Client.Queryable<SystemStateRecord>().InSingle(1);
             Assert.Null(state.EffectiveRevision);
             Assert.Null(state.PendingRevision);

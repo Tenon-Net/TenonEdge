@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -105,6 +106,25 @@ public sealed class GatewayIdentityTests
     }
 
     [Fact]
+    public void DeletedObjectMetadataContributesToTheIdFloorEvenAfterItsRowIsCleared()
+    {
+        using var store = TestConfigStore.Create();
+        store.Initialize();
+        var largest = TestIds.At(DateTimeOffset.UtcNow + TimeSpan.FromDays(365), lowBits: 7);
+        store.Database.Client.Ado.ExecuteCommand("INSERT INTO configuration_edit(kind,object_id,stamp,deleted,retained) VALUES ('device',@largest,'fixture',1,1)", new { largest });
+        Assert.Equal(largest, IdGeneration.ReadFloor(store.Database.Client));
+        store.Database.InTransaction(client =>
+        {
+            ConfigurationEditJournal.Record(client, "device", largest, "deleter", TimeProvider.System, deleted: true);
+            ConfigurationEditJournal.PruneCommitted(client, ConfigurationEditJournal.Read(client));
+            return true;
+        });
+        Assert.Equal(0, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM configuration_edit"));
+        Assert.Equal(largest, IdGeneration.ReadFloor(store.Database.Client));
+        Assert.True(IdGeneration.CreateGenerator(store.Database, TimeProvider.System, NullLogger.Instance).NextId() > largest);
+    }
+
+    [Fact]
     public void EveryTableKeyedBySnowflakeIdIsRegisteredForTheFloor()
     {
         // 新增使用雪花主键的表时，必须登记到 IdGeneration.SnowflakeKeyedTables，否则启动时会漏算库中已有的最大 ID。
@@ -112,7 +132,7 @@ public sealed class GatewayIdentityTests
         store.Initialize();
         // 不用雪花主键的表：单行的系统状态、迁移历史，以及以配置版本号为主键的运行快照（版本号的下限由 revision_floor 维护）。
         // mqtt_credential 的主键是种子中的 connectionId（逻辑引用），不分配新的对象 ID；正式连接实体由 T3 管理。
-        string[] bookkeepingTables = [SystemStateRecord.TableName, SchemaMigrationRecord.TableName, RuntimeSnapshotRecord.TableName, MqttCredentialRecord.TableName, HttpCredentialRecord.TableName, "output_control", "outbound_policy", "mqtt_subscription", "configuration_draft", "route_draft_reference"];
+        string[] bookkeepingTables = [SystemStateRecord.TableName, SchemaMigrationRecord.TableName, RuntimeSnapshotRecord.TableName, MqttCredentialRecord.TableName, HttpCredentialRecord.TableName, "output_control", "outbound_policy", "mqtt_subscription", "configuration_draft", "route_draft_reference", "configuration_edit"];
         Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('mqtt_credential') WHERE name = 'connection_id' AND pk = 1 AND type = 'INTEGER'"));
 
         // 订阅日志按 Broker/ClientId/Filter 三个文本字段联合寻址，不分配雪花 ID。
@@ -120,6 +140,10 @@ public sealed class GatewayIdentityTests
 
         // 路线引用索引用已有路线/来源/连接编号，不分配自己的雪花 ID。
         Assert.Equal(3, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('route_draft_reference') WHERE pk > 0"));
+
+        // 编辑记录以对象种类 + 现有对象编号联合寻址；编号另纳入 ReadFloor，不分配独立 ID。
+        Assert.Equal(2, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('configuration_edit') WHERE pk > 0"));
+        Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('configuration_edit') WHERE name = 'object_id' AND pk > 0 AND type = 'INTEGER'"));
 
         var tables = store.Database.Client.Ado
             .SqlQuery<string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")

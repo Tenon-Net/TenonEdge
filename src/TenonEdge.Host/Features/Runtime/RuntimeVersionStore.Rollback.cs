@@ -23,7 +23,7 @@ internal sealed partial class RuntimeVersionStore
                     RequiredSnapshot(client, targetRevision).ContentHash != captured.Target.ContentHash)
                 { throw new RuntimeVersionConflictException("runtime.versionChanged", targetRevision); }
                 ValidateRollbackReferences(client, draft);
-            }, changeDescription);
+            }, changeDescription, draft.Edits);
         return new(revision, document);
     }
 

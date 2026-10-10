@@ -246,5 +246,23 @@ internal static class ConfigMigrations
         new(16, "runtime_change_description", [
             "ALTER TABLE runtime_snapshot ADD COLUMN change_description TEXT CHECK (change_description IS NULL OR length(change_description) <= 1000)",
         ]),
+        new(17, "configuration_edit", [
+            """
+            CREATE TABLE configuration_edit (
+                kind TEXT NOT NULL CHECK(kind IN ('connection', 'device', 'input', 'route')),
+                object_id INTEGER NOT NULL,
+                stamp TEXT NOT NULL,
+                updated_by TEXT,
+                updated_at INTEGER,
+                deleted INTEGER NOT NULL CHECK(deleted IN (0, 1)),
+                retained INTEGER NOT NULL CHECK(retained IN (0, 1)),
+                PRIMARY KEY(kind, object_id)
+            )
+            """,
+            "INSERT INTO configuration_edit SELECT 'connection', id, '', NULL, NULL, 0, 1 FROM connection_draft",
+            "INSERT INTO configuration_edit SELECT 'device', id, '', NULL, NULL, 0, 1 FROM device_draft",
+            "INSERT INTO configuration_edit SELECT 'input', id, '', NULL, NULL, 0, 1 FROM input_draft",
+            "INSERT INTO configuration_edit SELECT 'route', id, '', updated_by, CASE WHEN updated_at > 0 THEN updated_at END, 0, 1 FROM route_draft",
+        ]),
     ];
 }

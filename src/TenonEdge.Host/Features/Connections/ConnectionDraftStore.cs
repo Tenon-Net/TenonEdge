@@ -54,6 +54,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             { client.Insertable(row).ExecuteCommand(); }
             else
             { client.Updateable(row).ExecuteCommand(); }
+            ConfigurationEditJournal.Record(client, "connection", id, account, time);
             var version = ConfigurationDraft.Advance(client, time);
             audit.Append(client, new AuditEntry(existing is null ? "connection.draftCreated" : "connection.draftUpdated",
                 AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
@@ -83,6 +84,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
                 id.ToString(CultureInfo.InvariantCulture), "删除未被引用且无发送记录的连接草稿，同时清除其认证凭证。"));
         }
         client.Deleteable(row).ExecuteCommand();
+        ConfigurationEditJournal.Record(client, "connection", id, account, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("connection.draftDeleted", AuditResults.Success, account, sourceIp,
             id.ToString(CultureInfo.InvariantCulture), JsonSerializer.Serialize(new { previousVersion = expectedVersion, version })));
