@@ -66,6 +66,10 @@ public sealed partial class HostProcess : IAsyncDisposable
     public static HostProcess StartPartialStopProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PartialStopCommand);
 
+    /// <summary>仅测试侧延长提交后发送者交接判断，固定新输入尚未启动的窗口；其余 HTTP 行为委托原工厂。</summary>
+    public static HostProcess StartPreInputActivationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PreInputActivationCommand);
+
     private static HostProcess StartControlledProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments, string command) =>
         StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
             new Dictionary<string, string> { [ConfigurationInterruptionProcessHost.GateDirectoryVariable] = workingDirectory }, null,

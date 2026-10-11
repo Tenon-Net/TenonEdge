@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及五项在线应用强杀子场景软件验证（准备/部分停止使用测试侧工厂控制）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.175 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及六项在线应用强杀子场景软件验证（准备/部分停止/提交后输入未启动使用测试侧工厂控制）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.176 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3539,6 +3539,32 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 仅两个独立模拟输入的受控软件子场景，不代表任意输入数、共享 MQTT 半停止、真实协议设备或断电的全面验证。配置事务内部/提交返回、提交后立即/部分激活的确定性终止仍未验证，T3-06 不标整体完成。前端未改，本批未重跑或重计 250/43 项浏览器基线；最低浏览器、实物、断电和完整无 JSON 网页流程仍未验证。专用损坏快照恢复例外仍未获批准；不放宽普通回滚的草稿、队列、凭证保护，不进入 T3-07/08、T4/T5/G1，不推送或发布。
 
+### 2.176 T3-06 提交已返回、首个新输入启动前的真实进程中断（2026-10-11）
+
+承接 §2.175，补第 4 步提交返回后的第 5 步、**发送者交接判断尚未返回，首个新输入尚未交给监督者**的真实 SIGKILL 软件子场景，关联 T3-06 / GW-10 / AT-10、AT-13、AT-28 / 功能 §6.3。仅修改测试基础设施、用例与证据文档；产品源码、公开契约、注册、依赖、迁移、前端和部署不变，不进入下一任务。
+
+- 核对 `RuntimeCoordinator.ExecuteApplicationAsync`、`RuntimeHost.ActivateCommittedCoreAsync` 与 `TransitionSendersAsync` 的实际顺序：`versions.Commit` 返回后先公布 `activating`/committed=true，切换运行时版本，协调发送者，再登记新输入和分发器。本窗口在 HTTP 输出的 `CanShareSenderWith` 返回前固定，不把“已产生新投递”误称为“提交后、输入启动前”，也不把它写成数据库提交调用尚未返回。
+- 专用测试命令在原有 IntegrationTests 可执行入口运行原 `Program` 的 Production Kestrel。只替换当前唯一的进程级 HTTP 输出工厂登记，调用其原构造和依赖，并包装真实输出目标：身份、指纹、预算、报文格式化、客户端与发送均委托原对象；共用发送者判断先解包并调用真实类型/参数检查，再在结果为 true 且显式武装时等待文件同步点，最终返回原结果。输入工厂、实际采样和连接管理器不替换，不创建第二套运行时或发送者。控制代码不进入产品发布，也没有复制第三方源码。
+- 父测试先真实接收 r1/42 而不确认，确认应用 84 后核对完整发送者身份、未释放同步点、公开操作 `activating`/committed=true、effective/running/active=r2、previous=r1、pending 空。旧输入和分发器均 stopped，旧独立 HTTP 发送者仍 running，在途预算为 0；全部已提交项仍是 r1/42，没有 r2 投递。随后在本操作仍未完成时保存但不应用草稿 126，持队列写锁固定已提交集合直到 SIGKILL 完成；该锁不代替激活同步点。
+- 强杀不释放判断、不运行停机清理。重启仍是未经注入的产品 Host：加载 r2，不恢复 r1、不应用 126、不生成新版本；r2 非正常退出计数加一，r1 不增加，没有“未生效”或自动回滚事件/审计。旧操作 404，草稿版本与 126 保留；全部旧 r1 记录按原 FIFO、正文、投递编号与幂等头重发后，必须收到源 ID 不在旧集合内的新 84。已有“新版本已产生投递”的原产品强杀用例仍保留为另一行 Theory，不重计为新增中断点。
+- 新增第三行探针正常释放用例：核对提交后阻塞状态，解除本次武装并释放，再确认 r2 操作 completed、新输入 running 和真实 84；SIGTERM 退出 0，清除运行标记。60 秒同步期限、5 分钟探针自停仅属测试，未调整产品停止期限。普通参数仍交给原 xUnit runner。
+- 延续已确认的真实配置 API、独立进程、实际 HTTP 输出和持久检查点验证边界。回读本机参考总汇及 Node-RED/SqlSugar 笔记和相关原代码，未移植源码、安装其他运行时或把静态笔记当作验证。
+
+验证经过（Linux x64、SDK 10.0.401/runtime 10.0.12、Python 3.14.4）：
+
+- 先加入提交后 Theory 的新输入未启动行，尚未实现新同步点时使用旧探针执行：Release 构建 0 警告/错误，`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~KillAfterConfigurationCommitKeepsCommittedVersionAndIgnoresLaterDraft --logger trx --results-directory /tmp/tenonedge-pre-input-activation-red-trx-MYR6yn --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal` **1 通过、1 失败、0 跳过**，退出 1；新行在等待尚未实现的同步点时到期，旧投递后强杀行通过（`/tmp/tenonedge-pre-input-activation-build-red.log`、`...-red.log`）。这是测试控制设施的 RED，不是产品恢复失败。
+- 首次加入输出包装后仍 **1 通过、1 失败、0 跳过**，构建 0 警告/错误（`/tmp/tenonedge-pre-input-activation-build-green.log`、`...-green.log`；TRX `/tmp/tenonedge-pre-input-activation-green-trx-tWlqj7`）。实际已到同步点，但用例误把示例 `output.http/route/out` 当作编译路线的身份；实际路径含编译生成的哈希，等待完整身份因此到期。改为武装前从公开运行状态读取旧发送者完整身份，不在测试中复制身份算法，未改产品编号。
+- 身份修正后同一命令定向 **2 项通过，0 失败/跳过**，TRX 门禁通过，构建 0 警告/错误（`/tmp/tenonedge-pre-input-activation-build-green2.log`、`...-green2.log`；TRX `/tmp/tenonedge-pre-input-activation-green2-trx-72R0j0`）。两项分别为新输入启动前与已产生新投递之后的中断，不把重复执行算作新用例。
+- 随后补正常释放第三行；本类现在为 **6 个中断子场景 + 3 个探针释放用例 + 1 个身份回归，共 10 项**。`dotnet format TenonEdge.sln --verify-no-changes --no-restore`、`dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal` 均通过，构建 **0 警告/错误**（`/tmp/tenonedge-pre-input-activation-format-final.log`、`...-build-final.log`）。整类 `--filter FullyQualifiedName~ConfigurationInterruptionProcessTests` 定向 **10 项通过，0 失败/跳过**，TRX 门禁核对通过（`/tmp/tenonedge-pre-input-activation-class.log`；TRX `/tmp/tenonedge-pre-input-activation-class-trx-XN4gbB`）。
+- 最终代码 `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~ConfigurationInterruptionProcessTests --logger trx --results-directory <独立目录> --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal` **重复 3 轮，每轮 10 项通过，共 30 次通过，0 失败/跳过**，各轮 `verify-test-results.py --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-pre-input-activation-repeats-final.log`；目录列表 `/tmp/tenonedge-pre-input-activation-repeat-paths`）。未并行运行格式/构建，不重计重复用例。
+- 普通入口 `dotnet tests/IntegrationTests/bin/Release/net10.0/TenonEdge.IntegrationTests.dll -assemblyInfo` 退出 0，返回原 xUnit 4.0.1/.NET 10.0.12；未启动探针或执行测试，不计入用例数（`/tmp/tenonedge-pre-input-activation-console-info-final.log`）。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-pre-input-activation-full-trx-wbo4V9 --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1360 集成 = 2618 项通过，0 失败/跳过**，集成约 5 分 31 秒（`/tmp/tenonedge-pre-input-activation-backend-full.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-pre-input-activation-full-trx-wbo4V9 --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对两程序集均非零、无失败/中止/跳过；再次核对最终三轮定向及完整回归均通过（`/tmp/tenonedge-pre-input-activation-trx-verify-final.log`）。
+- 从最终三轮定向与完整回归 TRX 核对本类 **40 次通过执行，其中 36 次使用真实进程、4 次为身份辅助回归**。4 次新窗口强杀均已进入且未释放同步点，提交指针与公开阶段一致，重启实际收到新 84；4 次该探针正常停止均有进入/释放及真实 84 的记录，准备与部分停止标记仍符合各自预期。只读执行 `python3 /tmp/tenonedge-pre-input-activation-evidence-cleanup-final.py`：确认 **36 个日志可识别的数据目录 + 24 个同步/工作目录已删除、对应产品 Host 与探针进程不在 `/proc`、119 个不同的已记录管理端口不再监听**（`/tmp/tenonedge-pre-input-activation-evidence-cleanup-final.log`）。36 次使用真实进程的用例执行不是只有 36 个进程启动，119 是去重后的实际端口数，不用估计值代替。
+- 前述 RED、身份失败、两项修正后定向及首轮整类执行的资源另行只读核查：**15 个数据目录、9 个同步目录已删除，对应进程已退出，50 个不同管理端口不再监听**（`python3 /tmp/tenonedge-pre-input-activation-earlier-cleanup.py`；`/tmp/tenonedge-pre-input-activation-earlier-cleanup.log`）。两次清理审计均不删除目录或终止进程，资源由测试自身释放，不将失败执行计入最终通过数。
+- 最终源码的格式、Release 构建、重复与完整后端回归均已完成，后续证据整理只修改文档；`git diff --check` 通过。按既有授权整理本地提交，不推送或发布。
+
+本窗口是一个真实 HTTP 输出沿用判断的测试侧控制，不代表原产品二进制自然停在该位置，也不是全部协议、任意输入数或断电验证。配置事务内部、数据库已提交但提交调用尚未返回、多输入部分激活的确定性中断仍未验证；T3-06 不标整体完成。前端/公开 API 未改，本批不重跑或重计 250/43 项浏览器基线；最低浏览器、实物、断电和完整无 JSON 网页流程仍未验证。专用损坏快照恢复例外仍未获批准，普通回滚的草稿、队列和凭证保护不变；不进入 T3-07/08、T4/T5/G1，不推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3589,7 +3615,7 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
-| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 五项真实强杀子场景通过（本地软件，准备/部分停止为测试侧工厂注入）；全部 2616 项后端回归通过，不代表完整矩阵 | §2.172—§2.175 | 共享协议的部分停止、提交事务内部/返回及精确激活边界、断电与完整网页流程 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 六项真实强杀子场景通过（本地软件，准备/部分停止/提交后输入未启动为测试侧工厂注入）；全部 2618 项后端回归通过，不代表完整矩阵 | §2.172—§2.176 | 共享协议的部分停止、提交事务内部/返回、多输入部分激活、断电与完整网页流程 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录

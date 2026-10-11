@@ -14,8 +14,8 @@ using TenonEdge.IntegrationTests.Infrastructure;
 
 namespace TenonEdge.IntegrationTests.Processes;
 
-/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：受控准备中、部分输入已停、旧消息排空中、等待配置提交写锁及新版本产生投递。
-/// 准备/部分停止使用测试侧工厂，其余使用原产品 Host；SQLite 写锁固定已提交集合，不添加产品故障开关或重启接口，不是断电验证。</summary>
+/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：准备中、部分输入已停、旧消息排空中、等待提交写锁、提交后输入未启动及新版本产生投递。
+/// 准备/部分停止/提交后输入未启动使用测试侧工厂，其余使用原产品 Host；不添加产品故障开关或重启接口，不是断电验证。</summary>
 public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper output)
 {
     private const string Api = "/api/edge-admin/v1";
@@ -334,9 +334,11 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         finally { output.WriteLine(restarted.Output); }
     }
 
-    [Fact]
+    [Theory]
     [Trait("Category", "Process")]
-    public async Task KillAfterNewVersionProducesDeliveryKeepsCommittedVersionAndIgnoresLaterDraft()
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KillAfterConfigurationCommitKeepsCommittedVersionAndIgnoresLaterDraft(bool beforeInputs)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "真实 SIGKILL 恢复验证只在 Linux 执行。");
         using var work = TemporaryDirectory.Create();
@@ -347,10 +349,13 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         var state = new RuntimeStateReader(data.Path);
         long deviceId;
         string dirtyVersion;
+        string appliedPath;
         WireRequest frozen;
         DeliveryRow stored;
+        DeliveryRow[] committed;
 
-        await using (var host = Start(work.Path, data.Path, port))
+        await using (var host = beforeInputs ? HostProcess.StartPreInputActivationProbe(work.Path, data.Path, DeploymentArguments(port))
+            : Start(work.Path, data.Path, port))
         {
             try
             {
@@ -359,43 +364,98 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 deviceId = draft.DeviceId;
                 var initial = await BeginApplyAsync(api, draft.Version);
                 await WaitForAsync(api, initial, operation => operation.GetProperty("stage").GetString() == "completed");
-                using (var peer = await AcceptAsync(receiver))
-                {
-                    var request = await ReadRequestAsync(peer.GetStream());
-                    Assert.Equal(42, Value(request));
-                    await AckAsync(peer.GetStream());
-                }
+                var initialStatus = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                var oldSender = Assert.Single(initialStatus.GetProperty("runtime").GetProperty("units").EnumerateArray(),
+                    unit => unit.GetProperty("id").GetProperty("kind").GetString() == "output.http").GetProperty("id");
+                var oldSenderIdentity = $"{oldSender.GetProperty("kind").GetString()}/{oldSender.GetProperty("key").GetString()}";
+                using var initialPeer = await AcceptAsync(receiver);
+                var initialRequest = await ReadRequestAsync(initialPeer.GetStream());
+                Assert.Equal(42, Value(initialRequest));
+                if (!beforeInputs)
+                { await AckAsync(initialPeer.GetStream()); }
                 var nextVersion = await EditSampleAsync(api, deviceId, draft.InputId, draft.Version, 84);
-                var applied = await BeginApplyAsync(api, nextVersion);
-                // 可能仍有 r1 的已冻结记录。逐条确认，直到实际收到新输入生成的 84；不靠固定延迟猜测提交。
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token);
-                deadline.CancelAfter(Deadline);
-                while (true)
+                if (beforeInputs)
+                { File.WriteAllText(Path.Combine(work.Path, ConfigurationInterruptionProcessHost.ActivationArmedFile), "armed"); }
+                appliedPath = await BeginApplyAsync(api, nextVersion);
+                if (beforeInputs)
                 {
-                    using var peer = await receiver.AcceptTcpClientAsync(deadline.Token);
-                    var request = await ReadRequestAsync(peer.GetStream());
-                    var value = Value(request);
-                    Assert.True(value is 42 or 84);
-                    if (value == 42)
-                    { await AckAsync(peer.GetStream()); continue; }
-                    frozen = request;
-                    stored = ReadDeliveries(data.Path)[0];
-                    Assert.Equal(2, stored.Revision);
+                    await WaitForGateAsync(work.Path, ConfigurationInterruptionProcessHost.ActivationEnteredFile,
+                        oldSenderIdentity);
+                    var applying = await api.GetJsonAsync(appliedPath, Token);
+                    Assert.Equal("activating", applying.GetProperty("stage").GetString());
+                    Assert.True(applying.GetProperty("committed").GetBoolean());
+                    Assert.Equal(2, applying.GetProperty("revision").GetInt64());
+                    Assert.False(File.Exists(Path.Combine(work.Path, ConfigurationInterruptionProcessHost.ActivationReleasedFile)));
+                    var quiet = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                    Assert.Equal(2, quiet.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
+                    Assert.Equal("stopped", Input(quiet).GetProperty("state").GetString());
+                    Assert.Equal("stopped", Assert.Single(quiet.GetProperty("runtime").GetProperty("units").EnumerateArray(),
+                        unit => unit.GetProperty("id").GetProperty("kind").GetString() == "delivery.dispatcher").GetProperty("state").GetString());
+                    Assert.Equal("running", Assert.Single(quiet.GetProperty("runtime").GetProperty("units").EnumerateArray(),
+                        unit => unit.GetProperty("id").GetProperty("kind").GetString() == "output.http").GetProperty("state").GetString());
+                    Assert.Equal(0, quiet.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64());
+                    frozen = initialRequest;
+                    committed = ReadDeliveries(data.Path);
+                    stored = committed[0];
+                    Assert.All(committed, row =>
+                    {
+                        Assert.Equal(1, row.Revision);
+                        using var json = JsonDocument.Parse(row.Payload);
+                        Assert.Equal(42, json.RootElement.GetProperty("values").GetProperty("value").GetInt64());
+                        Assert.Equal(row.SourceId, json.RootElement.GetProperty("sourceMessageId").GetString());
+                    });
                     Assert.Equal(stored.SourceId, SourceMessageId(frozen));
                     Assert.Equal(stored.Payload, Encoding.UTF8.GetString(frozen.Body));
                     Assert.Contains($"Idempotency-Key: {stored.Id}", frozen.Header, StringComparison.OrdinalIgnoreCase);
-                    var completed = await WaitForAsync(api, applied, operation => operation.GetProperty("stage").GetString() == "completed");
-                    Assert.True(completed.GetProperty("committed").GetBoolean());
-                    // 再保存 126，但不应用。有效版本 r2 与其运行中标记已持久化，pending 为空。
+                    Assert.False(receiver.Pending());
                     dirtyVersion = await EditSampleAsync(api, deviceId, draft.InputId, nextVersion, 126);
                     Assert.Equal((2L, (long?)1, (long?)null, (long?)2),
                         (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
+                    Assert.Equal(RuntimeSnapshotStates.History, state.Snapshot(1).State);
+                    Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(2).State);
                     Assert.False(state.Snapshot(2).IsStable);
-                    output.WriteLine($"强杀前：新版本已完成激活并发送 84，{state.Pointers()}，未确认队头 seq={stored.Seq} / {stored.Id}。");
-                    await host.KillAsync(Token); // 新投递未获确认；不执行停机删除或回滚。
-                    break;
+                    Assert.Equal(["r1", "r2"], state.Audit(AuditActions.SnapshotApplied).Select(entry => entry.Target).ToArray());
+                    // 输入和分发已停，HTTP 队头尚未确认；另持写锁固定已提交集合到强杀完成。
+                    using var connection = OpenQueue(data.Path);
+                    using var held = connection.BeginTransaction(deferred: false);
+                    Assert.Equal(committed, ReadDeliveries(data.Path));
+                    output.WriteLine($"强杀前：配置提交已返回，stage=activating/committed=true，新输入尚未启动，旧输入/分发 stopped，旧发送者 running，{state.Pointers()}，冻结 {committed.Length} 条 r1/42。");
+                    await host.KillAsync(Token); // 不释放发送者交接判断，不让新输入生成任何投递。
+                    held.Rollback();
                 }
-                Assert.Equal(stored, Assert.Single(ReadDeliveries(data.Path)));
+                else
+                {
+                    // 可能仍有 r1 的已冻结记录。逐条确认，直到实际收到新输入生成的 84；不靠固定延迟猜测提交。
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token);
+                    deadline.CancelAfter(Deadline);
+                    while (true)
+                    {
+                        using var peer = await receiver.AcceptTcpClientAsync(deadline.Token);
+                        var request = await ReadRequestAsync(peer.GetStream());
+                        var value = Value(request);
+                        Assert.True(value is 42 or 84);
+                        if (value == 42)
+                        { await AckAsync(peer.GetStream()); continue; }
+                        frozen = request;
+                        stored = ReadDeliveries(data.Path)[0];
+                        Assert.Equal(2, stored.Revision);
+                        Assert.Equal(stored.SourceId, SourceMessageId(frozen));
+                        Assert.Equal(stored.Payload, Encoding.UTF8.GetString(frozen.Body));
+                        Assert.Contains($"Idempotency-Key: {stored.Id}", frozen.Header, StringComparison.OrdinalIgnoreCase);
+                        var completed = await WaitForAsync(api, appliedPath, operation => operation.GetProperty("stage").GetString() == "completed");
+                        Assert.True(completed.GetProperty("committed").GetBoolean());
+                        // 再保存 126，但不应用。有效版本 r2 与其运行中标记已持久化，pending 为空。
+                        dirtyVersion = await EditSampleAsync(api, deviceId, draft.InputId, nextVersion, 126);
+                        Assert.Equal((2L, (long?)1, (long?)null, (long?)2),
+                            (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
+                        Assert.False(state.Snapshot(2).IsStable);
+                        output.WriteLine($"强杀前：新版本已完成激活并发送 84，{state.Pointers()}，未确认队头 seq={stored.Seq} / {stored.Id}。");
+                        await host.KillAsync(Token); // 新投递未获确认；不执行停机删除或回滚。
+                        break;
+                    }
+                    committed = [stored];
+                }
+                Assert.Equal(committed, ReadDeliveries(data.Path));
             }
             finally { output.WriteLine(host.Output); }
         }
@@ -416,6 +476,9 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
             var sources = await api.GetJsonAsync($"{Api}/devices/{deviceId}/inputs", Token);
             Assert.Equal(dirtyVersion, sources.GetProperty("version").GetString());
             Assert.Equal("{\"value\":126}", sources.GetProperty("inputs")[0].GetProperty("simulator").GetProperty("sampleJson").GetString());
+            Assert.Empty((await api.GetJsonAsync(Api + "/configuration/operations/", Token)).EnumerateArray());
+            using var missing = await api.GetAsync(new Uri(appliedPath, UriKind.Relative), Token);
+            await ProblemAssert.HasStatusAsync(missing, HttpStatusCode.NotFound, Token);
             using (var replay = await AcceptAsync(receiver))
             {
                 var request = await ReadRequestAsync(replay.GetStream());
@@ -423,13 +486,22 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 Assert.Contains($"Idempotency-Key: {stored.Id}", request.Header, StringComparison.OrdinalIgnoreCase);
                 await AckAsync(replay.GetStream());
             }
+            foreach (var old in committed.Skip(1))
+            {
+                using var replay = await AcceptAsync(receiver);
+                var request = await ReadRequestAsync(replay.GetStream());
+                Assert.Equal(Encoding.UTF8.GetBytes(old.Payload), request.Body);
+                Assert.Contains($"Idempotency-Key: {old.Id}", request.Header, StringComparison.OrdinalIgnoreCase);
+                await AckAsync(replay.GetStream());
+            }
             using (var collected = await AcceptAsync(receiver))
             {
                 var request = await ReadRequestAsync(collected.GetStream());
                 Assert.Equal(84, Value(request)); // 不加载 r1，也不采集未应用草稿 126。
-                Assert.NotEqual(SourceMessageId(frozen), SourceMessageId(request));
+                Assert.DoesNotContain(committed, row => row.SourceId == SourceMessageId(request));
                 await AckAsync(collected.GetStream());
             }
+            output.WriteLine($"恢复新采样：值 84，sourceMessageId 不在强杀前已提交集合；提交后输入未启动窗口={beforeInputs}，草稿 126 未被应用。");
             Assert.All(ReadDeliveries(data.Path), row => Assert.Equal(2, row.Revision));
             var running = await api.GetJsonAsync(Api + "/runtime/status", Token);
             Assert.Equal(2, running.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
@@ -443,25 +515,36 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
 
     [Theory]
     [Trait("Category", "Process")]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ControlledProbeRunsRealSimulatorsAfterReleaseAndStopsNormally(bool partialStop)
+    [InlineData("preparing")]
+    [InlineData("partial-stop")]
+    [InlineData("pre-input-activation")]
+    public async Task ControlledProbeRunsRealSimulatorsAfterReleaseAndStopsNormally(string stage)
     {
-        Assert.SkipUnless(OperatingSystem.IsLinux(), "受控准备阶段与 SIGTERM 子进程只在 Linux 验证。");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "受控配置中断与 SIGTERM 子进程只在 Linux 验证。");
         using var work = TemporaryDirectory.Create();
         using var data = TemporaryDirectory.Create();
         using var receiver = new TcpListener(IPAddress.Loopback, 0);
         receiver.Start();
         var port = ((IPEndPoint)receiver.LocalEndpoint).Port;
         var state = new RuntimeStateReader(data.Path);
-        await using var host = partialStop ? HostProcess.StartPartialStopProbe(work.Path, data.Path, DeploymentArguments(port))
-            : HostProcess.StartPreparationProbe(work.Path, data.Path, DeploymentArguments(port));
+        var partialStop = stage == "partial-stop";
+        var preInputActivation = stage == "pre-input-activation";
+        await using var host = stage switch
+        {
+            "partial-stop" => HostProcess.StartPartialStopProbe(work.Path, data.Path, DeploymentArguments(port)),
+            "pre-input-activation" => HostProcess.StartPreInputActivationProbe(work.Path, data.Path, DeploymentArguments(port)),
+            _ => HostProcess.StartPreparationProbe(work.Path, data.Path, DeploymentArguments(port)),
+        };
         try
         {
             using var api = await ClientAsync(host, setup: true);
             var draft = await CreateDraftAsync(api, port, partialStop);
             var initial = await BeginApplyAsync(api, draft.Version);
             await WaitForAsync(api, initial, operation => operation.GetProperty("stage").GetString() == "completed");
+            var initialStatus = await api.GetJsonAsync(Api + "/runtime/status", Token);
+            var oldSender = Assert.Single(initialStatus.GetProperty("runtime").GetProperty("units").EnumerateArray(),
+                unit => unit.GetProperty("id").GetProperty("kind").GetString() == "output.http").GetProperty("id");
+            var oldSenderIdentity = $"{oldSender.GetProperty("kind").GetString()}/{oldSender.GetProperty("key").GetString()}";
             if (partialStop)
             {
                 await WaitForAsync(api, Api + "/runtime/status", status =>
@@ -475,16 +558,24 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 await AckAsync(first.GetStream());
             }
             var edited = await EditSampleAsync(api, draft.DeviceId, draft.InputId, draft.Version, 84);
-            var armed = partialStop ? ConfigurationInterruptionProcessHost.StopArmedFile : ConfigurationInterruptionProcessHost.ArmedFile;
-            var entered = partialStop ? ConfigurationInterruptionProcessHost.StopEnteredFile : ConfigurationInterruptionProcessHost.EnteredFile;
-            var released = partialStop ? ConfigurationInterruptionProcessHost.StopReleasedFile : ConfigurationInterruptionProcessHost.ReleasedFile;
+            var armed = preInputActivation ? ConfigurationInterruptionProcessHost.ActivationArmedFile : partialStop ? ConfigurationInterruptionProcessHost.StopArmedFile : ConfigurationInterruptionProcessHost.ArmedFile;
+            var entered = preInputActivation ? ConfigurationInterruptionProcessHost.ActivationEnteredFile : partialStop ? ConfigurationInterruptionProcessHost.StopEnteredFile : ConfigurationInterruptionProcessHost.EnteredFile;
+            var released = preInputActivation ? ConfigurationInterruptionProcessHost.ActivationReleasedFile : partialStop ? ConfigurationInterruptionProcessHost.StopReleasedFile : ConfigurationInterruptionProcessHost.ReleasedFile;
             File.WriteAllText(Path.Combine(work.Path, armed), "armed");
             var applying = await BeginApplyAsync(api, edited);
-            await WaitForGateAsync(work.Path, entered, partialStop ? ConfigurationInterruptionProcessHost.SlowIdentity : "input.simulator/meter/sample");
+            await WaitForGateAsync(work.Path, entered, preInputActivation ? oldSenderIdentity : partialStop ? ConfigurationInterruptionProcessHost.SlowIdentity : "input.simulator/meter/sample");
             var preparing = await api.GetJsonAsync(applying, Token);
-            Assert.Equal(partialStop ? "quiescing" : "preparing", preparing.GetProperty("stage").GetString());
-            Assert.False(preparing.GetProperty("committed").GetBoolean());
-            Assert.Equal((1L, (long?)2), (state.Pointers().Effective, state.Pointers().Pending));
+            Assert.Equal(preInputActivation ? "activating" : partialStop ? "quiescing" : "preparing", preparing.GetProperty("stage").GetString());
+            Assert.Equal(preInputActivation, preparing.GetProperty("committed").GetBoolean());
+            Assert.Equal(preInputActivation ? (2L, (long?)null) : (1L, (long?)2), (state.Pointers().Effective, state.Pointers().Pending));
+            Assert.False(File.Exists(Path.Combine(work.Path, released)));
+            if (preInputActivation)
+            {
+                var quiet = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                Assert.Equal(2, quiet.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
+                Assert.Equal("stopped", Input(quiet).GetProperty("state").GetString());
+                Assert.Equal(0, quiet.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64());
+            }
             if (partialStop)
             {
                 var quiet = await WaitForAsync(api, Api + "/runtime/status", status => Input(status).GetProperty("state").GetString() == "stopped");
@@ -516,7 +607,13 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 if (value == 84)
                 { break; }
             }
-            Assert.Contains(partialStop ? "TEST PARTIAL STOP GATE RELEASED" : "TEST PREPARATION GATE RELEASED", host.Output, StringComparison.Ordinal);
+            Assert.Contains(preInputActivation ? "TEST PRE-INPUT ACTIVATION GATE RELEASED" : partialStop ? "TEST PARTIAL STOP GATE RELEASED" : "TEST PREPARATION GATE RELEASED", host.Output, StringComparison.Ordinal);
+            if (preInputActivation)
+            {
+                var running = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                Assert.Equal("running", Input(running).GetProperty("state").GetString());
+                output.WriteLine("提交后输入启动同步点已释放：r2 激活完成，真实模拟输入实际发送 84。");
+            }
             await host.RequestStopAsync(Token);
             Assert.Equal(HostExitCodes.Success, await host.WaitForExitAsync(Deadline, Token));
             Assert.Null(state.Pointers().Running);
