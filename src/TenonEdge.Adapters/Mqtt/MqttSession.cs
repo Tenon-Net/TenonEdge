@@ -207,7 +207,13 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             generation.Cancel();
             generation.Dispose();
         }
-        _client?.Dispose();
+        try
+        { _client?.Dispose(); }
+        catch (ObjectDisposedException)
+        {
+            // MQTTnet 5.2.0 的后台 Cleanup 与 Dispose 可同时回收内部取消源：源已释放、字段未清空时 Cancel 抛此异常。
+            // 库仍在 finally 中释放传输/分派器；只在客户端回收边界接住重复释放，不把原来的网络超时改成毒消息或停机失败。
+        }
         _client = null;
         _receiveBuffer?.Dispose();
         _receiveBuffer = null;

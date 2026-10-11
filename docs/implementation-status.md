@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启和人工重试子场景软件验证；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.171 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及两项在线应用强杀子场景软件验证；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.172 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3430,6 +3430,41 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 损坏快照恢复的未确认边界：设计 §7.4 要求保留管理访问用于回滚/恢复，但功能 §6.4 普通回滚要求无未应用修改；损坏快照无法证明草稿干净，也不能安全完成旧目标比较。已向维护者提出独立恢复入口建议（明确确认放弃草稿、只用校验通过且生效过的完整历史版本、待发/失败区非空时拒绝、保留当前凭证检查），**尚未收到本项答复，不视为已批准**。本批不放开普通回滚按钮，不绕过队列/凭证保护，不提前实现 T5 备份恢复。完整准备/静默/提交/激活逐点强杀/断电矩阵、最低浏览器/实物、来源到输出的全程网页流程仍未验证；未推送、发布或修改其他仓库/持久部署。
 
+### 2.172 T3-06 在线应用静默中断与激活后强杀的真实进程验证（2026-10-11）
+
+承接 §2.171，补充 T3-06 / GW-10 / AT-10、AT-13、AT-28 / 功能 §6.3—§6.4 的**两项软件强杀子场景**。增加 `ConfigurationInterruptionProcessTests` 与本节证据；全量回归发现既有 MQTT 客户端释放竞争后，另补 2 项固定窗口用例并在 `MqttSession.Reset` 做窄边界修正（见下）。不修改公开契约、依赖、数据库迁移或持久部署，不将子场景作为完整中断矩阵验收。
+
+- 测试各自拥有工作/数据目录、回环动态 HTTP 接收端和真实 Release Production Host。通过真实会话、CSRF、连接/设备/来源/路线草稿 API、预检哈希及明确确认应用建立模拟输入→真实 HTTP 输出，不直接写产品配置库来伪造指针。配置准备使用 API 和人工测试 JSON，**不是网页全程无 JSON 验收或实物输入**。所有等待有期限，Host 失败释放时强杀，临时目录与端口由测试释放；没有新增产品测试开关、重启端点或第三方依赖。
+- **第 3 步：旧输入已停止、在途消息尚未提交。** r1 的 42 已入库并开始发送，但接收端不返回确认。保存 84 草稿后，测试持有 `queue.db` 的真实 SQLite 写事务，等到旧配置又完成读取且保留在途预算，再确认应用；核对操作 `quiescing`、输入 `stopped`、active/effective/running 仍为 r1、pending=r2、投递只有 r1，才在写锁仍持有时 SIGKILL。没有让停机排空或释放锁赶在终止前提交。重启丢弃 r2、历史 API 显示“未生效：进程中断”、记运行事件，r1 非正常退出次数加一、r2 为零；只保留 r1 应用审计，没有自动应用草稿或生成新版本。
+- 重启仍保留 84 草稿及其版本；旧操作 ID 返回真实 404，新进程操作列表为空，不冒充持久历史。所有强杀前已入库记录在终止后原样保留；FIFO 队头及可能的后续积压逐条按原正文/投递编号/幂等头重发。确认这些记录后再收到 sourceMessageId 不在旧记录集合内的 42，证明实际按 r1 恢复采样，不把旧积压误当新采样，也不按草稿生成 84。第二个同目录进程退出 3。未生效 r2 的回滚预检返回 409；再次**明确预检/确认**才生成 r3、开始发送 84，审计只有 r1/r3，r2 不复用。尚未入库的旧采样不属于接管保证，本场景不宣称这部分不会丢失。
+- **新版本已完成激活并产生投递后的第 5/6 步子场景。** 先确认 r1 的外部 42，再应用 r2 的 84；逐条确认可能残留的 r1 冻结记录，直到接收端实际读到未确认的 r2/84，并核对激活完成、effective/running=r2、previous=r1、pending 空。另存 126 草稿而不应用，再 SIGKILL。重启仍加载 r2，只有 r2 非正常退出次数加一，没有自动回滚或新 revision；126 草稿保持。先重发同一 84 正文/投递编号/幂等头，再产生不同 messageId 的 84，不退回 42 或使用草稿 126。正常 SIGTERM 退出 0 并清除运行标记。
+
+中断点覆盖边界（按总设计 §7.4，不能把新场景泛化为整行通过）：
+
+| 中断点 | 本批实际验证 | 尚缺 |
+|---|---|---|
+| 第 1/2 步冻结/准备 | 沿用既有进程内准备失败/互斥测试，不在此新增真实强杀 | 准备阶段确定性进程终止 |
+| 第 3 步静默 | 一个模拟输入已停止、旧分发尚未入库时真实 SIGKILL；重启核对旧版本/历史/投递 | 多输入中第 k 个已停而其余未停的强杀 |
+| 第 4 步提交事务返回前 | 本批未在该精确边界终止 | 提交事务内部/返回前的确定性强杀 |
+| 第 4 步返回后、第 5/6 步 | 新版本已完成激活并实际发送后真实 SIGKILL；重启核对新版本/原样重发/新采样 | 提交后尚未启动任何新输入、或部分单元激活中的精确强杀 |
+| 新有效版本反复非正常退出 | 沿用 §2.14 的真实启动保护/自动回滚测试；本批分别核对一次在线强杀计数 | 不把本批一次强杀写成在线 API 全链路反复退出验证 |
+
+验证经过：第一轮构建因测试缺少 Storage 命名空间引用出现 3 项编译错误，补上后通过（`/tmp/tenonedge-configuration-interruption-build-first.log`、`...-build-second.log`）。最初仅静默中断 **1 项通过**（`/tmp/tenonedge-configuration-interruption-targeted-first.log`）；增加激活后场景后 **2 项通过，0 失败/跳过**（`/tmp/tenonedge-configuration-interruption-targeted-second.log`）。未修改产品停止期限、SQLite 超时或既有时限测试来让新场景通过；最终完整验证见下。
+
+最终验证（Linux x64、.NET SDK 10.0.401/runtime 10.0.12、Python 3.14.4）：
+
+- 在线中断测试阶段（MQTT 修正前）的 `dotnet format TenonEdge.sln --verify-no-changes --no-restore`：通过（`/tmp/tenonedge-configuration-interruption-format-final3.log`）；`dotnet build TenonEdge.sln -c Release --no-restore -v minimal`：通过，0 警告/错误（`/tmp/tenonedge-configuration-interruption-build-final3.log`）。
+- 审阅时补强旧记录与重启新采样的区分，保留全部强杀前已提交的 sourceMessageId，再逐条核对冻结积压；不是只凭值为 42 或与第一条不同就声称是新采样。最终代码使用 `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~ConfigurationInterruptionProcessTests --logger trx --results-directory <独立临时目录> --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal` **独立重复 3 轮，每轮 2 项通过，共 6 次通过，0 失败/跳过**；每轮执行报告核对脚本要求 IntegrationTests 非零且无失败/跳过（`/tmp/tenonedge-configuration-interruption-repeats-final2.log`）。重复次数不算新增用例数。
+- 第一轮完整后端为 **1258 单元通过、1349 集成通过/1 失败**（`/tmp/tenonedge-configuration-interruption-backend-final.log`，TRX `/tmp/tenonedge-configuration-interruption-final-trx-STNxol`）。两个新强杀场景均通过，失败为既有 `RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison`：MQTTnet 的 Cleanup/Dispose 重叠，`CancellationTokenSource.Cancel` 抛 ObjectDisposedException，经 `MqttSession.Reset` 越过原发送超时处理。该轮没有运行“全部通过”的核对脚本，不写为全量通过。
+- 原失败案例单独重复 **3 次均通过**（`/tmp/tenonedge-mqtt-dispose-race-repro.log`），不以这 3 次通过否认故障或声称其已经修好。随后用真实 Broker 和 MQTTnet 客户端固定“内部存活取消源已释放、字段还未清空”的 Cleanup 窗口：测试反射只置换内部取消源，转发取消到原始源，并在原库真实 Disconnect/Dispose 路径暂停；不伪造客户端结果、不复制库源码、不加产品故障开关。修正前 **2 项确定性失败**（`/tmp/tenonedge-mqtt-dispose-window-red.log`）：会话释放抛同样的 CTS 已释放异常，重连则误计毒消息。
+- `MqttSession.Reset` 只在第三方客户端 `Dispose` 调用边界捕获 ObjectDisposedException；MQTTnet 在该异常下仍执行 finally 回收传输/分派器，之后按原逻辑清理客户端/缓冲引用。没有在发送、授权、凭证或所有异常上加吞错，没有修改网络超时/取消、毒消息判断规则、共享连接串行所有权或库版本。固定窗口的重连与重复释放加既有流释放窗口 **3 项通过**（`/tmp/tenonedge-mqtt-dispose-window-green.log`）。这是显式拉宽原库清理窗口的真实软件回归，不是宣称所有内部并发都已证明安全。
+- 修正后 `dotnet format TenonEdge.sln --verify-no-changes --no-restore` 和 `dotnet build TenonEdge.sln -c Release --no-restore -v minimal`：通过，构建 0 警告/错误（`/tmp/tenonedge-configuration-interruption-mqtt-format-final.log`、`/tmp/tenonedge-configuration-interruption-mqtt-build-final.log`）。在没有并行构建/格式分析的情况下，以过滤器 `FullyQualifiedName~MqttDisconnectRaceTests|FullyQualifiedName~RepeatedFrozenConnectionsDoNotCountNetworkFailuresAsPoison` 独立重复 **3 轮，每轮 4 项通过，共 12 次通过，0 失败/跳过**，每轮 TRX 均核对通过（`/tmp/tenonedge-mqtt-cleanup-postfix-repeats-final.log`）；没有修改原随机压力场景的源码、时限或毒消息断言。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-configuration-interruption-mqtt-final-trx-zd4gOh --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1352 集成 = 2610 项通过，0 失败/跳过**，集成约 5 分 37 秒（`/tmp/tenonedge-configuration-interruption-backend-final2.log`）。本批新增 2 个在线强杀场景和 2 个固定清理窗口场景；独立重复次数不计入用例总数。
+- `python3 .github/scripts/verify-test-results.py /tmp/tenonedge-configuration-interruption-mqtt-final-trx-zd4gOh --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests`：两程序集均非零、无失败/中止/跳过，核对通过（`/tmp/tenonedge-configuration-interruption-trx-verify-final2.log`）。首次全量失败和修正前 RED 记录仍保留，不改写为通过。
+- 从最终 TRX 提取两项强杀的实际持久指针/运行输出，核对 **2 个所拥有的数据目录已删除、对应 Host 已不在进程列表、8 个已记录的管理 HTTP/HTTPS 端口不再监听**（`/tmp/tenonedge-configuration-interruption-cleanup-final.log`）。接收端由测试自身释放，不操作其他进程或部署。`git diff --check` 通过；沿用已授权的本地提交，不推送或发布。
+
+本批仍不完成专用损坏快照恢复，不把未答复的恢复例外建议视为批准；不推进 T3-07/08、T4/T5/G1。准备/部分停止/精确提交边界、断电、最低 Chrome/Edge 111、实物及来源到输出的全程网页流程仍待验证。前端代码/契约未变，本批不重跑或重计 §2.171 的 250 项前端/43 项浏览器基线；未推送、发布或修改其他仓库。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3480,6 +3515,7 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 两项真实强杀子场景通过（本地软件）；全部 2610 项后端回归通过，不代表完整矩阵 | §2.172 | 准备、部分停止、精确提交/激活边界、断电与完整网页流程 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录

@@ -1,4 +1,6 @@
 using System.Net;
+using System.Reflection;
+using MQTTnet;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
@@ -9,6 +11,55 @@ namespace TenonEdge.IntegrationTests.Runtime;
 [Trait("Category", "RealBroker")]
 public sealed class MqttDisconnectRaceTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResetDuringDisposedAliveTokenWindowCannotEscapeOrPoisonPayload(bool disposeSession)
+    {
+        var broker = fixture.Require();
+        var settings = new MqttConnectionSettings { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, UsePassword = true };
+        await using var session = new MqttSession(settings, "alive-dispose-race-" + Guid.NewGuid().ToString("N"),
+            new Credentials(), TimeProvider.System, new OutboundConnector(new Loopback()));
+        using var deadline = MqttProbe.Timeout(Token);
+        var message = new OutputMessage("{}"u8.ToArray(), MqttProbe.NewTopic("alive-dispose-race"), 1,
+            settings.Fingerprint(MosquittoBroker.UserName, "account"), "test");
+        Assert.Equal(OutputSendStatus.Ack, (await session.SendAsync(message, deadline.Token)).Status);
+
+        // 锁定 MQTTnet 5.2.0 的真实 Cleanup 窗口：内部源已 Dispose，但字段还未置空。
+        // 仅测试反射置换该源；网络/Disconnect/Publish/Dispose 仍由真实 MQTTnet 和 Broker 执行。
+        var clientField = typeof(MqttSession).GetField("_client", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var client = Assert.IsAssignableFrom<IMqttClient>(clientField.GetValue(session));
+        var aliveField = client.GetType().GetField("_mqttClientAlive", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        using var original = Assert.IsType<CancellationTokenSource>(aliveField.GetValue(client));
+        using var release = new ManualResetEventSlim();
+        using var alive = new DisposedAliveWindow(release);
+        using var forwarding = alive.Token.Register(() => original.Cancel());
+        aliveField.SetValue(client, alive);
+        var disconnect = Task.Run(() => client.DisconnectAsync(new MqttClientDisconnectOptions(), deadline.Token), Token);
+        try
+        {
+            await alive.Closing.Task.WaitAsync(deadline.Token);
+            Assert.False(session.IsConnected);
+            if (disposeSession)
+            {
+                await session.DisposeAsync();
+                await session.DisposeAsync();
+            }
+            else
+            {
+                var result = await session.SendAsync(message, deadline.Token);
+                Assert.False(result.CountsTowardPoison, result.Error);
+                Assert.Equal(OutputSendStatus.Ack, result.Status);
+                Assert.NotSame(client, clientField.GetValue(session));
+            }
+        }
+        finally
+        {
+            alive.Release.Set();
+            await disconnect.WaitAsync(TimeSpan.FromSeconds(10), Token);
+        }
+    }
+
     [Fact]
     public async Task SendDuringBrokerDisconnectCleanupDoesNotCountPayloadAsPoison()
     {
@@ -39,6 +90,22 @@ public sealed class MqttDisconnectRaceTests(MosquittoBrokerFixture fixture) : IC
     }
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
+    private sealed class DisposedAliveWindow(ManualResetEventSlim release) : CancellationTokenSource
+    {
+        private int _disposes;
+        public TaskCompletionSource Closing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ManualResetEventSlim Release => release;
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && Interlocked.Increment(ref _disposes) == 1)
+            {
+                Closing.TrySetResult();
+                if (!Release.Wait(TimeSpan.FromSeconds(10)))
+                { throw new TimeoutException("测试未释放 MQTT 内部源的 Dispose 窗口。"); }
+            }
+        }
+    }
     private sealed class Credentials : ICredentialResolver
     {
         public MqttCredentialIdentity? DescribeMqtt(long connectionId) => new(MosquittoBroker.UserName, "account", "v1");
