@@ -60,9 +60,16 @@ public sealed partial class HostProcess : IAsyncDisposable
     /// <summary>以测试程序集启动真实 Program/Kestrel，仅替换模拟输入的准备工厂来固定中断窗口。
     /// 默认 Start 仍运行未经注入的产品 Host；此入口、参数和工厂不会进入产品构建。</summary>
     public static HostProcess StartPreparationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.Command);
+
+    /// <summary>以同一测试入口控制一个真实模拟输入的停止完成；不改变其他输入或产品停止期限。</summary>
+    public static HostProcess StartPartialStopProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PartialStopCommand);
+
+    private static HostProcess StartControlledProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments, string command) =>
         StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
-            new Dictionary<string, string> { [PreparationProcessHost.GateDirectoryVariable] = workingDirectory }, null,
-            "TenonEdge.IntegrationTests.dll", [PreparationProcessHost.Command]);
+            new Dictionary<string, string> { [ConfigurationInterruptionProcessHost.GateDirectoryVariable] = workingDirectory }, null,
+            "TenonEdge.IntegrationTests.dll", [command]);
 
     private static HostProcess StartCore(string workingDirectory, string environmentName, string? dataDirectory,
         IEnumerable<string>? additionalArguments, IReadOnlyDictionary<string, string>? environmentVariables,
