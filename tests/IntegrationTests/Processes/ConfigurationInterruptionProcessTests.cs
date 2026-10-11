@@ -14,17 +14,19 @@ using TenonEdge.IntegrationTests.Infrastructure;
 
 namespace TenonEdge.IntegrationTests.Processes;
 
-/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：旧输入已停止但消息尚在排空，以及新版本已提交且产生投递。
-/// 提交前用测试持有的 queue.db 写锁确定边界，提交后核对真实新投递；不添加产品故障注入或重启接口，不是断电验证。</summary>
+/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：旧消息排空中、排空后等待配置提交的写锁，以及新版本已提交且产生投递。
+/// 提交前用测试持有的 SQLite 写锁确定边界，提交后核对真实新投递；不添加产品故障注入或重启接口，不是断电验证。</summary>
 public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper output)
 {
     private const string Api = "/api/edge-admin/v1";
     private static TimeSpan Deadline => TimeSpan.FromSeconds(30);
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
-    [Fact]
+    [Theory]
     [Trait("Category", "Process")]
-    public async Task KillDuringOldMessageDrainDiscardsPendingWithoutApplyingDraftOrRewritingFrozenDelivery()
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KillBeforeConfigurationCommitDiscardsPendingWithoutApplyingDraftOrRewritingFrozenDelivery(bool waitForCommitWriteLock)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "真实 SIGKILL 与数据目录锁验证只在 Linux 执行。");
         using var work = TemporaryDirectory.Create();
@@ -81,15 +83,48 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 Assert.Equal(2, operation.GetProperty("revision").GetInt64());
                 Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
                 Assert.Equal(RuntimeSnapshotStates.Pending, state.Snapshot(2).State);
+
+                // 先用队列写锁固定静默窗口，再在释放它之前取得配置写锁。这样冻结已经提交，
+                // 旧分发可以真正排空，但第 4 步的 BEGIN IMMEDIATE 不能取得写锁或改变有效版本。
+                // 这是提交事务开始前的窗口，不是事务内部或数据库已经提交、方法尚未返回的窗口。
+                using var commitConnection = waitForCommitWriteLock ? OpenDatabase(data.Path, ConfigDatabase.FileName) : null;
+                using var commitLock = commitConnection?.BeginTransaction(deferred: false);
+                if (waitForCommitWriteLock)
+                {
+                    held.Rollback();
+                    operation = await WaitForAsync(api, interruptedPath, status => status.GetProperty("stage").GetString() == "committing");
+                    // 提交中的公共进度有意为 null；是否提交由持久指针与所持写锁证明，不能误读为 false。
+                    Assert.Equal(JsonValueKind.Null, operation.GetProperty("committed").ValueKind);
+                    var drained = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                    Assert.Equal("stopped", Input(drained).GetProperty("state").GetString());
+                    Assert.Equal("stopped", Assert.Single(drained.GetProperty("runtime").GetProperty("units").EnumerateArray(),
+                        unit => unit.GetProperty("id").GetProperty("kind").GetString() == "delivery.dispatcher").GetProperty("state").GetString());
+                    Assert.Equal(0, drained.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64());
+                    Assert.Equal(1, drained.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
+                    Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
+                    Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(1).State);
+                    Assert.Equal(RuntimeSnapshotStates.Pending, state.Snapshot(2).State);
+                }
                 committed = ReadDeliveries(data.Path);
                 Assert.Equal(stored, committed[0]);
-                Assert.All(committed, row => Assert.Equal(1, row.Revision));
+                Assert.All(committed, row =>
+                {
+                    Assert.Equal(1, row.Revision);
+                    using var json = JsonDocument.Parse(row.Payload);
+                    Assert.Equal(42, json.RootElement.GetProperty("values").GetProperty("value").GetInt64());
+                });
+                if (waitForCommitWriteLock)
+                { Assert.True(committed.Length >= 2, "静默期间的旧消息应已在配置提交前真正入库。"); }
                 Assert.Single(state.Audit(AuditActions.SnapshotApplied));
                 Assert.False(receiver.Pending()); // 新输入未激活，独立发送者仍只有先前的未确认请求。
-                output.WriteLine($"强杀前：stage=quiescing，输入已停止，{state.Pointers()}，冻结队头 seq={stored.Seq} / {stored.Id}。");
+                output.WriteLine($"强杀前：stage={operation.GetProperty("stage").GetString()}，输入已停止，" +
+                    $"配置提交写锁窗口={waitForCommitWriteLock}，{state.Pointers()}，已入库 {committed.Length} 条，冻结队头 seq={stored.Seq} / {stored.Id}。");
 
-                await host.KillAsync(Token); // 写锁仍持有，不能跑停机清理或让旧消息赶在强杀前提交。
-                held.Rollback();
+                await host.KillAsync(Token); // 对应阶段的写锁仍持有，不能跑停机清理或赶在强杀前提交。
+                if (waitForCommitWriteLock)
+                { commitLock!.Rollback(); }
+                else
+                { held.Rollback(); }
                 Assert.Equal(committed, ReadDeliveries(data.Path));
                 Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
             }
@@ -403,10 +438,12 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
     private static JsonElement Input(JsonElement status) => Assert.Single(status.GetProperty("runtime").GetProperty("units").EnumerateArray(),
         unit => unit.GetProperty("id").GetProperty("kind").GetString() == "input.simulator");
 
-    private static SqliteConnection OpenQueue(string data)
+    private static SqliteConnection OpenQueue(string data) => OpenDatabase(data, "queue.db");
+
+    private static SqliteConnection OpenDatabase(string data, string file)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-        { DataSource = Path.Combine(data, "queue.db"), Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
+        { DataSource = Path.Combine(data, file), Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
         connection.Open();
         return connection;
     }

@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及两项在线应用强杀子场景软件验证；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.172 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及三项在线应用强杀子场景软件验证；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.173 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3465,6 +3465,29 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 本批仍不完成专用损坏快照恢复，不把未答复的恢复例外建议视为批准；不推进 T3-07/08、T4/T5/G1。准备/部分停止/精确提交边界、断电、最低 Chrome/Edge 111、实物及来源到输出的全程网页流程仍待验证。前端代码/契约未变，本批不重跑或重计 §2.171 的 250 项前端/43 项浏览器基线；未推送、发布或修改其他仓库。
 
+### 2.173 T3-06 旧消息排空后等待配置提交写锁的强杀恢复（2026-10-11）
+
+承接 §2.172，在同一 `ConfigurationInterruptionProcessTests` 中增加**第 4 步尚未取得配置事务写锁**的真实 SIGKILL 子场景，关联 T3-06 / GW-10 / AT-10、AT-13、AT-28 / 功能 §6.3—§6.4。复用原来的完整恢复断言，把原静默中断用例改为两行 Theory；新增 1 个执行用例，另一个激活后场景保持不变。不修改产品代码、公开契约、依赖、数据库迁移或部署参数。
+
+- 仍由真实 Release Production Host、认证/CSRF/预检确认 API、模拟输入和动态回环 HTTP 接收端完成配置与投递；没有产品故障开关、额外测试 Host 或修改正式数据库。测试写锁只作用于自己拥有的临时数据目录，不伪造配置指针或快照。
+- 先保留 r1/42 的未确认 HTTP 请求，保存 84 草稿；用 `queue.db` 写锁固定旧输入已停、旧消息尚未排空的窗口。**冻结 r2 已经完成后**，在释放队列写锁之前取得 `config.db` 的 SQLite 写事务，随后只释放队列写锁。旧消息真正提交到发送缓存，分发器完全停止，操作进入 `committing`，但第 4 步的 `BEGIN IMMEDIATE` 无法取得配置写锁。
+- 公共操作进度在 `committing` 时的 `committed` **有意为 null**，不能误当 false。测试独立核对所持写锁、effective/running/active 仍为 r1、pending=r2、r1 为 effective、r2 为 pending、输入/分发器 stopped、在途预算归零；强杀前至少 2 条旧记录已入库，全部 revision=r1、内容为 42，只保留 r1 的应用审计。持有配置写锁直到 SIGKILL 完成，保证不会因测试提前释放锁而提交 r2。
+- 强杀后全部已入库记录保持不变；重启按 r1 运行，r2 标为“未生效：进程中断”，历史 API 和运行事件一致，r1 非正常退出次数加一而 r2 不计数，没有自动回滚/应用草稿/分配新版本。草稿 84 与其版本号保留，旧操作 ID 为 404。先逐条确认强杀前的全部冻结 FIFO 积压（含排空期间新增记录），核对原正文、投递 ID 和幂等头，再收到 sourceMessageId 不在旧集合内的 42，才判定恢复了旧版新采样。
+- 第二个同目录 Host 仍退出 3；未生效 r2 不能回滚，明确再次预检/确认应用才生成 r3 并实际发送 84，版本号不复用。正常 SIGTERM 清除运行标记。原 `quiescing` 用例保留，激活后实际产生 r2 投递的强杀场景也继续执行。
+
+覆盖口径：本次是**旧消息已排空、配置提交事务尚未取得写锁**的确定性窗口，不是“事务内部执行了一部分更新”、数据库已提交但方法尚未返回，或提交后立即进入激活的窗口。这些边界，以及准备阶段/多输入部分停止/部分激活的确定性终止，仍未通过完整矩阵验收；§2.172 的历史记录不改写为完整通过。
+
+验证经过与环境（Linux x64、SDK 10.0.401/runtime 10.0.12、Python 3.14.4）：
+
+- 首轮 Release 构建通过，0 警告/错误（`/tmp/tenonedge-commit-lock-build-first.log`）。首次定向执行 **2 通过、1 失败**（`/tmp/tenonedge-commit-lock-targeted-first.log`）：测试误用 `GetBoolean()` 读取提交阶段的 null；不是产品提交失败。按已有公开契约改为断言 null，再用持久指针和真实写锁判定未提交，没有修改产品语义或放宽恢复断言。
+- 修正后构建通过；定向 **3 项通过，0 失败/跳过**，TRX 核对通过（`/tmp/tenonedge-commit-lock-build-second.log`、`/tmp/tenonedge-commit-lock-targeted-second.log`；TRX `/tmp/tenonedge-commit-lock-second-trx-OHDOQT`）。随后补强所有强杀前旧记录正文均为 42 的断言。
+- 最终代码的 `dotnet format TenonEdge.sln --verify-no-changes --no-restore`、`dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal`：通过，构建 0 警告/错误（`/tmp/tenonedge-commit-lock-format-final.log`、`/tmp/tenonedge-commit-lock-build-final.log`）。
+- 在不并行运行格式分析/构建的情况下，`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~ConfigurationInterruptionProcessTests --logger trx --results-directory <独立目录> --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal` **重复 3 轮，每轮 3 项通过，共 9 次通过，0 失败/跳过**；每轮执行报告脚本核对 IntegrationTests 非零且无失败/跳过（`/tmp/tenonedge-commit-lock-repeats-final.log`，结果目录列表 `/tmp/tenonedge-commit-lock-repeat-paths`）。重复次数不算新增用例数。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-commit-lock-full-trx-YJTjRu --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1353 集成 = 2611 项通过，0 失败/跳过**，集成约 5 分 30 秒（`/tmp/tenonedge-commit-lock-backend-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-commit-lock-full-trx-YJTjRu --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests`：两程序集均非零、无失败/中止/跳过，核对通过（`/tmp/tenonedge-commit-lock-trx-verify-final.log`）。首次测试断言失败仍保留，不改写为通过。
+- 从最终 TRX 提取三类强杀的实际阶段/持久指针和 Host 输出，核对 **3 个可从日志识别的所拥有数据目录已删除、对应 Host 不在进程列表、12 个已记录的管理端口不再监听**（`/tmp/tenonedge-commit-lock-cleanup-final.log`）。接收端由测试自身释放，不操作其他进程、数据目录或部署。`git diff --check` 通过，按既有授权整理本地提交，不推送/发布。
+
+前端/公开 API 未变，本批未重跑浏览器，沿用 §2.171 的 250 项前端/43 项 Chromium 基线；最低浏览器、真实设备和断电、无 JSON 的网页端到端流程仍未验证。专用损坏快照恢复的例外建议仍未获批准，不借本批放宽普通回滚的草稿/队列/凭证保护。不进入 T3-07/08、T4/T5/G1，不推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3515,7 +3538,7 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
-| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 两项真实强杀子场景通过（本地软件）；全部 2610 项后端回归通过，不代表完整矩阵 | §2.172 | 准备、部分停止、精确提交/激活边界、断电与完整网页流程 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 三项真实强杀子场景通过（本地软件）；全部 2611 项后端回归通过，不代表完整矩阵 | §2.172—§2.173 | 准备、部分停止、提交事务内部/返回及精确激活边界、断电与完整网页流程 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录
