@@ -74,6 +74,10 @@ public sealed partial class HostProcess : IAsyncDisposable
     public static HostProcess StartTransactionWritingProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.TransactionWritingCommand);
 
+    /// <summary>仅测试侧延后一个正式输入循环，并固定原激活事件的返回；其他输入、输出和事件处理保持原样。</summary>
+    public static HostProcess StartPartialActivationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PartialActivationCommand);
+
     private static HostProcess StartControlledProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments, string command) =>
         StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
             new Dictionary<string, string> { [ConfigurationInterruptionProcessHost.GateDirectoryVariable] = workingDirectory }, null,
