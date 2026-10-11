@@ -14,8 +14,8 @@ using TenonEdge.IntegrationTests.Infrastructure;
 
 namespace TenonEdge.IntegrationTests.Processes;
 
-/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：准备中、部分输入已停、旧消息排空中、等待提交写锁、提交后输入未启动及新版本产生投递。
-/// 准备/部分停止/提交后输入未启动使用测试侧工厂，其余使用原产品 Host；不添加产品故障开关或重启接口，不是断电验证。</summary>
+/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：准备中、部分输入已停、旧消息排空中、等待提交写锁、事务写入后、提交后输入未启动及新版本产生投递。
+/// 准备/部分停止/提交后输入未启动使用测试侧工厂，事务内部用原 SQL 回调，其余使用原产品 Host；无产品故障开关或重启接口，不是断电验证。</summary>
 public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper output)
 {
     private const string Api = "/api/edge-admin/v1";
@@ -41,6 +41,7 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
     [InlineData("committing")]
     [InlineData("preparing")]
     [InlineData("partial-stop")]
+    [InlineData("transaction-writing")]
     public async Task KillBeforeConfigurationCommitDiscardsPendingWithoutApplyingDraftOrRewritingFrozenDelivery(string stage)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "真实 SIGKILL 与数据目录锁验证只在 Linux 执行。");
@@ -50,6 +51,8 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         receiver.Start();
         var port = ((IPEndPoint)receiver.LocalEndpoint).Port;
         var partialStop = stage == "partial-stop";
+        var transactionWriting = stage == "transaction-writing";
+        var draftValue = transactionWriting ? 126 : 84;
         long[] oldValues = partialStop ? [42, 43] : [42];
         var state = new RuntimeStateReader(data.Path);
         long deviceId;
@@ -65,6 +68,7 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         {
             "preparing" => HostProcess.StartPreparationProbe(work.Path, data.Path, DeploymentArguments(port)),
             "partial-stop" => HostProcess.StartPartialStopProbe(work.Path, data.Path, DeploymentArguments(port)),
+            "transaction-writing" => HostProcess.StartTransactionWritingProbe(work.Path, data.Path, DeploymentArguments(port)),
             _ => Start(work.Path, data.Path, port),
         })
         {
@@ -110,6 +114,8 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 { File.WriteAllText(Path.Combine(work.Path, ConfigurationInterruptionProcessHost.ArmedFile), "armed"); }
                 else if (partialStop)
                 { File.WriteAllText(Path.Combine(work.Path, ConfigurationInterruptionProcessHost.StopArmedFile), "armed"); }
+                else if (transactionWriting)
+                { File.WriteAllText(Path.Combine(work.Path, ConfigurationTransactionGate.ArmedFile), "armed"); }
                 interruptedPath = await BeginApplyAsync(api, editedVersion);
                 var pendingStage = stage == "preparing" ? "preparing" : "quiescing";
                 await WaitForAsync(api, interruptedPath, operation => operation.GetProperty("stage").GetString() == pendingStage);
@@ -123,6 +129,32 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 Assert.Equal(2, operation.GetProperty("revision").GetInt64());
                 Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
                 Assert.Equal(RuntimeSnapshotStates.Pending, state.Snapshot(2).State);
+                var frozenSnapshot = transactionWriting ? state.Snapshot(2) : null;
+
+                if (transactionWriting)
+                {
+                    // 本次已冻结 84；在队列仍阻止静默完成时保存 126，避免在写事务中等待另一个写请求。
+                    editedVersion = await EditSampleAsync(api, deviceId, inputId, editedVersion, draftValue);
+                    held.Rollback();
+                    var writing = await WaitForTransactionGateAsync(work.Path);
+                    AssertTransactionWriting(writing, data.Path);
+                    Assert.False(File.Exists(Path.Combine(work.Path, ConfigurationTransactionGate.ReleasedFile)));
+                    operation = await api.GetJsonAsync(interruptedPath, Token);
+                    Assert.Equal("committing", operation.GetProperty("stage").GetString());
+                    Assert.Equal(JsonValueKind.Null, operation.GetProperty("committed").ValueKind);
+                    var drained = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                    Assert.Equal("stopped", Input(drained).GetProperty("state").GetString());
+                    Assert.Equal("stopped", Assert.Single(drained.GetProperty("runtime").GetProperty("units").EnumerateArray(),
+                        unit => unit.GetProperty("id").GetProperty("kind").GetString() == "delivery.dispatcher").GetProperty("state").GetString());
+                    Assert.Equal(0, drained.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64());
+                    Assert.Equal(1, drained.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
+                    Assert.Equal((1L, (long?)null, (long?)2, (long?)1),
+                        (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
+                    Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(1).State);
+                    Assert.Equal(frozenSnapshot, state.Snapshot(2));
+                    Assert.Equal(2, state.Pointers().RevisionFloor);
+                    output.WriteLine("事务内部：写连接已有 effective/running=r2、previous=r1、pending 空、r1 history/r2 effective；事务仍开启，外部仍为 r1/pending r2，后续草稿 126 已保存。");
+                }
 
                 if (partialStop)
                 {
@@ -191,7 +223,7 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                     { Assert.Equal(value == 42 ? "meter" : ConfigurationInterruptionProcessHost.SlowDeviceKey, json.RootElement.GetProperty("deviceKey").GetString()); }
                     Assert.Equal(row.SourceId, json.RootElement.GetProperty("sourceMessageId").GetString());
                 });
-                if (stage == "committing")
+                if (stage == "committing" || transactionWriting)
                 { Assert.True(committed.Length >= 2, "静默期间的旧消息应已在配置提交前真正入库。"); }
                 if (partialStop)
                 {
@@ -206,15 +238,22 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 output.WriteLine($"强杀前：stage={operation.GetProperty("stage").GetString()}，输入={(partialStop ? "sample stopped / slow-stop stopping" : inputState)}，" +
                     $"准备同步窗口={stage == "preparing"}，{state.Pointers()}，已入库 {committed.Length} 条，冻结队头 seq={stored.Seq} / {stored.Id}。");
 
-                await host.KillAsync(Token); // 对应阶段的写锁仍持有，不能跑停机清理或赶在强杀前提交。
+                await host.KillAsync(Token); // 对应阶段的写锁或同步点未释放，不能跑停机清理或赶在强杀前提交。
                 if (stage == "committing")
                 { commitLock!.Rollback(); }
                 else if (stage == "preparing")
                 { preparationQueueLock!.Rollback(); }
-                else
+                else if (!transactionWriting)
                 { held.Rollback(); }
                 Assert.Equal(committed, ReadDeliveries(data.Path));
                 Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
+                if (transactionWriting)
+                {
+                    Assert.Equal(frozenSnapshot, state.Snapshot(2));
+                    Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(1).State);
+                    Assert.Single(state.Audit(AuditActions.SnapshotApplied));
+                    Assert.False(File.Exists(Path.Combine(work.Path, ConfigurationTransactionGate.ReleasedFile)));
+                }
             }
             finally { output.WriteLine(host.Output); }
         }
@@ -240,7 +279,7 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
 
             var sources = await api.GetJsonAsync($"{Api}/devices/{deviceId}/inputs", Token);
             Assert.Equal(editedVersion, sources.GetProperty("version").GetString());
-            Assert.Equal("{\"value\":84}", Assert.Single(sources.GetProperty("inputs").EnumerateArray(),
+            Assert.Equal(JsonSerializer.Serialize(new { value = draftValue }), Assert.Single(sources.GetProperty("inputs").EnumerateArray(),
                 input => input.GetProperty("key").GetString() == "sample").GetProperty("simulator").GetProperty("sampleJson").GetString());
             if (partialStop)
             {
@@ -321,11 +360,12 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 using var next = await receiver.AcceptTcpClientAsync(receiveDeadline.Token);
                 var request = await ReadRequestAsync(next.GetStream());
                 var value = Value(request);
-                Assert.True(value == 84 || oldValues.Contains(value));
+                Assert.True(value == draftValue || oldValues.Contains(value));
                 await AckAsync(next.GetStream());
-                if (value == 84)
+                if (value == draftValue)
                 { break; }
             }
+            output.WriteLine($"显式重新预检并应用：r3，实际值 {draftValue}；中断的 r2 未复用。");
             await restarted.RequestStopAsync(Token);
             Assert.Equal(HostExitCodes.Success, await restarted.WaitForExitAsync(Deadline, Token));
             Assert.Null(state.Pointers().Running);
@@ -518,6 +558,7 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
     [InlineData("preparing")]
     [InlineData("partial-stop")]
     [InlineData("pre-input-activation")]
+    [InlineData("transaction-writing")]
     public async Task ControlledProbeRunsRealSimulatorsAfterReleaseAndStopsNormally(string stage)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "受控配置中断与 SIGTERM 子进程只在 Linux 验证。");
@@ -529,10 +570,12 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         var state = new RuntimeStateReader(data.Path);
         var partialStop = stage == "partial-stop";
         var preInputActivation = stage == "pre-input-activation";
+        var transactionWriting = stage == "transaction-writing";
         await using var host = stage switch
         {
             "partial-stop" => HostProcess.StartPartialStopProbe(work.Path, data.Path, DeploymentArguments(port)),
             "pre-input-activation" => HostProcess.StartPreInputActivationProbe(work.Path, data.Path, DeploymentArguments(port)),
+            "transaction-writing" => HostProcess.StartTransactionWritingProbe(work.Path, data.Path, DeploymentArguments(port)),
             _ => HostProcess.StartPreparationProbe(work.Path, data.Path, DeploymentArguments(port)),
         };
         try
@@ -558,21 +601,39 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 await AckAsync(first.GetStream());
             }
             var edited = await EditSampleAsync(api, draft.DeviceId, draft.InputId, draft.Version, 84);
-            var armed = preInputActivation ? ConfigurationInterruptionProcessHost.ActivationArmedFile : partialStop ? ConfigurationInterruptionProcessHost.StopArmedFile : ConfigurationInterruptionProcessHost.ArmedFile;
+            var armed = transactionWriting ? ConfigurationTransactionGate.ArmedFile : preInputActivation ? ConfigurationInterruptionProcessHost.ActivationArmedFile : partialStop ? ConfigurationInterruptionProcessHost.StopArmedFile : ConfigurationInterruptionProcessHost.ArmedFile;
             var entered = preInputActivation ? ConfigurationInterruptionProcessHost.ActivationEnteredFile : partialStop ? ConfigurationInterruptionProcessHost.StopEnteredFile : ConfigurationInterruptionProcessHost.EnteredFile;
-            var released = preInputActivation ? ConfigurationInterruptionProcessHost.ActivationReleasedFile : partialStop ? ConfigurationInterruptionProcessHost.StopReleasedFile : ConfigurationInterruptionProcessHost.ReleasedFile;
+            var released = transactionWriting ? ConfigurationTransactionGate.ReleasedFile : preInputActivation ? ConfigurationInterruptionProcessHost.ActivationReleasedFile : partialStop ? ConfigurationInterruptionProcessHost.StopReleasedFile : ConfigurationInterruptionProcessHost.ReleasedFile;
             File.WriteAllText(Path.Combine(work.Path, armed), "armed");
             var applying = await BeginApplyAsync(api, edited);
-            await WaitForGateAsync(work.Path, entered, preInputActivation ? oldSenderIdentity : partialStop ? ConfigurationInterruptionProcessHost.SlowIdentity : "input.simulator/meter/sample");
+            if (transactionWriting)
+            { AssertTransactionWriting(await WaitForTransactionGateAsync(work.Path), data.Path); }
+            else
+            { await WaitForGateAsync(work.Path, entered, preInputActivation ? oldSenderIdentity : partialStop ? ConfigurationInterruptionProcessHost.SlowIdentity : "input.simulator/meter/sample"); }
             var preparing = await api.GetJsonAsync(applying, Token);
-            Assert.Equal(preInputActivation ? "activating" : partialStop ? "quiescing" : "preparing", preparing.GetProperty("stage").GetString());
-            Assert.Equal(preInputActivation, preparing.GetProperty("committed").GetBoolean());
+            Assert.Equal(transactionWriting ? "committing" : preInputActivation ? "activating" : partialStop ? "quiescing" : "preparing", preparing.GetProperty("stage").GetString());
+            if (transactionWriting)
+            { Assert.Equal(JsonValueKind.Null, preparing.GetProperty("committed").ValueKind); }
+            else
+            { Assert.Equal(preInputActivation, preparing.GetProperty("committed").GetBoolean()); }
             Assert.Equal(preInputActivation ? (2L, (long?)null) : (1L, (long?)2), (state.Pointers().Effective, state.Pointers().Pending));
             Assert.False(File.Exists(Path.Combine(work.Path, released)));
             if (preInputActivation)
             {
                 var quiet = await api.GetJsonAsync(Api + "/runtime/status", Token);
                 Assert.Equal(2, quiet.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
+                Assert.Equal("stopped", Input(quiet).GetProperty("state").GetString());
+                Assert.Equal(0, quiet.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64());
+            }
+            if (transactionWriting)
+            {
+                Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(1).State);
+                Assert.Equal(RuntimeSnapshotStates.Pending, state.Snapshot(2).State);
+                Assert.Equal((1L, (long?)null, (long?)2, (long?)1),
+                    (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
+                Assert.Single(state.Audit(AuditActions.SnapshotApplied));
+                var quiet = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                Assert.Equal(1, quiet.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
                 Assert.Equal("stopped", Input(quiet).GetProperty("state").GetString());
                 Assert.Equal(0, quiet.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64());
             }
@@ -607,12 +668,23 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 if (value == 84)
                 { break; }
             }
-            Assert.Contains(preInputActivation ? "TEST PRE-INPUT ACTIVATION GATE RELEASED" : partialStop ? "TEST PARTIAL STOP GATE RELEASED" : "TEST PREPARATION GATE RELEASED", host.Output, StringComparison.Ordinal);
+            Assert.Contains(transactionWriting ? "TEST TRANSACTION WRITING GATE RELEASED" : preInputActivation ? "TEST PRE-INPUT ACTIVATION GATE RELEASED" : partialStop ? "TEST PARTIAL STOP GATE RELEASED" : "TEST PREPARATION GATE RELEASED", host.Output, StringComparison.Ordinal);
             if (preInputActivation)
             {
                 var running = await api.GetJsonAsync(Api + "/runtime/status", Token);
                 Assert.Equal("running", Input(running).GetProperty("state").GetString());
                 output.WriteLine("提交后输入启动同步点已释放：r2 激活完成，真实模拟输入实际发送 84。");
+            }
+            if (transactionWriting)
+            {
+                Assert.Equal(RuntimeSnapshotStates.History, state.Snapshot(1).State);
+                Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(2).State);
+                Assert.Equal(0, state.Snapshot(2).AbnormalExitCount);
+                Assert.Equal(["r1", "r2"], state.Audit(AuditActions.SnapshotApplied).Select(entry => entry.Target).ToArray());
+                Assert.Empty(state.Events(RuntimeEventTypes.VersionNotEffective));
+                var running = await api.GetJsonAsync(Api + "/runtime/status", Token);
+                Assert.Equal("running", Input(running).GetProperty("state").GetString());
+                output.WriteLine("事务写入同步点已释放：真实 COMMIT 返回，r2 激活完成并实际发送 84，正常停止清除标记。");
             }
             await host.RequestStopAsync(Token);
             Assert.Equal(HostExitCodes.Success, await host.WaitForExitAsync(Deadline, Token));
@@ -623,6 +695,32 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
 
     private static Task WaitForPreparationGateAsync(string directory) =>
         WaitForGateAsync(directory, ConfigurationInterruptionProcessHost.EnteredFile, "input.simulator/meter/sample");
+
+    private static async Task<JsonElement> WaitForTransactionGateAsync(string directory)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        deadline.CancelAfter(Deadline);
+        var path = Path.Combine(directory, ConfigurationTransactionGate.EnteredFile);
+        while (!File.Exists(path))
+        { await Task.Delay(10, deadline.Token); }
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(path, deadline.Token));
+        return document.RootElement.Clone();
+    }
+
+    private static void AssertTransactionWriting(JsonElement writing, string data)
+    {
+        Assert.Equal(Path.Combine(data, ConfigDatabase.FileName), writing.GetProperty("database").GetString());
+        Assert.True(writing.GetProperty("inTransaction").GetBoolean());
+        Assert.Equal(2, writing.GetProperty("effective").GetInt64());
+        Assert.Equal(1, writing.GetProperty("previous").GetInt64());
+        Assert.Equal(JsonValueKind.Null, writing.GetProperty("pending").ValueKind);
+        Assert.Equal(2, writing.GetProperty("running").GetInt64());
+        Assert.Equal(RuntimeSnapshotStates.History, writing.GetProperty("oldState").GetString());
+        Assert.Equal(RuntimeSnapshotStates.Effective, writing.GetProperty("newState").GetString());
+        Assert.Equal("wal", writing.GetProperty("journalMode").GetString());
+        Assert.Equal(2, writing.GetProperty("synchronous").GetInt64());
+        Assert.Equal(5000, writing.GetProperty("busyTimeout").GetInt64());
+    }
 
     private static async Task WaitForGateAsync(string directory, string file, string identity)
     {

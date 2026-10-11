@@ -70,6 +70,10 @@ public sealed partial class HostProcess : IAsyncDisposable
     public static HostProcess StartPreInputActivationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PreInputActivationCommand);
 
+    /// <summary>仅测试侧通过原配置库的 SQL 执行后回调固定真实写入、尚未 COMMIT 的事务窗口。</summary>
+    public static HostProcess StartTransactionWritingProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.TransactionWritingCommand);
+
     private static HostProcess StartControlledProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments, string command) =>
         StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
             new Dictionary<string, string> { [ConfigurationInterruptionProcessHost.GateDirectoryVariable] = workingDirectory }, null,

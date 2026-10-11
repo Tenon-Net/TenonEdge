@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及六项在线应用强杀子场景软件验证（准备/部分停止/提交后输入未启动使用测试侧工厂控制）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.176 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及七项在线应用强杀子场景软件验证（准备/部分停止/提交后输入未启动由测试侧工厂、事务写入后由测试侧原 SQL 回调控制）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.177 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3565,6 +3565,31 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 本窗口是一个真实 HTTP 输出沿用判断的测试侧控制，不代表原产品二进制自然停在该位置，也不是全部协议、任意输入数或断电验证。配置事务内部、数据库已提交但提交调用尚未返回、多输入部分激活的确定性中断仍未验证；T3-06 不标整体完成。前端/公开 API 未改，本批不重跑或重计 250/43 项浏览器基线；最低浏览器、实物、断电和完整无 JSON 网页流程仍未验证。专用损坏快照恢复例外仍未获批准，普通回滚的草稿、队列和凭证保护不变；不进入 T3-07/08、T4/T5/G1，不推送或发布。
 
+### 2.177 T3-06 配置事务已写入、COMMIT 前的真实进程中断（2026-10-11）
+
+承接 §2.176，补第 4 步**已经在真实配置事务内更新快照状态和版本指针，但尚未执行 COMMIT**的 SIGKILL 软件子场景，关联 T3-06 / GW-10 / AT-10、AT-13、AT-28 / 功能 §6.3。不把 §2.173 中“等待配置写锁、BEGIN IMMEDIATE 尚未取得写锁”的窗口当作本次事务内部验证。仅修改测试基础设施、用例与证据文档，不修改产品源码、API、注册、依赖、迁移、前端或部署。
+
+- 核对产品 `ConfigDatabase.InTransaction`、`RuntimeVersionStore.Commit` 和固定 `SqlSugarCoreNoDrive 5.1.4.221` 的实际行为。测试进程仍通过原 `Program` 和 Production Kestrel 装配，只把原 `ConfigDatabase` 单例登记改为调用其原构造、安装测试 AOP 后返回同一对象；未创建第二个数据库、运行时、连接管理器或发送者，所有输入/输出工厂保持原样。普通参数仍原样交给 xUnit runner，恢复使用未经注入的产品 Host。
+- `SqlSugarScope` 为不同上下文复制根配置，`CopyNew` 又复制隔离事务配置；只改启动线程的 `CurrentConnectionConfig` 不足以覆盖后续流程。测试专用 `ConfigurationTransactionGate` 对已核对的私有 `_configs` 字段做窄反射，要求原 SQLite 单根配置、原连接字符串和连接设置回调均存在，变化时明确失败，不静默降级。只在新单例尚未交付给其他服务时装饰根 AOP：先调用原 `CheckConnectionExecuted`，短暂借用本次同步命令的连接；SQL 完成时取出并清空线程局部引用，原 `OnLogExecuted` 如存在也照常调用。没有复制参考项目源码，也未改变产品的事务实现、设置回调或资源归属。
+- 武装后，仅在 `system_state` 的有效指针 UPDATE **实际执行完成**时阻塞原 SQL 回调。此时 r1 已在写事务内转为 history，r2 转为 effective，effective/running=r2、previous=r1、pending 空；应用审计等后续工作尚未执行，`InTransaction` 还没有调用 `CommitTran`。用该命令借用的同一写连接创建原生命令，确认它继承仍关联该连接的真实事务，关闭 reader 后原子公布回读检查点；同时核对 WAL、synchronous=2/FULL、busy_timeout=5000。回读不经 SqlSugar，不递归触发 AOP；检查点是写事务自己的视图，不冒充已经持久提交。
+- 父测试经真实认证/CSRF API 应用 r1/42，接收但不确认冻结队头；保存 84 并冻结 r2，在队列写锁暂时固定静默阶段时另保存草稿 126，再释放该锁，让旧分发真实排空。随后核对写连接检查点与外部独立读者的差异：公开进度 committing/committed=null、active=r1，输入和分发 stopped、在途字节为 0；外部仍为 effective/running=r1、previous 空、pending=r2，r1 effective、r2 pending，r2 冻结内容/哈希未变，revisionFloor=2，应用审计只有 r1，全部已提交投递仍是 r1/42。没有持有外部 config.db 写锁来替代事务内部窗口。
+- SIGKILL 不释放回调、不执行停机清理。进程退出后先直接核对 SQLite 仍显示原有效/待生效状态和同一队列、r2 完整冻结内容，未留下 r2 应用审计；再启动原产品 Host：丢弃 r2 并标“未生效：进程中断”，加载 r1，r1 非正常退出计数加一而 r2 为 0，不自动回滚、不应用 84 或草稿 126、不生成新版本。草稿版本和 126 保留，旧操作 404；全部冻结记录按原 FIFO、正文、投递编号、sourceMessageId 和幂等头重发，再实际收到源 ID 不在旧集合内的新 42。未生效 r2 的回滚被拒绝；只有明确重新预检并确认应用 126 才生成 r3、实际发送 126，r2 不复用。
+- 新增第四行探针正常释放用例：先核对同一未提交写视图/外部旧视图和 committing/null，解除本次武装并释放回调，再证明真实 COMMIT 返回、r2 激活 completed、r1 history/r2 effective、应用审计 r1/r2、r2 异常次数 0、新输入 running 和实际 HTTP 84；SIGTERM 退出 0，运行标记清除。60 秒回调同步期限与 5 分钟探针自停仅属测试，产品停止期限仍为原 5 秒。
+
+验证经过（Linux x64、SDK 10.0.401/runtime 10.0.12、SQLite 3.53.3、Python 3.14.4）：
+
+- 先只加入事务内部强杀行，尚未实现该同步点，仍使用旧准备探针执行：`dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal` 通过，0 警告/错误；`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~KillBeforeConfigurationCommitDiscardsPendingWithoutApplyingDraftOrRewritingFrozenDelivery --logger trx --results-directory /tmp/tenonedge-transaction-writing-red-trx-qQL9Bg --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal` **4 通过、1 失败、0 跳过**，退出 1，新行等待尚未实现的同步点到期，旧四行通过（`/tmp/tenonedge-transaction-writing-build-red.log`、`...-red.log`）。这是测试控制设施的 RED，不是产品恢复失败。
+- 安装测试侧原 SQL 回调后同一命令定向 **5 项通过，0 失败/跳过**，构建 0 警告/错误，TRX 门禁核对通过（`/tmp/tenonedge-transaction-writing-build-green.log`、`...-green.log`；TRX `/tmp/tenonedge-transaction-writing-green-trx-KQnTUz`）。实际隔离事务中回调与同连接读视图均到达，验证了已安装依赖的根配置/CopyNew 传播，不仅依据参考源码推断。
+- 补正常释放第四行后，本类为 **7 个中断子场景 + 4 个探针释放用例 + 1 个身份回归，共 12 项**。`dotnet format TenonEdge.sln --verify-no-changes --no-restore`、`dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal` 均通过，构建 **0 警告/错误**（`/tmp/tenonedge-transaction-writing-format-final.log`、`...-build-final.log`）。整类 `--filter FullyQualifiedName~ConfigurationInterruptionProcessTests` 定向 **12 项通过，0 失败/跳过**，TRX 门禁通过（`/tmp/tenonedge-transaction-writing-class.log`；TRX `/tmp/tenonedge-transaction-writing-class-trx-Yak2Uh`）。
+- 最终代码整类定向 **重复 3 轮，每轮 12 项通过，共 36 次通过，0 失败/跳过**，各轮 `python3 .github/scripts/verify-test-results.py <目录> --require TenonEdge.IntegrationTests` 核对通过（`/tmp/tenonedge-transaction-writing-repeats-final.log`；目录列表 `/tmp/tenonedge-transaction-writing-repeat-paths`）。每轮沿用上述参数、独立 `--results-directory` 和 5 分钟挂起门禁，未并行运行格式/构建，不把重复执行计为新用例。
+- 普通入口 `dotnet tests/IntegrationTests/bin/Release/net10.0/TenonEdge.IntegrationTests.dll -assemblyInfo` 退出 0，返回原 xUnit 4.0.1/.NET 10.0.12，没有启动探针或执行测试，不计用例（`/tmp/tenonedge-transaction-writing-console-info-final.log`）。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-transaction-writing-full-trx-WuHhN3 --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258 单元 + 1362 集成 = 2620 项通过，0 失败/跳过**，集成约 5 分 33 秒（`/tmp/tenonedge-transaction-writing-backend-full.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-transaction-writing-full-trx-WuHhN3 --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对两程序集非零、无失败/中止/跳过；再次核对最终三轮定向报告也全部通过（`/tmp/tenonedge-transaction-writing-trx-verify-final.log`）。
+- 从最终三轮定向与完整回归 TRX 核对本类 **48 次通过执行，其中 44 次使用真实进程、4 次为身份辅助回归**。4 次新事务窗口强杀均只有一次实际写视图检查点、未释放回调，外部 r1/pending r2 与写视图 r2/pending 空不同，重启实际收到新 42，明确重应用才有 r3/126；4 次事务探针正常释放均有进入/释放、实际 84 与正常退出记录。原准备、部分停止和提交后输入未启动的各项标记仍符合预期。只读执行 `python3 /tmp/tenonedge-transaction-writing-evidence-cleanup-final.py`：**44 个日志可识别的数据目录 + 32 个同步/工作目录已删除、对应产品 Host 与探针进程不在 `/proc`、143 个不同的已记录管理端口不再监听**（`/tmp/tenonedge-transaction-writing-evidence-cleanup-final.log`）。44 次进程用例执行不是只有 44 个进程启动，143 是去重后的实际端口数，不用理论值代替。
+- RED、五项修正后定向和首轮整类的资源另行只读核查：**21 个数据目录、14 个同步目录已删除，对应进程已退出，74 个不同管理端口不再监听**（`python3 /tmp/tenonedge-transaction-writing-earlier-cleanup.py`；`/tmp/tenonedge-transaction-writing-earlier-cleanup.log`）。两次审计均不删除目录或终止进程，资源由测试自身释放；失败执行不计入最终通过数。
+- 最终源码的格式、Release 构建、三轮重复、完整后端回归和 TRX/资源审计均已完成，后续只整理证据文档；`git diff --check` 通过。按既有授权整理本地提交，不推送或发布。
+
+本次固定的是一个配置事务内的确定性软件窗口，不代表原产品二进制自然停在此处，也不是所有 SQL 写入边界、全部协议或断电验证。**数据库已持久提交、提交调用尚未返回**是不同窗口，仍未验证；总设计表中“事务返回前”的字面口径对该窗口仍需维护者澄清，不据本次结果改写规则。多输入部分激活、共享协议部分停止仍未完成确定性验证，T3-06 不标整体完成。前端/公开 API 未改，本批不重跑或重计 250/43 项浏览器基线；最低浏览器、实物、断电和完整无 JSON 网页流程仍未验证。专用损坏快照恢复例外仍未获批准，普通回滚的草稿、队列和凭证保护不变；不进入 T3-07/08、T4/T5/G1，不推送或发布。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3615,7 +3640,7 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
-| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 六项真实强杀子场景通过（本地软件，准备/部分停止/提交后输入未启动为测试侧工厂注入）；全部 2618 项后端回归通过，不代表完整矩阵 | §2.172—§2.176 | 共享协议的部分停止、提交事务内部/返回、多输入部分激活、断电与完整网页流程 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 七项真实强杀子场景通过（本地软件，三类窗口为测试侧工厂注入，事务写入后为原 SQL 回调控制）；全部 2620 项后端回归通过，不代表完整矩阵 | §2.172—§2.177 | 共享协议的部分停止、数据库已持久提交但调用未返回、多输入部分激活、断电与完整网页流程 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录
