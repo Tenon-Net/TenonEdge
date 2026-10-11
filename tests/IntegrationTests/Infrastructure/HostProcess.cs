@@ -54,7 +54,19 @@ public sealed partial class HostProcess : IAsyncDisposable
         string? dataDirectory,
         IEnumerable<string>? additionalArguments = null,
         IReadOnlyDictionary<string, string>? environmentVariables = null,
-        string? programDirectory = null)
+        string? programDirectory = null) => StartCore(workingDirectory, environmentName, dataDirectory, additionalArguments,
+            environmentVariables, programDirectory, HostAssemblyFileName, []);
+
+    /// <summary>以测试程序集启动真实 Program/Kestrel，仅替换模拟输入的准备工厂来固定中断窗口。
+    /// 默认 Start 仍运行未经注入的产品 Host；此入口、参数和工厂不会进入产品构建。</summary>
+    public static HostProcess StartPreparationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
+            new Dictionary<string, string> { [PreparationProcessHost.GateDirectoryVariable] = workingDirectory }, null,
+            "TenonEdge.IntegrationTests.dll", [PreparationProcessHost.Command]);
+
+    private static HostProcess StartCore(string workingDirectory, string environmentName, string? dataDirectory,
+        IEnumerable<string>? additionalArguments, IReadOnlyDictionary<string, string>? environmentVariables,
+        string? programDirectory, string assemblyFileName, IEnumerable<string> prefixArguments)
     {
         programDirectory ??= AppContext.BaseDirectory;
         var startInfo = new ProcessStartInfo(DotNetExecutable.Path)
@@ -64,7 +76,9 @@ public sealed partial class HostProcess : IAsyncDisposable
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        startInfo.ArgumentList.Add(Path.Combine(programDirectory, HostAssemblyFileName));
+        startInfo.ArgumentList.Add(Path.Combine(programDirectory, assemblyFileName));
+        foreach (var argument in prefixArguments)
+        { startInfo.ArgumentList.Add(argument); }
         string[] listeners =
         [
             "--TenonEdge:Http:Address", "127.0.0.1", "--TenonEdge:Http:Port", "0",

@@ -14,7 +14,7 @@ using TenonEdge.IntegrationTests.Infrastructure;
 
 namespace TenonEdge.IntegrationTests.Processes;
 
-/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：旧消息排空中、排空后等待配置提交的写锁，以及新版本已提交且产生投递。
+/// <summary>总设计 §7.4 的真实 SIGKILL 子场景：受控准备中、旧消息排空中、排空后等待配置提交的写锁，以及新版本已提交且产生投递。
 /// 提交前用测试持有的 SQLite 写锁确定边界，提交后核对真实新投递；不添加产品故障注入或重启接口，不是断电验证。</summary>
 public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper output)
 {
@@ -24,9 +24,10 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
 
     [Theory]
     [Trait("Category", "Process")]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task KillBeforeConfigurationCommitDiscardsPendingWithoutApplyingDraftOrRewritingFrozenDelivery(bool waitForCommitWriteLock)
+    [InlineData("quiescing")]
+    [InlineData("committing")]
+    [InlineData("preparing")]
+    public async Task KillBeforeConfigurationCommitDiscardsPendingWithoutApplyingDraftOrRewritingFrozenDelivery(string stage)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "真实 SIGKILL 与数据目录锁验证只在 Linux 执行。");
         using var work = TemporaryDirectory.Create();
@@ -43,7 +44,8 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         DeliveryRow stored;
         DeliveryRow[] committed;
 
-        await using (var host = Start(work.Path, data.Path, port))
+        await using (var host = stage == "preparing"
+            ? HostProcess.StartPreparationProbe(work.Path, data.Path, DeploymentArguments(port)) : Start(work.Path, data.Path, port))
         {
             try
             {
@@ -72,24 +74,47 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                 await WaitForAsync(api, Api + "/runtime/status", status =>
                     Input(status).GetProperty("reads").GetProperty("readsCompleted").GetInt64() >= 2 &&
                     status.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64() > 0);
+                if (stage == "preparing")
+                { File.WriteAllText(Path.Combine(work.Path, PreparationProcessHost.ArmedFile), "armed"); }
                 interruptedPath = await BeginApplyAsync(api, editedVersion);
-                await WaitForAsync(api, interruptedPath, operation => operation.GetProperty("stage").GetString() == "quiescing");
-                var quiet = await WaitForAsync(api, Api + "/runtime/status", status => Input(status).GetProperty("state").GetString() == "stopped");
+                var pendingStage = stage == "preparing" ? "preparing" : "quiescing";
+                await WaitForAsync(api, interruptedPath, operation => operation.GetProperty("stage").GetString() == pendingStage);
+                var inputState = stage == "preparing" ? "running" : "stopped";
+                var quiet = await WaitForAsync(api, Api + "/runtime/status", status => Input(status).GetProperty("state").GetString() == inputState);
                 Assert.Equal(1, quiet.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
                 Assert.True(quiet.GetProperty("inFlight").GetProperty("reservedBytes").GetInt64() > 0);
                 var operation = await api.GetJsonAsync(interruptedPath, Token);
-                Assert.Equal("quiescing", operation.GetProperty("stage").GetString());
+                Assert.Equal(pendingStage, operation.GetProperty("stage").GetString());
                 Assert.False(operation.GetProperty("committed").GetBoolean());
                 Assert.Equal(2, operation.GetProperty("revision").GetInt64());
                 Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
                 Assert.Equal(RuntimeSnapshotStates.Pending, state.Snapshot(2).State);
 
+                if (stage == "preparing")
+                {
+                    await WaitForPreparationGateAsync(work.Path);
+                    Assert.False(File.Exists(Path.Combine(work.Path, PreparationProcessHost.ReleasedFile)));
+                    var reads = Input(quiet).GetProperty("reads").GetProperty("readsCompleted").GetInt64();
+                    held.Rollback(); // 准备阶段保持旧输入运行；不以队列写锁人为阻止它生成新投递。
+                    var continuing = await WaitForAsync(api, Api + "/runtime/status", status =>
+                        Input(status).GetProperty("reads").GetProperty("readsCompleted").GetInt64() > reads && ReadDeliveries(data.Path).Length > reads);
+                    Assert.Equal("running", Input(continuing).GetProperty("state").GetString());
+                    operation = await api.GetJsonAsync(interruptedPath, Token);
+                    Assert.Equal("preparing", operation.GetProperty("stage").GetString());
+                    Assert.False(operation.GetProperty("committed").GetBoolean());
+                    Assert.Equal((1L, (long?)2, (long?)1), (state.Pointers().Effective, state.Pointers().Pending, state.Pointers().Running));
+                }
+
+                // 准备中的旧输入仍在运行。先证明它继续产生已提交记录，再固定强杀前的集合；
+                // 不能假定读取队列到 SIGKILL 之间恰好不会发生下一次采样/提交。
+                using var preparationQueueLock = stage == "preparing" ? connection.BeginTransaction(deferred: false) : null;
+
                 // 先用队列写锁固定静默窗口，再在释放它之前取得配置写锁。这样冻结已经提交，
                 // 旧分发可以真正排空，但第 4 步的 BEGIN IMMEDIATE 不能取得写锁或改变有效版本。
                 // 这是提交事务开始前的窗口，不是事务内部或数据库已经提交、方法尚未返回的窗口。
-                using var commitConnection = waitForCommitWriteLock ? OpenDatabase(data.Path, ConfigDatabase.FileName) : null;
+                using var commitConnection = stage == "committing" ? OpenDatabase(data.Path, ConfigDatabase.FileName) : null;
                 using var commitLock = commitConnection?.BeginTransaction(deferred: false);
-                if (waitForCommitWriteLock)
+                if (stage == "committing")
                 {
                     held.Rollback();
                     operation = await WaitForAsync(api, interruptedPath, status => status.GetProperty("stage").GetString() == "committing");
@@ -113,16 +138,18 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
                     using var json = JsonDocument.Parse(row.Payload);
                     Assert.Equal(42, json.RootElement.GetProperty("values").GetProperty("value").GetInt64());
                 });
-                if (waitForCommitWriteLock)
+                if (stage == "committing")
                 { Assert.True(committed.Length >= 2, "静默期间的旧消息应已在配置提交前真正入库。"); }
                 Assert.Single(state.Audit(AuditActions.SnapshotApplied));
                 Assert.False(receiver.Pending()); // 新输入未激活，独立发送者仍只有先前的未确认请求。
-                output.WriteLine($"强杀前：stage={operation.GetProperty("stage").GetString()}，输入已停止，" +
-                    $"配置提交写锁窗口={waitForCommitWriteLock}，{state.Pointers()}，已入库 {committed.Length} 条，冻结队头 seq={stored.Seq} / {stored.Id}。");
+                output.WriteLine($"强杀前：stage={operation.GetProperty("stage").GetString()}，输入={inputState}，" +
+                    $"准备同步窗口={stage == "preparing"}，{state.Pointers()}，已入库 {committed.Length} 条，冻结队头 seq={stored.Seq} / {stored.Id}。");
 
                 await host.KillAsync(Token); // 对应阶段的写锁仍持有，不能跑停机清理或赶在强杀前提交。
-                if (waitForCommitWriteLock)
+                if (stage == "committing")
                 { commitLock!.Rollback(); }
+                else if (stage == "preparing")
+                { preparationQueueLock!.Rollback(); }
                 else
                 { held.Rollback(); }
                 Assert.Equal(committed, ReadDeliveries(data.Path));
@@ -328,6 +355,72 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         finally { output.WriteLine(restarted.Output); }
     }
 
+    [Fact]
+    [Trait("Category", "Process")]
+    public async Task PreparationProbeRunsRealSimulatorAfterReleaseAndStopsNormally()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "受控准备阶段与 SIGTERM 子进程只在 Linux 验证。");
+        using var work = TemporaryDirectory.Create();
+        using var data = TemporaryDirectory.Create();
+        using var receiver = new TcpListener(IPAddress.Loopback, 0);
+        receiver.Start();
+        var port = ((IPEndPoint)receiver.LocalEndpoint).Port;
+        var state = new RuntimeStateReader(data.Path);
+        await using var host = HostProcess.StartPreparationProbe(work.Path, data.Path, DeploymentArguments(port));
+        try
+        {
+            using var api = await ClientAsync(host, setup: true);
+            var draft = await CreateDraftAsync(api, port);
+            var initial = await BeginApplyAsync(api, draft.Version);
+            await WaitForAsync(api, initial, operation => operation.GetProperty("stage").GetString() == "completed");
+            using (var first = await AcceptAsync(receiver))
+            {
+                Assert.Equal(42, Value(await ReadRequestAsync(first.GetStream())));
+                await AckAsync(first.GetStream());
+            }
+            var edited = await EditSampleAsync(api, draft.DeviceId, draft.InputId, draft.Version, 84);
+            File.WriteAllText(Path.Combine(work.Path, PreparationProcessHost.ArmedFile), "armed");
+            var applying = await BeginApplyAsync(api, edited);
+            await WaitForPreparationGateAsync(work.Path);
+            var preparing = await api.GetJsonAsync(applying, Token);
+            Assert.Equal("preparing", preparing.GetProperty("stage").GetString());
+            Assert.Equal((1L, (long?)2), (state.Pointers().Effective, state.Pointers().Pending));
+            File.WriteAllText(Path.Combine(work.Path, PreparationProcessHost.ReleasedFile), "released");
+            var completed = await WaitForAsync(api, applying, operation => operation.GetProperty("stage").GetString() == "completed");
+            Assert.True(completed.GetProperty("committed").GetBoolean());
+            Assert.Equal((2L, (long?)1, (long?)null), (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending));
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token);
+            deadline.CancelAfter(Deadline);
+            while (true)
+            {
+                using var next = await receiver.AcceptTcpClientAsync(deadline.Token);
+                var request = await ReadRequestAsync(next.GetStream());
+                var value = Value(request);
+                Assert.True(value is 42 or 84);
+                await AckAsync(next.GetStream());
+                if (value == 84)
+                { break; }
+            }
+            Assert.Contains("TEST PREPARATION GATE RELEASED", host.Output, StringComparison.Ordinal);
+            await host.RequestStopAsync(Token);
+            Assert.Equal(HostExitCodes.Success, await host.WaitForExitAsync(Deadline, Token));
+            Assert.Null(state.Pointers().Running);
+        }
+        finally { output.WriteLine(host.Output); }
+    }
+
+    private static async Task WaitForPreparationGateAsync(string directory)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        deadline.CancelAfter(Deadline);
+        var path = Path.Combine(directory, PreparationProcessHost.EnteredFile);
+        while (!File.Exists(path))
+        { await Task.Delay(10, deadline.Token); }
+        // 读到完整身份才算子进程已到达同步点，不能把 Create/Write 之间的短窗口当作已进入。
+        while (await File.ReadAllTextAsync(path, deadline.Token) != "input.simulator/meter/sample")
+        { await Task.Delay(10, deadline.Token); }
+    }
+
     private static async Task<string> EditSampleAsync(HttpClient api, long deviceId, long inputId, string version, int value)
     {
         using var edit = await api.PutAsJsonAsync(new Uri($"{Api}/devices/{deviceId}/inputs/{inputId}", UriKind.Relative), new
@@ -341,8 +434,10 @@ public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper outp
         return (await edit.ReadJsonAsync(Token)).GetProperty("version").GetString()!;
     }
 
-    private static HostProcess Start(string work, string data, int port) => HostProcess.Start(work, Environments.Production, data,
-        ["--TenonEdge:Outbound:LocalPorts:0", port.ToString(CultureInfo.InvariantCulture), "--TenonEdge:Runtime:StableAfterSeconds", "600"]);
+    private static HostProcess Start(string work, string data, int port) => HostProcess.Start(work, Environments.Production, data, DeploymentArguments(port));
+
+    private static string[] DeploymentArguments(int port) =>
+        ["--TenonEdge:Outbound:LocalPorts:0", port.ToString(CultureInfo.InvariantCulture), "--TenonEdge:Runtime:StableAfterSeconds", "600"];
 
     private static async Task<HttpClient> ClientAsync(HostProcess host, bool setup)
     {
