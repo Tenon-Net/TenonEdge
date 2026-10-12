@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十项在线应用强杀子场景软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后由测试侧原 SQL 回调控制）；另有共享 MQTT 停止超时同进程恢复；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.181 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十一项在线应用强杀子场景软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；另有共享 MQTT 停止超时同进程恢复；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.182 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3685,6 +3685,31 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 **维护者本次已批准**：配置应用中断恢复以数据库持久 COMMIT 成功为边界，之前恢复旧版、之后恢复新版；COMMIT 已成功但上层提交方法尚未返回的专门窗口仍未验证，下一子项澄清总设计/开发准备并补测，不再列为待确认。专用损坏快照恢复例外仍未获批准。T3-06 不标整体完成；本次不是 Broker 崩溃/硬件断电、长期压力或所有共享协议验证。前端/API 未改，未重跑或重计 250 Vitest/43 Chromium 基线；最低浏览器、实物与无 JSON 完整配置流程未验证，不进入 T3-07/08、T4/T5/G1。
 
+### 2.182 T3-06 持久 COMMIT 成功但上层提交尚未返回的中断恢复（2026-10-12）
+
+承接 §2.181，基线 `9a3e016`，落实维护者明确批准的边界澄清：**以 config.db 持久 COMMIT 成功为界，不以上层配置提交方法返回为界**。更新总设计 §7.4 正文/中断表、§22 决策与开发准备 D-07 补充；新增此窗口的真实 SIGKILL 及正常释放对照，关联 T3-06 / GW-10 / AT-10、AT-13、AT-28 / 功能 §6.3。产品恢复实现原已符合此规则，本批仅改测试和文档，没有产品故障开关、API、运行时/数据库替身、依赖、迁移、前端或部署变更。
+
+- 先读 SqlSugar 对照笔记及固定版本的原 `CommitTran` 路径（5.1.4.221：同步真实 `Transaction.Commit` 后关闭连接），并核对 Microsoft.Data.Sqlite 10.0.12 官方源码 `SqliteConnection.Close` 在末尾同步发出 Open→Closed `StateChange`（源码留在 `/tmp/tenonedge-durable-commit-SqliteConnection-10.0.12.cs`，仅阅读，未复制第三方源码）。复用测试侧原 SQL 回调，在真实指针 UPDATE 尚处于事务时为**原连接**安装一次性关闭事件；保留原 FULL/WAL/超时回调、COMMIT 与全部原输入/输出工厂，同一套 ConfigDatabase，没有第二套运行时。
+- 关闭回调中先移除自身，用独立只读、非池化连接回读已持久化 effective/running=r2、previous=r1、pending 空、r1=history、r2=effective，以及 r2 应用审计恰好一条；原写连接已 closed，独立查询不在事务中，writer 设置为 WAL/FULL/busy_timeout=5000。关闭所有测试 reader/观察连接后才公布检查点并等待；若原事务未提交/结果不同则明确失败，不能把 rollback/关闭当成提交成功。原关闭回调未返回，因此原 `CommitTran` / `RuntimeVersionStore.Commit` 均尚未返回，不用替换事务或伪造 COMMIT 来固定窗口。
+- 真实认证/CSRF API 先应用 r1/42，HTTP 接收端不确认队头；编辑84并应用 r2。窗口内公开操作仍为 committing/committed=null，运行时 active=r1，旧输入/分发 stopped、旧 HTTP 发送者 running、在途0；独立持久检查点却已是 r2。队列只有原 r1/42 冻结记录，没有新版本投递。**在上层调用仍阻塞时，另一个认证请求成功保存并回读 dirty126**，验证配置写锁已经释放；不把这份新草稿自动应用。
+- 强杀行不释放关闭回调，持 queue 写锁直到 SIGKILL 完成；未经注入的原产品 Host 重启加载 r2，而非 r1/42 或草稿126。r2 异常次数1、r1 为0，r2 不标“未生效”，pending 空；仍只有两个快照、r1/r2 两条原应用审计，无自动回滚或未生效事件。内存操作列表为空、旧操作 URL 返回404。原冻结 r1/42 按 FIFO、正文逐字节、投递编号/幂等头/源编号不变地补发，之后真正采集84且源编号不在旧集合；队列排空，SIGTERM=0、运行标记清除。
+- 正常释放行移除 armed 后放行原连接关闭回调：原 COMMIT/上层方法返回，r2 completed/committed=true、输入 running；**原 HTTP 在途 socket**可正常确认，原冻结记录不重算，新采样84身份不同、草稿126保留；无新快照或回滚，异常次数均0，队列排空，SIGTERM=0、运行标记清除。不是用探针超时退出或自动重启冒充正常对照。
+
+验证（Linux x64、SDK 10.0.401/runtime 10.0.12、SQLite 3.53.3、Python 3.14.4、Docker 29.1.3；Broker 环境沿用 §2.181，未升级依赖；`/tmp/tenonedge-durable-commit-environment.log`）：
+
+- 首次构建遇到新增 `System.Data` 导入使 `DbType` 歧义：**CS0104，0 警告、1 错误，未执行测试**（`/tmp/tenonedge-durable-commit-build-kill.log`）；限定 `SqlSugar.DbType` 后构建通过，**0 警告/错误**（`...-build-kill-fixed.log`）。这是编译错误，不是产品行为 RED，也未发现需要修改产品恢复逻辑的问题。
+- 先实现/执行唯一中断 Fact **1 项通过、0 失败/跳过**（`...-kill.log`、`...-kill-verified.log`，TRX `/tmp/tenonedge-durable-commit-kill-trx-OcAJT7`）；随后才扩为 Theory 加正常释放行，单独执行该行 **1 项通过、0 失败/跳过**（`...-build-normal.log`、`...-normal.log`、`...-normal-verified.log`，TRX `/tmp/tenonedge-durable-commit-normal-trx-T4WmUT`）。这两次是最终重复前的源码版本，单独登记，不混入最终执行数。
+- 最终 `dotnet format TenonEdge.sln --verify-no-changes --no-restore` 与 `dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal` 通过，**0 警告/错误**（`...-format-final.log`、`...-build-final.log`）。普通 `dotnet tests/IntegrationTests/bin/Release/net10.0/TenonEdge.IntegrationTests.dll -assemblyInfo` 退出0，原 xUnit 4.0.1/.NET 10.0.12，不执行用例/启动探针（`...-assembly-info.log`）。
+- `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~DurableCommitBeforeSubmitReturnsKeepsNewVersionAndFrozenDelivery --logger trx --results-directory <独立目录> --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal` 连续 **3 轮，每轮2项，共6次通过，0 失败/跳过**；两行均实际发现，各轮 TRX 门禁通过，每轮约10—11秒（`...-repeat-{1,2,3}.log`、`...-repeat-{1,2,3}-verified.log`，目录列表 `...-repeat-paths`）。仅新增 Theory 的两行重复，不称整类三轮。
+- 首次全量回归 **不通过**：`dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-durable-commit-full-trx-xdotEk --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`，1258 单元通过，集成 **1370 通过/1 失败/0 跳过**（总1371）。失败为既有 `BrokerRestartRestoresOnlySessionsAndBacklogThatWereCheckpointed(persistence: False, forceKill: True, checkpoint: False)` 的 `docker start`：127.0.0.1:42757 已被占用，不是 COMMIT 测试断言失败；本中断类21项全部通过。TRX 门禁正确拒绝该全量结果（`...-first-full.log`、`...-first-full-verified.log`，目录 `...-first-full-trx-path`）。保留原失败报告，不能因重跑成功抹掉。
+- 固定原失败行的筛选 `FullyQualifiedName~BrokerRestartRestoresOnlySessionsAndBacklogThatWereCheckpointed&DisplayName~persistence: False, forceKill: True, checkpoint: False` 单独连续 **3 轮，各1项通过，零失败/跳过**，TRX 名称逐次核对确为原失败行（`...-broker-restart-{1,2,3}.log`、`...-broker-restart-{1,2,3}-verified.log`，目录列表 `...-broker-restart-repeat-paths`）。没有改产品、Broker 身份/端口选择、并行策略或源代码。晚取 Docker events 未保留故障容器记录，**实际端口占用者/竞争根因未证实，偶发端口风险未修复**；单独重跑未复现不等于找到根因。
+- 同一源码、相同参数完整重跑到独立目录 `/tmp/tenonedge-durable-commit-full-final-trx-C01J5x`：**1258 单元 + 1371 集成 = 2629 项通过，0 失败/跳过**，集成约5分39秒（`...-full-final.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-durable-commit-full-final-trx-C01J5x --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 通过（`...-full-final-verified.log`）。本类现为 **11 个中断子场景+8个正常释放+1个停止超时恢复+1个源身份辅助回归，共21项**，不称完整故障矩阵通过；没有同时执行构建/格式/其他测试。
+- `python3 /tmp/tenonedge-durable-commit-evidence-cleanup-final.py` 只读核对最终重复6次+最终全量本类21次：**27次通过，其中26次为真实进程，新增中断/正常各4次**。每次关闭检查点都符合持久边界；强杀不释放同步点、有两次相同数据锁取得，正常行真实释放、有一次取得。**26个数据目录+23个同步目录已删除、80个去重管理端口+10个Broker端口不再监听，相关进程退出、测试标签容器与空基线一致**（`...-evidence-cleanup-final.log`）。
+- 首次全量的本类另由 `python3 /tmp/tenonedge-durable-commit-first-full-cleanup.py` 只读核对：**21次全部通过、20个数据目录+17个同步目录已删除，62个去重管理端口+10个Broker端口不再监听，相关进程/容器无遗留**（`...-first-full-cleanup.log`）；只证明本类，不将首轮全量失败改为通过。最早单项中断/正常两次由 `python3 /tmp/tenonedge-durable-commit-earlier-cleanup.py` 另核对：**2个数据目录+2个同步目录已删除、6个管理端口不再监听，相关进程退出**（`...-earlier-cleanup.log`）。三组执行不混计、跨轮端口不累加冒充全局去重；审计不删目录、杀进程或删容器，资源由测试自身释放。
+- 五份测试源码全量前后 SHA-256 不变（`...-final-source.sha256`、`...-source-before-full.log`、`...-first-full-source-verified.log`、`...-source-before-full-final.log`、`...-source-final-verified.log`），`git diff --check` 通过；后续只整理证据文档，按既有授权本地提交，不推送或发布。
+
+本批是**单路模拟输入+真实 HTTP、磁盘 SQLite、真实进程强杀**的软件子场景，补齐的是持久 COMMIT 与上层方法返回之间的独立窗口；不代表所有协议/任意单元数量、COMMIT 内部未知结果故障、断电、慢盘或完整网页流程已验收。T3-06 仍部分完成，专用损坏快照恢复例外仍未获批准；前端/API 未变，不重跑或重计250 Vitest/43 Chromium基线。其他共享协议/MQTT激活边界、最低浏览器、实物、长期压力及无 JSON 完整流程仍未验证，不进入 T3-07/08、T4/T5/G1。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3735,7 +3760,7 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
-| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 十项真实强杀子场景通过（本地软件，含两路 MQTT 输入及 MQTT 输出共用客户端、HTTP 双目标；四类窗口为测试侧工厂或原事件包装，事务写入后为原 SQL 回调控制）；另补共享 MQTT 停止超时同进程恢复；全部 2627 项后端回归通过，不代表完整矩阵 | §2.172—§2.181 | 其他共享协议及 MQTT 其他停止/激活边界、数据库已持久提交但调用未返回、任意数量/真实协议部分激活、断电与完整网页流程 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 十一项真实强杀子场景通过（本地软件，含两路 MQTT 输入及 MQTT 输出共用客户端、HTTP 双目标；四类窗口为测试侧工厂或原事件包装，事务写入后及持久 COMMIT 后上层返回前为原 SQL/连接回调控制）；另补共享 MQTT 停止超时同进程恢复；最终 2629 项后端回归通过（首轮 Docker 端口冲突失败另保留），不代表完整矩阵 | §2.172—§2.182 | 其他共享协议及 MQTT 其他停止/激活边界、任意数量/真实协议部分激活、断电与完整网页流程 |
 | FS-02 / AT-13 / T3-06 | 应用停止超时不重复采集 | 共享 MQTT 双输入/双目标子场景通过（真实软件）：原 5 秒期限，原循环未退出不重建连接，退出后同进程恢复 r1、双目标原样补发，超时事件一次 | §2.181 | 其他协议/单元组合、实际设备与完整矩阵未验证 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
