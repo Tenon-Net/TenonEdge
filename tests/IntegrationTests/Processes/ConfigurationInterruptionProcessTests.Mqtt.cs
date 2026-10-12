@@ -22,11 +22,13 @@ public sealed partial class ConfigurationInterruptionProcessTests
     private const string MqttStopReleased = MqttPartialStopControl.ReleasedFile;
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
     [Trait("Category", "Process")]
     [Trait("Category", "RealBroker")]
-    public async Task SharedMqttPartialStopKeepsVersionAndDeliveryBoundaries(bool interrupt)
+    public async Task SharedMqttPartialStopKeepsVersionAndDeliveryBoundaries(bool interrupt, bool sharedOutput)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "共享 MQTT 部分停止与 SIGKILL 恢复只在 Linux 验证。");
         await using var broker = await MosquittoBrokerFixture.StartDedicatedAsync(Token);
@@ -40,26 +42,32 @@ public sealed partial class ConfigurationInterruptionProcessTests
         var clientId = "partial-stop-" + Guid.NewGuid().ToString("N");
         var (publisher, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, "publisher-" + Guid.NewGuid().ToString("N")), Token);
         using var peer = publisher;
+        var mqttMessages = sharedOutput ? ReceivedMessages.Attach(peer) : null;
+        if (sharedOutput)
+        { await MqttProbe.SubscribeAsync(peer, prefix + "/output", Token); }
         var state = new RuntimeStateReader(data.Path);
         MqttStopDraft draft;
         string applied, dirtyVersion;
         DeliveryRow[] frozen;
+        MqttFanOutRow[] mqttFrozen = [];
         await using (var host = HostProcess.StartMqttPartialStopProbe(work.Path, data.Path, MqttStopArguments(port, broker.Port)))
         {
             try
             {
                 using var api = await ClientAsync(host, setup: true);
-                draft = await CreateMqttStopDraftAsync(api, port, broker, clientId, prefix);
+                draft = await CreateMqttStopDraftAsync(api, port, broker, clientId, prefix, sharedOutput);
                 var initial = await BeginApplyAsync(api, draft.Version);
                 await WaitForAsync(api, initial, operation => operation.GetProperty("stage").GetString() == "completed");
                 await WaitForAsync(api, Api + "/runtime/status", _ => MqttCounter(data.Path, draft.ConnectionId, "subscribed") == 2);
+                if (sharedOutput)
+                { await SetMqttStopOutputPauseAsync(api, draft.ConnectionId, paused: true); }
                 Assert.Single((await broker.LogsAsync(Token)).Split('\n'), line => line.Contains($" as {clientId} (", StringComparison.Ordinal));
                 await PublishMqttStopAsync(peer, prefix + "/a-old", 42);
                 using var accepted = await AcceptAsync(receiver);
                 var original = await ReadRequestAsync(accepted.GetStream()); // 真实 HTTP 队头保持未确认。
                 Assert.Equal(42, Value(original));
                 await PublishMqttStopAsync(peer, prefix + "/b-old", 43);
-                await WaitForAsync(api, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == 2 &&
+                await WaitForAsync(api, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == (sharedOutput ? 4 : 2) &&
                     MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == 2);
                 var version = await EditMqttStopSourceAsync(api, draft.DeviceId, draft.InputId, draft.Version, "sample", prefix + "/a-new");
                 version = await EditMqttStopSourceAsync(api, draft.SlowDeviceId, draft.SlowInputId, version, "slow-stop", prefix + "/b-new");
@@ -84,12 +92,24 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 Assert.Equal(2, dispatchers.Length);
                 Assert.All(dispatchers, unit => Assert.Equal("running", unit.GetProperty("state").GetString()));
                 await WaitForMqttStopDisconnectAsync(broker, clientId);
+                if (sharedOutput)
+                {
+                    mqttFrozen = ReadMqttFanOutRows(data.Path, draft.ConnectionId);
+                    AssertMqttFanOutFrozen(mqttFrozen, HttpFanOutRows(data.Path, mqttFrozen), prefix + "/output");
+                    Assert.Empty(await mqttMessages!.CollectAsync(TimeSpan.Zero, Token));
+                    await SetMqttStopOutputPauseAsync(api, draft.ConnectionId, paused: false);
+                    await AssertMqttStopOutputQuiescingAsync(api, quiet);
+                    Assert.Equal(mqttFrozen, ReadMqttFanOutRows(data.Path, draft.ConnectionId));
+                    Assert.Empty(await mqttMessages.CollectAsync(TimeSpan.Zero, Token));
+                    Assert.Single((await broker.LogsAsync(Token)).Split('\n'), line => line.Contains($" as {clientId} (", StringComparison.Ordinal));
+                    output.WriteLine("TEST MQTT DUPLEX STOP CHECKPOINT: shared ClientId; frozen MQTT=2 + HTTP=2; manual pause removed; original MQTT output retried because input quiescing; no wire publish or reconnect.");
+                }
                 dirtyVersion = await EditMqttStopSourceAsync(api, draft.DeviceId, draft.InputId, version, "sample", prefix + "/a-dirty");
                 dirtyVersion = await EditMqttStopSourceAsync(api, draft.SlowDeviceId, draft.SlowInputId, dirtyVersion, "slow-stop", prefix + "/b-dirty");
                 output.WriteLine($"共享 MQTT 部分停止窗口：sample stopped/slow-stop stopping，原慢循环未取消/退出；quiescing/committed=false，旧分发器2项 running、在途0；{state.Pointers()}，dirty 草稿保留未应用。");
                 if (!interrupt)
                 {
-                    frozen = ReadDeliveries(data.Path);
+                    frozen = HttpFanOutRows(data.Path, mqttFrozen);
                     AssertMqttStopFrozen(frozen, original);
                     File.Delete(Path.Combine(work.Path, MqttStopArmed));
                     File.WriteAllText(Path.Combine(work.Path, MqttStopReleased), "released");
@@ -100,21 +120,33 @@ public sealed partial class ConfigurationInterruptionProcessTests
                     Assert.Equal(RuntimeSnapshotStates.Effective, state.Snapshot(2).State);
                     await AckAsync(accepted.GetStream());
                     await ReplayMqttStopFrozenAsync(receiver, frozen.Skip(1));
+                    if (sharedOutput)
+                    { await ReceiveMqttFanOutFrozenAsync(mqttMessages!, mqttFrozen); }
                     await WaitForAsync(api, Api + "/runtime/status", _ => MqttCounter(data.Path, draft.ConnectionId, "subscribed") == 4);
                     await PublishMqttStopAsync(peer, prefix + "/a-new", 84);
                     await PublishMqttStopAsync(peer, prefix + "/b-new", 86);
-                    await ReceiveMqttStopValuesAsync(receiver, frozen, [84, 86]);
+                    var samples = await ReceiveMqttStopValuesAsync(receiver, frozen, [84, 86]);
+                    if (sharedOutput)
+                    { await ReceiveMqttFanOutSamplesAsync(mqttMessages!, prefix + "/output", samples); }
                     await PublishMqttStopAsync(peer, prefix + "/a-old", 126);
                     await PublishMqttStopAsync(peer, prefix + "/b-old", 127);
                     await PublishMqttStopAsync(peer, prefix + "/a-dirty", 128);
                     await PublishMqttStopAsync(peer, prefix + "/b-dirty", 129);
                     await PublishMqttStopAsync(peer, prefix + "/a-new", 168);
                     await PublishMqttStopAsync(peer, prefix + "/b-new", 169);
-                    await ReceiveMqttStopValuesAsync(receiver, frozen, [168, 169]);
+                    var live = await ReceiveMqttStopValuesAsync(receiver, frozen, [168, 169]);
+                    if (sharedOutput)
+                    { await ReceiveMqttFanOutSamplesAsync(mqttMessages!, prefix + "/output", live); }
                     var running = await WaitForAsync(api, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == 0 &&
                         MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == 6);
                     AssertMqttStopRunning(running);
                     await AssertMqttStopSessionAsync(broker, data.Path, draft.ConnectionId, clientId);
+                    if (sharedOutput)
+                    {
+                        Assert.Empty(await mqttMessages!.CollectAsync(TimeSpan.Zero, Token));
+                        await AssertMqttStopOutputResumedAsync(api, state, draft.ConnectionId);
+                        output.WriteLine("TEST MQTT DUPLEX STOP RECOVERED: r2; MQTT + HTTP frozen42/43 and fresh84/86/168/169; source identities shared, delivery identities distinct; manual pause false; queue empty.");
+                    }
                     await AssertMqttStopDirtyAsync(api, draft, prefix, dirtyVersion);
                     Assert.Equal(["r1", "r2"], state.Audit(AuditActions.SnapshotApplied).Select(entry => entry.Target).ToArray());
                     Assert.Empty(state.Audit(AuditActions.AutoRollback));
@@ -138,13 +170,16 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 Assert.Equal(2, MqttCounter(data.Path, draft.ConnectionId, "acknowledged"));
                 using var queue = OpenQueue(data.Path);
                 using var held = queue.BeginTransaction(deferred: false);
-                frozen = ReadDeliveries(data.Path);
+                var allFrozen = ReadDeliveries(data.Path);
+                frozen = HttpFanOutRows(data.Path, mqttFrozen);
                 AssertMqttStopFrozen(frozen, original);
                 Assert.Equal(["r1"], state.Audit(AuditActions.SnapshotApplied).Select(entry => entry.Target).ToArray());
                 output.WriteLine($"共享 MQTT 部分停止：两路同一真实 ClientId，sample stopped/slow-stop stopping，原慢循环未取消/退出；r1 effective/r2 pending，旧确认=2，84/86 留在存活 Broker，草稿 dirty 未应用；{state.Pointers()}。");
                 await host.KillAsync(Token);
                 held.Rollback();
-                Assert.Equal(frozen, ReadDeliveries(data.Path));
+                Assert.Equal(allFrozen, ReadDeliveries(data.Path));
+                if (sharedOutput)
+                { Assert.Equal(mqttFrozen, ReadMqttFanOutRows(data.Path, draft.ConnectionId)); }
                 Assert.DoesNotContain("TEST MQTT PARTIAL STOP GATE RELEASED", host.Output, StringComparison.Ordinal);
                 Assert.DoesNotContain("TEST MQTT PARTIAL STOP ORIGINAL STOPPED", host.Output, StringComparison.Ordinal);
                 Assert.DoesNotContain("在 00:00:05 内没有停止", host.Output, StringComparison.Ordinal);
@@ -171,7 +206,11 @@ public sealed partial class ConfigurationInterruptionProcessTests
             await ProblemAssert.HasStatusAsync(missing, HttpStatusCode.NotFound, Token);
             await AssertMqttStopDirtyAsync(api, draft, prefix, dirtyVersion);
             await ReplayMqttStopFrozenAsync(receiver, frozen);
-            await ReceiveMqttStopValuesAsync(receiver, frozen, [84, 86]);
+            if (sharedOutput)
+            { await ReceiveMqttFanOutFrozenAsync(mqttMessages!, mqttFrozen); }
+            var samples = await ReceiveMqttStopValuesAsync(receiver, frozen, [84, 86]);
+            if (sharedOutput)
+            { await ReceiveMqttFanOutSamplesAsync(mqttMessages!, prefix + "/output", samples); }
             await WaitForAsync(api, Api + "/runtime/status", _ => MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == 4);
             await PublishMqttStopAsync(peer, prefix + "/a-new", 126);
             await PublishMqttStopAsync(peer, prefix + "/b-new", 127);
@@ -179,11 +218,19 @@ public sealed partial class ConfigurationInterruptionProcessTests
             await PublishMqttStopAsync(peer, prefix + "/b-dirty", 129);
             await PublishMqttStopAsync(peer, prefix + "/a-old", 168);
             await PublishMqttStopAsync(peer, prefix + "/b-old", 169);
-            await ReceiveMqttStopValuesAsync(receiver, frozen, [168, 169]);
+            var live = await ReceiveMqttStopValuesAsync(receiver, frozen, [168, 169]);
+            if (sharedOutput)
+            { await ReceiveMqttFanOutSamplesAsync(mqttMessages!, prefix + "/output", live); }
             var running = await WaitForAsync(api, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == 0 &&
                 MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == 6);
             AssertMqttStopRunning(running);
             await AssertMqttStopSessionAsync(broker, data.Path, draft.ConnectionId, clientId);
+            if (sharedOutput)
+            {
+                Assert.Empty(await mqttMessages!.CollectAsync(TimeSpan.Zero, Token));
+                await AssertMqttStopOutputResumedAsync(api, state, draft.ConnectionId);
+                output.WriteLine("TEST MQTT DUPLEX STOP RECOVERED: r1; MQTT + HTTP frozen42/43 and fresh84/86/168/169; source identities shared, delivery identities distinct; manual pause false; queue empty.");
+            }
             output.WriteLine("共享 MQTT 部分停止恢复：原 r1 两项冻结记录原样 FIFO 补发，Broker 离线消息84/86及旧主题实时168/169真实收到；pending r2 废弃，dirty 草稿保留，新/dirty 主题不采集；同一 ClientId 仅初始与重启两次连接，sessionLost=0。");
             await restarted.RequestStopAsync(Token);
             Assert.Equal(HostExitCodes.Success, await restarted.WaitForExitAsync(Deadline, Token));
@@ -293,8 +340,9 @@ public sealed partial class ConfigurationInterruptionProcessTests
         }
     }
 
-    private static async Task ReceiveMqttStopValuesAsync(TcpListener receiver, DeliveryRow[] frozen, long[] values)
+    private static async Task<WireRequest[]> ReceiveMqttStopValuesAsync(TcpListener receiver, DeliveryRow[] frozen, long[] values)
     {
+        var requests = new List<WireRequest>();
         foreach (var value in values)
         {
             using var peer = await AcceptAsync(receiver);
@@ -303,8 +351,10 @@ public sealed partial class ConfigurationInterruptionProcessTests
             Assert.DoesNotContain(frozen, row => row.SourceId == SourceMessageId(request));
             using var json = JsonDocument.Parse(request.Body);
             Assert.Equal(value is 84 or 168 ? "meter" : "meter-slow", json.RootElement.GetProperty("deviceKey").GetString());
+            requests.Add(request);
             await AckAsync(peer.GetStream());
         }
+        return requests.ToArray();
     }
 
     private static async Task<string> EditMqttStopSourceAsync(HttpClient api, long device, long source, string version, string key, string topic)
@@ -317,7 +367,7 @@ public sealed partial class ConfigurationInterruptionProcessTests
     private static object MqttStopSource(string version, string key, string topic) => new
     { expectedVersion = version, key, name = key, mqtt = new { topicFilter = topic, fields = new[] { new { key = "value", path = "/v", type = "integer" } } } };
 
-    private static async Task<MqttStopDraft> CreateMqttStopDraftAsync(HttpClient api, int port, MosquittoBroker broker, string clientId, string prefix)
+    private static async Task<MqttStopDraft> CreateMqttStopDraftAsync(HttpClient api, int port, MosquittoBroker broker, string clientId, string prefix, bool sharedOutput)
     {
         var connection = await PostAsync(api, Api + "/connections", new
         { expectedVersion = "0", key = "mqtt", name = "MQTT", kind = "mqtt", mqtt = new { host = "127.0.0.1", port = broker.Port, clientId } });
@@ -337,6 +387,17 @@ public sealed partial class ConfigurationInterruptionProcessTests
         }
         var http = await PostAsync(api, Api + "/connections", new
         { expectedVersion = version, key = "http", name = "HTTP", kind = "http", http = new { baseAddress = $"http://127.0.0.1:{port}/api/", timeoutMs = 60000 } });
+        List<object> nodes =
+        [
+            new { id = "in", type = "input.mqtt", version = 1, name = "Input", config = new { sourceIds = devices.Select(device => device.Input).ToArray() } },
+            new { id = "out", type = "output.http", version = 1, name = "Output", config = new { connectionId = http.GetProperty("connection").GetProperty("id").GetInt64() } },
+        ];
+        List<object> edges = [new { source = "in", target = "out" }];
+        if (sharedOutput)
+        {
+            nodes.Add(new { id = "mqtt-out", type = "output.mqtt", version = 1, name = "MQTT fan-out", config = new { connectionId, topic = prefix + "/output", qos = 1 } });
+            edges.Add(new { source = "in", target = "mqtt-out" });
+        }
         var route = await PostAsync(api, Api + "/routes", new
         {
             expectedVersion = http.GetProperty("version").GetString(),
@@ -346,12 +407,8 @@ public sealed partial class ConfigurationInterruptionProcessTests
             graph = new
             {
                 schemaVersion = 1,
-                nodes = new object[]
-                {
-                    new { id = "in", type = "input.mqtt", version = 1, name = "Input", config = new { sourceIds = devices.Select(device => device.Input).ToArray() } },
-                    new { id = "out", type = "output.http", version = 1, name = "Output", config = new { connectionId = http.GetProperty("connection").GetProperty("id").GetInt64() } },
-                },
-                edges = new[] { new { source = "in", target = "out" } },
+                nodes,
+                edges,
                 layout = new { nodes = new Dictionary<string, object>() },
             },
         });
