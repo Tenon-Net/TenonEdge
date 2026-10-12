@@ -2,12 +2,14 @@ using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
+using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Adapters.Simulator;
 using TenonEdge.Host.Features.Runtime;
 
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
-/// <summary>仅测试进程：全部单元已受监督、激活屏障已释放，一路真实采样而另一路尚未调用原循环。
+/// <summary>仅测试进程：全部单元已受监督、激活屏障已释放，另一路尚未调用原循环。
+/// 模拟输入可独立采样；共享 MQTT 则须等全部原输入循环启动后才连接，保持原持久接管/恢复分组。
 /// 原激活事件先真实保存，再固定其返回窗口；不谎称第二路未注册或处于 stopped。</summary>
 internal static class PartialActivationControl
 {
@@ -18,13 +20,27 @@ internal static class PartialActivationControl
     internal const string LifecycleReleasedFile = "partial-activation.lifecycle-released";
     internal const string EventType = "runtime.versionActivated";
 
-    public static void Register(IServiceCollection services, string directory)
+    public static void Register(IServiceCollection services, string directory, bool mqtt = false)
     {
-        var simulator = services.Single(service => service.ServiceType == typeof(IInputUnitFactory) &&
-            service.ImplementationType == typeof(SimulatorInputFactory));
-        services.Remove(simulator);
-        services.AddSingleton<IInputUnitFactory>(provider =>
-            new Factory(ActivatorUtilities.CreateInstance<SimulatorInputFactory>(provider), directory));
+        if (mqtt)
+        {
+            var registration = services.Single(service => service.ServiceType == typeof(IRuntimePlanAdapterProvider) &&
+                service.ImplementationFactory is not null);
+            if (registration.Lifetime != ServiceLifetime.Singleton)
+            { throw new InvalidOperationException("原 MQTT 计划提供者登记已变化，须重核共享激活探针。"); }
+            var build = registration.ImplementationFactory!;
+            services.Remove(registration);
+            services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>
+                new Provider(build(provider) as MqttPlanAdapterProvider ?? throw new InvalidOperationException("须包装原 MQTT 计划提供者。"), directory));
+        }
+        else
+        {
+            var simulator = services.Single(service => service.ServiceType == typeof(IInputUnitFactory) &&
+                service.ImplementationType == typeof(SimulatorInputFactory));
+            services.Remove(simulator);
+            services.AddSingleton<IInputUnitFactory>(provider =>
+                new Factory(ActivatorUtilities.CreateInstance<SimulatorInputFactory>(provider), directory));
+        }
         var events = services.Single(service => service.ServiceType == typeof(IRuntimeEventSink));
         if (events.ImplementationType != typeof(RuntimeEventSink) || events.Lifetime != ServiceLifetime.Singleton)
         { throw new InvalidOperationException("原运行事件入口登记已变化，须重核部分激活探针。"); }
@@ -33,9 +49,22 @@ internal static class PartialActivationControl
             new EventSink(ActivatorUtilities.CreateInstance<RuntimeEventSink>(provider), directory));
     }
 
+    private sealed class Provider(IRuntimePlanAdapterProvider inner, string directory) : IRuntimePlanAdapterProvider
+    {
+        public RuntimePlanAdapters Create()
+        {
+            var plan = inner.Create();
+            if (plan.Inputs.Count != 1 || plan.Inputs[0].Kind != "input.mqtt")
+            { throw new InvalidOperationException("原 MQTT 计划输入工厂集合已变化，须重核共享激活探针。"); }
+            return new([new Factory(plan.Inputs[0], directory)], plan.Outputs);
+        }
+    }
+
     private sealed class Factory(IInputUnitFactory inner, string directory) : IInputUnitFactory
     {
         public string Kind => inner.Kind;
+        public bool UsesDurableHandoff => inner.UsesDurableHandoff;
+        public RuntimeUnitId RecoveryGroup(RuntimeUnitPlan plan) => inner.RecoveryGroup(plan);
         public IRuntimeUnit Build(RuntimeUnitPlan plan, InputUnitContext context)
         {
             var unit = inner.Build(plan, context);

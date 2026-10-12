@@ -23,6 +23,7 @@ internal static class ConfigurationInterruptionProcessHost
     internal const string DurableCommitCommand = "--tenonedge-test-durable-commit-host";
     internal const string PartialActivationCommand = "--tenonedge-test-partial-activation-host";
     internal const string MqttPartialStopCommand = "--tenonedge-test-mqtt-partial-stop-host";
+    internal const string MqttPartialActivationCommand = "--tenonedge-test-mqtt-partial-activation-host";
     internal const string GateDirectoryVariable = "TENONEDGE_TEST_PREPARATION_DIRECTORY";
     internal const string ArmedFile = "preparation.armed";
     internal const string EnteredFile = "preparation.entered";
@@ -41,7 +42,7 @@ internal static class ConfigurationInterruptionProcessHost
 
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length == 0 || args[0] is not (Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PartialActivationCommand or MqttPartialStopCommand))
+        if (args.Length == 0 || args[0] is not (Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PartialActivationCommand or MqttPartialStopCommand or MqttPartialActivationCommand))
         { return await Xunit.Runner.InProc.SystemConsole.ConsoleRunner.Run(args); }
         if (!OperatingSystem.IsLinux())
         { throw new PlatformNotSupportedException("受控配置中断进程只在 Linux 验证。"); }
@@ -49,7 +50,7 @@ internal static class ConfigurationInterruptionProcessHost
         var preInputActivation = args[0] == PreInputActivationCommand;
         var transactionWriting = args[0] == TransactionWritingCommand;
         var durableCommit = args[0] == DurableCommitCommand;
-        var partialActivation = args[0] == PartialActivationCommand;
+        var partialActivation = args[0] is PartialActivationCommand or MqttPartialActivationCommand;
         var mqttPartialStop = args[0] == MqttPartialStopCommand;
         var gate = Environment.GetEnvironmentVariable(GateDirectoryVariable);
         if (gate is null || !Path.IsPathFullyQualified(gate) || !Directory.Exists(gate))
@@ -68,7 +69,7 @@ internal static class ConfigurationInterruptionProcessHost
             }
             if (partialActivation)
             {
-                PartialActivationControl.Register(services, gate);
+                PartialActivationControl.Register(services, gate, mqtt: args[0] == MqttPartialActivationCommand);
                 return;
             }
             if (transactionWriting || durableCommit)
