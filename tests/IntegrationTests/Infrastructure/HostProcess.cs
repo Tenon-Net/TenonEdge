@@ -78,6 +78,10 @@ public sealed partial class HostProcess : IAsyncDisposable
     public static HostProcess StartPartialActivationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PartialActivationCommand);
 
+    /// <summary>仅测试侧延后一路原 MQTT 循环收到取消，另一输入照常静默并断开原共享会话。</summary>
+    public static HostProcess StartMqttPartialStopProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.MqttPartialStopCommand);
+
     private static HostProcess StartControlledProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments, string command) =>
         StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
             new Dictionary<string, string> { [ConfigurationInterruptionProcessHost.GateDirectoryVariable] = workingDirectory }, null,

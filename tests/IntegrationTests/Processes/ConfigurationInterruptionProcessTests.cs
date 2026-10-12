@@ -15,8 +15,8 @@ using TenonEdge.IntegrationTests.Infrastructure;
 namespace TenonEdge.IntegrationTests.Processes;
 
 /// <summary>总设计 §7.4 的真实 SIGKILL 子场景：准备中、部分输入已停、旧消息排空中、等待提交写锁、事务写入后、提交后输入未启动及新版本产生投递。
-/// 准备/部分停止/提交后输入未启动使用测试侧工厂，事务内部用原 SQL 回调，其余使用原产品 Host；无产品故障开关或重启接口，不是断电验证。</summary>
-public sealed class ConfigurationInterruptionProcessTests(ITestOutputHelper output)
+/// 准备/部分停止（含共享 MQTT）/提交后输入未启动/部分采样使用测试侧工厂或原事件包装，事务内部用原 SQL 回调；恢复使用原产品 Host，无产品故障开关或重启接口，不是断电验证。</summary>
+public sealed partial class ConfigurationInterruptionProcessTests(ITestOutputHelper output)
 {
     private const string Api = "/api/edge-admin/v1";
     private static TimeSpan Deadline => TimeSpan.FromSeconds(30);
