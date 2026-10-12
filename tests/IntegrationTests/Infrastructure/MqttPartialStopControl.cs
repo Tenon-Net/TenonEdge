@@ -51,10 +51,12 @@ internal static class MqttPartialStopControl
 
     private sealed class DelayedStop(IRuntimeUnit inner, string directory) : IRuntimeUnit
     {
+        private bool _wasStarted;
         public RuntimeUnitId Id => inner.Id;
         public async Task RunAsync(CancellationToken stoppingToken)
         {
             stoppingToken.ThrowIfCancellationRequested();
+            _wasStarted = true;
             using var originalStop = new CancellationTokenSource();
             var stopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using var registration = stoppingToken.Register(() => stopping.TrySetResult());
@@ -88,7 +90,9 @@ internal static class MqttPartialStopControl
         public async ValueTask DisposeAsync()
         {
             await inner.DisposeAsync();
-            Console.WriteLine($"TEST MQTT PARTIAL STOP UNIT DISPOSED: {Id}");
+            // 放弃的候选计划也会释放从未启动的包装单元，不能误把它标成原运行实例已释放。
+            Console.WriteLine(_wasStarted ? $"TEST MQTT PARTIAL STOP UNIT DISPOSED: {Id}"
+                : $"TEST MQTT PARTIAL STOP UNSTARTED UNIT DISPOSED: {Id}");
         }
     }
 }
