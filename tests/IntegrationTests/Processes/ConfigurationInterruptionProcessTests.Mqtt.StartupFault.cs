@@ -14,11 +14,12 @@ namespace TenonEdge.IntegrationTests.Processes;
 public sealed partial class ConfigurationInterruptionProcessTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(3)]
     [Trait("Category", "Process")]
     [Trait("Category", "RealBroker")]
-    public async Task SharedMqttStartupFaultDoesNotRollBackAndRestartsOnlyFailedInput(bool backlog)
+    public async Task SharedMqttStartupFaultDoesNotRollBackAndRestartsOnlyFailedInput(int backlogCount)
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "共享 MQTT 输入启动故障及原监督者同进程恢复在 Linux 验证。");
         await using var broker = await MosquittoBrokerFixture.StartDedicatedAsync(Token);
@@ -136,13 +137,19 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 Assert.DoesNotContain("仅测试：原 MQTT 输入循环调用前的启动异常。", degraded.GetRawText(), StringComparison.Ordinal);
                 await AssertMqttStopSessionAsync(broker, data.Path, draft.ConnectionId, clientId);
                 output.WriteLine("TEST MQTT STARTUP FAULT DEGRADED: original fault disposed; original supervisor backoff/rebuild, only slow restartCount1; retry original loop still not called; r2 completed/committed=true; original HTTP socket + frozen MQTT2/HTTP2 acknowledged unchanged; offline old126/127 unmatched; fast84 delivered to both targets; connections2/subscribed4/sessionLost0; no rollback.");
-                if (backlog)
+                long[] recoveryValues = backlogCount == 3 ? [86, 87, 88] : [86];
+                var expectedAcknowledged = backlogCount == 3 ? 10 : 8;
+                if (backlogCount > 0)
                 {
                     Assert.Equal(0, MqttCounter(data.Path, draft.ConnectionId, "handoffFailed"));
                     // 只发布这一次。PUBACK 属于发布方/Broker；停用绑定不得确认或伪造持久接管。
                     await PublishMqttStopAsync(peer, prefix + "/b-new", 86);
                     var blocked = await WaitForAsync(api, Api + "/runtime/status", _ =>
                         MqttCounter(data.Path, draft.ConnectionId, "handoffFailed") >= 1);
+                    // 先观察未确认的队头，再积存后续报文；它们也只发布一次，不假定已被投递或 DUP=true。
+                    foreach (var value in recoveryValues.Skip(1))
+                    { await PublishMqttStopAsync(peer, prefix + "/b-new", (int)value); }
+                    blocked = await api.GetJsonAsync(Api + "/runtime/status", Token);
                     Assert.Equal(5, MqttCounter(data.Path, draft.ConnectionId, "acknowledged"));
                     Assert.Equal(0, MqttCounter(data.Path, draft.ConnectionId, "handoffTimeout"));
                     Assert.Equal(0, MqttStopUnit(blocked, "meter-slow/slow-stop").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
@@ -156,15 +163,22 @@ public sealed partial class ConfigurationInterruptionProcessTests
                     Assert.Empty(await messages.CollectAsync(TimeSpan.Zero, Token));
                     Assert.False(File.Exists(Path.Combine(work.Path, PartialActivationControl.RestartReleasedFile)));
                     Assert.False(File.Exists(Path.Combine(work.Path, PartialActivationControl.RestartOriginalCalledFile)));
-                    output.WriteLine("TEST MQTT STARTUP FAULT BACKLOG BLOCKED: slow86 published once before retry original loop; real handoffFailed>=1, no timeout/ACK/takeover; acknowledged5, slow reads0, no queue/HTTP/MQTT delivery; only slow restartCount1; r2 retained.");
+                    output.WriteLine($"TEST MQTT STARTUP FAULT BACKLOG BLOCKED: backlogCount={backlogCount}; slow{string.Join(',', recoveryValues)} published once each before retry original loop, later messages after observed head failure; real handoffFailed>=1, no timeout/ACK/takeover; acknowledged5, slow reads0, no queue/HTTP/MQTT delivery; only slow restartCount1; r2 retained.");
                 }
                 File.WriteAllText(Path.Combine(work.Path, PartialActivationControl.RestartReleasedFile), "run rebuilt original input");
                 await WaitForGateAsync(work.Path, PartialActivationControl.RestartOriginalCalledFile, "input.mqtt/meter-slow/slow-stop");
-                if (!backlog)
+                if (backlogCount == 0)
                 { await PublishMqttStopAsync(peer, prefix + "/b-new", 86); }
-                var recovered = await ReceiveMqttStopValuesAsync(receiver, httpFrozen, [86]);
+                var recovered = await ReceiveMqttStopValuesAsync(receiver, httpFrozen, recoveryValues);
                 await ReceiveMqttFanOutSamplesAsync(messages, prefix + "/output", recovered);
-                await AssertMqttStartupSampleAsync(api, draft.SlowInputId, dirtyVersion, SourceMessageId(recovered[0]), backlog);
+                Assert.Equal(recoveryValues.Length, recovered.Select(SourceMessageId).Distinct(StringComparer.Ordinal).Count());
+                Assert.DoesNotContain(recovered, request => SourceMessageId(request) == SourceMessageId(fast[0]));
+                for (var index = 0; index < recovered.Length; index++)
+                {
+                    await AssertMqttStartupSampleAsync(api, draft.SlowInputId, dirtyVersion, SourceMessageId(recovered[index]),
+                        index == 0 ? backlogCount > 0 : null);
+                }
+                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERY FIFO: backlogCount={backlogCount}; values={string.Join(',', recovered.Select(Value))}; MQTT+HTTP matched in wire order; distinct source IDs={string.Join(',', recovered.Select(SourceMessageId))}; distinct per-message/per-target delivery IDs; no republish after release.");
                 await PublishMqttStopAsync(peer, prefix + "/a-old", 252);
                 await PublishMqttStopAsync(peer, prefix + "/b-old", 253);
                 await PublishMqttStopAsync(peer, prefix + "/a-dirty", 128);
@@ -174,17 +188,17 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 var live = await ReceiveMqttStopValuesAsync(receiver, httpFrozen, [168, 169]);
                 await ReceiveMqttFanOutSamplesAsync(messages, prefix + "/output", live);
                 var running = await WaitForAsync(api, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == 0 &&
-                    MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == 8);
+                    MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == expectedAcknowledged);
                 AssertMqttStopRunning(running);
                 Assert.Equal(2, running.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
                 Assert.Equal(1, MqttStopUnit(running, "meter-slow/slow-stop").GetProperty("restartCount").GetInt32());
                 Assert.Equal(0, MqttStopUnit(running, "meter/sample").GetProperty("restartCount").GetInt32());
                 Assert.Equal(2, MqttStopUnit(running, "meter/sample").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
-                Assert.Equal(2, MqttStopUnit(running, "meter-slow/slow-stop").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
+                Assert.Equal(backlogCount == 3 ? 4 : 2, MqttStopUnit(running, "meter-slow/slow-stop").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
                 Assert.Equal(2, MqttCounter(data.Path, draft.ConnectionId, "unmatched"));
                 var connections = (await broker.LogsAsync(Token)).Split('\n').Count(line => line.Contains($" as {clientId} (", StringComparison.Ordinal));
                 var subscriptions = MqttCounter(data.Path, draft.ConnectionId, "subscribed");
-                if (backlog)
+                if (backlogCount > 0)
                 {
                     // 未接管会中止共享连接，等待期间可多次重连，甚至在订阅过程中再次中止。
                     Assert.True(connections >= 3);
@@ -220,7 +234,7 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 var released = host.Output.IndexOf("TEST MQTT STARTUP RETRY RELEASED", StringComparison.Ordinal);
                 Assert.True(injected >= 0 && injected < disposed && disposed < retry && retry < released, host.Output);
                 Assert.DoesNotContain("TEST PARTIAL ACTIVATION LIFECYCLE DEADLINE EXPIRED", host.Output, StringComparison.Ordinal);
-                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERED: backlog={backlog}; same process r2; original supervisor rebuilt only failed slow input after disposal/backoff; real slow86 + fast/slow live168/169 fan out to MQTT+HTTP with shared source IDs/distinct delivery IDs; old/dirty ignored; connections{connections}/subscribed{subscriptions}/acknowledged8/unmatched2/sessionLost0; no new snapshot/automatic rollback; abnormal counts0; dirty retained; pause false; queue empty; SIGTERM0.");
+                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERED: backlogCount={backlogCount}; same process r2; original supervisor rebuilt only failed slow input after disposal/backoff; real slow{string.Join(',', recoveryValues)} + fast/slow live168/169 fan out to MQTT+HTTP with shared source IDs/distinct delivery IDs; old/dirty ignored; connections{connections}/subscribed{subscriptions}/acknowledged{expectedAcknowledged}/unmatched2/sessionLost0; no new snapshot/automatic rollback; abnormal counts0; dirty retained; pause false; queue empty; SIGTERM0.");
             }
             finally
             {
@@ -232,7 +246,7 @@ public sealed partial class ConfigurationInterruptionProcessTests
         }
     }
 
-    private async Task AssertMqttStartupSampleAsync(HttpClient api, long source, string version, string sourceMessageId, bool duplicate)
+    private async Task AssertMqttStartupSampleAsync(HttpClient api, long source, string version, string sourceMessageId, bool? expectedDuplicate)
     {
         var routes = await api.GetJsonAsync(Api + "/routes", Token);
         Assert.Equal(version, routes.GetProperty("version").GetString());
@@ -258,7 +272,9 @@ public sealed partial class ConfigurationInterruptionProcessTests
         Assert.True(sample.GetProperty("previewed").GetBoolean());
         Assert.Empty(sample.GetProperty("issues").EnumerateArray());
         var mqtt = sample.GetProperty("mqtt");
-        Assert.Equal(duplicate, mqtt.GetProperty("duplicate").GetBoolean());
+        var duplicate = mqtt.GetProperty("duplicate").GetBoolean();
+        if (expectedDuplicate.HasValue)
+        { Assert.Equal(expectedDuplicate.Value, duplicate); }
         Assert.False(mqtt.GetProperty("retained").GetBoolean());
         Assert.Equal(1, mqtt.GetProperty("qos").GetInt32());
         output.WriteLine($"TEST MQTT STARTUP FAULT SAMPLE: source={sourceMessageId}; revision2; captured QoS1/retained=false/DUP={duplicate}; authenticated recent preview, no acquisition/output/queue.");

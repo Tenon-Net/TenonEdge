@@ -95,6 +95,7 @@ public sealed partial class ConfigurationInterruptionProcessTests
 
     private static async Task ReceiveMqttFanOutSamplesAsync(ReceivedMessages messages, string topic, WireRequest[] http)
     {
+        var deliveryIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var request in http)
         {
             var message = (await messages.NextAsync(Token, Deadline)).ApplicationMessage;
@@ -104,6 +105,8 @@ public sealed partial class ConfigurationInterruptionProcessTests
             using var mqttJson = JsonDocument.Parse(message.Payload);
             using var httpJson = JsonDocument.Parse(request.Body);
             AssertMqttFanOutEnvelope(mqttJson.RootElement, httpJson.RootElement);
+            Assert.True(deliveryIds.Add(mqttJson.RootElement.GetProperty("messageId").GetString()!));
+            Assert.True(deliveryIds.Add(httpJson.RootElement.GetProperty("messageId").GetString()!));
             Assert.Contains($"Idempotency-Key: {httpJson.RootElement.GetProperty("messageId").GetString()}", request.Header, StringComparison.OrdinalIgnoreCase);
         }
     }
