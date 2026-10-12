@@ -66,6 +66,24 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
         using var command = connection.CreateCommand();
         if (command.Transaction?.Connection != connection)
         { throw new InvalidOperationException("提交后探针必须先观察到真实指针写事务。"); }
+        // 在原写事务捕获本次实际版本；回滚生成新版本，不能固定为 r1 -> r2 或只找 apply 审计。
+        command.CommandText = """
+            SELECT effective_revision, previous_revision,
+                (SELECT origin FROM runtime_snapshot WHERE revision = effective_revision)
+            FROM system_state WHERE id = 1;
+            """;
+        long effective;
+        long previous;
+        string auditAction;
+        using (var writer = command.ExecuteReader())
+        {
+            if (!writer.Read())
+            { throw new InvalidOperationException("原指针写事务中缺少配置状态。"); }
+            effective = writer.GetInt64(0);
+            previous = writer.GetInt64(1);
+            auditAction = writer.GetString(2) == RuntimeSnapshotOrigins.Rollback
+                ? AuditActions.SnapshotRolledBack : AuditActions.SnapshotApplied;
+        }
         var settings = SqliteConnectionSettings.Read(connection);
         var connectionString = new SqliteConnectionStringBuilder(connection.ConnectionString)
         { Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString();
@@ -85,17 +103,22 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
                 using var read = observer.CreateCommand();
                 read.CommandText = """
                     SELECT effective_revision, previous_revision, pending_revision, running_revision,
-                        (SELECT state FROM runtime_snapshot WHERE revision = 1),
-                        (SELECT state FROM runtime_snapshot WHERE revision = 2),
-                        (SELECT count(*) FROM audit_log WHERE action = $action AND target = 'r2')
+                        (SELECT state FROM runtime_snapshot WHERE revision = $previous),
+                        (SELECT state FROM runtime_snapshot WHERE revision = $effective),
+                        (SELECT count(*) FROM audit_log WHERE action = $apply AND target = $target),
+                        (SELECT count(*) FROM audit_log WHERE action = $action AND target = $target)
                     FROM system_state WHERE id = 1;
                     """;
-                read.Parameters.AddWithValue("$action", AuditActions.SnapshotApplied);
+                read.Parameters.AddWithValue("$previous", previous);
+                read.Parameters.AddWithValue("$effective", effective);
+                read.Parameters.AddWithValue("$target", $"r{effective}");
+                read.Parameters.AddWithValue("$apply", AuditActions.SnapshotApplied);
+                read.Parameters.AddWithValue("$action", auditAction);
                 using var reader = read.ExecuteReader();
-                if (!reader.Read() || reader.GetInt64(0) != 2 || reader.GetInt64(1) != 1 || !reader.IsDBNull(2) ||
-                    reader.GetInt64(3) != 2 || reader.GetString(4) != RuntimeSnapshotStates.History ||
-                    reader.GetString(5) != RuntimeSnapshotStates.Effective || reader.GetInt64(6) != 1)
-                { throw new InvalidOperationException("原连接关闭时未独立读到完整已提交 r2；不能算持久 COMMIT 窗口。"); }
+                if (!reader.Read() || reader.GetInt64(0) != effective || reader.GetInt64(1) != previous || !reader.IsDBNull(2) ||
+                    reader.GetInt64(3) != effective || reader.GetString(4) != RuntimeSnapshotStates.History ||
+                    reader.GetString(5) != RuntimeSnapshotStates.Effective || reader.GetInt64(7) != 1)
+                { throw new InvalidOperationException($"原连接关闭时未独立读到完整已提交 r{effective}；不能算持久 COMMIT 窗口。"); }
                 json = JsonSerializer.Serialize(new
                 {
                     database = observer.DataSource,
@@ -108,6 +131,8 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
                     oldState = reader.GetString(4),
                     newState = reader.GetString(5),
                     appliedAuditCount = reader.GetInt64(6),
+                    auditAction,
+                    commitAuditCount = reader.GetInt64(7),
                     journalMode = settings.JournalMode,
                     synchronous = settings.Synchronous,
                     busyTimeout = settings.BusyTimeoutMilliseconds,
