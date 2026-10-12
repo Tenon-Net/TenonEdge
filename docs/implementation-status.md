@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用强杀子场景软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.187 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用强杀子场景软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.188 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3822,6 +3822,27 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 本批是**测试包装连续注入三次启动异常、原监督者同进程恢复、存活真实Broker/HTTP/SQLite**的软件验证，不是 MQTTnet 原生异常、无限持续故障/最大退避、重复故障期间同时积存、Broker崩溃/断电、实物或完整AT/T3-06验收。大积存/溢出、其他共享协议/输入数量、慢盘、最低浏览器与无JSON完整网页流程仍未验证；§2.182偶发Docker端口占用者/根因未证实、未修复。T3-06仍部分完成，专用损坏快照恢复例外未批准；不进入T3-07/08、T4/T5/G1。前端/API未变，不重跑或重计250Vitest/43Chromium基线，远端CI仍未执行。
 
+### 2.188 T3-06 连续三次 MQTT 启动异常期间的三条未确认积存与恢复 FIFO（2026-10-12）
+
+承接 §2.187，基线 `44e131e`，继续总设计 §6.2、§7.4、§8.1、§8.5 / T3-06 / GW-10 / AT-13、AT-25、AT-28 / 功能 §6.3 的一个有界组合子场景。既有四项 Theory 保留，仅新增 `(backlogCount,startupFaultCount)=(3,3)`。只修改一份测试源码与证据文档；沿用原测试控制器、原监督者、MQTT/HTTP/SQLite 与已确认的认证 API、线路和持久检查点，不改产品、API、启动注册、依赖、迁移、前端或部署。
+
+- r1冻结、r2提交、首次启动故障分类/原释放重建、旧报文双目标原样补发、old126/127不匹配确认和快84真实扇出均沿用前批。把积存发布提前到第二次异常之前：原第一次重试循环仍在 gate 上时，**86仅发布一次，观察真实 `handoffFailed>=1` 后，87/88也各发布一次**；后两次异常期间及恢复后均不再次发布它们。发布方PUBACK只证明Broker收到，网关acknowledged仍5，无慢读取/队列/HTTP/MQTT投递。
+- 之后分别放行第二、第三个包装实例，仍在原慢循环调用前抛错，由原监督者先释放再退避重建。每个下一重试 gate 已实际进入后，重新读取持久 `handoffFailed` 基线，**要求它再次严格增长**，才能认定又一次真实未接管重投；不把包装实例 running 或工厂重建当成已接管。两次均核对acknowledged=5、handoffTimeout=0、sessionLost=0、慢读取成功/失败0、在途0、队列空、两目标无报文、原循环调用标记仍不存在。故障事件合并次数2/3、连续次数2/3，仅慢输入restartCount升到2/3；r2有效、两份快照与dirty不变，没有自动回滚、构建故障或异常退出。
+- 第四个实例放行并实际调用原循环后，**不重新发布**，由原持久会话恢复三条报文；HTTP按86→87→88接收，独立MQTT订阅者按相同顺序与各条原信封比较。三条sourceMessageId不同、不复用r1或快84，各目标共用源编号、六个deliveryId各不同。认证最近记录/明确记录预览核对原采集记录r2、QoS1、retained=false：首条要求DUP=true，后两条只核对实际元数据、不固定DUP值。
+- 恢复后live168/169仍到两目标，old/dirty主题不采集；最终快成功2次/慢4次，仅慢输入重启3次、其他监督单元均0次，acknowledged=10/unmatched=2/sessionLost=0，无新快照/回滚，dirty保留、暂停false、队列空；SIGTERM=0、运行标记清除、两版本异常退出计数0。**本组合不发送95/96，也不承诺积存期间健康输入无中断**：未接管会中止共享连接，连接可多次重连，只要求最终connections>=3/subscribed>=6。无积存的 `(0,3)` 对照仍验证快95/96在两次异常后真实扇出；不能将其结论套给积存组合。
+
+验证（Linux x64/Ubuntu26.04、SDK10.0.401/runtime10.0.12、SQLite3.53.3、Python3.14.4、Docker29.1.3；Mosquitto2.1.2-alpine 镜像摘要同 §2.186；环境 `/tmp/tenonedge-mqtt-startup-repeat-backlog-environment.log`）：
+
+- 首次 `dotnet format TenonEdge.sln --verify-no-changes --no-restore`、`dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal` 通过，0警告/错误（`...-format-first.log`、`...-build-first.log`）。`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter 'FullyQualifiedName~SharedMqttStartupFaultDoesNotRollBackAndRestartsOnlyFailedInput&DisplayName~startupFaultCount: 3&DisplayName~backlogCount: 3' --logger trx --results-directory /tmp/tenonedge-mqtt-startup-repeat-backlog-first-trx-a1GGDW --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1项通过、0失败/跳过**，约72秒，TRX门禁通过（`...-first.log`、`...-first-verified.log`）。既有行为直接通过新增回归，没有产品行为RED或产品修复，不制造失败；此前 §2.187 测试辅助方法错误及 §2.182 端口冲突失败仍保留。
+- 最终格式/Release构建通过，0警告/错误；普通 `dotnet tests/IntegrationTests/bin/Release/net10.0/TenonEdge.IntegrationTests.dll -assemblyInfo` 退出0、原xUnit4.0.1/.NET10.0.12，不运行测试或探针（`...-format-final.log`、`...-build-final.log`、`...-assembly-info.log`）。实际顺序脚本 `/tmp/tenonedge-mqtt-startup-repeat-backlog-verify-final.sh`，未并行格式/构建/测试。
+- 同一过滤命令**仅重复新增组合行**，连续3轮各1项、共3次通过，0失败/跳过，约62—72秒/轮；逐轮 `python3 .github/scripts/verify-test-results.py <独立TRX目录> --require TenonEdge.IntegrationTests` 通过（`...-repeat-{1,2,3}.log`、`...-repeat-{1,2,3}-verified.log`；目录列表 `...-repeat-paths`）。不称全部五项启动故障对照或整类重复三轮。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-mqtt-startup-repeat-backlog-full-trx-CEFOZF --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258单元+1378集成=2636项通过，0失败/跳过**，集成约10分13秒（`...-full.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-mqtt-startup-repeat-backlog-full-trx-CEFOZF --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过（`...-full-verified.log`）。本类28项＝12个强杀中断+9个正常释放+1个停止超时恢复+5个启动异常行+1个身份辅助回归；新增组合不是第13个强杀场景，也不代表完整矩阵。
+- `python3 /tmp/tenonedge-mqtt-startup-repeat-backlog-evidence-cleanup-final.py` 只读核对重复3次+全量本类28次：**31次通过、其中30次真实进程，启动故障行8次（新增组合4次）**；实际原释放/构建/重试调用顺序、每次gate后的接管失败增长、未确认窗口、恢复FIFO和身份均符合。**30个数据目录+27个同步目录已删除，84个去重管理端口和30个去重Broker端口均不再监听**，相关进程/测试标签容器无遗留（`...-evidence-cleanup-final.log`）。仅审计本类资源；两类端口分别去重，不能相加当作跨类型全局去重。
+- 首次单项由 `python3 /tmp/tenonedge-mqtt-startup-repeat-backlog-earlier-cleanup.py` 另行只读核对：**1次通过，1个数据目录+1个同步目录已删除，2个管理端口+2个Broker端口不再监听**，相关进程/容器无遗留（`...-earlier-cleanup.log`）。两组执行/端口不跨轮混计；审计不删目录、杀进程或删容器，资源由测试自身释放。
+- 首轮、重复3次与全量1次共5次新增组合，实测两次gate后的 `handoffFailed` 分别5→6、6→7，三条捕获DUP均true，connections=9/subscribed=6；这只是本批实测，测试不固定失败计数、重连数或后两条DUP。修改的测试源码及未改控制器/接收辅助源码最终回归前后SHA-256一致（`...-final-source.sha256`、`...-source-before-full.log`、`...-source-final-verified.log`），`git diff --check` 通过；之后仅整理证据文档，按既有授权本地提交，不推送或发布。
+
+本批是**三次测试包装启动异常与三条真实QoS1未确认积存同时发生**的软件验证，不是无限持续故障、任意积存量/配额、真实适配器原生异常、Broker崩溃/断电、其他共享协议、实物或完整AT/T3-06验收。慢盘、最低浏览器与无JSON完整网页流程仍未验证，偶发Docker端口占用者/根因仍未证实、未修复；专用损坏快照恢复例外未批准。T3-06仍部分完成，不进入T3-07/08、T4/T5/G1；前端/API未变，不重跑或重计250Vitest/43Chromium基线，远端CI仍未执行。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3872,8 +3893,8 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
-| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 十二项真实强杀子场景通过（本地软件，含两路 MQTT 输入及 MQTT 输出共用客户端、HTTP 双目标；测试侧工厂/原事件包装及原 SQL/连接回调固定窗口）；另补共享 MQTT 停止超时同进程恢复和部分激活共享启动屏障、单次/连续三次输入启动异常及单条与三条未确认积存FIFO；最终2635项后端回归通过，既有端口冲突及本次测试辅助错误失败均保留，不代表完整矩阵 | §2.172—§2.187 | 其他共享协议、MQTT其他停止/激活、大积存/溢出、重复故障与积存组合、无限持续故障、任意数量、断电与完整网页流程 |
-| AT-13 / AT-25 / AT-28 / GW-10 / T3-06 | 共享 MQTT 输入启动异常、连续三次故障恢复及单条/三条未确认积存 | 四行软件子场景通过（测试包装在原循环前注入异常）：原释放/监督退避重建；单次故障积存不错误确认/接管、不重新发布、首条捕获DUP=true、86→87→88双目标FIFO；连续三次故障只慢输入重启、健康输入仍双目标转发，第四实例恢复；r2不自动回滚 | §2.184—§2.187 | 大积存/溢出、重复故障与积存组合、无限持续故障、真实适配器异常、其他协议/输入数量及完整网页流程 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 在线应用强杀子场景 | 十二项真实强杀子场景通过（本地软件，含两路 MQTT 输入及 MQTT 输出共用客户端、HTTP 双目标；测试侧工厂/原事件包装及原 SQL/连接回调固定窗口）；另补共享 MQTT 停止超时同进程恢复和部分激活共享启动屏障、单次/连续三次输入启动异常及单条/三条未确认积存FIFO（含连续故障组合）；最终2636项后端回归通过，既有端口冲突及测试辅助错误失败均保留，不代表完整矩阵 | §2.172—§2.188 | 其他共享协议、MQTT其他停止/激活、大积存/溢出、其他故障/积存数量组合、无限持续故障、任意数量、断电与完整网页流程 |
+| AT-13 / AT-25 / AT-28 / GW-10 / T3-06 | 共享 MQTT 输入启动异常、连续故障与单条/三条未确认积存 | 五行软件子场景通过（测试包装在原循环前注入异常）：原释放/监督退避重建；积存不错误确认/接管、不重新发布，首条捕获DUP=true、双目标FIFO；无积存连续三次故障时快输入继续扇出；三次故障与三条积存组合中跨后两次异常仍不接管，第四实例恢复86→87→88；r2不自动回滚 | §2.184—§2.188 | 大积存/溢出、其他故障/积存数量组合、无限持续故障、真实适配器异常、其他协议/输入数量及完整网页流程 |
 | FS-02 / AT-13 / T3-06 | 应用停止超时不重复采集 | 共享 MQTT 双输入/双目标子场景通过（真实软件）：原 5 秒期限，原循环未退出不重建连接，退出后同进程恢复 r1、双目标原样补发，超时事件一次 | §2.181 | 其他协议/单元组合、实际设备与完整矩阵未验证 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
