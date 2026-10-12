@@ -340,7 +340,7 @@ public sealed partial class ConfigurationInterruptionProcessTests
         }
     }
 
-    private static async Task<WireRequest[]> ReceiveMqttStopValuesAsync(TcpListener receiver, DeliveryRow[] frozen, long[] values)
+    private static async Task<WireRequest[]> ReceiveMqttStopValuesAsync(TcpListener receiver, DeliveryRow[] frozen, long[] values, string? deviceKey = null)
     {
         var requests = new List<WireRequest>();
         foreach (var value in values)
@@ -350,7 +350,7 @@ public sealed partial class ConfigurationInterruptionProcessTests
             Assert.Equal(value, Value(request));
             Assert.DoesNotContain(frozen, row => row.SourceId == SourceMessageId(request));
             using var json = JsonDocument.Parse(request.Body);
-            Assert.Equal(value is 84 or 168 ? "meter" : "meter-slow", json.RootElement.GetProperty("deviceKey").GetString());
+            Assert.Equal(deviceKey ?? (value is 84 or 168 ? "meter" : "meter-slow"), json.RootElement.GetProperty("deviceKey").GetString());
             requests.Add(request);
             await AckAsync(peer.GetStream());
         }
