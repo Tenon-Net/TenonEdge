@@ -21,9 +21,18 @@ public sealed partial class ConfigurationInterruptionProcessTests
     [InlineData(3, 3)]
     [Trait("Category", "Process")]
     [Trait("Category", "RealBroker")]
-    public async Task SharedMqttStartupFaultDoesNotRollBackAndRestartsOnlyFailedInput(int backlogCount, int startupFaultCount)
+    public Task SharedMqttStartupFaultDoesNotRollBackAndRestartsOnlyFailedInput(int backlogCount, int startupFaultCount) =>
+        RunMqttStartupFaultRecoveryAsync(backlogCount, startupFaultCount, interrupt: false);
+
+    [Fact]
+    [Trait("Category", "Process")]
+    [Trait("Category", "RealBroker")]
+    public Task SharedMqttStartupFaultBacklogSurvivesProcessInterruption() =>
+        RunMqttStartupFaultRecoveryAsync(backlogCount: 3, startupFaultCount: 3, interrupt: true);
+
+    private async Task RunMqttStartupFaultRecoveryAsync(int backlogCount, int startupFaultCount, bool interrupt)
     {
-        Assert.SkipUnless(OperatingSystem.IsLinux(), "共享 MQTT 输入启动故障及原监督者同进程恢复在 Linux 验证。");
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "共享 MQTT 输入启动故障及同进程/真实强杀恢复在 Linux 验证。");
         await using var broker = await MosquittoBrokerFixture.StartDedicatedAsync(Token);
         output.WriteLine($"TEST MQTT STARTUP FAULT BROKER PORTS: {broker.Port},{broker.TlsPort}");
         using var work = TemporaryDirectory.Create();
@@ -45,6 +54,8 @@ public sealed partial class ConfigurationInterruptionProcessTests
         DeliveryRow[] frozen;
         await using (var host = HostProcess.StartMqttPartialActivationProbe(work.Path, data.Path, MqttStopArguments(port, broker.Port)))
         {
+            HostProcess? restarted = null;
+            HttpClient? restartedApi = null;
             try
             {
                 using var api = await ClientAsync(host, setup: true);
@@ -233,9 +244,44 @@ public sealed partial class ConfigurationInterruptionProcessTests
                     Assert.Empty(state.Audit(AuditActions.AutoRollback));
                     Assert.Empty(state.Events(RuntimeEventTypes.VersionNotEffective));
                 }
-                File.WriteAllText(Path.Combine(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartReleasedFile, startupFaultCount)), "run rebuilt original input");
-                await WaitForGateAsync(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartOriginalCalledFile, startupFaultCount), "input.mqtt/meter-slow/slow-stop");
-                File.Delete(Path.Combine(work.Path, PartialActivationControl.ArmedFile));
+                if (interrupt)
+                {
+                    var subscriptionsBeforeRestart = MqttCounter(data.Path, draft.ConnectionId, "subscribed");
+                    // 固定已落盘的未接管边界；不放行原循环，也不给进程正常停机/确认机会。
+                    using (var queue = OpenQueue(data.Path))
+                    using (var held = queue.BeginTransaction(deferred: false))
+                    {
+                        Assert.Empty(ReadDeliveries(data.Path));
+                        Assert.Equal(5, MqttCounter(data.Path, draft.ConnectionId, "acknowledged"));
+                        await host.KillAsync(Token);
+                        Assert.NotEqual(HostExitCodes.Success, await host.WaitForExitAsync(Deadline, Token));
+                        held.Rollback();
+                    }
+                    Assert.Empty(ReadDeliveries(data.Path));
+                    Assert.Equal((2L, (long?)1, (long?)null, (long?)2),
+                        (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
+                    Assert.Equal(0, state.Snapshot(2).AbnormalExitCount); // 下一产品进程才计异常退出。
+                    Assert.DoesNotContain("TEST MQTT STARTUP RETRY ORIGINAL CALLED", host.Output, StringComparison.Ordinal);
+                    Assert.False(File.Exists(Path.Combine(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartReleasedFile, startupFaultCount))));
+                    output.WriteLine("TEST MQTT STARTUP FAULT KILLED: three wrapper faults disposed/rebuilt; next original loop never called; slow86/87/88 published once only, no local takeover/delivery; durable acknowledged5; r2/dirty retained, running marker2; real SIGKILL without gate release or graceful flush.");
+                    // 原产品 Host 不登记测试工厂，即使测试 gate 文件仍保留也不能阻挡真实恢复。
+                    restarted = HostProcess.Start(work.Path, "Production", data.Path, MqttStopArguments(port, broker.Port));
+                    restartedApi = await ClientAsync(restarted, setup: false);
+                    await WaitForAsync(restartedApi, Api + "/runtime/status", _ =>
+                        MqttCounter(data.Path, draft.ConnectionId, "subscribed") >= subscriptionsBeforeRestart + 2);
+                    Assert.Equal((2L, (long?)1, (long?)null, (long?)2),
+                        (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
+                    Assert.Equal(1, state.Snapshot(2).AbnormalExitCount);
+                    Assert.Equal(0, state.Snapshot(1).AbnormalExitCount);
+                }
+                else
+                {
+                    File.WriteAllText(Path.Combine(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartReleasedFile, startupFaultCount)), "run rebuilt original input");
+                    await WaitForGateAsync(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartOriginalCalledFile, startupFaultCount), "input.mqtt/meter-slow/slow-stop");
+                    File.Delete(Path.Combine(work.Path, PartialActivationControl.ArmedFile));
+                }
+                var recoveryApi = restartedApi ?? api;
+                var recoveryHost = restarted ?? host;
                 if (backlogCount == 0)
                 { await PublishMqttStopAsync(peer, prefix + "/b-new", 86); }
                 var recovered = await ReceiveMqttStopValuesAsync(receiver, httpFrozen, recoveryValues);
@@ -244,10 +290,10 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 Assert.DoesNotContain(recovered, request => SourceMessageId(request) == SourceMessageId(fast[0]));
                 for (var index = 0; index < recovered.Length; index++)
                 {
-                    await AssertMqttStartupSampleAsync(api, draft.SlowInputId, dirtyVersion, SourceMessageId(recovered[index]),
+                    await AssertMqttStartupSampleAsync(recoveryApi, draft.SlowInputId, dirtyVersion, SourceMessageId(recovered[index]),
                         index == 0 ? backlogCount > 0 : null);
                 }
-                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERY FIFO: backlogCount={backlogCount}; values={string.Join(',', recovered.Select(Value))}; MQTT+HTTP matched in wire order; distinct source IDs={string.Join(',', recovered.Select(SourceMessageId))}; distinct per-message/per-target delivery IDs; no republish after release.");
+                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERY FIFO: backlogCount={backlogCount}; values={string.Join(',', recovered.Select(Value))}; MQTT+HTTP matched in wire order; distinct source IDs={string.Join(',', recovered.Select(SourceMessageId))}; distinct per-message/per-target delivery IDs; no republish after recovery.");
                 await PublishMqttStopAsync(peer, prefix + "/a-old", 252);
                 await PublishMqttStopAsync(peer, prefix + "/b-old", 253);
                 await PublishMqttStopAsync(peer, prefix + "/a-dirty", 128);
@@ -256,15 +302,15 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 await PublishMqttStopAsync(peer, prefix + "/b-new", 169);
                 var live = await ReceiveMqttStopValuesAsync(receiver, httpFrozen, [168, 169]);
                 await ReceiveMqttFanOutSamplesAsync(messages, prefix + "/output", live);
-                var running = await WaitForAsync(api, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == 0 &&
+                var running = await WaitForAsync(recoveryApi, Api + "/runtime/status", _ => ReadDeliveries(data.Path).Length == 0 &&
                     MqttCounter(data.Path, draft.ConnectionId, "acknowledged") == expectedAcknowledged);
                 AssertMqttStopRunning(running);
                 Assert.Equal(2, running.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
-                Assert.Equal(startupFaultCount, MqttStopUnit(running, "meter-slow/slow-stop").GetProperty("restartCount").GetInt32());
+                Assert.Equal(interrupt ? 0 : startupFaultCount, MqttStopUnit(running, "meter-slow/slow-stop").GetProperty("restartCount").GetInt32());
                 Assert.All(running.GetProperty("runtime").GetProperty("units").EnumerateArray().Where(unit =>
                     unit.GetProperty("id").GetProperty("key").GetString() != "meter-slow/slow-stop"), unit =>
                     Assert.Equal(0, unit.GetProperty("restartCount").GetInt32()));
-                Assert.Equal(2 + healthyDuringFaults, MqttStopUnit(running, "meter/sample").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
+                Assert.Equal(interrupt ? 1 : 2 + healthyDuringFaults, MqttStopUnit(running, "meter/sample").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
                 Assert.Equal(backlogCount == 3 ? 4 : 2, MqttStopUnit(running, "meter-slow/slow-stop").GetProperty("reads").GetProperty("readsCompleted").GetInt64());
                 Assert.Equal(2, MqttCounter(data.Path, draft.ConnectionId, "unmatched"));
                 var connections = (await broker.LogsAsync(Token)).Split('\n').Count(line => line.Contains($" as {clientId} (", StringComparison.Ordinal));
@@ -282,8 +328,8 @@ public sealed partial class ConfigurationInterruptionProcessTests
                     await AssertMqttStopSessionAsync(broker, data.Path, draft.ConnectionId, clientId);
                     Assert.Equal(0, MqttCounter(data.Path, draft.ConnectionId, "handoffFailed"));
                 }
-                await AssertMqttStopDirtyAsync(api, draft, prefix, dirtyVersion);
-                await AssertMqttStopOutputResumedAsync(api, state, draft.ConnectionId);
+                await AssertMqttStopDirtyAsync(recoveryApi, draft, prefix, dirtyVersion);
+                await AssertMqttStopOutputResumedAsync(recoveryApi, state, draft.ConnectionId);
                 Assert.Equal((2L, (long?)1, (long?)null, (long?)2),
                     (state.Pointers().Effective, state.Pointers().Previous, state.Pointers().Pending, state.Pointers().Running));
                 Assert.Equal(2, state.Snapshots().Count);
@@ -294,11 +340,11 @@ public sealed partial class ConfigurationInterruptionProcessTests
                 Assert.Empty(state.Events(RuntimeEventTypes.VersionNotEffective));
                 Assert.Equal(startupFaultCount, Assert.Single(state.Events("runtime.unitFaulted")).Count);
                 Assert.Empty(await messages.CollectAsync(TimeSpan.Zero, Token));
-                await host.RequestStopAsync(Token);
-                Assert.Equal(HostExitCodes.Success, await host.WaitForExitAsync(Deadline, Token));
+                await recoveryHost.RequestStopAsync(Token);
+                Assert.Equal(HostExitCodes.Success, await recoveryHost.WaitForExitAsync(Deadline, Token));
                 Assert.Null(state.Pointers().Running);
                 Assert.Equal(0, state.Snapshot(1).AbnormalExitCount);
-                Assert.Equal(0, state.Snapshot(2).AbnormalExitCount);
+                Assert.Equal(interrupt ? 1 : 0, state.Snapshot(2).AbnormalExitCount);
                 for (var attempt = 1; attempt <= startupFaultCount; attempt++)
                 {
                     var injected = host.Output.IndexOf($"TEST MQTT STARTUP FAULT INJECTED: input.mqtt/meter-slow/slow-stop; attempt={attempt};", StringComparison.Ordinal);
@@ -307,15 +353,32 @@ public sealed partial class ConfigurationInterruptionProcessTests
                     var retry = host.Output.IndexOf($"TEST MQTT STARTUP RETRY ENTERED: input.mqtt/meter-slow/slow-stop; attempt={attempt + 1}", StringComparison.Ordinal);
                     Assert.True(injected >= 0 && injected < disposed && disposed < built && built < retry, host.Output);
                 }
-                var released = host.Output.IndexOf($"TEST MQTT STARTUP RETRY RELEASED: input.mqtt/meter-slow/slow-stop; attempt={startupFaultCount + 1}", StringComparison.Ordinal);
-                var called = host.Output.IndexOf($"TEST MQTT STARTUP RETRY ORIGINAL CALLED: input.mqtt/meter-slow/slow-stop; attempt={startupFaultCount + 1}", StringComparison.Ordinal);
-                Assert.True(released >= 0 && released < called, host.Output);
-                Assert.Single(host.Output.Split('\n'), line => line.Contains("TEST MQTT STARTUP RETRY ORIGINAL CALLED", StringComparison.Ordinal));
+                if (interrupt)
+                {
+                    Assert.True(File.Exists(Path.Combine(work.Path, PartialActivationControl.ArmedFile)));
+                    Assert.False(File.Exists(Path.Combine(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartReleasedFile, startupFaultCount))));
+                    Assert.DoesNotContain("TEST MQTT STARTUP RETRY ORIGINAL CALLED", host.Output, StringComparison.Ordinal);
+                    Assert.DoesNotContain("TEST PARTIAL ACTIVATION INPUT BUILT", recoveryHost.Output, StringComparison.Ordinal);
+                    Assert.DoesNotContain("TEST MQTT STARTUP", recoveryHost.Output, StringComparison.Ordinal);
+                }
+                else
+                {
+                    var released = host.Output.IndexOf($"TEST MQTT STARTUP RETRY RELEASED: input.mqtt/meter-slow/slow-stop; attempt={startupFaultCount + 1}", StringComparison.Ordinal);
+                    var called = host.Output.IndexOf($"TEST MQTT STARTUP RETRY ORIGINAL CALLED: input.mqtt/meter-slow/slow-stop; attempt={startupFaultCount + 1}", StringComparison.Ordinal);
+                    Assert.True(released >= 0 && released < called, host.Output);
+                    Assert.Single(host.Output.Split('\n'), line => line.Contains("TEST MQTT STARTUP RETRY ORIGINAL CALLED", StringComparison.Ordinal));
+                }
                 Assert.DoesNotContain("TEST PARTIAL ACTIVATION LIFECYCLE DEADLINE EXPIRED", host.Output, StringComparison.Ordinal);
-                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERED: backlogCount={backlogCount}; startupFaultCount={startupFaultCount}; same process r2; original supervisor rebuilt only failed slow input after each disposal/backoff; real slow{string.Join(',', recoveryValues)} + fast/slow live168/169 fan out to MQTT+HTTP with shared source IDs/distinct delivery IDs; old/dirty ignored; connections{connections}/subscribed{subscriptions}/acknowledged{expectedAcknowledged}/unmatched2/sessionLost0; no new snapshot/automatic rollback; abnormal counts0; dirty retained; pause false; queue empty; SIGTERM0.");
+                output.WriteLine($"TEST MQTT STARTUP FAULT RECOVERED: backlogCount={backlogCount}; startupFaultCount={startupFaultCount}; interrupt={interrupt}; {(interrupt ? "unmodified product Host after SIGKILL" : "same process")} r2; original supervisor rebuilt only failed slow input before recovery; real slow{string.Join(',', recoveryValues)} + fast/slow live168/169 fan out to MQTT+HTTP with shared source IDs/distinct delivery IDs; old/dirty ignored; connections{connections}/subscribed{subscriptions}/acknowledged{expectedAcknowledged}/unmatched2/sessionLost0; no new snapshot/automatic rollback; abnormal counts r1=0/r2={(interrupt ? 1 : 0)}; dirty retained; pause false; queue empty; SIGTERM0.");
             }
             finally
             {
+                restartedApi?.Dispose();
+                if (restarted is not null)
+                {
+                    output.WriteLine(restarted.Output);
+                    await restarted.DisposeAsync();
+                }
                 ReleaseMqttPartialActivation(work.Path);
                 for (var retry = 1; retry <= startupFaultCount; retry++)
                 { File.WriteAllText(Path.Combine(work.Path, PartialActivationControl.AttemptFile(PartialActivationControl.RestartReleasedFile, retry)), "cleanup"); }
