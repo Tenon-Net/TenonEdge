@@ -1099,6 +1099,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/deliveries/migrations/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 管理员选择同一源目标的待发、失败或隔离记录
+         * @description 仅元数据，每页最多100；不读取正文或身份摘要。翻页不是一致快照，准备时逐条重新核对选择。
+         */
+        get: operations["getMigrationDeliveryRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/deliveries/migrations/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 核对迁移选择、原接收方和有效同类目标
+         * @description 最多1000条，身份元数据总计最多4MiB，超限整批拒绝而不截断。逐条按冻结摘要判定原协议，不从当前源连接猜测。返回账户/客户端证书是否已记录及配额缺口；准备不迁移、不审计开始、不暂停发送者。全网关一份确认清单，属于创建它的登录会话，有效期15分钟。
+         */
+        post: operations["prepareDeliveryMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/deliveries/migrations/preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 恢复当前登录会话尚未消费的迁移确认清单 */
+        get: operations["getDeliveryMigrationPreparation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/deliveries/migrations/preparation/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 取消本登录会话的迁移准备，不改变队列 */
+        delete: operations["cancelDeliveryMigrationPreparation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/deliveries/migrations/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 确认同一数据所有者后执行冻结选择的原子迁移
+         * @description sameOwnerConfirmed必须为true。服务器消费原确认清单，复核有效版本和目标身份；双发送者静默后再核对记录代次与完整配额。未ACK记录保持原正文、编号、主题/路径、头和FIFO，失败记录仍在失败区。取消等待不取消后台执行；响应丢失只按操作编号查询，不重放确认。
+         */
+        post: operations["confirmDeliveryMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/deliveries/migrations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 管理员按操作编号查询持久迁移结果
+         * @description 开始/结果与启动恢复由持久迁移记录和queue.db收据核对；completed表示已迁移，不表示已发送。404不是迁移失败证明，可能尚未登记开始。
+         */
+        get: operations["getDeliveryMigrationOutcome"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/system/outbound-policy": {
         parameters: {
             query?: never;
@@ -1697,6 +1811,91 @@ export interface components {
             items: components["schemas"]["DeliveryInspectionItem"][];
             /** Format: int64 */
             nextSequence: null | number | string;
+        };
+        DeliveryMigrationConfirmation: {
+            sameOwnerConfirmed: boolean;
+        };
+        DeliveryMigrationConfirmationResult: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: int32 */
+            migratedRecords: number | string;
+        };
+        DeliveryMigrationCurrent: {
+            preparation: null | components["schemas"]["DeliveryMigrationReview"];
+        };
+        DeliveryMigrationKey: {
+            /** Format: int64 */
+            sequence: number | string;
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: int64 */
+            migrationId: null | number | string;
+        };
+        DeliveryMigrationOutcome: {
+            /** Format: uuid */
+            operationId: string;
+            status: string;
+            /** Format: int32 */
+            requestedRecords: null | number | string;
+            /** Format: int32 */
+            affectedRecords: null | number | string;
+            /** Format: int64 */
+            migrationId: null | number | string;
+            errorCode: null | string;
+        };
+        DeliveryMigrationPrepareRequest: {
+            /** Format: int64 */
+            sourceConnectionId: number | string;
+            /** Format: int64 */
+            targetConnectionId: number | string;
+            items: null | components["schemas"]["DeliveryMigrationKey"][];
+        };
+        DeliveryMigrationQuotaDeficit: {
+            /** Format: int64 */
+            pendingRecords: number | string;
+            /** Format: int64 */
+            pendingBytes: number | string;
+            /** Format: int64 */
+            globalBytes: number | string;
+            /** Format: int64 */
+            failedRecords: number | string;
+            exceeded?: boolean;
+        };
+        DeliveryMigrationReview: {
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            revision: number | string;
+            /** Format: int64 */
+            sourceConnectionId: number | string;
+            /** Format: int64 */
+            targetConnectionId: number | string;
+            targetKey: null | string;
+            targetName: null | string;
+            target: components["schemas"]["OutputRecipientIdentity"];
+            sources: components["schemas"]["DeliveryMigrationSourceIdentity"][];
+            /** Format: int32 */
+            count: number | string;
+            /** Format: int32 */
+            pending: number | string;
+            /** Format: int32 */
+            failed: number | string;
+            /** Format: int32 */
+            quarantined: number | string;
+            /** Format: date-time */
+            firstCreatedAt: string;
+            /** Format: date-time */
+            lastCreatedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            quota: components["schemas"]["DeliveryMigrationQuotaDeficit"];
+            canConfirm?: boolean;
+        };
+        DeliveryMigrationSourceIdentity: {
+            recipient: components["schemas"]["OutputRecipientIdentity"];
+            /** Format: int32 */
+            count: number | string;
         };
         DeliveryQueueFiles: {
             /** Format: int64 */
@@ -2346,6 +2545,15 @@ export interface components {
             diskReserveBytes: number | string;
             /** Format: double */
             diskReserveFraction: number | string;
+        };
+        OutputRecipientIdentity: {
+            protocol: string;
+            address: string;
+            authentication: string;
+            account: null | string;
+            accountRecorded: boolean;
+            clientCertificateSubject: null | string;
+            clientCertificateRecorded: boolean;
         };
         OutputRetryRequest: {
             /** Format: int64 */
@@ -6858,6 +7066,359 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getMigrationDeliveryRecords: {
+        parameters: {
+            query: {
+                connectionId: number | string;
+                state: string;
+                after?: number | string;
+                limit?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryInspectionPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    prepareDeliveryMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryMigrationPrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryMigrationReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getDeliveryMigrationPreparation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryMigrationCurrent"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    cancelDeliveryMigrationPreparation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    confirmDeliveryMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryMigrationConfirmation"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryMigrationConfirmationResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getDeliveryMigrationOutcome: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryMigrationOutcome"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

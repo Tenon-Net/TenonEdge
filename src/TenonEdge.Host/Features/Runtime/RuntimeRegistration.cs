@@ -46,6 +46,7 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<TimeProvider>(), events: provider.GetRequiredService<IRuntimeEventSink>()));
         services.AddSingleton<OutputControlStore>();
         services.AddSingleton<DeliveryMigrationStore>();
+        services.AddSingleton<DeliveryMigrationPreparation>();
         services.AddSingleton<DeliveryExportFiles>();
         services.AddSingleton<DeliveryExportManager>();
         services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());

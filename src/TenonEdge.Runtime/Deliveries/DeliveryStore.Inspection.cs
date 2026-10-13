@@ -5,10 +5,10 @@ namespace TenonEdge.Runtime.Deliveries;
 
 internal sealed partial class DeliveryStore
 {
-    internal DeliveryInspectionPage Inspect(DeliveryInspectionQuery query)
+    internal DeliveryInspectionPage Inspect(DeliveryInspectionQuery query, bool allowPending = false)
     {
         ArgumentNullException.ThrowIfNull(query);
-        query.Validate();
+        query.Validate(allowPending);
         EnsureInitialized();
         var captured = _time.GetUtcNow();
         using var connection = Open(_readConnectionString);
@@ -43,7 +43,7 @@ internal sealed partial class DeliveryStore
     private static List<string> InspectionConditions(SqliteCommand command, DeliveryInspectionQuery query)
     {
         var conditions = new List<string> { "state = $state", "seq > $after" };
-        command.Parameters.AddWithValue("$state", query.State == DeliveryState.Failed ? "failed" : "quarantined");
+        command.Parameters.AddWithValue("$state", query.State switch { DeliveryState.Pending => "pending", DeliveryState.Failed => "failed", _ => "quarantined" });
         command.Parameters.AddWithValue("$after", query.After);
         if (query.ConnectionId is { } id)
         { conditions.Add("connection_id = $connection"); command.Parameters.AddWithValue("$connection", id); }

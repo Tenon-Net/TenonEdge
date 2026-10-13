@@ -51,6 +51,46 @@ internal sealed partial class DeliveryStore
         if (!SelectMigration(command, request))
         { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.SelectionChanged); }
 
+        var deficit = CheckMigrationQuota(command, request, out var selected);
+        if (deficit.Exceeded)
+        { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.QuotaExceeded) with { MigrationQuota = deficit }; }
+
+        command.Parameters.Clear();
+        command.Parameters.AddWithValue("$store", request.ConfigStoreId);
+        command.Parameters.AddWithValue("$operation", request.OperationId.ToString("D"));
+        command.Parameters.AddWithValue("$hash", request.RequestHash);
+        command.Parameters.AddWithValue("$source", request.SourceConnectionId);
+        command.Parameters.AddWithValue("$target", request.TargetConnectionId);
+        command.Parameters.AddWithValue("$count", selected);
+        command.Parameters.AddWithValue("$now", now);
+        command.CommandText = """
+            INSERT INTO delivery_migration_receipt (config_store_id, operation_id, request_hash, source_connection_id,
+                target_connection_id, affected_records, completed_at)
+            VALUES ($store, $operation, $hash, $source, $target, $count, $now) RETURNING migration_id;
+            """;
+        var migrationId = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        command.Parameters.AddWithValue("$migration", migrationId);
+        command.Parameters.AddWithValue("$fingerprint", request.Fingerprint);
+        command.Parameters.AddWithValue("$summary", request.Summary);
+        command.CommandText = """
+            UPDATE delivery SET connection_id = $target, fingerprint = $fingerprint, fingerprint_summary = $summary,
+                state = CASE WHEN state = 'failed' THEN 'failed' ELSE 'pending' END,
+                failure_count = 0, migration_id = $migration, quarantine_reason = NULL,
+                failed_at = CASE WHEN state = 'failed' THEN failed_at ELSE NULL END, last_retried_at = NULL,
+                byte_size = (SELECT new_bytes FROM migration_selection WHERE seq = delivery.seq)
+            WHERE seq IN (SELECT seq FROM migration_selection);
+            """;
+        if (command.ExecuteNonQuery() != selected)
+        { throw new DeliveryStoreException("迁移未更新完整选择，事务必须回滚。"); }
+        AddCounter(connection, transaction, "manuallyMigratedRecords", selected);
+        var receipt = new DeliveryMigrationReceipt(migrationId, request.OperationId, request.ConfigStoreId, request.RequestHash,
+            request.SourceConnectionId, request.TargetConnectionId, selected, DateTimeOffset.FromUnixTimeMilliseconds(now));
+        return new(DeliveryWriteStatus.Committed, [], selected, null) { Migration = receipt };
+    }
+
+    // 准备与最终事务使用同一配额公式；准备只在只读连接的TEMP表中计算，不写主库或收据。
+    private DeliveryMigrationQuotaDeficit CheckMigrationQuota(SqliteCommand command, DeliveryMigrationCommand request, out int selected)
+    {
         command.Parameters.Clear();
         command.Parameters.AddWithValue("$target", request.TargetConnectionId);
         command.Parameters.AddWithValue("$identityBytes", (long)Encoding.UTF8.GetByteCount(request.Fingerprint) + Encoding.UTF8.GetByteCount(request.Summary));
@@ -68,7 +108,7 @@ internal sealed partial class DeliveryStore
                 COUNT(*) FILTER (WHERE d.connection_id = $target AND d.state = 'failed')
             FROM migration_selection s JOIN delivery d ON d.seq = s.seq;
             """;
-        int selected;
+
         long selectedBytes, alreadyPending, alreadyPendingBytes, previousGlobalBytes, nextGlobalBytes, failed, alreadyFailed;
         using (var reader = command.ExecuteReader())
         {
@@ -102,41 +142,27 @@ internal sealed partial class DeliveryStore
                     Math.Max(0, checked(reader.GetInt64(2) - previousGlobalBytes + nextGlobalBytes - _options.MaximumQueueBytes)),
                     Math.Max(0, checked(reader.GetInt64(3) - alreadyFailed + failed - _options.MaximumFailedPerTarget)));
             }
-            if (deficit.Exceeded)
-            { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.QuotaExceeded) with { MigrationQuota = deficit }; }
+            return deficit;
         }
 
-        command.Parameters.Clear();
-        command.Parameters.AddWithValue("$store", request.ConfigStoreId);
-        command.Parameters.AddWithValue("$operation", request.OperationId.ToString("D"));
-        command.Parameters.AddWithValue("$hash", request.RequestHash);
-        command.Parameters.AddWithValue("$source", request.SourceConnectionId);
-        command.Parameters.AddWithValue("$target", request.TargetConnectionId);
-        command.Parameters.AddWithValue("$count", selected);
-        command.Parameters.AddWithValue("$now", now);
-        command.CommandText = """
-            INSERT INTO delivery_migration_receipt (config_store_id, operation_id, request_hash, source_connection_id,
-                target_connection_id, affected_records, completed_at)
-            VALUES ($store, $operation, $hash, $source, $target, $count, $now) RETURNING migration_id;
-            """;
-        var migrationId = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-        command.Parameters.AddWithValue("$migration", migrationId);
-        command.Parameters.AddWithValue("$fingerprint", request.Fingerprint);
-        command.Parameters.AddWithValue("$summary", request.Summary);
-        command.CommandText = """
-            UPDATE delivery SET connection_id = $target, fingerprint = $fingerprint, fingerprint_summary = $summary,
-                state = CASE WHEN state = 'failed' THEN 'failed' ELSE 'pending' END,
-                failure_count = 0, migration_id = $migration, quarantine_reason = NULL,
-                failed_at = CASE WHEN state = 'failed' THEN failed_at ELSE NULL END, last_retried_at = NULL,
-                byte_size = (SELECT new_bytes FROM migration_selection WHERE seq = delivery.seq)
-            WHERE seq IN (SELECT seq FROM migration_selection);
-            """;
-        if (command.ExecuteNonQuery() != selected)
-        { throw new DeliveryStoreException("迁移未更新完整选择，事务必须回滚。"); }
-        AddCounter(connection, transaction, "manuallyMigratedRecords", selected);
-        var receipt = new DeliveryMigrationReceipt(migrationId, request.OperationId, request.ConfigStoreId, request.RequestHash,
-            request.SourceConnectionId, request.TargetConnectionId, selected, DateTimeOffset.FromUnixTimeMilliseconds(now));
-        return new(DeliveryWriteStatus.Committed, [], selected, null) { Migration = receipt };
+        return new(0, 0, 0, 0);
+    }
+
+    internal DeliveryMigrationPreflight PreflightMigration(DeliveryMigrationCommand request)
+    {
+        EnsureInitialized();
+        using var connection = Open(_readConnectionString);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT config_store_id FROM queue_meta WHERE id = 1";
+        if (request.ConfigStoreId != _options.ConfigStoreId || !Equals(command.ExecuteScalar(), request.ConfigStoreId))
+        { return new(0, DeliveryMigrationErrors.StoreChanged, null); }
+        if (!SelectMigration(command, request))
+        { return new(0, DeliveryMigrationErrors.SelectionChanged, null); }
+        var deficit = CheckMigrationQuota(command, request, out var count);
+        transaction.Commit();
+        return new(count, deficit.Exceeded ? DeliveryMigrationErrors.QuotaExceeded : null, deficit);
     }
 
     private static bool SelectMigration(SqliteCommand command, DeliveryMigrationCommand request)

@@ -4969,6 +4969,469 @@
         }
       }
     },
+    "/api/edge-admin/v1/deliveries/migrations/records": {
+      "get": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "管理员选择同一源目标的待发、失败或隔离记录",
+        "description": "仅元数据，每页最多100；不读取正文或身份摘要。翻页不是一致快照，准备时逐条重新核对选择。",
+        "operationId": "getMigrationDeliveryRecords",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryInspectionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/deliveries/migrations/prepare": {
+      "post": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "核对迁移选择、原接收方和有效同类目标",
+        "description": "最多1000条，身份元数据总计最多4MiB，超限整批拒绝而不截断。逐条按冻结摘要判定原协议，不从当前源连接猜测。返回账户/客户端证书是否已记录及配额缺口；准备不迁移、不审计开始、不暂停发送者。全网关一份确认清单，属于创建它的登录会话，有效期15分钟。",
+        "operationId": "prepareDeliveryMigration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryMigrationPrepareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryMigrationReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/deliveries/migrations/preparation": {
+      "get": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "恢复当前登录会话尚未消费的迁移确认清单",
+        "operationId": "getDeliveryMigrationPreparation",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryMigrationCurrent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/deliveries/migrations/preparation/{id}": {
+      "delete": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "取消本登录会话的迁移准备，不改变队列",
+        "operationId": "cancelDeliveryMigrationPreparation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/deliveries/migrations/{id}/confirm": {
+      "post": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "确认同一数据所有者后执行冻结选择的原子迁移",
+        "description": "sameOwnerConfirmed必须为true。服务器消费原确认清单，复核有效版本和目标身份；双发送者静默后再核对记录代次与完整配额。未ACK记录保持原正文、编号、主题/路径、头和FIFO，失败记录仍在失败区。取消等待不取消后台执行；响应丢失只按操作编号查询，不重放确认。",
+        "operationId": "confirmDeliveryMigration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryMigrationConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryMigrationConfirmationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/deliveries/migrations/{id}": {
+      "get": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "管理员按操作编号查询持久迁移结果",
+        "description": "开始/结果与启动恢复由持久迁移记录和queue.db收据核对；completed表示已迁移，不表示已发送。404不是迁移失败证明，可能尚未登记开始。",
+        "operationId": "getDeliveryMigrationOutcome",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryMigrationOutcome"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/system/outbound-policy": {
       "get": {
         "tags": [
@@ -8265,6 +8728,363 @@
           }
         }
       },
+      "DeliveryMigrationConfirmation": {
+        "required": [
+          "sameOwnerConfirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "sameOwnerConfirmed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DeliveryMigrationConfirmationResult": {
+        "required": [
+          "operationId",
+          "migratedRecords"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "migratedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "DeliveryMigrationCurrent": {
+        "required": [
+          "preparation"
+        ],
+        "type": "object",
+        "properties": {
+          "preparation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeliveryMigrationReview"
+              }
+            ]
+          }
+        }
+      },
+      "DeliveryMigrationKey": {
+        "required": [
+          "sequence",
+          "deliveryId",
+          "migrationId"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "deliveryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "migrationId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "DeliveryMigrationOutcome": {
+        "required": [
+          "operationId",
+          "status",
+          "requestedRecords",
+          "affectedRecords",
+          "migrationId",
+          "errorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "requestedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "affectedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "migrationId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "DeliveryMigrationPrepareRequest": {
+        "required": [
+          "sourceConnectionId",
+          "targetConnectionId",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceConnectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "targetConnectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "items": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryMigrationKey"
+            }
+          }
+        }
+      },
+      "DeliveryMigrationQuotaDeficit": {
+        "required": [
+          "pendingRecords",
+          "pendingBytes",
+          "globalBytes",
+          "failedRecords"
+        ],
+        "type": "object",
+        "properties": {
+          "pendingRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "pendingBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "globalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "exceeded": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DeliveryMigrationReview": {
+        "required": [
+          "id",
+          "revision",
+          "sourceConnectionId",
+          "targetConnectionId",
+          "targetKey",
+          "targetName",
+          "target",
+          "sources",
+          "count",
+          "pending",
+          "failed",
+          "quarantined",
+          "firstCreatedAt",
+          "lastCreatedAt",
+          "expiresAt",
+          "quota"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "sourceConnectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "targetConnectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "targetKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "targetName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "target": {
+            "$ref": "#/components/schemas/OutputRecipientIdentity"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryMigrationSourceIdentity"
+            }
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pending": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "quarantined": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "firstCreatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastCreatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/DeliveryMigrationQuotaDeficit"
+          },
+          "canConfirm": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DeliveryMigrationSourceIdentity": {
+        "required": [
+          "recipient",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "$ref": "#/components/schemas/OutputRecipientIdentity"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "DeliveryQueueFiles": {
         "required": [
           "databaseBytes",
@@ -11028,6 +11848,47 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "OutputRecipientIdentity": {
+        "required": [
+          "protocol",
+          "address",
+          "authentication",
+          "account",
+          "accountRecorded",
+          "clientCertificateSubject",
+          "clientCertificateRecorded"
+        ],
+        "type": "object",
+        "properties": {
+          "protocol": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "authentication": {
+            "type": "string"
+          },
+          "account": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountRecorded": {
+            "type": "boolean"
+          },
+          "clientCertificateSubject": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "clientCertificateRecorded": {
+            "type": "boolean"
           }
         }
       },

@@ -4,9 +4,9 @@ namespace TenonEdge.Runtime.Deliveries;
 public sealed record DeliveryInspectionQuery(DeliveryState State, long? ConnectionId = null, string? DeviceKey = null,
     string? Reason = null, DateTimeOffset? From = null, DateTimeOffset? To = null, long After = 0, int Limit = 100)
 {
-    internal void Validate()
+    internal void Validate(bool allowPending = false)
     {
-        if (State is not (DeliveryState.Failed or DeliveryState.Quarantined) || ConnectionId is < 1 or > 9007199254740991L ||
+        if ((State is not (DeliveryState.Failed or DeliveryState.Quarantined) && !(allowPending && State == DeliveryState.Pending)) || ConnectionId is < 1 or > 9007199254740991L ||
             DeviceKey is { Length: > 128 } || Reason is { Length: > 1024 } || From >= To || After < 0 || Limit is < 1 or > 100)
         { throw new ArgumentException("故障记录查询参数无效。"); }
     }

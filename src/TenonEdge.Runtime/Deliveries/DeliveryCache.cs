@@ -125,6 +125,14 @@ public sealed class DeliveryCache
 
     public DeliveryInspectionPage Inspect(DeliveryInspectionQuery query) => Store.Inspect(query);
 
+    /// <summary>管理员迁移选择专用，允许查看待发元数据；不改变普通故障列表的只读边界。</summary>
+    public DeliveryInspectionPage InspectForMigration(DeliveryInspectionQuery query) => Store.Inspect(query, allowPending: true);
+
+    public IReadOnlyList<DeliveryMigrationCandidate> ReadMigrationCandidates(long connectionId, IReadOnlyList<DeliveryMigrationKey> keys) =>
+        Store.ReadMigrationCandidates(connectionId, keys);
+
+    public DeliveryMigrationPreflight PreflightMigration(DeliveryMigrationCommand command) => Store.PreflightMigration(command);
+
     /// <summary>调用方必须先执行正文权限校验。仅查看指定失败/隔离区中仍存在的稳定投递编号。</summary>
     public DeliveryBodyPreview? InspectBody(Guid deliveryId, DeliveryState state) => Store.InspectBody(deliveryId, state);
 

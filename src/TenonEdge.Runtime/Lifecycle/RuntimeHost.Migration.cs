@@ -1,3 +1,4 @@
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Outputs;
 
@@ -5,6 +6,19 @@ namespace TenonEdge.Runtime.Lifecycle;
 
 public sealed partial class RuntimeHost
 {
+    /// <summary>准备阶段只读取原发送者的同次非秘密身份；不创建客户端、不发送、不把当前草稿当成有效目标。</summary>
+    public OutputTargetIdentity? CaptureMigrationTarget(long connectionId, long revision)
+    {
+        lock (_lock)
+        {
+            if (_stopping is not null || _operation is not null || _quiescenceRequested || _activeRevision != revision ||
+                !_senders.TryGetValue(connectionId, out var sender) || sender.Target.Id.Kind is not ("output.http" or "output.mqtt"))
+            { return null; }
+            var identity = sender.Target.CaptureIdentity();
+            return identity is not null && sender.Target.Id.Kind == "output." + identity.Recipient.Protocol ? identity : null;
+        }
+    }
+
     /// <summary>宿主已确认有效配置、每条原记录的同协议与所有者声明，并持久登记迁移开始。
     /// 原源/目标发送者都提交在途结果后，才交给唯一写者；不取消/替换发送者，不解除暂停。
     /// 本入口只支持已有目标发送者；宿主计划为无输出路线的启用连接准备queue-only单元，不在迁移中另建发送者。
