@@ -334,3 +334,5 @@ export function createDeliveryMigrationApi(
         },
     }
 }
+
+export { count as migrationCount, identity as validateMigrationIdentity }

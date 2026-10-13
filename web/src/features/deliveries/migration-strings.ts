@@ -1,3 +1,4 @@
+import { configurationMigrationErrors } from '../configuration/migration-strings'
 export const migrationStrings = {
     title: '迁移到另一个输出连接',
     open: '选择记录并迁移到另一连接',
@@ -84,6 +85,7 @@ export const migrationStrings = {
     restartNotice:
         '此操作只取消仍未消费的准备并清除页面选择，不取消已在后台执行的迁移；请保留操作编号。',
     errors: {
+        ...configurationMigrationErrors,
         'delivery.migrationProtocolMismatch': '所选记录原协议与目标不一致。',
         'delivery.migrationOriginalIdentityUnknown':
             '存在无法识别的原身份摘要，不能迁移。',

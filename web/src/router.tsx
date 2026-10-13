@@ -99,6 +99,43 @@ const configurationRoute = createRoute({
         'ConfigurationPage',
     ),
 })
+function migrationSearch(search: Record<string, unknown>): {
+    operationId?: string
+    intentId?: string
+    attemptId?: string
+} {
+    const id = (value: unknown) => {
+        const text = String(value ?? '').toLowerCase()
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+            text,
+        ) && text !== '00000000-0000-0000-0000-000000000000'
+            ? text
+            : undefined
+    }
+    return {
+        operationId: id(search.operationId),
+        intentId: id(search.intentId),
+        attemptId: id(search.attemptId),
+    }
+}
+const configurationMigrationRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/configuration/migrations',
+    validateSearch: migrationSearch,
+    component: lazyRouteComponent(
+        () => import('./features/configuration/migration'),
+        'ConfigurationMigrationPage',
+    ),
+})
+const configurationMigrationIntentsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/configuration/migration-intents',
+    validateSearch: migrationSearch,
+    component: lazyRouteComponent(
+        () => import('./features/configuration/migration-intents'),
+        'ConfigurationMigrationIntentsPage',
+    ),
+})
 const diagnosticsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/diagnostics',
@@ -174,6 +211,8 @@ export const router = createRouter({
         indexRoute,
         accountRoute,
         configurationRoute,
+        configurationMigrationRoute,
+        configurationMigrationIntentsRoute,
         diagnosticsRoute,
         runtimeDevicesRoute,
         runtimeOutputsRoute,

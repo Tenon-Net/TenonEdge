@@ -1,3 +1,4 @@
+import { configurationMigrationErrors } from './migration-strings'
 export const configurationStrings = {
     title: '配置应用',
     runtimeTitle: '有效配置运行状态',
@@ -81,6 +82,12 @@ export const configurationStrings = {
         seed: '种子导入',
     },
     errors: {
+        ...Object.fromEntries(
+            Object.entries(configurationMigrationErrors).map(([key, value]) => [
+                key.replaceAll('.', '_'),
+                value,
+            ]),
+        ),
         configuration_rollbackCredentialMissing:
             '目标版本需要的当前凭证不存在；不能恢复历史秘密，请先配置凭证。',
         configuration_rollbackConnectionMissing:

@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
@@ -173,6 +174,14 @@ export function ConfigurationPage() {
             <p className="text-sm text-muted-foreground">
                 {t('configuration.historyBoundary')}
             </p>
+            {role === 'administrator' && (
+                <Link
+                    className="underline"
+                    to="/configuration/migration-intents"
+                >
+                    {t('configurationMigration.intents')}
+                </Link>
+            )}
             <ConfigurationError error={summary.error || operations.error} />
             <ConfigurationRuntime
                 ready={!summary.isFetching && !summary.isPending}
@@ -304,6 +313,16 @@ export function ConfigurationPage() {
                     </h2>
                     {!fresh && <p role="alert">{t('configuration.stale')}</p>}
                     <ReviewContents review={form.review} />
+                    {role === 'administrator' &&
+                        form.review.targetRevision == null &&
+                        form.review.targetBlocks.length > 0 && (
+                            <Link
+                                className="inline-block underline"
+                                to="/configuration/migrations"
+                            >
+                                {t('configurationMigration.open')}
+                            </Link>
+                        )}
                     <label className="block">
                         {t('configuration.description')}
                         <textarea

@@ -163,7 +163,7 @@ export function decodeVersion(body: string): VersionDetail {
     }
 }
 
-function decodeOperation(body: string, expectedId?: string): Operation {
+export function decodeOperation(body: string, expectedId?: string): Operation {
     const operation = metadata(
         routeObject(readRouteJson(body, maximumResponseBytes, 64)),
     ) as Operation

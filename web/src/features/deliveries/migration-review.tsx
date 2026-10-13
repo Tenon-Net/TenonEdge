@@ -8,7 +8,7 @@ import type {
     MigrationQuota,
 } from './migration-api'
 
-function Identity({ identity }: { identity: MigrationIdentity }) {
+export function Identity({ identity }: { identity: MigrationIdentity }) {
     const { t } = useTranslation()
     const known = (recorded: boolean, value: string | null) =>
         !recorded ? t('migration.unknown') : (value ?? t('migration.none'))
