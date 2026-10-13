@@ -51,7 +51,11 @@ public sealed record OutputSendResult(
     string? Error = null,
     bool CountsTowardPoison = false,
     TimeSpan? RetryAfter = null,
-    bool FingerprintMismatch = false);
+    bool FingerprintMismatch = false)
+{
+    /// <summary>受保护的诊断正文；不得拼入 Error、输出状态或运行事件。</summary>
+    public HttpResponseSummary? ResponseSummary { get; init; }
+}
 
 public interface IOutputAdapterFactory
 {

@@ -128,7 +128,7 @@ internal sealed class OutputSenderUnit(
             if (state.PendingFailure is { } failure)
             {
                 // 每次提交创建独立 completion；重试绝对次数/条件状态转换不会重复计数。
-                var request = new FailureRequest(failure.Seq, failure.FailureCount, failure.Error, failure.Terminal, failure.Poison);
+                var request = new FailureRequest(failure.Seq, failure.FailureCount, failure.Error, failure.Terminal, failure.Poison, failure.ResponseSummary);
                 await RequireCommitAsync(await deliveries.RecordFailureAsync(request, stoppingToken),
                     "发送结果未提交，重试状态写入而不重发。", stoppingToken);
                 state.PendingFailure = null;
@@ -288,7 +288,7 @@ internal sealed class OutputSenderUnit(
                 case OutputSendStatus.Retry:
                     var count = result.CountsTowardPoison ? Math.Min(record.FailureCount, int.MaxValue - 1) + 1 : record.FailureCount;
                     var poison = rechecking && result.CountsTowardPoison;
-                    state.PendingFailure = new(record.Seq, count, result.Error ?? "输出暂时失败。", poison, poison);
+                    state.PendingFailure = new(record.Seq, count, result.Error ?? "输出暂时失败。", poison, poison, result.ResponseSummary);
                     if (!poison)
                     {
                         state.RetryDelay = state.NextRetry(backoff, result.RetryAfter);
@@ -299,7 +299,7 @@ internal sealed class OutputSenderUnit(
 
                     break;
                 case OutputSendStatus.RejectMessage:
-                    state.PendingFailure = new(record.Seq, record.FailureCount, result.Error ?? "报文被目标拒绝。", true, false);
+                    state.PendingFailure = new(record.Seq, record.FailureCount, result.Error ?? "报文被目标拒绝。", true, false, result.ResponseSummary);
                     state.ConsecutiveRejects++;
                     if (state.ConsecutiveRejects >= RejectThreshold)
                     {
@@ -308,7 +308,7 @@ internal sealed class OutputSenderUnit(
 
                     break;
                 case OutputSendStatus.SuspendTarget:
-                    state.PendingFailure = new(record.Seq, record.FailureCount, result.Error ?? "目标暂停。", false, false);
+                    state.PendingFailure = new(record.Seq, record.FailureCount, result.Error ?? "目标暂停。", false, false, result.ResponseSummary);
                     Suspend(version, result.Error ?? "输出目标暂停，记录保持待发。");
                     break;
             }

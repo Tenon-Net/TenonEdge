@@ -1,5 +1,7 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using TenonEdge.Abstractions.Contracts;
 
 namespace TenonEdge.Runtime.Deliveries;
 
@@ -82,12 +84,22 @@ internal sealed partial class DeliveryStore
         using var connection = Open(_readConnectionString);
         using var command = connection.CreateCommand();
         // SQL 层截取 BLOB，不把整条报文读到托管内存后再截断。长度与前缀来自同一查询快照。
-        command.CommandText = "SELECT length(payload), substr(payload, 1, 65536) FROM delivery WHERE delivery_id = $id AND state = $state";
+        command.CommandText = "SELECT length(payload), substr(payload, 1, 65536), length(CAST(response_summary AS BLOB)), substr(CAST(response_summary AS BLOB), 1, 8192) FROM delivery WHERE delivery_id = $id AND state = $state";
         command.Parameters.AddWithValue("$id", deliveryId.ToString("D"));
         command.Parameters.AddWithValue("$state", state == DeliveryState.Failed ? "failed" : "quarantined");
         using var reader = command.ExecuteReader();
         if (!reader.Read())
         { return null; }
+        HttpResponseSummary? summary = null;
+        if (!reader.IsDBNull(2))
+        {
+            if (reader.GetInt64(2) > HttpResponseSummary.MaximumSerializedBytes)
+            { throw new DeliveryStoreException("响应摘要超过读取上限。"); }
+            try
+            { summary = JsonSerializer.Deserialize<HttpResponseSummary>((byte[])reader.GetValue(3)) ?? throw new JsonException(); }
+            catch (Exception error) when (error is JsonException or ArgumentException)
+            { throw new DeliveryStoreException("响应摘要不可读取。"); }
+        }
         var total = reader.GetInt64(0);
         var prefix = (byte[])reader.GetValue(1);
         try
@@ -97,11 +109,11 @@ internal sealed partial class DeliveryStore
             utf8.GetDecoder().Convert(prefix, chars, flush: total == prefix.Length, out _, out var charsUsed, out _);
             var content = new string(chars, 0, charsUsed);
             var displayed = utf8.GetByteCount(content);
-            return new(deliveryId, state, "utf-8", content, total, displayed, displayed < total);
+            return new(deliveryId, state, "utf-8", content, total, displayed, displayed < total, summary);
         }
         catch (DecoderFallbackException)
         {
-            return new(deliveryId, state, "base64", Convert.ToBase64String(prefix), total, prefix.Length, prefix.Length < total);
+            return new(deliveryId, state, "base64", Convert.ToBase64String(prefix), total, prefix.Length, prefix.Length < total, summary);
         }
     }
 }

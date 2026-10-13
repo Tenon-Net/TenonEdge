@@ -64,6 +64,16 @@ internal static class JsonReadPreview
     internal static bool IsSensitive(JsonElement root, HttpCredential? credential, CancellationToken token, string[]? additionalSecrets = null) =>
         ContainsSensitive(root, CredentialForms(credential).Concat(additionalSecrets ?? []).Where(value => value.Length > 0).ToArray(), token);
 
+    /// <summary>对方纯文本错误的保守检查；敏感标签即整段隐藏，不能靠截断来“去掉”秘密。
+    /// JSON 仍须另用 IsSensitive 检查解码后的字段名/字符串；这里不声称识别任意变换后的秘密。</summary>
+    internal static bool IsSensitiveText(string text, HttpCredential? credential)
+    {
+        if (CredentialForms(credential).Any(secret => text.Contains(secret, StringComparison.OrdinalIgnoreCase)))
+        { return true; }
+        var normalized = text.Replace("-", "", StringComparison.Ordinal).Replace("_", "", StringComparison.Ordinal);
+        return SecretKeys.Any(key => normalized.Contains(key, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string Limit(string text, int bytes)
     {
         if (JsonSerializer.SerializeToUtf8Bytes(text, Json).Length <= bytes)

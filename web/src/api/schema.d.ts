@@ -1209,7 +1209,7 @@ export interface paths {
         };
         /**
          * 按稳定投递编号查看最多 64 KiB 正文
-         * @description 指定 failed 或 quarantined 区域；记录删除或状态变化返回 404。非 UTF-8 前缀返回显式 Base64。只读角色禁止访问；不返回头、凭证或指纹。
+         * @description 指定 failed 或 quarantined 区域；记录删除或状态变化返回 404。非 UTF-8 前缀返回显式 Base64。只读角色禁止访问；不返回头、凭证或指纹。responseSummary 为上次记录的 HTTP 响应诊断：完整有界正文经凭证回显检查后最多保留 1024 UTF-8 字节；仅按正文权限提供，不进入列表/日志/导出，不能保证识别未知秘密或任意编码。旧记录或未取得响应时为 null，隐藏/超限/不可读取等状态不改变投递分类。
          */
         get: operations["getDeliveryBody"];
         put?: never;
@@ -1977,6 +1977,7 @@ export interface components {
             /** Format: int32 */
             displayedBytes: number | string;
             truncated: boolean;
+            responseSummary?: null | components["schemas"]["HttpResponseSummary"];
         };
         DeliveryCacheStatus: {
             storageFault: boolean;
@@ -2427,6 +2428,16 @@ export interface components {
             inputId?: null | number | string;
             source?: null | components["schemas"]["HttpSourceDraft"];
         };
+        HttpResponseSummary: {
+            /** Format: int32 */
+            statusCode: number | string;
+            state: components["schemas"]["HttpResponseSummaryState"];
+            text?: null | string;
+            /** @default false */
+            truncated: boolean;
+        };
+        /** @enum {unknown} */
+        HttpResponseSummaryState: "captured" | "empty" | "tooLarge" | "unsupportedEncoding" | "unsupportedMediaType" | "invalidBody" | "redacted" | "unavailable";
         HttpsCertificateInfo: {
             sha256Fingerprint: string;
             /** Format: date-time */

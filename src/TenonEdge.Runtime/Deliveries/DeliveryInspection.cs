@@ -1,3 +1,5 @@
+using TenonEdge.Abstractions.Contracts;
+
 namespace TenonEdge.Runtime.Deliveries;
 
 /// <summary>故障记录筛选。时间为首次入队时间，左闭右开；原因是区分大小写的字面子串，不解释 SQL 通配符。</summary>
@@ -22,4 +24,4 @@ public sealed record DeliveryInspectionPage(DateTimeOffset CapturedAt, DeliveryI
 
 /// <summary>最多读取 64 KiB 原始正文。UTF-8 截断时舍去不完整末尾字符；非 UTF-8 前缀用 Base64 明示，不替换成乱码。</summary>
 public sealed record DeliveryBodyPreview(Guid DeliveryId, DeliveryState State, string Encoding, string Content,
-    long TotalBytes, int DisplayedBytes, bool Truncated);
+    long TotalBytes, int DisplayedBytes, bool Truncated, HttpResponseSummary? ResponseSummary = null);

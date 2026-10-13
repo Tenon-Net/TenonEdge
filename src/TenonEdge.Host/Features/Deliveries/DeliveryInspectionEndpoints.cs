@@ -16,7 +16,7 @@ internal static class DeliveryInspectionEndpoints
             .ProducesProblem(400).ProducesProblem(503);
         group.MapGet("/{deliveryId:guid}/body", Body).RequireAuthorization(AuthorizationPolicies.Configurator)
             .WithName("getDeliveryBody").WithSummary("按稳定投递编号查看最多 64 KiB 正文")
-            .WithDescription("指定 failed 或 quarantined 区域；记录删除或状态变化返回 404。非 UTF-8 前缀返回显式 Base64。只读角色禁止访问；不返回头、凭证或指纹。")
+            .WithDescription("指定 failed 或 quarantined 区域；记录删除或状态变化返回 404。非 UTF-8 前缀返回显式 Base64。只读角色禁止访问；不返回头、凭证或指纹。responseSummary 为上次记录的 HTTP 响应诊断：完整有界正文经凭证回显检查后最多保留 1024 UTF-8 字节；仅按正文权限提供，不进入列表/日志/导出，不能保证识别未知秘密或任意编码。旧记录或未取得响应时为 null，隐藏/超限/不可读取等状态不改变投递分类。")
             .ProducesProblem(400).ProducesProblem(403).ProducesProblem(404).ProducesProblem(503);
         return api;
     }

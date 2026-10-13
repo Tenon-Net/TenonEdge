@@ -18,7 +18,7 @@ namespace TenonEdge.Runtime.Deliveries;
 /// </summary>
 internal sealed partial class DeliveryStore
 {
-    public const int SchemaVersion = 8;
+    public const int SchemaVersion = 9;
 
     public const string ExpectedJournalMode = "wal";
 
@@ -140,6 +140,11 @@ internal sealed partial class DeliveryStore
             created_at INTEGER NOT NULL,
             PRIMARY KEY (config_store_id, intent_id)
         );
+        """,
+        // 版本 9（T3-08）：受正文权限保护的HTTP响应摘要；不混入last_error/只读元数据。
+        """
+        ALTER TABLE delivery ADD COLUMN response_summary TEXT
+            CHECK (response_summary IS NULL OR length(CAST(response_summary AS BLOB)) <= 8192);
         """,
     ];
 

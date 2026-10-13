@@ -15,6 +15,7 @@ import {
 } from './api'
 import { DeliveryRecordActions } from './actions'
 import { DeliveryExport } from './export'
+import { ResponseSummary } from './response-summary'
 
 const deliveries = createDeliveryApi(api)
 export function DeliveryRecordsPage() {
@@ -436,6 +437,7 @@ function Body({
                     <pre className="max-h-96 overflow-auto rounded border bg-background p-4 text-xs break-all whitespace-pre-wrap">
                         {body.content}
                     </pre>
+                    <ResponseSummary summary={body.responseSummary} />
                 </>
             )}
             <Button variant="outline" onClick={close}>

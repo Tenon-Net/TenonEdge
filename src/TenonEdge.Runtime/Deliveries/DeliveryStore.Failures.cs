@@ -24,18 +24,42 @@ internal sealed partial class DeliveryStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT connection_id FROM delivery WHERE seq = $seq AND state = 'pending'";
+        command.CommandText = "SELECT connection_id, COALESCE(length(CAST(response_summary AS BLOB)), 0) FROM delivery WHERE seq = $seq AND state = 'pending'";
         command.Parameters.AddWithValue("$seq", request.Seq);
-        if (command.ExecuteScalar() is not long connectionId)
+        long connectionId, oldSummaryBytes;
+        using (var reader = command.ExecuteReader())
         {
-            return DeliveryWriteResult.Deleted(0);
+            if (!reader.Read())
+            { return DeliveryWriteResult.Deleted(0); }
+            connectionId = reader.GetInt64(0);
+            oldSummaryBytes = reader.GetInt64(1);
+        }
+        var summary = request.ResponseSummaryJson;
+        var delta = request.ResponseSummaryBytes - oldSummaryBytes;
+        var error = request.Error;
+        command.Parameters.AddWithValue("$id", connectionId);
+        if (!request.Terminal && delta > 0)
+        {
+            // 可选诊断不能把既有pending记录推过目标/全局字节配额，也不能阻止真实失败结果落库。
+            // failed不挤占pending/全局配额；其条数本身有界。每条摘要的序列化字节仍计入byte_size。
+            command.CommandText = """
+                SELECT COALESCE(SUM(byte_size) FILTER (WHERE connection_id=$id AND state='pending'), 0),
+                    COALESCE(SUM(byte_size) FILTER (WHERE state IN ('pending', 'quarantined')), 0) FROM delivery;
+                """;
+            using var reader = command.ExecuteReader();
+            reader.Read();
+            if (delta > _options.MaximumPendingBytesPerTarget - reader.GetInt64(0) || delta > _options.MaximumQueueBytes - reader.GetInt64(1))
+            {
+                summary = null;
+                delta = -oldSummaryBytes;
+                error = error[..Math.Min(error.Length, 900)] + "（响应摘要未保存：队列字节配额不足。）";
+            }
         }
 
         var overflow = false;
         if (request.Terminal)
         {
             command.CommandText = "SELECT COUNT(*) FROM delivery WHERE state = 'failed' AND connection_id = $id";
-            command.Parameters.AddWithValue("$id", connectionId);
             var targetCount = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
             command.CommandText = "SELECT COUNT(*) FROM delivery WHERE state = 'failed'";
             var globalCount = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
@@ -44,11 +68,13 @@ internal sealed partial class DeliveryStore
 
         command.CommandText = overflow ? "DELETE FROM delivery WHERE seq = $seq AND state = 'pending'" : """
             UPDATE delivery SET failure_count = MAX(failure_count, $count), last_error = $error,
-                state = $state, failed_at = $at
+                state = $state, failed_at = $at, response_summary = $summary, byte_size = byte_size + $summaryDelta
             WHERE seq = $seq AND state = 'pending';
             """;
         command.Parameters.AddWithValue("$count", request.FailureCount);
-        command.Parameters.AddWithValue("$error", request.Error);
+        command.Parameters.AddWithValue("$error", error);
+        command.Parameters.AddWithValue("$summary", (object?)summary ?? DBNull.Value);
+        command.Parameters.AddWithValue("$summaryDelta", delta);
         command.Parameters.AddWithValue("$state", request.Terminal ? "failed" : "pending");
         command.Parameters.AddWithValue("$at", request.Terminal ? now : DBNull.Value);
         var changed = command.ExecuteNonQuery();

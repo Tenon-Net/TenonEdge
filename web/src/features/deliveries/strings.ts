@@ -172,6 +172,29 @@ export const deliveryStrings = {
     view: '查看正文 {{id}}',
     viewShort: '查看正文',
     viewer: '只读角色只能查看元数据和原因，不能查看报文正文、重试或清理记录。',
+    response: {
+        title: '上次记录的 HTTP 响应摘要',
+        notice: '这是对方响应正文，不是当前连接探测结果。迁移后仍可能来自原接收方；人工重试会清除。仅配置人员和管理员可查看，不进入普通日志、列表筛选或 JSON Lines 导出。凭证回显检查不能识别未知秘密或任意编码，请按敏感业务数据保护。',
+        status: 'HTTP {{status}}',
+        missing:
+            '未保留响应摘要：可能是旧记录、未取得响应、非 HTTP 输出或字节配额不足；不表示对方返回空正文。',
+        truncated:
+            '响应摘要已截断，最多展示 1024 UTF-8 字节，不是完整错误正文。',
+        unknown: '未知摘要状态，未展示响应正文。',
+        states: {
+            captured: '以下按纯文本显示，不执行 HTML。',
+            empty: '对方响应正文为空。',
+            tooLarge: '对方响应超过 64 KiB 读取上限，未保存正文前缀。',
+            unsupportedEncoding:
+                '响应压缩方式、字符集或 UTF-8 编码不受支持，未保存正文。',
+            unsupportedMediaType:
+                '响应媒体类型不适合作为文本摘要，未读取正文。',
+            invalidBody: '响应 JSON 或文本格式无效，未保存正文。',
+            redacted: '检测到凭证回显或敏感标签，整段响应已隐藏。',
+            unavailable:
+                '摘要读取超时、取消或连接中断；不改变已知 HTTP 结果分类。',
+        },
+    },
     body: '报文正文',
     close: '关闭正文',
     bodyNotice:

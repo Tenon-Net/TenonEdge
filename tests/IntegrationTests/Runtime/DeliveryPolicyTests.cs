@@ -210,7 +210,7 @@ public sealed class DeliveryPolicyTests
             await runtime.StopAsync(Token);
         }
 
-        Sql(data.Path, "DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; DROP TABLE queue_counters; DROP INDEX ix_delivery_state_created; DROP TABLE delivery_queue_totals; ALTER TABLE delivery DROP COLUMN byte_size; ALTER TABLE delivery DROP COLUMN clock_anomaly; PRAGMA user_version = 2;");
+        Sql(data.Path, "ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; DROP TABLE queue_counters; DROP INDEX ix_delivery_state_created; DROP TABLE delivery_queue_totals; ALTER TABLE delivery DROP COLUMN byte_size; ALTER TABLE delivery DROP COLUMN clock_anomaly; PRAGMA user_version = 2;");
         var cache = RuntimeTesting.CreateDeliveryCache(data.Path);
         var record = Assert.Single(cache.ReadFailed(1, 0, 10));
         Assert.Equal(draft.DeliveryId, record.DeliveryId);

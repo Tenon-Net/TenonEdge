@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Security;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Deliveries;
@@ -30,7 +31,7 @@ public sealed class DeliveryInspectionTests
         var draft = Draft();
         var write = await cache.EnqueueAsync([draft], Token);
         Assert.True(write.Committed);
-        Assert.True((await cache.RecordFailureAsync(new(write.Seqs[0], 3, "HTTP 422", true, false), Token)).Committed);
+        Assert.True((await cache.RecordFailureAsync(new(write.Seqs[0], 3, "HTTP 422", true, false, new(422, HttpResponseSummaryState.Captured, "private-response")), Token)).Committed);
         var bodyPath = $"{Root}/{draft.DeliveryId}/body?state=failed";
         using var anon = factory.CreateClient();
         foreach (var path in new[] { Root + "?state=failed", bodyPath })
@@ -51,7 +52,7 @@ public sealed class DeliveryInspectionTests
         Assert.Equal("Frozen node", item.GetProperty("nodeLabel").GetString());
         Assert.True(item.GetProperty("failedAt").GetDateTimeOffset() >= item.GetProperty("createdAt").GetDateTimeOffset());
         Assert.DoesNotContain("private-", page.GetRawText(), StringComparison.Ordinal);
-        foreach (var name in new[] { "payload", "headers", "fingerprint", "targetAddress", "protocolMetadata" })
+        foreach (var name in new[] { "payload", "headers", "fingerprint", "targetAddress", "protocolMetadata", "responseSummary" })
         { Assert.False(item.TryGetProperty(name, out _)); }
         using var body = await client.GetAsync(new Uri(bodyPath, UriKind.Relative), Token);
         Assert.Equal(bodyStatus, body.StatusCode);
@@ -60,6 +61,8 @@ public sealed class DeliveryInspectionTests
             Assert.True(body.Headers.CacheControl!.NoStore);
             var preview = await body.ReadJsonAsync(Token);
             Assert.Equal("private-body", preview.GetProperty("content").GetString());
+            Assert.Equal("private-response", preview.GetProperty("responseSummary").GetProperty("text").GetString());
+            Assert.Equal(422, preview.GetProperty("responseSummary").GetProperty("statusCode").GetInt32());
             Assert.False(preview.GetProperty("truncated").GetBoolean());
             Assert.Equal("utf-8", preview.GetProperty("encoding").GetString());
             Assert.DoesNotContain("private-header", preview.GetRawText(), StringComparison.Ordinal);
@@ -218,14 +221,15 @@ public sealed class DeliveryInspectionTests
                 migration_id, byte_size, clock_anomaly,
                 json('invalid-payload') AS payload, json('invalid-headers') AS headers,
                 json('invalid-address') AS target_address, qos, json('invalid-fingerprint') AS fingerprint,
-                json('invalid-summary') AS fingerprint_summary, json('invalid-metadata') AS protocol_metadata
+                json('invalid-summary') AS fingerprint_summary, json('invalid-metadata') AS protocol_metadata,
+                json('invalid-response') AS response_summary
             FROM fixture_delivery;
             """;
         command.ExecuteNonQuery();
         try
         {
             Assert.Single(cache.Inspect(new(DeliveryState.Failed)).Items);
-            foreach (var column in new[] { "payload", "headers", "target_address", "fingerprint", "fingerprint_summary", "protocol_metadata" })
+            foreach (var column in new[] { "payload", "headers", "target_address", "fingerprint", "fingerprint_summary", "protocol_metadata", "response_summary" })
             {
                 command.CommandText = "SELECT " + column + " FROM delivery";
                 Assert.Throws<SqliteException>(() => command.ExecuteScalar());
@@ -236,6 +240,33 @@ public sealed class DeliveryInspectionTests
             command.CommandText = "DROP VIEW delivery; ALTER TABLE fixture_delivery RENAME TO delivery";
             command.ExecuteNonQuery();
         }
+    }
+
+    [Theory]
+    [InlineData("not-json-private-response")]
+    [InlineData("{\"StatusCode\":422,\"State\":0,\"Text\":null}")]
+    [InlineData("{\"StatusCode\":422,\"State\":99,\"Text\":\"private-response\"}")]
+    public async Task CorruptSummaryReturnsFixedFailureWithoutExposingItsContent(string corrupt)
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
+        var cache = factory.Services.GetRequiredService<DeliveryCache>();
+        var draft = Draft();
+        var write = await cache.EnqueueAsync([draft], Token);
+        await cache.RecordFailureAsync(new(write.Seqs[0], 1, "HTTP 422", true, false), Token);
+        using var db = cache.Store.OpenWriteConnection();
+        using var command = db.CreateCommand();
+        command.CommandText = "UPDATE delivery SET response_summary=$corrupt";
+        command.Parameters.AddWithValue("$corrupt", corrupt);
+        command.ExecuteNonQuery();
+        using var client = await factory.CreateLoggedInClientAsync("operator", Token);
+        using var metadata = await client.GetAsync(new Uri(Root + "?state=failed", UriKind.Relative), Token);
+        Assert.Equal(HttpStatusCode.OK, metadata.StatusCode);
+        using var body = await client.GetAsync(new Uri($"{Root}/{draft.DeliveryId}/body?state=failed", UriKind.Relative), Token);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, body.StatusCode);
+        Assert.Equal("delivery.queueUnavailable", await body.ReadProblemCodeAsync(Token));
+        Assert.DoesNotContain("private-response", await body.Content.ReadAsStringAsync(Token), StringComparison.Ordinal);
+        Assert.True(body.Headers.CacheControl!.NoStore);
     }
 
     [Fact]

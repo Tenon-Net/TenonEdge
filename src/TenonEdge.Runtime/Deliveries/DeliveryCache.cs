@@ -1,4 +1,7 @@
+using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Diagnostics;
 
@@ -334,11 +337,14 @@ internal sealed class DeleteRequest(IReadOnlyList<long> seqs) : WriteRequest
     public override int RecordCount => Seqs.Count;
 }
 
-internal sealed class FailureRequest(long seq, int failureCount, string error, bool terminal, bool poison) : WriteRequest
+internal sealed class FailureRequest(long seq, int failureCount, string error, bool terminal, bool poison, HttpResponseSummary? responseSummary = null) : WriteRequest
 {
     public long Seq { get; } = seq;
     public int FailureCount { get; } = failureCount;
     public string Error { get; } = error.Length <= 1024 ? error : error[..1024];
+    public HttpResponseSummary? ResponseSummary { get; } = responseSummary;
+    public string? ResponseSummaryJson { get; } = responseSummary is null ? null : JsonSerializer.Serialize(responseSummary);
+    public int ResponseSummaryBytes => ResponseSummaryJson is null ? 0 : Encoding.UTF8.GetByteCount(ResponseSummaryJson);
     public bool Terminal { get; } = terminal;
     public bool Poison { get; } = poison;
     public override int RecordCount => 1;

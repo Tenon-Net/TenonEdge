@@ -18,7 +18,10 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
             /* consume genuine output */
         }
         response.writeHead(422)
-        response.end('private-peer-response')
+        response.end(
+            'private-peer-response <script>globalThis.responseInjected=true</script> ' +
+                'x'.repeat(1200),
+        )
     })
     peer.listen(0, '127.0.0.1')
     await once(peer, 'listening')
@@ -128,6 +131,34 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
         expect(await page.evaluate(() => 'queueInjected' in globalThis)).toBe(
             false,
         )
+        const summary = () =>
+            page.getByRole('region', {
+                name: '上次记录的 HTTP 响应摘要',
+                exact: true,
+            })
+        await expect(summary()).toContainText('private-peer-response')
+        await expect(summary()).toContainText('HTTP 422')
+        await expect(summary()).toContainText('响应摘要已截断')
+        expect(
+            await page.evaluate(() => 'responseInjected' in globalThis),
+        ).toBe(false)
+        await page.screenshot({
+            path: '/tmp/tenonedge-http-error-browser.png',
+            fullPage: true,
+        })
+        await page.route(`**/deliveries/${realId}/body?*`, (route) =>
+            route.fulfill({
+                status: 503,
+                contentType: 'application/problem+json',
+                body: '{"status":503}',
+            }),
+        )
+        await body()
+            .getByRole('button', { name: '刷新本区域', exact: true })
+            .click()
+        await expect(body().getByRole('alert')).toBeVisible()
+        await expect(summary()).toHaveCount(0)
+        await page.unroute(`**/deliveries/${realId}/body?*`)
         // Pause via the already-tested API; this test is not the pending T3-08 control UI acceptance.
         const session = await (
             await page.request.get('/api/edge-admin/v1/auth/session')
@@ -189,6 +220,20 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
                 realId,
             )
         } finally {
+            for (const [id, state] of [
+                [largeId, 2],
+                [binaryId, 6],
+            ] as const) {
+                const summaryJson = JSON.stringify({
+                    StatusCode: 422,
+                    State: state,
+                    Text: null,
+                    Truncated: false,
+                })
+                db.prepare(
+                    'UPDATE delivery SET response_summary=?, byte_size=byte_size+? WHERE delivery_id=?',
+                ).run(summaryJson, Buffer.byteLength(summaryJson), id)
+            }
             db.close()
         }
         host = await startOwnedHost(data, 0, args)
@@ -280,6 +325,7 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
             .click()
         await expect(body()).toContainText('正文已截断')
         await expect(body()).toContainText('65535 / 65543')
+        await expect(summary()).toContainText('超过 64 KiB 读取上限')
         await expect(body().locator('pre')).toHaveText('x'.repeat(65535))
         await page
             .getByRole('button', { name: '关闭正文', exact: true })
@@ -289,6 +335,7 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
             .getByRole('button', { name: `查看正文 ${binaryId}`, exact: true })
             .click()
         await expect(body()).toContainText('Base64')
+        await expect(summary()).toContainText('整段响应已隐藏')
         await expect(body().locator('pre')).toHaveText('//4=')
         await page.screenshot({
             path: '/tmp/tenonedge-queue-inspection-browser.png',
@@ -385,6 +432,10 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
                 await expect(page.locator('body')).not.toContainText(
                     'queue-body-private-marker',
                 )
+                await expect(page.locator('body')).not.toContainText(
+                    'private-peer-response',
+                )
+                await expect(summary()).toHaveCount(0)
                 await page.screenshot({
                     path: '/tmp/tenonedge-queue-inspection-viewer.png',
                     fullPage: false,
@@ -397,6 +448,8 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
                     })
                     .click()
                 await expect(body()).toContainText('queue-body-private-marker')
+                await expect(summary()).toContainText('private-peer-response')
+                await expect(summary()).toContainText('响应摘要已截断')
             }
             await context.close()
             context = undefined

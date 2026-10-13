@@ -32,7 +32,7 @@ internal sealed partial class DeliveryStore
         }
         command.Parameters.Clear();
         command.CommandText = """
-            SELECT d.connection_id, d.fingerprint, d.byte_size
+            SELECT d.connection_id, d.fingerprint, d.byte_size - COALESCE(length(CAST(d.response_summary AS BLOB)), 0)
             FROM delivery d JOIN retry_selection s ON s.seq = d.seq AND s.delivery_id = d.delivery_id
             WHERE d.state = 'failed' ORDER BY d.seq;
             """;
@@ -75,7 +75,8 @@ internal sealed partial class DeliveryStore
         { return DeliveryWriteResult.Rejected(DeliveryRetryErrors.QuotaExceeded); }
         command.CommandText = """
             UPDATE delivery SET seq = (SELECT next_seq FROM retry_selection WHERE seq = delivery.seq),
-                state = 'pending', failure_count = 0, failed_at = NULL, last_error = NULL, quarantine_reason = NULL, last_retried_at = $now
+                state = 'pending', failure_count = 0, failed_at = NULL, last_error = NULL, quarantine_reason = NULL, last_retried_at = $now,
+                byte_size = byte_size - COALESCE(length(CAST(response_summary AS BLOB)), 0), response_summary = NULL
             WHERE seq IN (SELECT seq FROM retry_selection);
             """;
         command.Parameters.AddWithValue("$now", now);

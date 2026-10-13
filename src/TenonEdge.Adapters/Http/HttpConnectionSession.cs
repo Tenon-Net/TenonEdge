@@ -81,8 +81,8 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
                 { return new(OutputSendStatus.SuspendTarget, "HTTP 凭证格式无效或与固定请求参数冲突。"); }
             }
             using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            var evaluator = new HttpOutputResponse(successRule);
-            return await evaluator.EvaluateAsync(response, time.GetUtcNow(), cancellationToken);
+            var evaluator = new HttpOutputResponse(successRule, time);
+            return await evaluator.EvaluateAsync(response, time.GetUtcNow(), cancellationToken, credential);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception) when (exception is not OutOfMemoryException)
