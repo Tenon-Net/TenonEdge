@@ -8,26 +8,6 @@ import {
 import { useTranslation } from 'react-i18next'
 import { SessionGate } from './features/auth/session-gate'
 import { AuthForm } from './features/auth/auth-form'
-import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card'
-
-function WorkspacePage() {
-    const { t } = useTranslation()
-    return (
-        <div className="mx-auto max-w-4xl space-y-6">
-            <h1 className="text-2xl font-semibold">{t('workspace')}</h1>
-            <Card>
-                <CardHeader>
-                    <CardTitle>{t('authenticated')}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p className="leading-7 text-muted-foreground">
-                        {t('foundationNotice')}
-                    </p>
-                </CardContent>
-            </Card>
-        </div>
-    )
-}
 function AccountPage() {
     const { t } = useTranslation()
     return (
@@ -53,7 +33,10 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
-    component: WorkspacePage,
+    component: lazyRouteComponent(
+        () => import('./features/diagnostics/overview'),
+        'OverviewPage',
+    ),
 })
 const accountRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -116,11 +99,20 @@ const configurationRoute = createRoute({
         'ConfigurationPage',
     ),
 })
+const diagnosticsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/diagnostics',
+    component: lazyRouteComponent(
+        () => import('./features/diagnostics/page'),
+        'DiagnosticsPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
         accountRoute,
         configurationRoute,
+        diagnosticsRoute,
         pointsRoute,
         canvasRoute,
         connectionsRoute,

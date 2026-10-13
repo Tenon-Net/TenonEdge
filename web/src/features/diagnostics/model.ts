@@ -1,0 +1,60 @@
+import type { Diagnostics, TrendPoint } from './api'
+
+export function runtimeHealth(status: Diagnostics) {
+    if (status.coordinator.state !== 'active') return status.coordinator.state
+    return status.queue.storageFault ||
+        status.storageProtection.rejectNewRecords ||
+        status.runtime.units.some(
+            (unit) =>
+                unit.state !== 'running' ||
+                (unit.id.kind !== 'input.mqtt' &&
+                    unit.reads &&
+                    ['partialFailure', 'failing', 'offline'].includes(
+                        unit.reads.health,
+                    )),
+        )
+        ? 'degraded'
+        : 'active'
+}
+
+/** SVG geometry is approximate; exact counts remain in the accessible table. Never invent missing buckets. */
+export function trendGeometry(points: TrendPoint[]) {
+    const samples = points.map((point) => {
+        const duration = Number(point.durationSeconds)
+        const values = [
+            Number(point.received),
+            Number(point.sent),
+            Number(point.readFailures) + Number(point.sendFailures),
+        ]
+        const uptime = Number(point.uptimeSeconds)
+        if (
+            !Number.isFinite(duration) ||
+            duration <= 0 ||
+            !Number.isFinite(uptime) ||
+            values.some((value) => !Number.isFinite(value) || value < 0)
+        )
+            throw new Error('diagnostics-trends')
+        return { uptime, values: values.map((value) => value / duration) }
+    })
+    const start = samples[0]?.uptime ?? 0
+    const span = Math.max(1, (samples.at(-1)?.uptime ?? start) - start)
+    const peak = Math.max(1, ...samples.flatMap((sample) => sample.values))
+    return {
+        peak,
+        lines: [0, 1, 2].map((series) =>
+            samples
+                .map(
+                    (sample) =>
+                        `${20 + (760 * (sample.uptime - start)) / span},${180 - (160 * sample.values[series]) / peak}`,
+                )
+                .join(' '),
+        ),
+    }
+}
+
+export function eventTime(value: string): string | undefined {
+    if (!value) return undefined
+    const parsed = new Date(value)
+    if (!Number.isFinite(parsed.getTime())) throw new Error('diagnostics-time')
+    return parsed.toISOString()
+}

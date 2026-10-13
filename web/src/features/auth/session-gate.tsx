@@ -92,11 +92,13 @@ export function SessionGate() {
                     <CardHeader>
                         <CardTitle>{t(mode)}</CardTitle>
                         <CardDescription>
-                            {session?.mustChangePassword
-                                ? t('temporaryPassword')
-                                : location.protocol === 'http:'
-                                  ? t('httpWarning')
-                                  : ''}
+                            {session?.mustChangePassword &&
+                                t('temporaryPassword')}
+                            {location.protocol === 'http:' && (
+                                <span className="block">
+                                    {t('httpWarning')} {t('httpsInstructions')}
+                                </span>
+                            )}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">

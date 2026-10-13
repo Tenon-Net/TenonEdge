@@ -44,6 +44,13 @@ export function Workspace() {
                         {t('workspace')}
                     </Link>
                     <Link
+                        to="/diagnostics"
+                        className="rounded-md p-2 hover:bg-accent"
+                        activeProps={{ className: 'bg-accent font-medium' }}
+                    >
+                        {t('diagnostics.title')}
+                    </Link>
+                    <Link
                         to="/account"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
@@ -87,6 +94,15 @@ export function Workspace() {
                 </nav>
             </aside>
             <div className="min-w-0">
+                {location.protocol === 'http:' && (
+                    <div
+                        role="note"
+                        className="border-b border-amber-300 bg-amber-50 px-6 py-3 text-sm text-amber-950"
+                    >
+                        <p>{t('httpWarning')}</p>
+                        <p>{t('httpsInstructions')}</p>
+                    </div>
+                )}
                 <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
                     <div>
                         <p className="text-sm">

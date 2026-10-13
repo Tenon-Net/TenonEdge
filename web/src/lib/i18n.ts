@@ -1,4 +1,5 @@
 import { configurationStrings } from '../features/configuration/strings'
+import { diagnosticsStrings } from '../features/diagnostics/strings'
 import { routeStrings } from '../features/routes/strings'
 import { inputStrings } from '../features/inputs/strings'
 import { deviceStrings } from '../features/devices/strings'
@@ -18,6 +19,7 @@ void i18n.use(initReactI18next).init({
         'zh-CN': {
             translation: {
                 configuration: configurationStrings,
+                diagnostics: diagnosticsStrings,
                 routes: routeStrings,
                 devices: deviceStrings,
                 inputs: inputStrings,
@@ -58,8 +60,10 @@ void i18n.use(initReactI18next).init({
                 windowCloses: '设置窗口关闭时间：{{time}}',
                 httpWarning:
                     '当前使用 HTTP，密码会明文传输。请仅在可信管理网络使用，建议通过 HTTPS 访问。',
+                httpsInstructions:
+                    '密码、会话和凭证可能被同网段设备截获。请使用管理员提供的 HTTPS 地址（默认端口 8443），核对证书后重新登录；两种协议的登录不通用。',
                 temporaryPassword: '当前账号必须先修改临时密码，才能继续操作。',
-                workspace: '工作区',
+                workspace: '总览',
                 authenticated: '已连接到真实网关',
                 accountDetail: '当前账号：{{name}}',
                 roles: {
@@ -67,10 +71,8 @@ void i18n.use(initReactI18next).init({
                     configurator: '配置人员',
                     viewer: '只读',
                 },
-                foundationNotice:
-                    'T3 开发中：连接、设备、来源与路线编辑已接入真实草稿，可在“配置应用”查看变更并确认应用。原型页面仍不保存配置；历史比较与回滚页面尚未完成。此工作区不代表设备已经在采集。',
                 noPage: '此页面不存在。',
-                backHome: '返回工作区',
+                backHome: '返回总览',
                 security: '账号安全',
                 savedPassword: '密码已修改。',
                 showNavigation: '展开导航',

@@ -36,6 +36,8 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
     await page.getByRole('button', { name: '创建管理员并登录' }).click()
     await expect(page.getByRole('navigation')).toBeVisible()
     await expect(page.getByRole('heading', { name: '修改密码' })).toBeVisible()
+    await expect(page.getByRole('note')).toContainText('密码会明文传输')
+    await expect(page.getByRole('note')).toContainText('默认端口 8443')
     const cookies = await context.cookies()
     expect(cookies.some((cookie) => cookie.httpOnly)).toBe(true)
     await expect
@@ -64,7 +66,8 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
     await page.getByLabel('密码', { exact: true }).fill('Changed-fixture-5938')
     await page.getByRole('button', { name: '登录', exact: true }).click()
     await expect(page.getByRole('navigation')).toBeVisible()
-    await page.getByRole('link', { name: '工作区', exact: true }).click()
+    await page.getByRole('link', { name: '总览', exact: true }).click()
+    await expect(page.getByRole('note')).toContainText('两种协议的登录不通用')
     await expect(
         page.getByText('已连接到真实网关', { exact: true }),
     ).toBeVisible()
@@ -486,7 +489,7 @@ test('canvas drag/connect, cycle rejection, properties, clipboard and history us
     expect(mutations).toEqual([])
     expect(errors).toEqual([])
     await page.screenshot({ path: 'test-results/canvas.png', fullPage: true })
-    await page.getByRole('link', { name: '工作区', exact: true }).click()
+    await page.getByRole('link', { name: '总览', exact: true }).click()
     await page.getByRole('link', { name: '画布交互原型' }).click()
     await page
         .getByText('查看自有格式（定义与布局分离）', { exact: true })
