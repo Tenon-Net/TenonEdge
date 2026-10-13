@@ -468,6 +468,22 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     public RuntimeOutputSender[] GetOutputSenders() => _senderStates.OrderBy(pair => pair.Key)
         .Select(pair => new RuntimeOutputSender(pair.Key, pair.Value.Diagnostics)).ToArray();
 
+    /// <summary>仅向当前运行发送者的当前退避窗口提交可合并信号；不创建适配器或执行发送。
+    /// 暂停始终由原循环优先检查，旧版本/旧退避/停止中的请求不能影响下一次退避。</summary>
+    public bool RequestOutputRetry(long connectionId, long revision, string backoffVersion)
+    {
+        if (_controls?.Read(connectionId).ManuallyPaused == true)
+        { return false; }
+        lock (_lock)
+        {
+            if (_stopping is not null || _operation is not null || _activeRevision != revision ||
+                !_senderStates.TryGetValue(connectionId, out var sender) || sender.Diagnostics.UnitId is not { } id ||
+                !_supervisor.Snapshot().Any(unit => unit.Id == id && unit.State == RuntimeUnitState.Running))
+            { return false; }
+            return sender.RequestImmediateRetry(backoffVersion);
+        }
+    }
+
     public async ValueTask DisposeAsync() => await StopAsync(CancellationToken.None);
 
     /// <summary>诊断捕获失败次数（不含消息内容），不改变输入投递/确认结果。</summary>

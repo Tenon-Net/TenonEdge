@@ -901,6 +901,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/retry-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 请求跳过当前退避并探测一条，不解除暂停
+         * @description 无需二次确认；绑定运行版本及当前退避窗口，重复信号合并，不排队到下一次退避。202仅表示已接受内存信号，不承诺已发送或收到业务确认。手动/自动暂停、停止、窗口过期或版本切换拒绝。
+         */
+        post: operations["retryOutputNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/deliveries": {
         parameters: {
             query?: never;
@@ -2108,6 +2128,11 @@ export interface components {
             /** Format: double */
             diskReserveFraction: number | string;
         };
+        OutputRetryRequest: {
+            /** Format: int64 */
+            revision: number | string;
+            backoffVersion: null | string;
+        };
         OutputSenderDiagnostics: {
             state: string;
             /** Format: date-time */
@@ -2122,6 +2147,7 @@ export interface components {
             /** Format: date-time */
             headBlockedSince: null | string;
             unitId?: null | components["schemas"]["RuntimeUnitId"];
+            backoffVersion?: null | string;
         };
         /** @enum {unknown} */
         OutputSendStatus: "ack" | "retry" | "rejectMessage" | "suspendTarget" | null;
@@ -5925,6 +5951,66 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    retryOutputNow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutputRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

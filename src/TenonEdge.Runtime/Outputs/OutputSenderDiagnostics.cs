@@ -7,5 +7,5 @@ namespace TenonEdge.Runtime.Outputs;
 /// 队头阻塞时间从该队头首次发送失败算起，不把创建时间误当阻塞起点。</summary>
 public sealed record OutputSenderDiagnostics(string State, DateTimeOffset? RetryAt, string? PauseReason,
     OutputSendStatus? LastResult, string? LastError, DateTimeOffset? LastResultAt,
-    long? HeadSequence, DateTimeOffset? HeadBlockedSince, RuntimeUnitId? UnitId = null);
+    long? HeadSequence, DateTimeOffset? HeadBlockedSince, RuntimeUnitId? UnitId = null, string? BackoffVersion = null);
 public sealed record RuntimeOutputSender(long ConnectionId, OutputSenderDiagnostics Sender);

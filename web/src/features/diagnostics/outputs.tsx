@@ -1,3 +1,4 @@
+import { OutputControls } from '../deliveries/controls'
 import { LossCounters } from './loss-counters'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -312,6 +313,18 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                         {item.name ?? item.connectionId} ·{' '}
                         {t(`outputs.states.${item.state}`)}
                     </h3>
+                    <OutputControls
+                        id={id}
+                        name={item.name ?? id}
+                        revision={revision}
+                        state={item.state}
+                        backoffVersion={item.sender?.backoffVersion}
+                        unavailable={query.isFetching || query.isError}
+                        refresh={async () => {
+                            const result = await query.refetch()
+                            if (result.error) throw result.error
+                        }}
+                    />
                     <dl className="grid gap-4 sm:grid-cols-3">
                         <Fact
                             label={t('outputs.lastResult')}

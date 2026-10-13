@@ -10,12 +10,46 @@ namespace TenonEdge.Runtime.Outputs;
 internal sealed class OutputSenderState
 {
     private OutputSenderDiagnostics _diagnostics = new("normal", null, null, null, null, null, null, null);
+    private BackoffWindow? _backoff;
+    private sealed record BackoffWindow(string Version, bool Requested);
     public OutputSenderDiagnostics Diagnostics => Volatile.Read(ref _diagnostics);
+
+    // 每个正在等待的退避仅一个可合并信号；请求线程不触碰发送者的 RetryDelay/失败计数/暂停状态。
+    internal void BeginBackoff(DateTimeOffset retryAt)
+    {
+        var window = new BackoffWindow(Guid.NewGuid().ToString("N"), false);
+        Volatile.Write(ref _backoff, window);
+        Volatile.Write(ref _diagnostics, Diagnostics with { State = "backoff", RetryAt = retryAt, PauseReason = null, BackoffVersion = window.Version });
+    }
+
+    internal bool RequestImmediateRetry(string version)
+    {
+        while (Volatile.Read(ref _backoff) is { } current)
+        {
+            if (current.Version != version)
+            { return false; }
+            if (current.Requested)
+            { return true; }
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _backoff, current with { Requested = true }, current), current))
+            { return true; }
+        }
+        return false;
+    }
+
+    internal bool ImmediateRetryRequested => Volatile.Read(ref _backoff)?.Requested == true;
+
+    internal void EndBackoff()
+    {
+        Interlocked.Exchange(ref _backoff, null);
+        Volatile.Write(ref _diagnostics, Diagnostics with { BackoffVersion = null });
+    }
 
     internal void ReportUnit(RuntimeUnitId id) => Volatile.Write(ref _diagnostics, Diagnostics with { UnitId = id });
 
     internal void ReportState(string status, DateTimeOffset? retryAt = null, string? pauseReason = null)
     {
+        if (status != "backoff")
+        { EndBackoff(); }
         var previous = Diagnostics;
         Volatile.Write(ref _diagnostics, previous with { State = status, RetryAt = retryAt, PauseReason = SafeLength(pauseReason) });
     }
@@ -160,21 +194,25 @@ internal sealed class OutputSenderUnit(
             if (state.RetryDelay is { } delay)
             {
                 var started = time.GetTimestamp();
-                state.ReportState("backoff", time.GetUtcNow() + delay);
-                while (time.GetElapsedTime(started) < delay)
+                state.BeginBackoff(time.GetUtcNow() + delay);
+                try
                 {
-                    var currentControl = controls?.Read(target.ConnectionId);
-                    if (currentControl?.ManuallyPaused == true || currentControl is not null && currentControl.ResumeVersion != state.ResumeVersion)
+                    while (time.GetElapsedTime(started) < delay)
                     {
-                        break;
-                    }
+                        var currentControl = controls?.Read(target.ConnectionId);
+                        if (currentControl?.ManuallyPaused == true || currentControl is not null && currentControl.ResumeVersion != state.ResumeVersion || state.ImmediateRetryRequested)
+                        {
+                            break;
+                        }
 
-                    var remaining = delay - time.GetElapsedTime(started);
-                    if (remaining > TimeSpan.Zero)
-                    {
-                        await Task.Delay(remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250), time, stoppingToken);
+                        var remaining = delay - time.GetElapsedTime(started);
+                        if (remaining > TimeSpan.Zero)
+                        {
+                            await Task.Delay(remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250), time, stoppingToken);
+                        }
                     }
                 }
+                finally { state.EndBackoff(); }
 
                 state.RetryDelay = null;
                 state.ReportState("normal");

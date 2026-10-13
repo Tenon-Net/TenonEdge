@@ -77,7 +77,9 @@ test('real HTTP output diagnostics show backlog, rates, retry, suspend, durable 
             name: '目标详情',
             exact: true,
         })
-        await expect(detail).toContainText('退避中', { timeout: 15_000 })
+        await expect(
+            detail.getByRole('heading', { name: / · 退避中$/ }),
+        ).toBeVisible({ timeout: 15_000 })
         await expect
             .poll(
                 async () =>
@@ -119,10 +121,14 @@ test('real HTTP output diagnostics show backlog, rates, retry, suspend, durable 
             version = (await response.json()).resumeVersion
         }
         code = 401
-        await pause(false) // Real, already-authorized control API; UI operation buttons are a separate T3-08 batch.
-        await expect(detail).toContainText('自动暂停', { timeout: 15_000 })
+        await pause(false) // This diagnostic scenario uses the API; output-controls.spec.ts exercises the UI.
+        await expect(
+            detail.getByRole('heading', { name: / · 自动暂停$/ }),
+        ).toBeVisible({ timeout: 15_000 })
         await pause(true)
-        await expect(detail).toContainText('手动暂停')
+        await expect(
+            detail.getByRole('heading', { name: / · 手动暂停$/ }),
+        ).toBeVisible()
         await expect
             .poll(
                 async () =>
@@ -151,7 +157,9 @@ test('real HTTP output diagnostics show backlog, rates, retry, suspend, durable 
         )
         await detail.getByRole('button', { name: '刷新本区域' }).click()
         await expect(detail.getByRole('alert')).toBeVisible()
-        await expect(detail).toContainText('手动暂停') // Failed refresh retains last metadata, visibly stale.
+        await expect(
+            detail.getByRole('heading', { name: / · 手动暂停$/ }),
+        ).toBeVisible() // Failed refresh retains last metadata, visibly stale.
         await page.unroute('**/runtime/outputs/11?*')
         await page.screenshot({
             path: '/tmp/tenonedge-output-diagnostics-final.png',
@@ -194,8 +202,10 @@ test('real HTTP output diagnostics show backlog, rates, retry, suspend, durable 
             .getByRole('button', { name: '查看目标 11', exact: true })
             .click()
         await expect(
-            viewer.getByRole('region', { name: '目标详情', exact: true }),
-        ).toContainText('手动暂停')
+            viewer
+                .getByRole('region', { name: '目标详情', exact: true })
+                .getByRole('heading', { name: / · 手动暂停$/ }),
+        ).toBeVisible()
         const restarted = await (await viewer.request.get(root + '/11')).json()
         expect(restarted.usage.pendingCount).toBeGreaterThanOrEqual(beforePause)
         expect(restarted.items[0].sender.lastResult).toBeNull()

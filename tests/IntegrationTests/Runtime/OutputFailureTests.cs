@@ -216,6 +216,63 @@ public sealed class OutputFailureTests
     }
 
     [Fact]
+    public async Task ImmediateRetrySkipsOneWaitWithoutSkippingTheNextOrChangingFifo()
+    {
+        await using var h = await Harness.CreateAsync(2);
+        var time = new FakeTimeProvider();
+        h.SenderTime = time;
+        h.Target.OnSend = _ => new(OutputSendStatus.Retry, "temporary", RetryAfter: TimeSpan.FromSeconds(60));
+        h.Start();
+        await Until(() => h.State.Diagnostics.BackoffVersion is not null);
+        var first = h.State.Diagnostics.BackoffVersion!;
+        Assert.True(h.State.RequestImmediateRetry(first));
+        await AdvanceShortWait(time, () => h.Target.Calls.Count == 2 && h.State.Diagnostics.BackoffVersion is { } next && next != first);
+        Assert.False(h.State.RequestImmediateRetry(first));
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.Equal(2, h.Target.Calls.Count);
+        Assert.All(h.Target.Calls, value => Assert.Equal(1, value));
+        Assert.Equal(2, h.Cache.ReadPending(1, 0, 10).Count);
+        await h.StopAsync();
+        Assert.Null(h.State.Diagnostics.BackoffVersion);
+    }
+
+    [Fact]
+    public async Task ManualPauseWinsEvenAfterImmediateRetryWasAcceptedAndSuspendCannotBeBypassed()
+    {
+        await using var h = await Harness.CreateAsync(1);
+        var time = new FakeTimeProvider();
+        h.SenderTime = time;
+        var controls = new TestControls();
+        h.Controls = controls;
+        h.Target.OnSend = _ => new(OutputSendStatus.Retry, "temporary", RetryAfter: TimeSpan.FromSeconds(60));
+        string? version = null;
+        controls.BeforeRead = () =>
+        {
+            if (version is null && h.State.Diagnostics.BackoffVersion is { } window)
+            {
+                // 在原循环读暂停状态的边界，先接受信号再提交暂停；不依赖线程恰好已注册定时器。
+                version = window;
+                Assert.True(h.State.RequestImmediateRetry(window));
+                controls.State = new(true, "paused");
+            }
+        };
+        h.Start();
+        await AdvanceShortWait(time, () => h.State.Diagnostics.State == "manuallyPaused");
+        Assert.NotNull(version);
+        Assert.Single(h.Target.Calls);
+        Assert.False(h.State.RequestImmediateRetry(version));
+        h.Target.OnSend = _ => new(OutputSendStatus.SuspendTarget, "HTTP 401");
+        controls.State = new(false, "resume");
+        await AdvanceShortWait(time, () => h.State.Diagnostics.State == "automaticallyPaused");
+        Assert.False(h.State.RequestImmediateRetry(version));
+        time.Advance(TimeSpan.FromSeconds(2));
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        Assert.Equal(2, h.Target.Calls.Count);
+        Assert.Single(h.Cache.ReadPending(1, 0, 10));
+    }
+
+    [Fact]
     public async Task RetryAfterWaitsAtTargetAndCancellationInterruptsTheWait()
     {
         await using var h = await Harness.CreateAsync(2);
@@ -300,10 +357,27 @@ public sealed class OutputFailureTests
     private sealed class TestControls : IOutputControl
     {
         public OutputControlState State { get; set; } = new(false, null);
-        public OutputControlState Read(long connectionId) => State;
+        public Action? BeforeRead { get; set; }
+        public OutputControlState Read(long connectionId)
+        {
+            BeforeRead?.Invoke();
+            return State;
+        }
     }
 
     private static Task Until(Func<bool> condition) => OutputPipelineTests.UntilAsync(condition);
+
+    private static async Task AdvanceShortWait(FakeTimeProvider time, Func<bool> condition)
+    {
+        // 窗口发布与 Task.Delay 注册之间也可接受信号；逐步推进避免测试抢在定时器创建前只推进一次。
+        // 总共不超过2.5秒虚拟时间，不能靠自然耗尽60秒退避让测试误通过。
+        for (var i = 0; i < 10 && !condition(); i++)
+        {
+            time.Advance(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(30, TestContext.Current.CancellationToken);
+        }
+        Assert.True(condition());
+    }
 
     private sealed class Harness : IAsyncDisposable
     {
@@ -316,6 +390,7 @@ public sealed class OutputFailureTests
         public TimeProvider SenderTime { get; set; } = TimeProvider.System;
         public IOutputControl? Controls { get; set; }
         private readonly OutputSenderState _state = new();
+        public OutputSenderState State => _state;
         private readonly CancellationTokenSource _stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         private OutputSenderUnit? _sender;
 

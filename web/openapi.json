@@ -4075,6 +4075,83 @@
         }
       }
     },
+    "/api/edge-admin/v1/connections/{connectionId}/retry-now": {
+      "post": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "请求跳过当前退避并探测一条，不解除暂停",
+        "description": "无需二次确认；绑定运行版本及当前退避窗口，重复信号合并，不排队到下一次退避。202仅表示已接受内存信号，不承诺已发送或收到业务确认。手动/自动暂停、停止、窗口过期或版本切换拒绝。",
+        "operationId": "retryOutputNow",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutputRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/deliveries": {
       "get": {
         "tags": [
@@ -10004,6 +10081,29 @@
           }
         }
       },
+      "OutputRetryRequest": {
+        "required": [
+          "revision",
+          "backoffVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "backoffVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "OutputSenderDiagnostics": {
         "required": [
           "state",
@@ -10080,6 +10180,12 @@
               {
                 "$ref": "#/components/schemas/RuntimeUnitId"
               }
+            ]
+          },
+          "backoffVersion": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }

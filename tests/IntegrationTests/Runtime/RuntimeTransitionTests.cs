@@ -75,6 +75,40 @@ public sealed class RuntimeTransitionTests
         Assert.Equal(2, runtime.ActiveRevision);
     }
 
+    [Fact]
+    public async Task ImmediateRetryIsBoundToActiveRevisionEvenWhenTheOriginalSenderSurvivesAnAliasChange()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var output = new Factory { Result = OutputSendStatus.Retry, RetryAfter = TimeSpan.FromSeconds(60) };
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], directory.Path, outputs: [output]);
+        runtime.StartCore();
+        await using var first = runtime.Prepare(Revision(1, Output("old", "same")));
+        await runtime.ActivateAsync(first);
+        await UntilAsync(() => runtime.GetOutputSenders().FirstOrDefault()?.Sender.BackoffVersion is not null);
+        var window = Assert.Single(runtime.GetOutputSenders()).Sender.BackoffVersion!;
+        var frozen = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
+        await using var next = runtime.Prepare(Revision(2, Output("renamed", "same")));
+        await runtime.ActivateCommittedAsync(next, await runtime.QuiesceInputsAsync(Token));
+        await UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 2);
+        var sender = Assert.Single(runtime.GetOutputSenders()).Sender;
+        Assert.Equal("old", sender.UnitId!.Key); // The actual sender ID differs from the new plan alias.
+        Assert.Equal(window, sender.BackoffVersion);
+        Assert.False(runtime.RequestOutputRetry(1, 1, window));
+        Assert.Equal(1, Volatile.Read(ref output.Sends));
+        Assert.True(runtime.RequestOutputRetry(1, 2, window));
+        await UntilAsync(() => Volatile.Read(ref output.Sends) == 2 &&
+            runtime.GetOutputSenders()[0].Sender.BackoffVersion is { } current && current != window);
+        Assert.Single(output.Created); // No parallel sender or adapter.
+        Assert.False(runtime.RequestOutputRetry(1, 2, window));
+        var pending = runtime.Deliveries.ReadPending(1, 0, 10);
+        Assert.Equal(frozen.DeliveryId, pending[0].DeliveryId);
+        Assert.Equal(new long[] { 1, 2 }, pending.Select(record => record.Revision));
+        var latestWindow = runtime.GetOutputSenders()[0].Sender.BackoffVersion!;
+        await runtime.StopAsync(Token);
+        Assert.False(runtime.RequestOutputRetry(1, 2, latestWindow));
+        Assert.Null(runtime.GetOutputSenders()[0].Sender.BackoffVersion);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -326,6 +360,7 @@ public sealed class RuntimeTransitionTests
         public bool BlockOld { get; init; }
         public bool FailNewAdapter { get; init; }
         public OutputSendStatus Result { get; init; } = OutputSendStatus.SuspendTarget;
+        public TimeSpan? RetryAfter { get; init; }
         public ConcurrentQueue<string> Created { get; } = new();
         public ConcurrentQueue<string> Disposed { get; } = new();
         public TaskCompletionSource Sending { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -369,7 +404,7 @@ public sealed class RuntimeTransitionTests
                     factory.Sending.TrySetResult();
                     await factory.ReleaseSend.Task;
                 }
-                return new(factory.Result);
+                return new(factory.Result, RetryAfter: factory.RetryAfter);
             }
             public async ValueTask DisposeAsync()
             {

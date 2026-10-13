@@ -1,3 +1,4 @@
+import { outputControlStrings } from '../features/deliveries/control-strings'
 import { deliveryStrings } from '../features/deliveries/strings'
 import { outputStrings } from '../features/diagnostics/output-strings'
 import { currentValueStrings } from '../features/diagnostics/current-value-strings'
@@ -26,6 +27,7 @@ void i18n.use(initReactI18next).init({
                 currentValues: currentValueStrings,
                 outputs: outputStrings,
                 deliveries: deliveryStrings,
+                outputControls: outputControlStrings,
                 routes: routeStrings,
                 devices: deviceStrings,
                 inputs: inputStrings,
