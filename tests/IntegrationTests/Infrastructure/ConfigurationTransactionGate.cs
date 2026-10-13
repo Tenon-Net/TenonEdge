@@ -9,7 +9,7 @@ using TenonEdge.Host.Storage;
 
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
-/// <summary>仅测试进程：在真实配置指针 UPDATE 后，或真实 COMMIT 后而上层调用未返回时固定窗口。
+/// <summary>仅测试进程：在真实配置指针/回滚草稿 UPDATE 后，或真实 COMMIT 后而上层调用未返回时固定窗口。
 /// SqlSugarScope 会复制根配置，不能只改启动线程的 ScopedContext；固定依赖的私有配置字段有变就明确失败。
 /// 不替换事务实现、连接设置、数据库或运行时，重启仍使用原产品 Host。</summary>
 internal sealed class ConfigurationTransactionGate(string directory, bool afterCommit = false) : IDisposable
@@ -20,6 +20,9 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
     internal const string CommittedArmedFile = "durable-commit.armed";
     internal const string CommittedEnteredFile = "durable-commit.entered";
     internal const string CommittedReleasedFile = "durable-commit.released";
+    internal const string RollbackDraftArmedFile = "rollback-draft-writing.armed";
+    internal const string RollbackDraftEnteredFile = "rollback-draft-writing.entered";
+    internal const string RollbackDraftReleasedFile = "rollback-draft-writing.released";
 
     // Commit 全程同步执行，CheckConnectionExecuted 与 OnLogExecuted 在同一线程；只借用本次命令的连接。
     private readonly ThreadLocal<SqliteConnection?> _commandConnection = new();
@@ -47,6 +50,13 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
             var connection = _commandConnection.Value;
             _commandConnection.Value = null;
             executed?.Invoke(sql, parameters);
+            if (!afterCommit && File.Exists(Path.Combine(directory, RollbackDraftArmedFile)) &&
+                sql.TrimStart().StartsWith("UPDATE ", StringComparison.OrdinalIgnoreCase) &&
+                sql.Contains("configuration_draft", StringComparison.OrdinalIgnoreCase))
+            {
+                HoldAfterRollbackDraftWrite(connection ?? throw new InvalidOperationException("草稿版本命令未经过原配置库连接回调。"));
+                return;
+            }
             if (File.Exists(Path.Combine(directory, afterCommit ? CommittedArmedFile : ArmedFile)) &&
                 sql.TrimStart().StartsWith("UPDATE ", StringComparison.OrdinalIgnoreCase) &&
                 sql.Contains("system_state", StringComparison.OrdinalIgnoreCase) &&
@@ -181,15 +191,64 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
         HoldCheckpoint(json);
     }
 
-    private void HoldCheckpoint(string json)
+    private void HoldAfterRollbackDraftWrite(SqliteConnection connection)
     {
-        var path = Path.Combine(directory, afterCommit ? CommittedEnteredFile : EnteredFile);
+        // ConfigurationReplacement 已替换全部草稿与编辑索引，最后推进草稿版本；原提交事务尚未返回。
+        using var command = connection.CreateCommand();
+        var transaction = command.Transaction
+            ?? throw new InvalidOperationException("回滚草稿替换不在真实事务内。");
+        command.CommandText = """
+            SELECT effective_revision, previous_revision, pending_revision, running_revision,
+                (SELECT state FROM runtime_snapshot WHERE revision = previous_revision),
+                (SELECT state FROM runtime_snapshot WHERE revision = effective_revision),
+                (SELECT origin FROM runtime_snapshot WHERE revision = effective_revision),
+                (SELECT version FROM configuration_draft WHERE id = 1),
+                (SELECT content FROM input_draft LIMIT 1),
+                (SELECT count(*) FROM input_draft),
+                (SELECT count(*) FROM audit_log WHERE action = $action AND target = 'r' || effective_revision),
+                (SELECT stamp FROM configuration_edit WHERE kind = 'input')
+            FROM system_state WHERE id = 1;
+            """;
+        command.Parameters.AddWithValue("$action", AuditActions.SnapshotRolledBack);
+        var settings = SqliteConnectionSettings.Read(connection);
+        string json;
+        using (var reader = command.ExecuteReader())
+        {
+            if (!reader.Read() || reader.GetString(6) != RuntimeSnapshotOrigins.Rollback || reader.GetInt64(9) != 1 || reader.GetInt64(10) != 1)
+            { throw new InvalidOperationException("草稿写入探针只用于单来源人工回滚，且审计须已在同一事务写入。"); }
+            using var input = JsonDocument.Parse(reader.GetString(8));
+            json = JsonSerializer.Serialize(new
+            {
+                database = connection.DataSource,
+                inTransaction = transaction.Connection == connection,
+                effective = reader.GetInt64(0),
+                previous = reader.GetInt64(1),
+                pending = reader.IsDBNull(2) ? (long?)null : reader.GetInt64(2),
+                running = reader.GetInt64(3),
+                oldState = reader.GetString(4),
+                newState = reader.GetString(5),
+                origin = reader.GetString(6),
+                draftVersion = reader.GetString(7),
+                draftSampleJson = input.RootElement.GetProperty("simulator").GetProperty("sampleJson").GetString(),
+                rollbackAuditCount = reader.GetInt64(10),
+                draftEditStamp = reader.GetString(11),
+                journalMode = settings.JournalMode,
+                synchronous = settings.Synchronous,
+                busyTimeout = settings.BusyTimeoutMilliseconds,
+            });
+        }
+        HoldCheckpoint(json, rollbackDraft: true);
+    }
+
+    private void HoldCheckpoint(string json, bool rollbackDraft = false)
+    {
+        var path = Path.Combine(directory, rollbackDraft ? RollbackDraftEnteredFile : afterCommit ? CommittedEnteredFile : EnteredFile);
         File.WriteAllText(path + ".tmp", json);
         File.Move(path + ".tmp", path);
-        var label = afterCommit ? "DURABLE COMMIT" : "TRANSACTION WRITING";
+        var label = rollbackDraft ? "ROLLBACK DRAFT WRITING" : afterCommit ? "DURABLE COMMIT" : "TRANSACTION WRITING";
         Console.WriteLine($"TEST {label} GATE ENTERED: {json}");
         var elapsed = Stopwatch.StartNew();
-        while (!File.Exists(Path.Combine(directory, afterCommit ? CommittedReleasedFile : ReleasedFile)))
+        while (!File.Exists(Path.Combine(directory, rollbackDraft ? RollbackDraftReleasedFile : afterCommit ? CommittedReleasedFile : ReleasedFile)))
         {
             if (elapsed.Elapsed >= TimeSpan.FromSeconds(60))
             { throw new TimeoutException($"测试 {label} 同步点未在期限内释放。"); }
