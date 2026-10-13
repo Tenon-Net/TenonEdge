@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Credentials;
@@ -54,7 +53,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             pending = Assert.Single(queue.ReadPending(1, 0, 10));
             setup.Services.GetRequiredService<OutputControlStore>().Write(1, new(true, true), "admin", null);
         }
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using var running = Factory(data.Path, clock, new Dictionary<string, string>
         { ["TenonEdge:Outbound:LocalPorts:0"] = address.Port.ToString(CultureInfo.InvariantCulture) });
         using var http = running.CreateClient();
@@ -111,7 +110,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             }
             setup.Services.GetRequiredService<OutputControlStore>().Write(1, new(true, true), "admin", null);
         }
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using var running = Factory(data.Path, clock, configure: services =>
         {
             if (change == "quota")
@@ -156,7 +155,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             var versions = setup.Services.GetRequiredService<RuntimeVersionStore>();
             versions.Commit(versions.FreezeDraft(RuntimePlanDocument.Parse("{\"schemaVersion\":1,\"units\":[]}"u8), "0", "admin"), MigrationIntentFixture.Application);
         }
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using var running = Factory(data.Path, clock, new Dictionary<string, string> { [RuntimeSettings.StableAfterSecondsKey] = "1" });
         using var http = running.CreateClient();
         await clock.PollAsync();
@@ -185,7 +184,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             setup.Services.GetRequiredService<ConfigDatabase>().Client.Ado.ExecuteCommand("CREATE TRIGGER fail_finish BEFORE INSERT ON audit_log WHEN NEW.action='delivery.migrationFinished' BEGIN SELECT abs(-9223372036854775808); END;");
         }
         Guid operation;
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using (var running = Factory(data.Path, clock))
         {
             using var http = running.CreateClient();
@@ -202,7 +201,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             Assert.Empty(TestAccounts.Audit(running.Services, "delivery.migrationFinished"));
             running.Services.GetRequiredService<ConfigDatabase>().Client.Ado.ExecuteCommand("DROP TRIGGER fail_finish");
         }
-        var restartedClock = new PollClock();
+        var restartedClock = new MigrationPollClock();
         await using var restarted = Factory(data.Path, restartedClock);
         using var clientAgain = restarted.CreateClient();
         var final = restarted.Services.GetRequiredService<DeliveryMigrationStore>();
@@ -249,7 +248,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             versions.ClearRunningMarker(2);
             setup.Services.GetRequiredService<OutputControlStore>().Write(1, new(true, true), "admin", null);
         }
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using var running = Factory(data.Path, clock);
         using var http = running.CreateClient();
         await clock.PollAsync();
@@ -291,7 +290,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             versions.ClearRunningMarker(3);
             setup.Services.GetRequiredService<OutputControlStore>().Write(1, new(true, true), "admin", null);
         }
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using var running = Factory(data.Path, clock);
         using var http = running.CreateClient();
         var store = running.Services.GetRequiredService<DeliveryMigrationStore>();
@@ -333,7 +332,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             using var client = setup.CreateClient();
             intent = await MigrationIntentFixture.RegisterAsync(setup.Services, new Uri(address, "/new/").AbsoluteUri);
         }
-        var clock = new PollClock();
+        var clock = new MigrationPollClock();
         await using var running = Factory(data.Path, clock, new Dictionary<string, string>
         { ["TenonEdge:Outbound:LocalPorts:0"] = address.Port.ToString(CultureInfo.InvariantCulture) });
         using var http = running.CreateClient();
@@ -366,7 +365,7 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
         finally { release.TrySetResult(); await peer.StopAsync(CancellationToken.None); }
     }
 
-    private static FixedDataDirectoryApplicationFactory Factory(string directory, PollClock clock,
+    private static FixedDataDirectoryApplicationFactory Factory(string directory, MigrationPollClock clock,
         IReadOnlyDictionary<string, string>? settings = null, Action<IServiceCollection>? configure = null) => new(directory, settings, services =>
         {
             // Only coordinator timers are controlled. Queue commits, sender deadlines and the host retain real time.
@@ -374,28 +373,5 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             configure?.Invoke(services);
         });
 
-    private sealed class PollClock : TimeProvider
-    {
-        private readonly FakeTimeProvider _clock = new(DateTimeOffset.UtcNow);
-        private int _pollTimers;
-        private int _polls;
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            var timer = _clock.CreateTimer(callback, state, dueTime, period);
-            if (dueTime == RuntimeCoordinator.MigrationPollInterval)
-            { Interlocked.Increment(ref _pollTimers); }
-            return timer;
-        }
-        public async Task FireAsync()
-        {
-            await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref _pollTimers) > _polls);
-            _clock.Advance(RuntimeCoordinator.MigrationPollInterval);
-            _polls++;
-        }
-        public async Task PollAsync()
-        {
-            await FireAsync();
-            await OutputPipelineTests.UntilAsync(() => Volatile.Read(ref _pollTimers) > _polls);
-        }
-    }
+
 }

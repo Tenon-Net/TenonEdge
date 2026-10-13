@@ -40,6 +40,22 @@ public sealed class PreparedPlan : IAsyncDisposable
 
     internal IReadOnlyList<PreparedOutput> Outputs { get; }
 
+    /// <summary>只读取尚未交接计划的非秘密输出身份；构建不联网、不启动适配器或改变原发送者。
+    /// 同连接多条输出须得到同一身份，凭证轮换导致不一致时返回 null，交由调用方重新核对。</summary>
+    public OutputTargetIdentity? CaptureMigrationTarget(long connectionId)
+    {
+        lock (_lock)
+        {
+            if (_handedOver || Failures.Count != 0)
+            { return null; }
+            var outputs = Outputs.Where(output => output.Target.ConnectionId == connectionId).ToArray();
+            if (outputs.Length == 0 || outputs.Any(output => output.Target.Id.Kind is not ("output.http" or "output.mqtt")))
+            { return null; }
+            var identities = outputs.Select(output => output.Target.CaptureIdentity()).ToArray();
+            return identities[0] is { } first && identities.All(identity => identity == first) ? first : null;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         lock (_lock)

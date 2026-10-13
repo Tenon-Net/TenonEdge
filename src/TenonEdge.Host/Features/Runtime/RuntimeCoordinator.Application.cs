@@ -1,5 +1,6 @@
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Runtime.Lifecycle;
 
@@ -34,6 +35,15 @@ internal sealed partial class RuntimeCoordinator
         string account, string? sourceIp, string? changeDescription, CancellationToken token) =>
         StartApplication(null, expectedDraftVersion, account, sourceIp, token, changeDescription, expectation).Status;
 
+    // 只接受管理员准备服务持有的服务器侧确认资料；不从普通 Apply/回滚请求接受意图或指纹。
+    public RuntimeApplicationStatus BeginApplyWithMigrations(Guid operationId, string version, RuntimeApplicationExpectation expectation,
+        IReadOnlyList<DeliveryMigrationIntentDraft> intents, string account, string? sourceIp, string? description, CancellationToken token)
+    {
+        if (operationId == Guid.Empty || intents.Count is < 1 or > 500 || expectation.EffectiveRevision is null)
+        { throw new ArgumentException("须提供已确认的迁移应用清单。"); }
+        return StartApplication(null, version, account, sourceIp, token, description, expectation, intents.ToArray(), operationId).Status;
+    }
+
     public RuntimeApplicationStatus BeginRollback(long targetRevision, string expectedDraftVersion, RuntimeApplicationExpectation expectation,
         string account, string? sourceIp, string? changeDescription, CancellationToken token)
     {
@@ -41,7 +51,7 @@ internal sealed partial class RuntimeCoordinator
         return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, token, changeDescription, expectation).Status;
     }
 
-    private ApplicationStart StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null, RuntimeApplicationExpectation? expectation = null)
+    private ApplicationStart StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null, RuntimeApplicationExpectation? expectation = null, DeliveryMigrationIntentDraft[]? intents = null, Guid? operationId = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(account);
@@ -49,17 +59,17 @@ internal sealed partial class RuntimeCoordinator
         { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
         changeDescription = ConfigurationChangeDescription.Normalize(changeDescription);
         return StartOperation(targetRevision is null ? "apply" : "rollback", expectedDraftVersion, targetRevision, account,
-            id => ExecuteApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, id, changeDescription, expectation), cancellationToken);
+            id => ExecuteApplicationAsync(targetRevision, expectedDraftVersion, account, sourceIp, id, changeDescription, expectation, intents ?? []), cancellationToken, operationId);
     }
 
     // 应用、回滚与人工重试共享唯一准入/停机所有权；后台任务不捕获请求上下文。
     private ApplicationStart StartOperation(string kind, string draftVersion, long? targetRevision, string account,
-        Func<Guid, Task<RuntimeApplicationResult>> execute, CancellationToken token)
+        Func<Guid, Task<RuntimeApplicationResult>> execute, CancellationToken token, Guid? requestedId = null)
     {
         token.ThrowIfCancellationRequested();
         TaskCompletionSource operation;
         RuntimeApplicationStatus initial;
-        var operationId = Guid.NewGuid();
+        var operationId = requestedId ?? Guid.NewGuid();
         lock (_lock)
         {
             if (_stopping is not null || _state is RuntimeCoordinatorState.Starting or RuntimeCoordinatorState.Blocked or RuntimeCoordinatorState.Stopping or RuntimeCoordinatorState.Stopped)
@@ -69,6 +79,8 @@ internal sealed partial class RuntimeCoordinator
             if (_deliveryWrite is not null)
             { throw new RuntimeApplicationUnavailableException(); }
             if (kind == "retry" && _state != RuntimeCoordinatorState.RunFailed)
+            { throw new RuntimeApplicationUnavailableException(); }
+            if (_applications.Any(application => application.Id == operationId))
             { throw new RuntimeApplicationUnavailableException(); }
             operation = NewSignal();
             initial = new(operationId, kind, account, draftVersion, targetRevision,
@@ -84,7 +96,7 @@ internal sealed partial class RuntimeCoordinator
         return new(initial, task);
     }
 
-    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation)
+    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation, DeliveryMigrationIntentDraft[] intents)
     {
         RuntimePlanDocument document;
         long revision;
@@ -112,23 +124,27 @@ internal sealed partial class RuntimeCoordinator
             if (prepared.Failures.Count != 0)
             { throw new ApplicationRejectedException(code); }
             code = "runtime.targetChangeBlocked";
-            if (versions.TargetChangeProblem(document) is not null)
+            if (versions.TargetChangeProblem(document, intents) is not null)
             { throw new ApplicationRejectedException(code); }
+            code = "configuration.migrationReviewChanged";
+            ValidateApplicationMigrations(prepared, intents, expectation?.EffectiveRevision);
             code = "runtime.quiescenceFailed";
             AdvanceApplication(operationId, RuntimeApplicationStage.Quiescing, revision);
             quiesced = true;
-            var quiet = await runtime.QuiesceInputsAsync(CancellationToken.None);
+            var quiet = await runtime.QuiesceInputsAsync(intents.Select(intent => intent.Hold.ConnectionId).ToArray(), CancellationToken.None);
             if (!quiet.Succeeded || quiet.Revision is not null && !runtime.IsCurrentQuiescence(quiet))
             { throw new ApplicationRejectedException(code); }
             code = "runtime.targetChangeBlocked";
-            if (versions.TargetChangeProblem(document) is not null)
+            if (versions.TargetChangeProblem(document, intents) is not null)
             { throw new ApplicationRejectedException(code); }
+            code = "configuration.migrationReviewChanged";
+            ValidateApplicationMigrations(prepared, intents, expectation?.EffectiveRevision, quiet);
             code = "runtime.commitFailed";
             AdvanceApplication(operationId, RuntimeApplicationStage.Committing, revision, committed: null);
             var replaced = versions.Commit(revision, new AuditEntry(targetRevision is null ? AuditActions.SnapshotApplied : AuditActions.SnapshotRolledBack,
                 AuditResults.Success, account, sourceIp, Target(revision), targetRevision is null
                     ? $"应用已确认的草稿版本 {expectedDraftVersion}。" : $"回滚到版本 r{targetRevision}，生成新版本；已发送数据不撤回。"),
-                markRunning: true, replaceDraftVersion: targetRevision is null ? null : expectedDraftVersion);
+                markRunning: true, replaceDraftVersion: targetRevision is null ? null : expectedDraftVersion, migrationIntents: intents);
             draftReplaced = targetRevision is null ? null : replaced;
             committed = true;
             lock (_lock)
@@ -137,6 +153,9 @@ internal sealed partial class RuntimeCoordinator
                 _activeIsStable = false;
                 SignalVersionChange();
             }
+            // COMMIT 之后先持久隔离；失败必须保留原发送屏障，不能激活或恢复旧地址。
+            // 也补齐前次提交后隔离失败留下的意图；普通应用/回滚不能借新交接绕过旧屏障。
+            await HoldWaitingMigrationIntentsAsync(quiet);
             AdvanceApplication(operationId, RuntimeApplicationStage.Activating, revision, committed: true);
             if (quiet.Revision is null)
             { await runtime.ActivateAsync(prepared); }

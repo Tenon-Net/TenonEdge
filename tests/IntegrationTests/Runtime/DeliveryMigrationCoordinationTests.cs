@@ -284,6 +284,39 @@ public sealed class DeliveryMigrationCoordinationTests
         finally { target.Release(); }
     }
 
+    [Fact]
+    public async Task IdentityCaptureRequiresAnUnhandedPreparedPlanOrTheExactSelectedQuiescence()
+    {
+        using var data = TemporaryDirectory.Create();
+        var target = new Target(2);
+        target.Release();
+        await using var runtime = Create(data.Path, target);
+        runtime.StartCore();
+        var definition = new RuntimePlan(1, [new(target.Id, JsonSerializer.SerializeToElement(new { connectionId = 2 }))]);
+        await using var prepared = runtime.Prepare(definition);
+        Assert.NotNull(prepared.CaptureMigrationTarget(2));
+        Assert.Null(prepared.CaptureMigrationTarget(3));
+        Assert.Equal(0, target.Creates);
+        await runtime.ActivateAsync(prepared);
+        Assert.Null(prepared.CaptureMigrationTarget(2));
+        Assert.NotNull(runtime.CaptureMigrationTarget(2, 1));
+        var ordinary = await runtime.QuiesceInputsAsync(Token);
+        Assert.True(runtime.IsCurrentQuiescence(ordinary));
+        Assert.Null(runtime.CaptureMigrationTarget(2, 1, ordinary));
+        await runtime.RestoreInputsAsync();
+        var selected = await runtime.QuiesceInputsAsync([2], Token);
+        Assert.NotNull(runtime.CaptureMigrationTarget(2, 1, selected));
+        Assert.Null(runtime.CaptureMigrationTarget(2, 1, selected with { }));
+        Assert.Null(runtime.CaptureMigrationTarget(2, 2, selected));
+        await runtime.RestoreInputsAsync();
+        Assert.Null(runtime.CaptureMigrationTarget(2, 1, selected));
+        var abandoned = runtime.Prepare(definition);
+        Assert.NotNull(abandoned.CaptureMigrationTarget(2));
+        await abandoned.DisposeAsync();
+        Assert.Null(abandoned.CaptureMigrationTarget(2));
+        Assert.Equal(1, target.Creates); // Preparing/reading identity never constructs another adapter.
+    }
+
     private static void Sql(string path, string sql)
     {
         using var connection = new SqliteConnection($"Data Source={Path.Combine(path, "queue.db")};Pooling=False");

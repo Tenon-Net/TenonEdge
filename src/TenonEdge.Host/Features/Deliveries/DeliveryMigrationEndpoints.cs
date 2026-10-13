@@ -103,7 +103,7 @@ internal static class DeliveryMigrationEndpoints
             : TypedResults.Ok(new DeliveryMigrationOutcome(id, row.Status, row.RequestedRecords, row.AffectedRecords, row.MigrationId, row.ErrorCode));
     }
 
-    private static DeliveryMigrationActor Actor(HttpContext context)
+    internal static DeliveryMigrationActor Actor(HttpContext context)
     {
         var csrf = context.User.FindFirstValue(SessionClaims.CsrfToken);
         var user = context.User.FindFirstValue(SessionClaims.UserId);

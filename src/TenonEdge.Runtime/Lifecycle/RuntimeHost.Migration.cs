@@ -7,11 +7,13 @@ namespace TenonEdge.Runtime.Lifecycle;
 public sealed partial class RuntimeHost
 {
     /// <summary>准备阶段只读取原发送者的同次非秘密身份；不创建客户端、不发送、不把当前草稿当成有效目标。</summary>
-    public OutputTargetIdentity? CaptureMigrationTarget(long connectionId, long revision)
+    public OutputTargetIdentity? CaptureMigrationTarget(long connectionId, long revision, RuntimeQuiescenceResult? quiet = null)
     {
         lock (_lock)
         {
-            if (_stopping is not null || _operation is not null || _quiescenceRequested || _activeRevision != revision ||
+            if (_stopping is not null || _operation is not null || _activeRevision != revision ||
+                (quiet is null ? _quiescenceRequested : !ReferenceEquals(_currentQuiescence, quiet) || quiet.Revision != revision ||
+                    !_applicationSenderPauses.ContainsKey(connectionId)) ||
                 !_senders.TryGetValue(connectionId, out var sender) || sender.Target.Id.Kind is not ("output.http" or "output.mqtt"))
             { return null; }
             var identity = sender.Target.CaptureIdentity();
