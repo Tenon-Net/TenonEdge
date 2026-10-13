@@ -48,6 +48,7 @@ internal static class RuntimeRegistration
         services.AddSingleton<DeliveryMigrationStore>();
         services.AddSingleton<DeliveryMigrationPreparation>();
         services.AddSingleton<TenonEdge.Host.Features.Configuration.ConfigurationMigrationPreparation>();
+        services.AddSingleton<TenonEdge.Host.Features.Configuration.ConfigurationMigrationIntentService>();
         services.AddSingleton<DeliveryExportFiles>();
         services.AddSingleton<DeliveryExportManager>();
         services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());

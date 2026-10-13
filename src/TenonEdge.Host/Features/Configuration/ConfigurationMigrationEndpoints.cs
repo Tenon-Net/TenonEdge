@@ -12,7 +12,7 @@ using TenonEdge.Runtime.Diagnostics;
 
 namespace TenonEdge.Host.Features.Configuration;
 
-internal static class ConfigurationMigrationEndpoints
+internal static partial class ConfigurationMigrationEndpoints
 {
     public static RouteGroupBuilder MapConfigurationMigrationEndpoints(this RouteGroupBuilder api)
     {
@@ -33,6 +33,7 @@ internal static class ConfigurationMigrationEndpoints
         group.MapGet("/intents/{id:guid}", Intent).WithName("getConfigurationMigrationIntent")
             .WithSummary("管理员查看持久迁移意图及最近一次尝试；completed不代表已发送")
             .ProducesProblem(403).ProducesProblem(404).ProducesProblem(503);
+        MapIntentOperations(group);
         return api;
     }
 
@@ -92,7 +93,7 @@ internal static class ConfigurationMigrationEndpoints
     }
     private static bool Handled(Exception error) => error is ArgumentException or DeliveryMigrationRequestException or DraftWriteException or
         RouteTopologyException or RuntimeApplicationBusyException or RuntimeApplicationUnavailableException or RuntimeVersionConflictException or RuntimePlanDocumentException or
-        SqliteException or SqlSugar.SqlSugarException or DeliveryStoreException;
+        SqliteException or SqlSugar.SqlSugarException or DeliveryStoreException or DeliveryMigrationUnavailableException;
     private static ProblemHttpResult Problem(Exception error) => error switch
     {
         DeliveryMigrationRequestException request => ApiProblems.Problem(request.StatusCode, request.Code, "迁移应用清单不可确认，请重新核对当前版本、接收方与配额。"),
@@ -100,6 +101,7 @@ internal static class ConfigurationMigrationEndpoints
         RuntimeApplicationBusyException busy => TypedResults.Problem(statusCode: 409, title: "已有应用操作，请查询而非重放确认。",
             extensions: new Dictionary<string, object?> { ["code"] = "runtime.applicationInProgress", ["operationId"] = busy.Application.Id }),
         RuntimeApplicationUnavailableException or RuntimeVersionConflictException => ApiProblems.Problem(409, "runtime.applicationUnavailable", "运行操作或版本已变化，请重新核对。"),
+        DeliveryMigrationUnavailableException => ApiProblems.Problem(409, DeliveryMigrationErrors.Unavailable, "有其他运行操作或有效版本已变化，请重新准备。"),
         ArgumentException => ApiProblems.Problem(400, "configuration.invalidMigrationRequest", "须提供有效草稿版本、不同连接及明确的两项确认；说明最多1000字符。"),
         _ => ApiProblems.Problem(503, "configuration.migrationUnavailable", "配置或队列暂不可读写，不按空配置或零记录处理。"),
     };

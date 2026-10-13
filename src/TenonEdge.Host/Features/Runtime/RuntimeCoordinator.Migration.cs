@@ -34,15 +34,41 @@ internal sealed partial class RuntimeCoordinator
         return owned.WaitAsync(token);
     }
 
+    public Task<DeliveryWriteResult> RetryMigrationIntentAsync(DeliveryMigrationCommand command, long revision,
+        DeliveryMigrationIntentRecord expected, string account, string? sourceIp, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        if (command.Hold?.RequestHash != expected.ToHold().RequestHash || revision < expected.Revision)
+        { throw new ArgumentException("须提供已核对的原意图范围。"); }
+        TaskCompletionSource operation;
+        lock (_lock)
+        {
+            if (_stopping is not null || _application is not null || _deliveryWrite is not null ||
+                _state != RuntimeCoordinatorState.Active || _activeRevision != revision)
+            { throw new DeliveryMigrationUnavailableException(); }
+            operation = NewSignal();
+            _deliveryWrite = operation;
+        }
+        Task<DeliveryWriteResult> owned;
+        using (ExecutionContext.SuppressFlow())
+        { owned = Task.Run(() => RunMigrationOwnedAsync(command, revision, expected.SourceSummary, account, sourceIp, operation, expected, retryIntent: true)); }
+        return owned.WaitAsync(token);
+    }
+
     private async Task<DeliveryWriteResult> RunMigrationOwnedAsync(DeliveryMigrationCommand command, long revision,
         string sourceSummary, string account, string? sourceIp, TaskCompletionSource completion,
-        DeliveryMigrationIntentRecord? intent = null, string? validationError = null)
+        DeliveryMigrationIntentRecord? intent = null, string? validationError = null, bool retryIntent = false)
     {
         var started = false;
         try
         {
             if (intent is null)
             { migrations.Begin(command, revision, sourceSummary, true, account, sourceIp); }
+            else if (retryIntent)
+            { migrations.BeginIntentRetry(command, revision, intent, account, sourceIp); }
             else
             { migrations.BeginIntent(command, revision); }
             started = true;

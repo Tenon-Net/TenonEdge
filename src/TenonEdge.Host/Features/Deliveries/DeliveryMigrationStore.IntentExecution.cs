@@ -1,4 +1,6 @@
 using SqlSugar;
+using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.Host.Features.Deliveries;
@@ -25,20 +27,43 @@ internal sealed partial class DeliveryMigrationStore
         ArgumentNullException.ThrowIfNull(command);
         var hold = command.Hold ?? throw new ArgumentException("须提供意图限定的迁移命令。", nameof(command));
         var intent = ReadIntent(hold.IntentId) ?? throw new InvalidOperationException("迁移意图不存在。");
-        BeginCore(command, revision, intent.SourceSummary, true, intent.AccountName, intent.SourceIp, intent);
+        // 显式重试之后的进程中断续跑，沿用最近一次已确认尝试的操作者，不倒退为首次登记人。
+        var previous = intent.LastOperationId is { } id ? Read(Guid.Parse(id)) : null;
+        BeginCore(command, revision, intent.SourceSummary, true, previous?.AccountName ?? intent.AccountName,
+            previous is null ? intent.SourceIp : previous.SourceIp, intent);
     }
 
     private static void BindIntentAttempt(SqlSugarClient client, DeliveryMigrationIntentRecord expected,
-        DeliveryMigrationCommand command, long revision)
+        DeliveryMigrationCommand command, long revision, bool retry)
     {
         var intent = client.Queryable<DeliveryMigrationIntentRecord>().InSingle(expected.IntentId)
             ?? throw new InvalidOperationException("迁移意图不存在。");
-        if (intent.Status != "waiting" || revision < intent.Revision || intent.ToHold().RequestHash != command.Hold?.RequestHash ||
-            command.Fingerprint != intent.TargetFingerprint || command.Summary != intent.TargetSummary ||
+        if ((!retry && intent.Status != "waiting") || revision < intent.Revision || intent.ToHold().RequestHash != command.Hold?.RequestHash ||
+            (!retry && (command.Fingerprint != intent.TargetFingerprint || command.Summary != intent.TargetSummary)) ||
             intent.SourceSummary != expected.SourceSummary || intent.AccountName != expected.AccountName || intent.SourceIp != expected.SourceIp ||
             client.Queryable<DeliveryMigrationIntentRecord>().Any(row => row.ConfigStoreId == intent.ConfigStoreId &&
                 row.ConnectionId == intent.ConnectionId && row.Status == "waiting" && row.Revision < intent.Revision))
         { throw new InvalidOperationException("意图已变化或同连接仍有更早的等待意图。"); }
+        if (retry)
+        {
+            if (!MatchesRetryReview(intent, expected) ||
+                client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId)?.EffectiveRevision != revision)
+            { throw new InvalidOperationException("重新核对的意图或有效版本已变化。"); }
+            var lastAttempt = intent.LastOperationId is { } operation ? client.Queryable<DeliveryMigrationRecord>().InSingle(operation) : null;
+            if (RetryStateProblem(intent, lastAttempt) is not null)
+            { throw new InvalidOperationException("上次尝试不能安全重新执行。"); }
+            var source = OutputRecipientIdentity.Read(intent.SourceSummary);
+            var target = OutputRecipientIdentity.Read(command.Summary);
+            if (source?.Protocol != intent.Protocol || target?.Protocol != intent.Protocol || !target.AccountRecorded)
+            { throw new InvalidOperationException("不能重新确认未知原协议或未知新身份。"); }
+            intent.TargetFingerprint = command.Fingerprint;
+            intent.TargetSummary = command.Summary;
+            intent.TargetRecipient = target.Address;
+            intent.Status = "waiting";
+            intent.LastOperationId = command.OperationId.ToString("D");
+            client.Updateable(intent).UpdateColumns(row => new { row.TargetFingerprint, row.TargetSummary, row.TargetRecipient, row.Status, row.LastOperationId }).ExecuteCommand();
+            return;
+        }
         if (intent.LastOperationId is { } previous)
         {
             var attempt = client.Queryable<DeliveryMigrationRecord>().InSingle(previous);

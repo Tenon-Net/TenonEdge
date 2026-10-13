@@ -19,7 +19,7 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
     }
 
     private void BeginCore(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed,
-        string account, string? sourceIp, DeliveryMigrationIntentRecord? intent)
+        string account, string? sourceIp, DeliveryMigrationIntentRecord? intent, bool retry = false)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentOutOfRangeException.ThrowIfLessThan(revision, 1);
@@ -48,11 +48,27 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
         database.InTransaction(client =>
         {
             if (intent is not null)
-            { BindIntentAttempt(client, intent, command, revision); }
+            { BindIntentAttempt(client, intent, command, revision, retry); }
             client.Insertable(row).ExecuteCommand();
+            if (retry)
+            {
+                audit.Append(client, new("delivery.migrationIntentRetried", AuditResults.Success, account, sourceIp, intent!.IntentId,
+                    JsonSerializer.Serialize(new
+                    {
+                        previousOperationId = intent.LastOperationId,
+                        operationId = row.OperationId,
+                        previousTarget = intent.TargetSummary,
+                        previousTargetRecipient = intent.TargetRecipient,
+                        currentTarget = command.Summary,
+                        intent.SourceSummary,
+                        revision,
+                        sameOwnerConfirmed = true,
+                        message = "管理员重新核对后发起新尝试；保留原隔离范围及所有历史尝试，不代表已迁移。"
+                    })));
+            }
             audit.Append(client, Entry(row, "delivery.migrationStarted", AuditResults.Success, intent is null
                 ? "已确认同一数据所有者并开始迁移；尚无执行结果。"
-                : "按配置提交时的所有者声明开始核对意图；当前目标仍须匹配已确认身份，尚无执行结果。"));
+                : "按已持久确认的所有者声明开始核对意图；当前目标仍须匹配已确认身份，尚无执行结果。"));
             return true;
         });
     }
