@@ -1,9 +1,11 @@
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Runtime.Deliveries;
+using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.Host.Features.Runtime;
 
 internal sealed class DeliveryRetryUnavailableException : InvalidOperationException;
+internal sealed class DeliveryCleanupUnavailableException : InvalidOperationException;
 
 internal sealed partial class RuntimeCoordinator
 {
@@ -34,29 +36,59 @@ internal sealed partial class RuntimeCoordinator
             operation = NewSignal();
             _deliveryWrite = operation;
         }
+        return OwnDeliveryWrite(() => runtime.Deliveries.RetryFailedAsync(selected, targets, CancellationToken.None),
+            new("delivery.retryFailed", AuditResults.Success, account, sourceIp, Target(revision),
+                $"已将{selected.Length}条失败记录移至队尾；保留投递编号，可能重复，不代表已发送。"),
+            "delivery.retryOutcomeUnknown", operation, token);
+    }
+
+    /// <summary>清理可处理无有效输出/运行失败时遗留的失败和隔离数据，但写者须可用；不把“没有配置”当作空队列。</summary>
+    public Task<DeliveryWriteResult> CleanupDeliveriesAsync(DeliveryCleanupSelection selection,
+        string account, string? sourceIp, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        TaskCompletionSource operation;
+        lock (_lock)
+        {
+            if (_stopping is not null || _application is not null || _deliveryWrite is not null ||
+                _state is not (RuntimeCoordinatorState.Active or RuntimeCoordinatorState.Idle or RuntimeCoordinatorState.RunFailed) ||
+                !runtime.GetStatus().Units.Any(unit => unit.Id == DeliveryCache.WriterId && unit.State == RuntimeUnitState.Running))
+            { throw new DeliveryCleanupUnavailableException(); }
+            operation = NewSignal();
+            _deliveryWrite = operation;
+        }
+        var area = selection.State == DeliveryState.Failed ? "failed" : "quarantined";
+        return OwnDeliveryWrite(() => runtime.Deliveries.CleanupAsync(selection, CancellationToken.None),
+            new("delivery.cleanup", AuditResults.Success, account, sourceIp, area,
+                $"已按确认永久清理{selection.Items.Count}条记录，涉及{selection.Items.Select(item => item.ConnectionId).Distinct().Count()}个目标；属于人工丢弃，不是发送成功。"),
+            "delivery.cleanupOutcomeUnknown", operation, token);
+    }
+
+    private Task<DeliveryWriteResult> OwnDeliveryWrite(Func<Task<DeliveryWriteResult>> write, AuditEntry success,
+        string unknownCode, TaskCompletionSource completion, CancellationToken token)
+    {
         Task<DeliveryWriteResult> owned;
         using (ExecutionContext.SuppressFlow())
-        { owned = Task.Run(() => RunDeliveryRetryAsync(selected, targets, revision, account, sourceIp, operation)); }
+        { owned = Task.Run(() => RunDeliveryWriteAsync(write, success, unknownCode, completion)); }
         return owned.WaitAsync(token);
     }
 
-    private async Task<DeliveryWriteResult> RunDeliveryRetryAsync(DeliveryRetryItem[] selected,
-        IReadOnlyDictionary<long, string> targets, long revision, string account, string? sourceIp, TaskCompletionSource completion)
+    private async Task<DeliveryWriteResult> RunDeliveryWriteAsync(Func<Task<DeliveryWriteResult>> write, AuditEntry success,
+        string unknownCode, TaskCompletionSource completion)
     {
+        var failure = success with { Result = AuditResults.Failure, Detail = "队列管理操作未完成或结果不可确定，请重新读取；不自动重放。" };
         try
         {
-            var result = await runtime.Deliveries.RetryFailedAsync(selected, targets, CancellationToken.None);
-            audit.AppendOrLog(new("delivery.retryFailed", result.Committed ? AuditResults.Success : AuditResults.Failure,
-                account, sourceIp, Target(revision), result.Committed
-                    ? $"已将{result.AffectedRecords}条失败记录移至队尾；保留投递编号，可能重复，不代表已发送。"
-                    : "重试失败记录未完成或结果不可确定；请重新读取，不自动重放。"));
+            var result = await write();
+            audit.AppendOrLog(result.Committed ? success : failure);
             return result;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            audit.AppendOrLog(new("delivery.retryFailed", AuditResults.Failure, account, sourceIp, Target(revision),
-                "无法确定失败记录重试结果，请重新读取记录，不自动重放。"));
-            return new(DeliveryWriteStatus.StorageFailed, [], 0, "delivery.retryOutcomeUnknown");
+            audit.AppendOrLog(failure);
+            return new(DeliveryWriteStatus.StorageFailed, [], 0, unknownCode);
         }
         finally
         {

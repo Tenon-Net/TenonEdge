@@ -327,6 +327,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/deliveries/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 管理员确认后永久清理选定的失败或隔离记录
+         * @description 最多1000条，绑定区域、稳定编号、seq、目标及迁移代次；全部匹配才原子删除，不按执行时筛选扩大选择，不清空待发、不发送。记录人工清理计数及审计。响应丢失只重新查询，不自动重放；请求取消不撤销已接收操作。
+         */
+        post: operations["cleanupDeliveryRecords"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/test/mqtt": {
         parameters: {
             query?: never;
@@ -1481,6 +1501,25 @@ export interface components {
             rejectedRecords: number | string;
             store: null | components["schemas"]["DeliveryStoreInfo"];
         };
+        DeliveryCleanupItem: {
+            /** Format: int64 */
+            sequence: number | string;
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: int64 */
+            connectionId: number | string;
+            /** Format: int64 */
+            migrationId: null | number | string;
+        };
+        DeliveryCleanupRequest: {
+            state: components["schemas"]["DeliveryState"];
+            confirmed: boolean;
+            items: null | components["schemas"]["DeliveryCleanupItem"][];
+        };
+        DeliveryCleanupResponse: {
+            /** Format: int32 */
+            clearedRecords: number | string;
+        };
         DeliveryInspectionItem: {
             /** Format: int64 */
             sequence: number | string;
@@ -1506,6 +1545,8 @@ export interface components {
             /** Format: int64 */
             byteSize: number | string;
             clockAnomaly: boolean;
+            /** Format: int64 */
+            migrationId?: null | number | string;
         };
         DeliveryInspectionPage: {
             /** Format: date-time */
@@ -3460,6 +3501,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeliveryRetryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    cleanupDeliveryRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryCleanupResponse"];
                 };
             };
             /** @description Bad Request */

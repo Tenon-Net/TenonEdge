@@ -33,7 +33,7 @@ test('failed records: real single/batch retry, stale generation, lost reply, fro
     const retryPath = root + '/deliveries/retry'
     const password = 'Failed-retry-test-7421'
     const panel = (page: Page) =>
-        page.getByRole('region', { name: '失败记录人工重试', exact: true })
+        page.getByRole('region', { name: '队列记录操作', exact: true })
     const button = (page: Page, name: string | RegExp) =>
         panel(page).getByRole('button', {
             name,
@@ -163,7 +163,7 @@ test('failed records: real single/batch retry, stale generation, lost reply, fro
         const before = original.map((item) => stored(item.deliveryId)!)
         await page.goto('/deliveries')
         await page
-            .getByLabel('选择重试 ' + original[0].deliveryId, { exact: true })
+            .getByLabel('选择记录 ' + original[0].deliveryId, { exact: true })
             .check()
         await button(page, '核对本页已选 1 条').click()
         await expect(button(page, '确认重试本批')).toBeDisabled()
@@ -171,12 +171,12 @@ test('failed records: real single/batch retry, stale generation, lost reply, fro
         expect(stored(original[0].deliveryId)?.state).toBe('failed')
         await button(page, '取消本批').click()
         await expect(
-            page.getByLabel('选择重试 ' + original[0].deliveryId, {
+            page.getByLabel('选择记录 ' + original[0].deliveryId, {
                 exact: true,
             }),
         ).not.toBeChecked()
         await page
-            .getByLabel('选择重试 ' + original[0].deliveryId, { exact: true })
+            .getByLabel('选择记录 ' + original[0].deliveryId, { exact: true })
             .check()
         await button(page, '核对本页已选 1 条').click()
         await confirm(page)
@@ -193,7 +193,7 @@ test('failed records: real single/batch retry, stale generation, lost reply, fro
         await expect(panel(page)).toBeVisible()
         const second = original[1]
         await page
-            .getByLabel('选择重试 ' + second.deliveryId, { exact: true })
+            .getByLabel('选择记录 ' + second.deliveryId, { exact: true })
             .check()
         await button(page, '核对本页已选 1 条').click()
         await expect(button(page, '确认重试本批')).toBeVisible()
@@ -272,7 +272,7 @@ test('failed records: real single/batch retry, stale generation, lost reply, fro
         page = await login()
         await expect(
             page.getByText(
-                '只读角色只能查看元数据和原因，不能查看报文正文或重试记录。',
+                '只读角色只能查看元数据和原因，不能查看报文正文、重试或清理记录。',
             ),
         ).toBeVisible()
         await expect(panel(page)).toHaveCount(0)

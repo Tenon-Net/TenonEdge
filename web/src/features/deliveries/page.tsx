@@ -13,7 +13,7 @@ import {
     type DeliveryFilter,
     type DeliveryItem,
 } from './api'
-import { FailedRetryControls } from './retry'
+import { DeliveryRecordActions } from './actions'
 
 const deliveries = createDeliveryApi(api)
 export function DeliveryRecordsPage() {
@@ -40,8 +40,10 @@ function Records({ connectionId }: { connectionId?: string }) {
     const [invalid, setInvalid] = useState(false)
     const [selected, select] = useState<DeliveryItem>()
     const [checked, check] = useState<DeliveryItem[]>([])
-    const [retryLocked, lockRetry] = useState(false)
+    const [operationLocked, lockOperation] = useState(false)
     const canRetry = canReadBody && filter.state === 'failed'
+    const canCleanup = role === 'administrator'
+    const canSelect = canRetry || canCleanup
     const after = cursors.at(-1)
     const query = useQuery({
         queryKey: ['delivery-records', filter, after],
@@ -62,7 +64,7 @@ function Records({ connectionId }: { connectionId?: string }) {
                 {t('deliveries.notice')}
             </p>
             <DiagnosticPanel title={t('deliveries.records')} query={query}>
-                <fieldset disabled={retryLocked}>
+                <fieldset disabled={operationLocked}>
                     <form
                         className="flex flex-wrap items-end gap-3"
                         onSubmit={(event) => {
@@ -150,9 +152,9 @@ function Records({ connectionId }: { connectionId?: string }) {
                             <table className="w-full text-left text-sm">
                                 <thead>
                                     <tr>
-                                        {canRetry && (
+                                        {canSelect && (
                                             <th className="p-2">
-                                                {t('deliveries.retry.select')}
+                                                {t('deliveries.select')}
                                             </th>
                                         )}
                                         {[
@@ -176,12 +178,12 @@ function Records({ connectionId }: { connectionId?: string }) {
                                             className="border-t align-top"
                                             key={item.deliveryId}
                                         >
-                                            {canRetry && (
+                                            {canSelect && (
                                                 <td className="p-2">
                                                     <input
                                                         type="checkbox"
                                                         aria-label={t(
-                                                            'deliveries.retry.selectRecord',
+                                                            'deliveries.selectRecord',
                                                             {
                                                                 id: item.deliveryId,
                                                             },
@@ -194,7 +196,7 @@ function Records({ connectionId }: { connectionId?: string }) {
                                                                     item.deliveryId,
                                                         )}
                                                         disabled={
-                                                            retryLocked ||
+                                                            operationLocked ||
                                                             query.isFetching ||
                                                             !!query.error
                                                         }
@@ -311,7 +313,7 @@ function Records({ connectionId }: { connectionId?: string }) {
                             <Button
                                 variant="outline"
                                 disabled={
-                                    retryLocked ||
+                                    operationLocked ||
                                     !cursors.length ||
                                     query.isFetching
                                 }
@@ -331,7 +333,7 @@ function Records({ connectionId }: { connectionId?: string }) {
                             <Button
                                 variant="outline"
                                 disabled={
-                                    retryLocked ||
+                                    operationLocked ||
                                     query.data.nextSequence === null ||
                                     query.isFetching ||
                                     !!query.error
@@ -353,17 +355,19 @@ function Records({ connectionId }: { connectionId?: string }) {
                     </>
                 )}
             </DiagnosticPanel>
-            {canRetry && (
-                <FailedRetryControls
+            {canSelect && (
+                <DeliveryRecordActions
                     key={JSON.stringify([filter, after])}
                     filter={filter}
+                    canRetry={canRetry}
+                    canCleanup={canCleanup}
                     selected={visibleChecked}
                     unavailable={
                         query.isFetching ||
                         !!query.error ||
                         !query.data?.items.length
                     }
-                    lock={lockRetry}
+                    lock={lockOperation}
                     reset={() => {
                         check([])
                         select(undefined)

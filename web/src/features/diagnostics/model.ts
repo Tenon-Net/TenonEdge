@@ -67,6 +67,14 @@ export function classifyCounters(
         string,
         { category: 'policy' | 'data' | 'fault'; label: string }
     > = {
+        manuallyClearedFailedRecords: {
+            category: 'policy',
+            label: 'lossManualFailed',
+        },
+        manuallyClearedQuarantinedRecords: {
+            category: 'policy',
+            label: 'lossManualQuarantined',
+        },
         globalQuotaRejectedRecords: {
             category: 'policy',
             label: 'lossGlobalQuota',

@@ -134,6 +134,8 @@ public sealed class FailedDeliveryRetryApiTests
         using var wait = CancellationTokenSource.CreateLinkedTokenSource(Token);
         var pending = coordinator.RetryFailedDeliveriesAsync(1, [new(seq, draft.DeliveryId)], "admin", null, wait.Token);
         Assert.True(coordinator.Status.QueueOperationInProgress);
+        await Assert.ThrowsAsync<DeliveryCleanupUnavailableException>(() => coordinator.CleanupDeliveriesAsync(
+            new(DeliveryState.Failed, [new(seq, draft.DeliveryId, 11, null)]), "admin", null, Token));
         var version = factory.Services.GetRequiredService<RouteDraftStore>().Read().Version;
         await Assert.ThrowsAsync<RuntimeApplicationUnavailableException>(() => coordinator.ApplyDraftAsync(version, "admin", null, Token));
         await Assert.ThrowsAsync<DeliveryRetryUnavailableException>(() => coordinator.RetryFailedDeliveriesAsync(1, [new(seq, draft.DeliveryId)], "admin", null, Token));

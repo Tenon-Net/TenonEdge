@@ -33,7 +33,7 @@ internal sealed partial class DeliveryStore
         { conditions.Add("created_at < $to"); command.Parameters.AddWithValue("$to", CeilingMilliseconds(to)); }
         command.CommandText = $"""
             SELECT seq, delivery_id, connection_id, device_key, route_id, node_label, revision,
-                created_at, failed_at, failure_count, quarantine_reason, last_error, byte_size, clock_anomaly
+                created_at, failed_at, failure_count, quarantine_reason, last_error, byte_size, clock_anomaly, migration_id
             FROM delivery WHERE {string.Join(" AND ", conditions)} ORDER BY seq LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", query.Limit + 1);
@@ -47,7 +47,7 @@ internal sealed partial class DeliveryStore
                     DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(7)),
                     reader.IsDBNull(8) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(8)), reader.GetInt32(9), query.State,
                     reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11),
-                    reader.GetInt64(12), reader.GetBoolean(13)));
+                    reader.GetInt64(12), reader.GetBoolean(13), reader.IsDBNull(14) ? null : reader.GetInt64(14)));
             }
         }
         transaction.Commit();

@@ -26,3 +26,27 @@ it('separates units and categories without double-counting path aliases or label
     ).toBe('9223372036854775807')
     expect(rows.some((row) => row.key.startsWith('route/'))).toBe(false)
 })
+
+it('shows durable global manual cleanup as policy loss without double-counting per-target breakdown', () => {
+    const rows = classifyCounters({
+        manuallyClearedFailedRecords: '9223372036854775807',
+        manuallyClearedQuarantinedRecords: '3',
+        'target/11/manuallyClearedFailedRecords': '9',
+        'target/11/manuallyClearedQuarantinedRecords': '3',
+        acknowledgedRecords: '7',
+    })
+    expect(rows).toEqual([
+        {
+            key: 'manuallyClearedFailedRecords',
+            value: '9223372036854775807',
+            category: 'policy',
+            label: 'lossManualFailed',
+        },
+        {
+            key: 'manuallyClearedQuarantinedRecords',
+            value: '3',
+            category: 'policy',
+            label: 'lossManualQuarantined',
+        },
+    ])
+})

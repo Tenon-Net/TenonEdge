@@ -15,7 +15,7 @@ public sealed record DeliveryInspectionQuery(DeliveryState State, long? Connecti
 /// <summary>只读元数据，不包含正文、目标地址、请求头、协议元数据或身份指纹；失效连接仍按冻结编号显示。</summary>
 public sealed record DeliveryInspectionItem(long Sequence, Guid DeliveryId, long ConnectionId, string DeviceKey,
     long? RouteId, string? NodeLabel, long Revision, DateTimeOffset CreatedAt, DateTimeOffset? FailedAt,
-    int FailureCount, DeliveryState State, string? QuarantineReason, string? LastError, long ByteSize, bool ClockAnomaly);
+    int FailureCount, DeliveryState State, string? QuarantineReason, string? LastError, long ByteSize, bool ClockAnomaly, long? MigrationId = null);
 
 /// <summary>每页是独立短事务快照；翻页期间记录可能过期或被操作，不保证跨页快照或导出一致性。</summary>
 public sealed record DeliveryInspectionPage(DateTimeOffset CapturedAt, DeliveryInspectionItem[] Items, long? NextSequence);

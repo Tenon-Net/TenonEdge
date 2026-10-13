@@ -5,9 +5,11 @@ import {
     connectionFilter,
     createDeliveryApi,
     readFilter,
-    readFailedBatch,
+    readDeliveryBatch,
     retrySelection,
     retryProblem,
+    cleanupSelection,
+    cleanupProblem,
     type DeliveryItem,
     type DeliveryFilter,
 } from './api'
@@ -143,6 +145,7 @@ function item(sequence: number): DeliveryItem {
         lastError: 'HTTP 422',
         byteSize: '100',
         clockAnomaly: false,
+        migrationId: null,
     }
 }
 it('freezes a single bounded 1000-record batch from applied filters without body reads or hidden writes', async () => {
@@ -160,25 +163,25 @@ it('freezes a single bounded 1000-record batch from applied filters without body
             nextSequence: String(start + 100),
         }
     })
-    const batch = await readFailedBatch({ records }, filter)
+    const batch = await readDeliveryBatch({ records }, filter)
     expect(batch.items).toHaveLength(1000)
     expect(batch.items[999].sequence).toBe('1000')
     expect(batch.hasMore).toBe(true)
     expect(records).toHaveBeenCalledTimes(10)
 })
-it('stops at the exact final page, retains generations and refuses an empty/isolated/malformed selection', async () => {
+it('stops at the exact final page, retains generations and refuses an empty/wrong-area/malformed selection', async () => {
     const records = vi.fn(async () => ({
         capturedAt: '',
         items: [item(7)],
         nextSequence: null,
     }))
-    expect(await readFailedBatch({ records }, { state: 'failed' })).toEqual({
+    expect(await readDeliveryBatch({ records }, { state: 'failed' })).toEqual({
         items: [item(7)],
         hasMore: false,
     })
     expect(records).toHaveBeenCalledTimes(1)
     await expect(
-        readFailedBatch({ records }, { state: 'quarantined' }),
+        readDeliveryBatch({ records }, { state: 'quarantined' }),
     ).rejects.toThrow()
     records.mockResolvedValueOnce({
         capturedAt: '',
@@ -186,7 +189,7 @@ it('stops at the exact final page, retains generations and refuses an empty/isol
         nextSequence: null,
     })
     await expect(
-        readFailedBatch({ records }, { state: 'failed' }),
+        readDeliveryBatch({ records }, { state: 'failed' }),
     ).rejects.toThrow()
     records.mockResolvedValueOnce({
         capturedAt: '',
@@ -194,7 +197,7 @@ it('stops at the exact final page, retains generations and refuses an empty/isol
         nextSequence: null,
     })
     await expect(
-        readFailedBatch({ records }, { state: 'failed' }),
+        readDeliveryBatch({ records }, { state: 'failed' }),
     ).rejects.toThrow()
 })
 it('does not write or silently continue when a batch read fails or has a nonadvancing cursor', async () => {
@@ -204,14 +207,14 @@ it('does not write or silently continue when a batch read fails or has a nonadva
         nextSequence: after ?? '100',
     }))
     await expect(
-        readFailedBatch({ records }, { state: 'failed' }),
+        readDeliveryBatch({ records }, { state: 'failed' }),
     ).rejects.toThrow()
     expect(records).toHaveBeenCalledTimes(2)
     const failed = vi.fn(async () => {
         throw new Error('offline')
     })
     await expect(
-        readFailedBatch({ records: failed }, { state: 'failed' }),
+        readDeliveryBatch({ records: failed }, { state: 'failed' }),
     ).rejects.toThrow('offline')
     expect(failed).toHaveBeenCalledTimes(1)
 })
@@ -328,4 +331,120 @@ it('shows only known retry problem codes, never arbitrary server text', () => {
         ),
     ).toBe('unknown')
     expect(retryProblem(new Error('network'))).toBe('unknown')
+})
+
+it('cleanup binds state, connection and exact migration/sequence identities and explicit confirmation with CSRF', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+        const request = input as Request
+        expect(request.method).toBe('POST')
+        expect(new URL(request.url).pathname).toBe(
+            '/api/edge-admin/v1/deliveries/cleanup',
+        )
+        expect(request.headers.get('X-CSRF-Token')).toBe('not-used')
+        expect(await request.json()).toEqual({
+            state: 'quarantined',
+            confirmed: true,
+            items: [
+                {
+                    sequence: '9223372036854775806',
+                    deliveryId: item(1).deliveryId,
+                    connectionId: '9007199254740991',
+                    migrationId: '9223372036854775807',
+                },
+            ],
+        })
+        return new Response('{"clearedRecords":1}')
+    })
+    await expect(
+        client(fetcher).cleanup('quarantined', [
+            {
+                ...item(1),
+                state: 'quarantined',
+                sequence: '9223372036854775806',
+                connectionId: '9007199254740991',
+                migrationId: '9223372036854775807',
+            },
+        ]),
+    ).resolves.toEqual({ clearedRecords: 1 })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+})
+it('cleanup rejects unknown/invalid generations, pending records and oversized selections before any request', async () => {
+    const missing = item(1)
+    Reflect.deleteProperty(missing, 'migrationId')
+    const fetcher = vi.fn(async () => new Response('{"clearedRecords":1}'))
+    const api = client(fetcher)
+    for (const items of [
+        [],
+        [item(1), item(1)],
+        [missing],
+        [{ ...item(1), migrationId: '0' }],
+        [{ ...item(1), connectionId: '9007199254740992' }],
+        [{ ...item(1), state: 'pending' as const }],
+        Array.from({ length: 1001 }, (_, i) => item(i + 1)),
+    ])
+        await expect(api.cleanup('failed', items)).rejects.toThrow()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(cleanupSelection('failed', [item(1)])[0]).toEqual({
+        sequence: '1',
+        deliveryId: item(1).deliveryId,
+        connectionId: '11',
+        migrationId: null,
+    })
+    expect(
+        cleanupSelection(
+            'failed',
+            Array.from({ length: 1000 }, (_, i) => item(i + 1)),
+        ),
+    ).toHaveLength(1000)
+})
+it('quarantine batch selection uses the same bounded metadata-only pagination', async () => {
+    const records = vi.fn(async (_filter: DeliveryFilter, after?: string) => ({
+        capturedAt: '',
+        items: Array.from({ length: 100 }, (_, i) => ({
+            ...item(Number(after ?? 0) + i + 1),
+            state: 'quarantined' as const,
+        })),
+        nextSequence: String(Number(after ?? 0) + 100),
+    }))
+    const batch = await readDeliveryBatch(
+        { records },
+        { state: 'quarantined', reason: 'targetMissing' },
+    )
+    expect(batch.items).toHaveLength(1000)
+    expect(batch.hasMore).toBe(true)
+    expect(records).toHaveBeenCalledTimes(10)
+})
+it.each([403, 409, 503, 'lost-response'] as const)(
+    'cleanup does not replay after %s',
+    async (status) => {
+        const fetcher = vi.fn(async () => {
+            if (status === 'lost-response') throw new Error('disconnected')
+            return new Response('{}', { status })
+        })
+        await expect(
+            client(fetcher).cleanup('failed', [item(1)]),
+        ).rejects.toThrow()
+        expect(fetcher).toHaveBeenCalledTimes(1)
+    },
+)
+it('cleanup never invents success and only exposes known problem codes', async () => {
+    await expect(
+        client(async () => new Response('{"clearedRecords":0}')).cleanup(
+            'failed',
+            [item(1)],
+        ),
+    ).rejects.toThrow('delivery-cleanup-outcome-unknown')
+    expect(
+        cleanupProblem(
+            new ApiError(409, { code: 'delivery.cleanupSelectionChanged' }),
+        ),
+    ).toBe('selection')
+    expect(
+        cleanupProblem(
+            new ApiError(409, { code: 'delivery.cleanupUnavailable' }),
+        ),
+    ).toBe('unavailable')
+    expect(
+        cleanupProblem(new ApiError(503, { code: 'private-storage-error' })),
+    ).toBe('unknown')
 })

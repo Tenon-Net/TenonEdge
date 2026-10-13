@@ -64,6 +64,33 @@ export function retrySelection(items: readonly RetryItem[]): RetryItem[] {
         throw new Error('delivery-retry-duplicate')
     return selected
 }
+export function cleanupSelection(
+    state: DeliveryArea,
+    items: readonly DeliveryItem[],
+): components['schemas']['DeliveryCleanupItem'][] {
+    const selected = retrySelection(items)
+    if (!['failed', 'quarantined'].includes(state))
+        throw new Error('delivery-cleanup-area')
+    return selected.map((entry, i) => {
+        const item = items[i]
+        if (item.state !== state || item.migrationId === undefined)
+            throw new Error('delivery-cleanup-selection')
+        return {
+            ...entry,
+            connectionId: connectionFilter(revisionId(item.connectionId))!,
+            migrationId:
+                item.migrationId === null ? null : revisionId(item.migrationId),
+        }
+    })
+}
+export function cleanupProblem(error: unknown) {
+    const problem = error instanceof ApiError ? error.problem : null
+    if (!problem || typeof problem !== 'object' || !('code' in problem))
+        return 'unknown'
+    if (problem.code === 'delivery.cleanupSelectionChanged') return 'selection'
+    if (problem.code === 'delivery.cleanupUnavailable') return 'unavailable'
+    return 'unknown'
+}
 export function connectionFilter(value: string): string | undefined {
     if (!value) return undefined
     const id = revisionId(value)
@@ -98,12 +125,13 @@ export function readFilter(draft: {
 }
 
 /** Freeze at most one explicit batch. Pages are not a snapshot; the writer rechecks every generation atomically. */
-export async function readFailedBatch(
+export async function readDeliveryBatch(
     api: Pick<ReturnType<typeof createDeliveryApi>, 'records'>,
     filter: DeliveryFilter,
     signal?: AbortSignal,
 ) {
-    if (filter.state !== 'failed') throw new Error('delivery-retry-area')
+    if (!['failed', 'quarantined'].includes(filter.state))
+        throw new Error('delivery-area')
     const items: DeliveryItem[] = []
     let after: string | undefined
     for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
@@ -113,7 +141,7 @@ export async function readFailedBatch(
             const sequence = revisionId(item.sequence)
             if (
                 (after && BigInt(sequence) <= BigInt(after)) ||
-                item.state !== 'failed'
+                item.state !== filter.state
             )
                 throw new Error('delivery-retry-page')
             after = sequence
@@ -134,6 +162,18 @@ export async function readFailedBatch(
 }
 export function createDeliveryApi(api: ReturnType<typeof createGatewayClient>) {
     return {
+        async cleanup(state: DeliveryArea, items: readonly DeliveryItem[]) {
+            const selected = cleanupSelection(state, items)
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/deliveries/cleanup',
+                {
+                    body: { state, confirmed: true, items: selected },
+                },
+            )
+            if (!data || Number(data.clearedRecords) !== selected.length)
+                throw new Error('delivery-cleanup-outcome-unknown')
+            return data
+        },
         async retry(revision: string, items: readonly RetryItem[]) {
             const selected = retrySelection(items)
             const { data } = await api.POST(

@@ -971,6 +971,88 @@
         }
       }
     },
+    "/api/edge-admin/v1/deliveries/cleanup": {
+      "post": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "管理员确认后永久清理选定的失败或隔离记录",
+        "description": "最多1000条，绑定区域、稳定编号、seq、目标及迁移代次；全部匹配才原子删除，不按执行时筛选扩大选择，不清空待发、不发送。记录人工清理计数及审计。响应丢失只重新查询，不自动重放；请求取消不撤销已接收操作。",
+        "operationId": "cleanupDeliveryRecords",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryCleanupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryCleanupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/test/mqtt": {
       "post": {
         "tags": [
@@ -7318,6 +7400,87 @@
           }
         }
       },
+      "DeliveryCleanupItem": {
+        "required": [
+          "sequence",
+          "deliveryId",
+          "connectionId",
+          "migrationId"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "deliveryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "migrationId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "DeliveryCleanupRequest": {
+        "required": [
+          "state",
+          "confirmed",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/DeliveryState"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryCleanupItem"
+            }
+          }
+        }
+      },
+      "DeliveryCleanupResponse": {
+        "required": [
+          "clearedRecords"
+        ],
+        "type": "object",
+        "properties": {
+          "clearedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "DeliveryInspectionItem": {
         "required": [
           "sequence",
@@ -7428,6 +7591,15 @@
           },
           "clockAnomaly": {
             "type": "boolean"
+          },
+          "migrationId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },

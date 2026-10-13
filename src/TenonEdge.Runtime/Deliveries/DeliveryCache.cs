@@ -135,6 +135,14 @@ public sealed class DeliveryCache
         IReadOnlyDictionary<long, string> targetFingerprints, CancellationToken cancellationToken) =>
         SubmitAsync(new RetryFailedRequest(items, targetFingerprints), cancellationToken);
 
+    /// <summary>仅供已授权且已确认的管理操作。整批删除明确选择的失败/隔离记录，独立累计人工清理数量；
+    /// 存储保护期间也允许清理，不重发、不删除待发数据、不等同协议确认。取消只结束等待。</summary>
+    public Task<DeliveryWriteResult> CleanupAsync(DeliveryCleanupSelection selection, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        return SubmitAsync(new CleanupRequest(selection), cancellationToken);
+    }
+
     public DeliveryQueueTotals GetQueueTotals(long connectionId) => Store.ReadQueueTotals(connectionId);
 
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>
