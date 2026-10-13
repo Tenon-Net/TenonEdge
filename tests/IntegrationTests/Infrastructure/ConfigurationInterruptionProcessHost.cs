@@ -16,6 +16,7 @@ namespace TenonEdge.IntegrationTests.Infrastructure;
 /// 不复制产品装配，不增加测试专用产品 API、配置开关或运行单元种类。重启验证仍运行原产品 Host。</summary>
 internal static class ConfigurationInterruptionProcessHost
 {
+    internal const string MigrationCommand = "--tenonedge-test-migration-host";
     internal const string Command = "--tenonedge-test-preparation-host";
     internal const string PartialStopCommand = "--tenonedge-test-partial-stop-host";
     internal const string PreInputActivationCommand = "--tenonedge-test-pre-input-activation-host";
@@ -43,10 +44,11 @@ internal static class ConfigurationInterruptionProcessHost
 
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length == 0 || args[0] is not (Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PreparationCommitCommand or PartialActivationCommand or MqttPartialStopCommand or MqttPartialActivationCommand))
+        if (args.Length == 0 || args[0] is not (MigrationCommand or Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PreparationCommitCommand or PartialActivationCommand or MqttPartialStopCommand or MqttPartialActivationCommand))
         { return await Xunit.Runner.InProc.SystemConsole.ConsoleRunner.Run(args); }
         if (!OperatingSystem.IsLinux())
         { throw new PlatformNotSupportedException("受控配置中断进程只在 Linux 验证。"); }
+        var migration = args[0] == MigrationCommand;
         var partialStop = args[0] == PartialStopCommand;
         var preInputActivation = args[0] == PreInputActivationCommand;
         var transactionWriting = args[0] == TransactionWritingCommand;
@@ -57,13 +59,17 @@ internal static class ConfigurationInterruptionProcessHost
         var gate = Environment.GetEnvironmentVariable(GateDirectoryVariable);
         if (gate is null || !Path.IsPathFullyQualified(gate) || !Directory.Exists(gate))
         { throw new ArgumentException("测试同步目录必须是已存在的绝对路径。"); }
-        Console.WriteLine($"TEST {(mqttPartialStop ? "MQTT PARTIAL STOP" : partialActivation ? "PARTIAL ACTIVATION" : durableCommit ? "DURABLE COMMIT" : transactionWriting ? "TRANSACTION WRITING" : preInputActivation ? "PRE-INPUT ACTIVATION" : partialStop ? "PARTIAL STOP" : "PREPARATION")} DIRECTORY: {gate}");
+        Console.WriteLine($"TEST {(migration ? "MIGRATION" : mqttPartialStop ? "MQTT PARTIAL STOP" : partialActivation ? "PARTIAL ACTIVATION" : durableCommit ? "DURABLE COMMIT" : transactionWriting ? "TRANSACTION WRITING" : preInputActivation ? "PRE-INPUT ACTIVATION" : partialStop ? "PARTIAL STOP" : "PREPARATION")} DIRECTORY: {gate}");
         var configuration = new ConfigurationBuilder().AddCommandLine(args[1..]).Build();
         var data = configuration[DataDirectory.ConfigurationKey] ?? throw new ArgumentException("须提供独立测试数据目录。");
+        if (migration)
+        { DeliveryMigrationTransactionGate.Install(gate, data); }
         var settings = configuration.AsEnumerable().Where(pair => pair.Value is not null)
             .ToDictionary(pair => pair.Key, pair => pair.Value!, StringComparer.OrdinalIgnoreCase);
         await using var factory = new FixedDataDirectoryApplicationFactory(data, settings, services =>
         {
+            if (migration)
+            { return; }
             if (mqttPartialStop)
             {
                 MqttPartialStopControl.Register(services, gate);

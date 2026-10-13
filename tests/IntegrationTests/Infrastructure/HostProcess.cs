@@ -94,6 +94,10 @@ public sealed partial class HostProcess : IAsyncDisposable
     public static HostProcess StartMqttPartialActivationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.MqttPartialActivationCommand);
 
+    /// <summary>只在测试子进程登记 SQLite 原生通知探针，产品的运行时、写者和事务均不替换。</summary>
+    internal static HostProcess StartMigrationProbe(string workingDirectory, string dataDirectory) =>
+        StartControlledProbe(workingDirectory, dataDirectory, [], ConfigurationInterruptionProcessHost.MigrationCommand);
+
     private static HostProcess StartControlledProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments, string command) =>
         StartCore(workingDirectory, "Production", dataDirectory, additionalArguments,
             new Dictionary<string, string> { [ConfigurationInterruptionProcessHost.GateDirectoryVariable] = workingDirectory }, null,

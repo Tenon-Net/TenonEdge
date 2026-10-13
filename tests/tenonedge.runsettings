@@ -4,7 +4,8 @@
   <RunConfiguration>
     <!-- 没有发现任何用例时以失败结束：零用例不能算作测试通过。 -->
     <TreatNoTestsAsError>true</TreatNoTestsAsError>
-    <!-- 整个测试会话的上限（毫秒），防止挂起的测试无限占用 CI。 -->
-    <TestSessionTimeout>900000</TestSessionTimeout>
+    <!-- T3 真实中断/双重重启矩阵使全量超过原 15 分钟；总会话限 25 分钟。
+         CI 仍另外保留单用例 5 分钟无进展检测，不延长产品或故障窗口的期限。 -->
+    <TestSessionTimeout>1500000</TestSessionTimeout>
   </RunConfiguration>
 </RunSettings>
