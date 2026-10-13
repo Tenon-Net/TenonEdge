@@ -636,6 +636,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         // 停止之后才到达的请求一律报告失败。
         var writerTimedOut = await StopStepAsync("停止发送缓存写者", () => _supervisor.StopAsync(id => id == DeliveryCache.WriterId, timeout, cancellationToken));
         var senderTimedOut = await StopStepAsync("停止输出发送者", () => _supervisor.StopAsync(id => id.Kind.StartsWith("output.", StringComparison.Ordinal), timeout, cancellationToken));
+        // 只有原发送循环确实不再占用时才收回跨提交屏障；停止异常/超时不能让旧地址重新取队列。
+        if (_applicationSenderPauses.Keys.All(id => !_supervisor.IsGroupOccupied(SenderGroup(id))))
+        { ReleaseApplicationSenderPauses(); }
         var failed = _deliveries.FailRemaining("发送缓存已停止，请求没有提交。");
         if (inputsTimedOut.Count == 0 && dispatcherTimedOut.Count == 0 && writerTimedOut.Count == 0)
         {

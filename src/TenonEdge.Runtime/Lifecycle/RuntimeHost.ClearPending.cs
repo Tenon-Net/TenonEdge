@@ -23,7 +23,7 @@ public sealed partial class RuntimeHost
             OutputSenderState sender;
             lock (_lock)
             {
-                if (_activeRevision != revision || !_activeOutputs.Any(output => output.Target.ConnectionId == connectionId) ||
+                if (_activeRevision != revision || _quiescenceRequested || !_activeOutputs.Any(output => output.Target.ConnectionId == connectionId) ||
                     !_senderStates.TryGetValue(connectionId, out sender!) ||
                     !_supervisor.Snapshot().Any(unit => unit.Id == DeliveryCache.WriterId && unit.State == RuntimeUnitState.Running))
                 { return DeliveryWriteResult.Rejected("delivery.clearPendingUnavailable"); }

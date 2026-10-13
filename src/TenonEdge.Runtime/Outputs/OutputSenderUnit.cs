@@ -151,6 +151,8 @@ internal sealed class OutputSenderUnit(
 
             // 管理操作只能在原发送结果已持久化后取得队列；暂停期间不释放适配器或创建第二个发送者。
             await state.WaitForQueuePauseAsync(stoppingToken);
+            // 版本交接可能同时取消旧循环并释放跨提交屏障；不能因 Released 先完成而再取一条旧目标记录。
+            stoppingToken.ThrowIfCancellationRequested();
             state.ApplyQueueProbeReset();
 
             var fingerprint = target.CurrentFingerprint;

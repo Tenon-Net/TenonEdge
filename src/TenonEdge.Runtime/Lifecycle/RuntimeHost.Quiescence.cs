@@ -18,21 +18,38 @@ public sealed partial class RuntimeHost
     /// 超时保留原实例和预算，不丢弃未完成分发。开始后操作由运行时拥有，调用方取消等待不打断清理。
     /// 应用所有者必须在失败时恢复旧输入，成功后再提交/激活；此方法不是独立应用入口。</summary>
     public Task<RuntimeQuiescenceResult> QuiesceInputsAsync(CancellationToken cancellationToken)
+        => QuiesceInputsAsync([], cancellationToken);
+
+    /// <summary>形式 A 的提交前屏障：先等待选中连接的原发送结果持久化，再静默输入并排空。
+    /// 成功后发送屏障由运行时持有，不因调用方取消或方法返回释放；提交前放弃时调用 RestoreInputsAsync。
+    /// 提交后须由协调者持久隔离等待迁移的记录，再调用 ActivateCommittedAsync 交接。
+    /// 本方法不登记迁移意图、不改变队列状态、不证明配置提交，也不代替管理员授权和配额/身份复核。</summary>
+    public Task<RuntimeQuiescenceResult> QuiesceInputsAsync(IReadOnlyCollection<long> migrationConnections, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(migrationConnections);
         cancellationToken.ThrowIfCancellationRequested();
+        var selected = migrationConnections.ToArray();
+        if (selected.Length > 500 || selected.Any(id => id is < 1 or > 9007199254740991L) || selected.Distinct().Count() != selected.Length)
+        { throw new ArgumentException("迁移连接清单无效。", nameof(migrationConnections)); }
         var operation = EnterOperation();
-        var task = QuiesceOwnedAsync(operation);
+        var task = QuiesceOwnedAsync(operation, selected);
         return task.WaitAsync(cancellationToken);
     }
 
-    private async Task<RuntimeQuiescenceResult> QuiesceOwnedAsync(TaskCompletionSource operation)
+    private async Task<RuntimeQuiescenceResult> QuiesceOwnedAsync(TaskCompletionSource operation, long[] migrationConnections)
     {
+        var added = new List<long>();
+        var succeeded = false;
         try
         {
             lock (_lock)
             { _currentQuiescence = null; }
             await CancelRecoveryAsync();
+            var blocked = await PauseApplicationSendersAsync(migrationConnections, added);
+            if (blocked.Length != 0)
+            { return new(_activeRevision, false, blocked); }
             var result = await QuiesceCoreAsync();
+            succeeded = result.Succeeded;
             lock (_lock)
             {
                 if (_stopping is null && result.Succeeded && result.Revision is not null)
@@ -40,7 +57,13 @@ public sealed partial class RuntimeHost
             }
             return result;
         }
-        finally { CompleteOperation(operation); }
+        finally
+        {
+            // 失败的新请求不留下不可见暂停。先前成功屏障仍归原应用所有，不能因后一次重试失败而释放。
+            if (!succeeded)
+            { ReleaseApplicationSenderPauses(added); }
+            CompleteOperation(operation);
+        }
     }
 
     private bool _quiescenceRequested;

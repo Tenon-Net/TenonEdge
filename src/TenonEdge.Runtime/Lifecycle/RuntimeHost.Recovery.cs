@@ -32,6 +32,8 @@ public sealed partial class RuntimeHost
             lock (_lock)
             { _currentQuiescence = null; }
             await CancelRecoveryAsync();
+            // 宿主已确认配置未提交：独立发送者继续用原实例，耦合发送者重建时沿用已解除屏障的状态。
+            ReleaseApplicationSenderPauses();
             try
             { return await RecoverGroupsCoreAsync(onlyWaiting: false); }
             finally

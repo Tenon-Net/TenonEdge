@@ -16,6 +16,7 @@ public sealed partial class RuntimeHost
     /// <summary>应用第 5 步：宿主已提交新 effectiveRevision 后，切换输入及发送者。
     /// 调用方必须持有完整应用/回滚锁，完成静态校验和静默后的目标变更检查（含禁止删除尚有待发数据的目标）。
     /// 此方法不提交配置，也不能证明配置已提交；进入后不接受请求取消、不自动回滚有效版本。
+    /// 若静默包含形式 A 发送屏障，宿主还须先持久登记意图并隔离等待记录，才可进入本次交接。
     /// 停止超时的独立发送者保留原实例，替换者等其完整退出后才构建；输入按新版本启动。</summary>
     public Task ActivateCommittedAsync(PreparedPlan prepared, RuntimeQuiescenceResult quiescence) =>
         ActivateCommittedCoreAsync(prepared, quiescence, retryEffective: false);
@@ -54,6 +55,9 @@ public sealed partial class RuntimeHost
             {
                 await CancelRecoveryAsync();
                 var blockedGroups = await TransitionSendersAsync(prepared);
+                // 带迁移屏障时，调用方须已持久隔离意图的旧记录；旧发送者已取消，替换者沿用同一暂停状态。
+                // 交接失败不释放，避免提交后异常使旧地址重新发送；可重试当前有效版本或停机恢复。
+                ReleaseApplicationSenderPauses();
                 lock (_lock)
                 {
                     _activeInputs.Clear();
