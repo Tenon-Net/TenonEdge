@@ -71,8 +71,10 @@ public sealed class ClearPendingTests
     {
         using var data = TemporaryDirectory.Create();
         var output = new ControlledOutput();
+        // 第一条发送由闸门一直阻塞，仍必定超时；后续正常暂停检查须覆盖原循环250ms轮询周期。
+        // 80ms会让第二次合法清空也随机超时，不能把轮询尚未醒来误判为未完成原ACK。
         await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, outputs: [output],
-            options: new RuntimeOptions { UnitStopTimeout = TimeSpan.FromMilliseconds(80) });
+            options: new RuntimeOptions { UnitStopTimeout = TimeSpan.FromSeconds(2) });
         runtime.StartCore();
         await runtime.Deliveries.EnqueueAsync([Draft(1), Draft(1)], Token);
         await Activate(runtime);
@@ -87,7 +89,13 @@ public sealed class ClearPendingTests
             Assert.Equal(1, output.Creates);
             output.Result.TrySetResult(new(OutputSendStatus.Ack));
             await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords == 1 && output.Sends == 2);
-            Assert.Equal(1, (await runtime.ClearPendingAsync(1, 1, Token)).AffectedRecords);
+            await OutputPipelineTests.UntilAsync(() => Assert.Single(runtime.GetOutputSenders()).Sender.State == "automaticallyPaused");
+            var cleared = await runtime.ClearPendingAsync(1, 1, Token);
+            Assert.True(cleared.Committed, cleared.Error);
+            Assert.Equal(1, cleared.AffectedRecords);
+            Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+            Assert.Equal(1, runtime.Deliveries.GetStatus().DeletedRecords);
+            Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["manuallyClearedPendingRecords"]);
             Assert.Equal(1, output.Creates);
         }
         finally { output.Result.TrySetResult(new(OutputSendStatus.SuspendTarget)); }

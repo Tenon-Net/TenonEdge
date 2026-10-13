@@ -13,6 +13,8 @@ public interface IOutputTarget
     string Recipient { get; }
     string CredentialVersion { get; }
     string CurrentFingerprint { get; }
+    /// <summary>一次捕获同代的指纹与非秘密接收方；不解密、不连接。未实现的扩展默认不可核对，不猜测身份。</summary>
+    OutputTargetIdentity? CaptureIdentity() => null;
     /// <summary>单次发送的期限。管理迁移等待原在途结果落库，不按宿主默认停止期限截断较长的合法发送。</summary>
     TimeSpan SendTimeout => TimeSpan.FromSeconds(5);
     /// <summary>输入入队前预留的每路径格式化上界；默认包含报文及冻结拷贝，协议可增加非秘密元数据暂存。</summary>

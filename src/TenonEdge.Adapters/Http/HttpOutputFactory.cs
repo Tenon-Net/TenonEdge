@@ -23,17 +23,21 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
 {
     private readonly string _frozenRequest = HttpFrozenRequest.Freeze(settings);
     private readonly OutputPayloadFormat _payload = OutputPayloadFormat.Parse(settings.Payload);
-    public long MinimumSerializationReservationBytes => _payload.MinimumSerializationReservationBytes;
+    public long MinimumSerializationReservationBytes => Math.Max(_payload.MinimumSerializationReservationBytes, 4L * OutputRecipientIdentity.MaximumSummaryBytes);
     public RuntimeUnitId Id => id;
     public long ConnectionId => settings.ConnectionId;
     public IReadOnlyList<string> Inputs => settings.Inputs;
     public string? ClientId => null;
     public string Recipient => settings.BaseAddress;
     public string CredentialVersion => credentials.DescribeHttp(ConnectionId)?.Version ?? "anonymous";
-    // 16 KiB 静态头的 JSON 转义暂存、字典节点与幂等编号额外保守预约。
-    public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024 + 2L * OutputMessage.MaximumProtocolMetadataBytes;
+    // 16 KiB 静态头、字典节点、幂等编号和摘要UTF-16结果逐路径保留；摘要编码暂存串行复用。
+    public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024 +
+        2L * OutputMessage.MaximumProtocolMetadataBytes + 2L * OutputRecipientIdentity.MaximumSummaryBytes;
     public string CurrentFingerprint => settings.Fingerprint(credentials.DescribeHttp(ConnectionId));
     public TimeSpan SendTimeout => TimeSpan.FromMilliseconds(settings.TimeoutMs);
+    public OutputTargetIdentity CaptureIdentity() => CaptureIdentity(credentials.DescribeHttp(ConnectionId));
+    private OutputTargetIdentity CaptureIdentity(HttpCredentialIdentity? identity) =>
+        new(settings.Fingerprint(identity), OutputRecipientIdentity.Http(Recipient, identity));
 
     public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
     {
@@ -41,8 +45,9 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
         if (identity is { Kind: HttpCredentialKind.ApiKeyHeader, Name: { } name } && settings.Headers.ContainsKey(name))
         { throw new ArgumentException("API Key 请求头不能同时保存在非秘密静态请求头中。"); }
         var headers = settings.Headers.SetItem("Idempotency-Key", deliveryId.ToString("D"));
-        return new(_payload.Serialize(message, deliveryId), settings.Path, null, settings.Fingerprint(identity),
-            $"{settings.BaseAddress}; authentication={identity?.Kind.ToString() ?? "none"}", headers, _frozenRequest);
+        var recipient = CaptureIdentity(identity);
+        return new(_payload.Serialize(message, deliveryId), settings.Path, null, recipient.Fingerprint,
+            recipient.Summary, headers, _frozenRequest);
     }
 
     private HttpOutputSettings Settings => settings;

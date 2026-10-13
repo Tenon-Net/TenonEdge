@@ -47,7 +47,7 @@
 | T3 | T3-05 图编译与样本预览 | 部分实现，整项未完成 | 自有图格式、路径限制、持久画布、映射/输出表单、字段分析及手工/现场/运行缓存样本已实现；剩余：按功能 §4/5 逐项核对画布操作与无 JSON 路线验收，不用已有局部用例代替完整闭环 | §2.123—§2.148，T3-11 收口 |
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
-| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。迁移API/页面尚未开放。剩余：原协议/接收方核对、无输出路线目标接续、两种迁移入口/配置意图及 FS-23 强杀审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.206；功能 §8 |
+| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；迁移API/页面尚未开放。剩余：准备入口的逐记录原协议/接收方核对、无输出路线目标接续、两种迁移入口/配置意图及 FS-23 强杀审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.207；功能 §8 |
 | T3 | T3-09 用户审计与系统管理 | 未完成 | 既有登录/权限、审计查询、系统信息和出站白名单 API 不等于管理产品已完成；须补用户/临时密码/强制下线/最后管理员、HTTPS API Token、审计导出、运行参数/白名单/访问策略页面与真实授权验收。宿主管理证书替换按 T5-01 | 功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
@@ -4369,6 +4369,42 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 - 修正后 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --verbosity quiet` 与 `git diff --check` 通过（`...-format-final-r2.log`）；最终构建22个改动/新增C#文件哈希 `...-code-final-r2.json` 复核未变，含文档的最终哈希 `...-source-final.json`。本批未执行浏览器或前端测试，不沿用旧结果当作迁移页面验收；远端CI和设备/断电未验证。
 
 下一步：完善冻结接收方/原协议核对与无输出路线目标的发送接续，接迁移准备/二次确认/状态查询 API 与页面，登记形式 A 随配置提交的意图/隔离/顺序执行，再进行 FS-23 强杀及完整审计验收。§1其他T3缺项不变；未推送、发布或进入T4/T5/G1。
+
+### 2.207 T3-08 冻结接收方身份、同次读取与旧摘要诚实解析（2026-10-13）
+
+基线 `180646d`，继续总设计 §8.3、功能 §8.4。**这是迁移准备的身份数据子项，不是迁移 API/页面交付；无输出路线目标接续和形式 A 意图尚未实现。**
+
+实现与边界：
+
+- 新 `OutputRecipientIdentity` 在既有 `fingerprint_summary` 中写入 `recipient:v1:`＋可读 JSON，包含原协议、基础接收地址、认证方式、可见账户、客户端证书主题及信息是否已记录。账户/证书的“未记录”与“未使用/无可见标识”明确分开；当前适配器尚无客户端证书能力，新记录如实写“未使用”，不虚构已验证的服务端证书或客户端证书接口。密码、Token、API Key 值/名称、账户内部标记和凭证版本均不写入摘要；用户名是非秘密账户标识。
+- `IOutputTarget.CaptureIdentity` 由 MQTT/HTTP 适配器一次读取非秘密凭证描述，同时生成原算法指纹与摘要；不解密、不访问网络。格式化使用同一捕获值，HTTP 的认证头冲突检查也使用该次描述，防止凭证轮换时指纹与展示账户来自不同读取。未知扩展默认返回不可核对，不根据 `Recipient` 或当前配置猜测历史。MQTT 凭证身份暂不可知仍允许按既有规则格式化，账户明确未知；已冻结消息不随随后换账户改写。
+- 摘要解析只接受已知版本/字段/类型，拒绝重复字段、大小写冒充、缺失必填、额外秘密字段、协议/地址矛盾和带 userinfo/查询/片段的接收地址；读写均限制32 KiB。序列化前按每UTF-16码元最多6个JSON转义字节检查保守上界，避免先分配越界暂存再拒绝。两协议按路径预约摘要UTF-16保留文本，摘要编码/拼接暂存与报文编码串行共用一次工作预约，不改变队列条数/字节计费规则。
+- 兼容解析此前自有 MQTT/HTTP 摘要：MQTT 从完整 JSON 用户名读取，不按账户内的分号或认证样文本拆分；旧 password 空串曾同时代表缺失身份，故保守标未知。旧 HTTP Basic 摘要未保存用户名，永不从当前凭证回填；无可见标识的 Bearer/API Key 不假装能证明账户。旧摘要未保存证书字段一律标未知。无法识别或损坏的摘要返回不可核对，不能拿当前连接协议代替原协议。信息不完整时仍须在后续确认界面明确呈现；本批未决定或实现任何自动所有权确认。
+- 不新增数据库列/schema，不回填历史行，不修改指纹算法；已有 `InputDispatcherUnit` 直接冻结新摘要，存储配额继续按实际 UTF-8 字节计。迁移只替换已允许改变的指纹/摘要；`protocol_metadata`、正文、主题/路径/QoS/头、编号、FIFO和原创建时间保持不变。
+
+验证：
+
+- 新增48项身份格式单元：新格式往返/未知值、5种HTTP认证、MQTT匿名/身份缺失/合法空账户、旧格式地址和转义账户、HTTP旧Basic用户名未知、未知版本/重复/错字段/畸形/矛盾与UTF-8长度边界。
+- 新增9项适配器单元：两协议均明确预约逐路径保留文本和串行编码工作区，2048字符内HTTP地址及256字符Unicode账户可往返；描述返回后立即换账户，捕获或格式化仍严格只读一次、指纹和旧用户名相符；禁止秘密解析和网络；同账户凭证轮换不改指纹/摘要，换账户不改写旧消息；MQTT描述缺失不伪装为空用户名。
+- 新增2项SQLite集成（HTTP/MQTT各1）：实际分发器→唯一写者→queue.db，旧、新摘要并存；换当前账户并重启后旧摘要仍不变；原迁移写者替换接收方，冻结内容/协议元数据/编号/顺序/创建时间不变，UTF-8字节差额精确；再重启和收据重放不重复计数。这是软件分发/存储验证，无外部网络，不冒充角色、页面或强杀验证。
+
+命令与证据（前缀 `/tmp/tenonedge-recipient-identity`）：
+
+- 环境：Linux7.0.0-31-generic x64、SDK10.0.401；无新依赖，未改前端/OpenAPI/数据库schema。
+- 首轮定向117单元中107通过、10失败（`...-targeted.log`、`...-targeted/recipient-unit.trx`）：新解析器错误要求MQTT URI的`AbsolutePath`必须为空，而.NET对无显式路径返回`/`。修正允许空或根路径，仍拒绝非根路径。第二轮124单元中123通过、1失败（`...-targeted-r2.log`/`recipient-unit-r2.trx`）：新测试两次读UtcNow违反网关采集时间须等于接收时间的约束；改为一次取时，不改产品时间校验。两轮失败均保留，不记通过。
+- 修正后定向 `dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-restore --filter 'FullyQualifiedName~OutputRecipientIdentityTests|FullyQualifiedName~OutputTargetIdentityTests|FullyQualifiedName~MqttOutputTests|FullyQualifiedName~HttpOutputSettingsTests'` **124项通过**；集成筛选 `FullyQualifiedName~DeliveryRecipientIdentityTests|FullyQualifiedName~DeliveryMigrationCoordinatorTests|FullyQualifiedName~Runtime.HttpOutputTests|FullyQualifiedName~Runtime.MqttOutputTests` **44项通过**，0失败/跳过（`...-targeted-r3.log`）。最终定向报告另存`...-targeted-final-trx`，`verify-test-results.py`核对通过（`...-targeted-verified.log`）；此前失败报告未删除。
+- 首次全量 **1355单元通过；1570集成中1569通过、1失败**，0跳过（`...-full.log`、`...-full-trx`、`...-full-first-verified.log`）。`ThirtyTwoMappedPathsShareSerialWorkingSpaceInsteadOfReservingThirtyTwoCopies`在15秒内未入队32条；同一原用例单独`--no-build --filter`复现失败（`...-budget-repro.log`/`...-budget-repro-trx`）。新增摘要把本应串行共用的编码暂存按32路径重复预约，固定预约（不含源消息）从61.0625 MiB变成65.0625 MiB，超过既有64 MiB上限。修正为逐路径预约2×32 KiB的UTF-16保留文本，4×32 KiB编码/拼接暂存与原报文编码工作区取最大、只预约一次，原32路固定预约为63.0625 MiB；没有缩减路径、增大全局额度或放宽原60—64 MiB峰值断言。补两项预算/最大合法账户子用例。
+- 修正后 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --verbosity quiet` 通过（`...-format-final-r2.log`）；Release构建0警告/错误（`...-build-final-r2.log`）。筛选 `FullyQualifiedName~ThirtyTwoMappedPathsShareSerialWorkingSpaceInsteadOfReservingThirtyTwoCopies|FullyQualifiedName~SummaryRetainedTextAndSerialEncodingWorkspaceAreBothReserved` 连续三轮复验，每轮2单元＋1集成通过，0失败/跳过（`...-budget-fix-1/2/3.log`、各轮`-trx`及`-verified.log`）。原32路集成用例未改，未留下诊断探针。
+- 第二次全量 **1357单元通过；1570集成中1569通过、1失败**（`...-full-final.log`、`...-full-second-verified.log`）：预算回归已通过，既有 `RealHostSamplesWithoutRequestsAndStopsItsSingleMonitor` 在获取服务后断言历史为空，但真实后台已经合法完成第一条10秒采样，失败点中的活动计数均为0。该原用例单独重跑通过（`...-trend-repro.log`），不能据此忽略全量失败。
+- 为固定同一窗口，先尝试给测试宿主整体替换可控时钟，但测试未完成；只终止本次测试子进程，报告为运行中断/未完成（`...-trend-red.log`/`...-trend-red-trx`），不是通过，也不归因于产品趋势服务。改为只替换原趋势服务/历史的时钟，队列、身份和其他宿主生命周期仍使用原时钟；先断言原托管服务登记唯一且为singleton，再由同一原类创建PeriodicTimer和调用原Sample。正常观察和已有一条采样两分支中，保留原无条件Empty断言时，第二分支在原错误点**确定性失败**、第一分支通过（`...-trend-red-r2.log`/`...-trend-red-r2-trx`，2项中1通过1失败），没有直接向历史塞测试采样。
+- 测试修正为显式检查观察前0/1条合法基线；活动计数仍精确要求3/2/1，10秒前一tick不采样，完整10秒只增加1条；停止后原后台任务正常完成，再推进一周期也不产生点。保留唯一托管服务断言，不放宽计数或停止要求；生产趋势服务/历史/注册均未修改。该用例由1项扩为2个场景。
+- 趋势修正后Release构建0警告/错误、format通过（`...-build-final-r3.log`、`...-format-final-r3.log`）。趋势两场景＋原32路预算用例连续三轮每轮3项全部通过，0失败/跳过（`...-trend-fix-1/2/3.log`、各轮`-trx`和`-verified.log`）。第三次全量 **1357单元通过；1571集成中1570通过、1失败**（`...-full-final-r3.log`、`...-full-third-verified.log`）：上述用例通过，既有清空超时恢复用例第二次操作返回AffectedRecords=0；该用例单独原样复跑通过（`...-clear-repro.log`）。
+- 清空用例第一次明确阻塞发送，用80ms期限验证超时；第二条返回自动暂停后，原产品循环每250ms查看控制信号，80ms不足以保证第二次正常清空被循环观察。测试增加等待原自动暂停状态及明确检查结果状态，在未改80ms时复现 `delivery.clearPendingNotQuiescent` 的RED（`...-clear-red.log`/`...-clear-red-trx`，1项失败）。只将该测试期限改为2秒以覆盖250ms轮询，第一条仍由闸门阻塞到真实超时，超时后两条保留/无人工清空、迟到ACK落库/不替换原适配器的要求均保留；第二次还增加了队列为空、ACK删除仅1条、人工清空仅1条的精确断言。未改产品期限、控制循环或删除逻辑。
+- 最终 `dotnet format TenonEdge.sln --no-restore --verify-no-changes --verbosity quiet` 与Release构建通过，0警告/错误（`...-format-final-r4.log`、`...-build-final-r4.log`）。清空超时＋趋势两场景＋原32路预算用例连续三轮每轮4项全部通过，0失败/跳过（`...-clear-fix-1/2/3.log`、各轮`-trx`和`-verified.log`）。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --logger trx --results-directory /tmp/tenonedge-recipient-identity-full-final-r4-trx`：**1357单元＋1571集成＝2928项全部通过，0失败/跳过**（`...-full-final-r4.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-recipient-identity-full-final-r4-trx --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 完整报告核对通过（`...-full-final-r4-verified.log`）。前述失败/中断报告保留，不能与最终报告混为同一轮。
+- 最终 `git diff --check` 通过；9个C#改动/新增文件与最终构建前的 `...-code-final-r4.json` 哈希一致，含文档的11个最终改动文件哈希见 `...-source-final.json`。本批未执行前端或浏览器测试；未开放外部迁移入口，不将这批后端软件验证作为页面、真实设备/断电、FS-23强杀或远端CI通过。
+
+下一步：无输出路线的有效启用同类连接发送接续；迁移准备入口按每条冻结摘要核对原协议并展示旧/新身份，保持绑定的选择代次和目标指纹，接管理员确认/API/页面及形式A意图/强杀审计。T3其余缺项按§1继续；没有推送、发布或进入T4/T5/G1。
 
 ## 3. 验收编号登记
 
