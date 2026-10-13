@@ -30,6 +30,7 @@ public sealed class RuntimeApplicationTests
                 provider.GetRequiredService<RouteDraftStore>(), provider.GetRequiredService<RuntimeSettings>(),
                 provider.GetRequiredService<RuntimeStartConditions>(), provider.GetRequiredService<RuntimeEventLog>(),
                 provider.GetRequiredService<AuditTrail>(),
+                provider.GetRequiredService<TenonEdge.Host.Features.Deliveries.DeliveryMigrationStore>(),
                 clock, provider.GetRequiredService<ILogger<RuntimeCoordinator>>()));
         });
         using var client = factory.CreateClient();

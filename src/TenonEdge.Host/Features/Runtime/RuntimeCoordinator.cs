@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using SqlSugar;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
@@ -35,6 +36,7 @@ internal sealed partial class RuntimeCoordinator(
     RuntimeStartConditions startConditions,
     RuntimeEventLog runtimeEvents,
     AuditTrail audit,
+    DeliveryMigrationStore migrations,
     TimeProvider time,
     ILogger<RuntimeCoordinator> logger) : BackgroundService
 {
@@ -163,6 +165,8 @@ internal sealed partial class RuntimeCoordinator(
         StartupDecision decision;
         try
         {
+            // 核对发生在启动任何发送者之前；仅补记结果，不重放上次已开始的人工操作。
+            migrations.RecoverInterrupted();
             decision = await EvaluateAsync();
         }
         catch (Exception exception) when (IsStorageError(exception))

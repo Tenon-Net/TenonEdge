@@ -33,6 +33,7 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
     // 16 KiB 静态头的 JSON 转义暂存、字典节点与幂等编号额外保守预约。
     public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024 + 2L * OutputMessage.MaximumProtocolMetadataBytes;
     public string CurrentFingerprint => settings.Fingerprint(credentials.DescribeHttp(ConnectionId));
+    public TimeSpan SendTimeout => TimeSpan.FromMilliseconds(settings.TimeoutMs);
 
     public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
     {

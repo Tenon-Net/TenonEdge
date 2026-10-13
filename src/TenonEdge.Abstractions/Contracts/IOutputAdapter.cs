@@ -13,6 +13,8 @@ public interface IOutputTarget
     string Recipient { get; }
     string CredentialVersion { get; }
     string CurrentFingerprint { get; }
+    /// <summary>单次发送的期限。管理迁移等待原在途结果落库，不按宿主默认停止期限截断较长的合法发送。</summary>
+    TimeSpan SendTimeout => TimeSpan.FromSeconds(5);
     /// <summary>输入入队前预留的每路径格式化上界；默认包含报文及冻结拷贝，协议可增加非秘密元数据暂存。</summary>
     long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes;
     /// <summary>字段组装可能放大很小的输入；各路径串行复用的编码暂存下限。</summary>

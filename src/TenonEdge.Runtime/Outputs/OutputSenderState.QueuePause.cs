@@ -3,7 +3,17 @@ namespace TenonEdge.Runtime.Outputs;
 internal sealed partial class OutputSenderState
 {
     private QueuePause? _queuePause;
+    private int _queueProbeReset;
     internal bool QueuePauseRequested => Volatile.Read(ref _queuePause) is not null;
+
+    // 操作线程只提交信号。原循环（或监督者重建后的同一状态所有者）消费它，不跨线程清零毒消息探测字段。
+    internal void RequestQueueProbeReset() => Volatile.Write(ref _queueProbeReset, 1);
+
+    internal void ApplyQueueProbeReset()
+    {
+        if (Interlocked.Exchange(ref _queueProbeReset, 0) != 0)
+        { RecheckHeadSeq = null; }
+    }
 
     // 状态由监督者重建沿用。请求线程只发信号，不触碰 ACK/失败/退避等循环所有的数据。
     internal QueuePause PauseQueue()

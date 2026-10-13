@@ -109,8 +109,8 @@ public sealed partial class ConfigurationInterruptionProcessTests
             File.Delete(Path.Combine(work.Path, MqttStopArmed));
             File.WriteAllText(Path.Combine(work.Path, MqttStopReleased), "released after application failure");
             var recovered = await WaitForAsync(api, Api + "/runtime/status", status =>
-                MqttStopUnit(status, "meter/sample").GetProperty("state").GetString() == "running" &&
-                MqttStopUnit(status, "meter-slow/slow-stop").GetProperty("state").GetString() == "running" &&
+                MqttStopUnitRunning(status, "meter/sample") &&
+                MqttStopUnitRunning(status, "meter-slow/slow-stop") &&
                 MqttCounter(data.Path, draft.ConnectionId, "subscribed") == 4 &&
                 host.Output.Contains("TEST MQTT PARTIAL STOP ORIGINAL STOPPED: input.mqtt/meter-slow/slow-stop", StringComparison.Ordinal) &&
                 host.Output.Contains("TEST MQTT PARTIAL STOP UNIT DISPOSED: input.mqtt/meter-slow/slow-stop", StringComparison.Ordinal));

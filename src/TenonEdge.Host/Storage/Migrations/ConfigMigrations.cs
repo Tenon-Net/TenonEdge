@@ -264,5 +264,30 @@ internal static class ConfigMigrations
             "INSERT INTO configuration_edit SELECT 'input', id, '', NULL, NULL, 0, 1 FROM input_draft",
             "INSERT INTO configuration_edit SELECT 'route', id, '', updated_by, CASE WHEN updated_at > 0 THEN updated_at END, 0, 1 FROM route_draft",
         ]),
+        new(18, "delivery_migration", [
+            """
+            CREATE TABLE delivery_migration (
+                operation_id TEXT NOT NULL PRIMARY KEY,
+                config_store_id TEXT NOT NULL,
+                request_hash TEXT NOT NULL,
+                mode TEXT NOT NULL CHECK(mode IN ('selected', 'oldTarget')),
+                revision INTEGER NOT NULL,
+                source_connection_id INTEGER NOT NULL,
+                target_connection_id INTEGER NOT NULL,
+                source_summary TEXT NOT NULL,
+                target_summary TEXT NOT NULL,
+                requested_records INTEGER,
+                account_name TEXT NOT NULL,
+                source_ip TEXT,
+                started_at INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('started', 'completed', 'rejected', 'interrupted')),
+                migration_id INTEGER,
+                affected_records INTEGER,
+                completed_at INTEGER,
+                error_code TEXT
+            )
+            """,
+            "CREATE INDEX ix_delivery_migration_status_started ON delivery_migration (status, started_at)",
+        ]),
     ];
 }

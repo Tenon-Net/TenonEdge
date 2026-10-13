@@ -3,20 +3,24 @@ using System.Text.Json;
 
 namespace TenonEdge.Runtime.Deliveries;
 
-// 仅用于运行时已取得源/目标发送者暂停租约后的写者请求，不是管理 API。
-// Host 仍须持久登记开始、校验有效配置/协议/所有者声明，并在提交后同步状态和审计。
-internal sealed record DeliveryMigrationItem(long Sequence, Guid DeliveryId, string Fingerprint, long? MigrationId);
+// 宿主必须先校验有效配置/每条冻结记录的协议/所有者声明并持久登记开始，再交给 RuntimeHost 的协调入口。
+// DeliveryCache 的实际写入仍为 internal，不能从管理 API 绕过发送者暂停。
+public sealed record DeliveryMigrationItem(long Sequence, Guid DeliveryId, string Fingerprint, long? MigrationId);
 
-internal sealed record DeliveryMigrationReceipt(long MigrationId, Guid OperationId, string ConfigStoreId,
+public sealed record DeliveryMigrationReceipt(long MigrationId, Guid OperationId, string ConfigStoreId,
     string RequestHash, long SourceConnectionId, long TargetConnectionId, int AffectedRecords, DateTimeOffset CompletedAt);
 
-internal sealed record DeliveryMigrationQuotaDeficit(long PendingRecords, long PendingBytes, long GlobalBytes, long FailedRecords)
+public sealed record DeliveryMigrationQuotaDeficit(long PendingRecords, long PendingBytes, long GlobalBytes, long FailedRecords)
 {
     public bool Exceeded => PendingRecords > 0 || PendingBytes > 0 || GlobalBytes > 0 || FailedRecords > 0;
 }
 
-internal static class DeliveryMigrationErrors
+public static class DeliveryMigrationErrors
 {
+    public const string Unavailable = "delivery.migrationUnavailable";
+    public const string NotQuiescent = "delivery.migrationNotQuiescent";
+    public const string TargetChanged = "delivery.migrationTargetChanged";
+    public const string ProtocolMismatch = "delivery.migrationProtocolMismatch";
     public const string StoreChanged = "delivery.migrationStoreChanged";
     public const string OperationChanged = "delivery.migrationOperationChanged";
     public const string SelectionChanged = "delivery.migrationSelectionChanged";
@@ -24,7 +28,7 @@ internal static class DeliveryMigrationErrors
     public const string StorageProtection = "delivery.migrationStorageProtection";
 }
 
-internal sealed class DeliveryMigrationCommand
+public sealed class DeliveryMigrationCommand
 {
     private DeliveryMigrationCommand(string configStoreId, Guid operationId, long sourceConnectionId, long targetConnectionId,
         string fingerprint, string summary, string? oldFingerprint, IReadOnlyList<DeliveryMigrationItem>? items)

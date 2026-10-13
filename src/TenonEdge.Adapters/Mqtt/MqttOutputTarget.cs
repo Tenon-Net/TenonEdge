@@ -16,6 +16,7 @@ internal sealed class MqttOutputTarget(
     public string ClientId { get; } = settings.ClientId ?? $"{defaultClientPrefix}-{settings.ConnectionId}";
     public string Recipient => settings.Recipient;
     public string CredentialVersion => Identity()?.Version ?? "unavailable";
+    public TimeSpan SendTimeout => TimeSpan.FromMilliseconds(settings.TimeoutMs);
     public string CurrentFingerprint
     {
         get

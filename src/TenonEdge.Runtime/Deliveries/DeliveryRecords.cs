@@ -50,8 +50,8 @@ public sealed record DeliveryWriteResult(DeliveryWriteStatus Status, IReadOnlyLi
 {
     public bool Committed => Status == DeliveryWriteStatus.Committed;
 
-    internal DeliveryMigrationReceipt? Migration { get; init; }
-    internal DeliveryMigrationQuotaDeficit? MigrationQuota { get; init; }
+    public DeliveryMigrationReceipt? Migration { get; init; }
+    public DeliveryMigrationQuotaDeficit? MigrationQuota { get; init; }
 
     internal static DeliveryWriteResult Inserted(IReadOnlyList<long> seqs, int quotaRejected = 0) => new(DeliveryWriteStatus.Committed, seqs, seqs.Count, null, quotaRejected);
 

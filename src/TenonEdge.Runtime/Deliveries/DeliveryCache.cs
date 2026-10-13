@@ -163,7 +163,8 @@ public sealed class DeliveryCache
     internal Task<DeliveryWriteResult> MigrateAsync(DeliveryMigrationCommand command) =>
         SubmitAsync(new MigrateDeliveriesRequest(command), CancellationToken.None);
 
-    internal DeliveryMigrationReceipt? ReadMigrationReceipt(Guid operationId) => Store.ReadMigrationReceipt(operationId);
+    /// <summary>当前配置库归属下的持久完成记录；供宿主同步迁移状态/审计，不启动或重放迁移。</summary>
+    public DeliveryMigrationReceipt? ReadMigrationReceipt(Guid operationId) => Store.ReadMigrationReceipt(operationId);
 
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>
         SubmitAsync(new QuarantineRequest(seq, reason), token);

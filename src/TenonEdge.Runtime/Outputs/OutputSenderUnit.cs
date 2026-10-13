@@ -151,6 +151,7 @@ internal sealed class OutputSenderUnit(
 
             // 管理操作只能在原发送结果已持久化后取得队列；暂停期间不释放适配器或创建第二个发送者。
             await state.WaitForQueuePauseAsync(stoppingToken);
+            state.ApplyQueueProbeReset();
 
             var fingerprint = target.CurrentFingerprint;
             if (state.ReconciledFingerprint != fingerprint)
