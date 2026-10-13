@@ -21,6 +21,7 @@ internal static class ConfigurationInterruptionProcessHost
     internal const string PreInputActivationCommand = "--tenonedge-test-pre-input-activation-host";
     internal const string TransactionWritingCommand = "--tenonedge-test-transaction-writing-host";
     internal const string DurableCommitCommand = "--tenonedge-test-durable-commit-host";
+    internal const string PreparationCommitCommand = "--tenonedge-test-preparation-commit-host";
     internal const string PartialActivationCommand = "--tenonedge-test-partial-activation-host";
     internal const string MqttPartialStopCommand = "--tenonedge-test-mqtt-partial-stop-host";
     internal const string MqttPartialActivationCommand = "--tenonedge-test-mqtt-partial-activation-host";
@@ -42,14 +43,15 @@ internal static class ConfigurationInterruptionProcessHost
 
     public static async Task<int> Main(string[] args)
     {
-        if (args.Length == 0 || args[0] is not (Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PartialActivationCommand or MqttPartialStopCommand or MqttPartialActivationCommand))
+        if (args.Length == 0 || args[0] is not (Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PreparationCommitCommand or PartialActivationCommand or MqttPartialStopCommand or MqttPartialActivationCommand))
         { return await Xunit.Runner.InProc.SystemConsole.ConsoleRunner.Run(args); }
         if (!OperatingSystem.IsLinux())
         { throw new PlatformNotSupportedException("受控配置中断进程只在 Linux 验证。"); }
         var partialStop = args[0] == PartialStopCommand;
         var preInputActivation = args[0] == PreInputActivationCommand;
         var transactionWriting = args[0] == TransactionWritingCommand;
-        var durableCommit = args[0] == DurableCommitCommand;
+        var preparationCommit = args[0] == PreparationCommitCommand;
+        var durableCommit = args[0] is DurableCommitCommand or PreparationCommitCommand;
         var partialActivation = args[0] is PartialActivationCommand or MqttPartialActivationCommand;
         var mqttPartialStop = args[0] == MqttPartialStopCommand;
         var gate = Environment.GetEnvironmentVariable(GateDirectoryVariable);
@@ -89,7 +91,10 @@ internal static class ConfigurationInterruptionProcessHost
                     }
                     catch { database.Dispose(); throw; }
                 });
-                return; // 保留全部原输入/输出工厂，只装饰这一套数据库的原 AOP。
+                // 组合入口还使用下方既有准备工厂：冻结事务已返回且写锁已释放，允许真实 API 并发保存草稿。
+                // 原事务探针入口仍保留全部原输入/输出工厂，只装饰这一套数据库的原 AOP。
+                if (!preparationCommit)
+                { return; }
             }
             if (preInputActivation)
             {

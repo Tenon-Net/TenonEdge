@@ -78,6 +78,10 @@ public sealed partial class HostProcess : IAsyncDisposable
     public static HostProcess StartDurableCommitProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.DurableCommitCommand);
 
+    /// <summary>组合既有准备与持久 COMMIT 探针，先在冻结后保存并发草稿，再固定提交返回前窗口。</summary>
+    public static HostProcess StartPreparationCommitProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
+        StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PreparationCommitCommand);
+
     /// <summary>仅测试侧延后一个正式输入循环，并固定原激活事件的返回；其他输入、输出和事件处理保持原样。</summary>
     public static HostProcess StartPartialActivationProbe(string workingDirectory, string dataDirectory, IEnumerable<string> additionalArguments) =>
         StartControlledProbe(workingDirectory, dataDirectory, additionalArguments, ConfigurationInterruptionProcessHost.PartialActivationCommand);

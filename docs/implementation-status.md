@@ -42,7 +42,7 @@
 | T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
 | T3 | T3-04 连接草稿子项 | 部分实现，整项未完成 | Modbus/MQTT/HTTP 草稿 CRUD、并发/事务/权限与真实表单通过；未应用 | §2.103 |
-| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、两项人工回滚草稿写入后/持久 COMMIT 后的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.191 |
+| T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | 后续 | T3-04 剩余及 T3-05—T3-11 | 未完成 | 尚未形成完整可视化配置闭环 | 沿维护者授权继续；不含 T4/T5/G1 实施 |
 
 ## 2. 实现内容
@@ -3907,6 +3907,27 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 本批补的是**回滚已写入草稿、编辑索引和审计但COMMIT前**的真实进程软件中断及正常对照，与§2.190的COMMIT后窗口分开。没有在冻结后另存并发草稿，不把它算作“草稿版本变化而跳过替换”的真实进程中断验证；其他回滚窗口、慢盘/断电/fsync实物、最低浏览器及无JSON完整网页流程仍未验证，专用损坏快照恢复例外未批准。T3-06仍部分完成，不进入T3-07/08、T4/T5/G1；前端/API未变，不重跑或重计250Vitest/43Chromium基线，远端CI仍未执行。
 
+### 2.192 T3-06 回滚冻结后、提交前并发草稿的持久提交中断恢复（2026-10-13）
+
+承接 §2.191，基线 `95289a3`，补总设计 §7.4 / T3-06 / GW-10 / AT-10、AT-13、AT-28 / 功能 §6.3—§6.4 的一个软件子场景。新增 `DurableRollbackKeepsDraftEditedAfterFreezeBeforeCommit(bool interrupt)` 两行 Theory（强杀/正常放行）。既有进程内 `ManualRollbackSharesOwnershipPreservesConcurrentDraftAndKeepsOldPendingRecords` 已覆盖并发草稿，本批补真实进程的持久 COMMIT 后、上层返回前窗口，不声称该分支此前完全未测。
+
+- 新增**仅测试程序集**的 `PreparationCommitCommand` / `StartPreparationCommitProbe`，组合原准备工厂和原持久 COMMIT SQL/连接回调，不新增同步点实现。准备 gate 在冻结事务已返回后固定窗口，允许另一个真实认证请求保存草稿；放行后才静默并进入提交 gate。原独立准备/事务探针入口不变；不改产品、公开 API、产品启动注册、依赖、迁移或前端。
+- 通过认证 API 应用 r1/42、r2/84（周期60秒），原r1 HTTP在途请求不确认，r2记录已持久入队。人工回滚到r1冻结r3，准备期间确认effective/running=r2、previous=r1、pending=r3、旧输入仍running、回滚审计0；此时另存dirty126，草稿版本及输入编辑stamp都推进，完整输入JSON与原草稿不同。再次核对r3仍pending、COMMIT gate尚未进入、两条冻结记录不变。**与§2.190不同，dirty126在冻结后、COMMIT前保存**，不是提交后再编辑。
+- 放行准备后，原持久COMMIT gate独立读到effective/running=r3、previous=r2、pending空、回滚审计1、应用审计0，WAL/FULL/5000不变；上层仍committing/committed=null，内存r2输入已停、在途0，无r3投递。并发草稿的版本、完整输入JSON及编辑stamp均与提交前逐项相等，认证API仍显示126及changeCount=1。r3内容哈希仍等于r1，revisionFloor=3，未把并发修改混入回滚快照。
+- 强杀行在短暂queue.db写锁下固定原记录，真实SIGKILL、非零退出、不放行COMMIT gate；原产品Host启动前已确认r3提交及并发草稿保留。未经注入的原产品Host恢复r3/42而非dirty126；旧操作404、操作列表空，无自动重试、r4、自动回滚或notEffective事件，异常次数仅r3加1。原r1/r2冻结记录逐条按FIFO比较payload、sourceMessageId和Idempotency-Key，随后新采样42，源编号不同且ACK前核对持久revision3；并发草稿及编辑stamp持续保留。
+- 正常对照返回completed/committed=true/activated=true/code=runtime.rolledBack/**draftReplaced=false**（现有页面据此提示保留草稿，本批未重跑浏览器），仍运行r3/42。确认原HTTP socket，再补发旧r2记录与新r3采样；草稿126/version/完整输入JSON/stamp不变、changeCount=1，三版本异常次数全0。两行最终队列空、SIGTERM退出0、运行标记清除。
+
+验证（Ubuntu26.04/Linux x64、SDK10.0.401/runtime10.0.12、Python3.14.4；环境 `/tmp/tenonedge-rollback-concurrent-draft-environment.log`；下文 `...` 表示 `/tmp/tenonedge-rollback-concurrent-draft`）：
+
+- `dotnet format TenonEdge.sln --verify-no-changes --no-restore`、`dotnet build TenonEdge.sln -c Release --no-restore -m:1 -v minimal` 通过，0警告/错误（`...-format.log`、`...-build.log`）。首轮新Theory **2项通过、0失败/跳过**，约12秒，TRX `...-first-trx-92H2kG`；报告门禁通过（`...-first.log`、`...-first-verified.log`）。这是既有行为的新增回归，无产品行为RED或产品修复，不人为制造失败。普通 `dotnet tests/IntegrationTests/bin/Release/net10.0/TenonEdge.IntegrationTests.dll -assemblyInfo` 退出0，仍为原xUnit4.0.1/.NET10.0.12，不执行探针（`...-assembly-info.log`）。
+- 定向命令 `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter '(FullyQualifiedName~ConfigurationInterruptionProcessTests&(FullyQualifiedName~DurableCommitBeforeSubmitReturnsKeepsNewVersionAndFrozenDelivery|FullyQualifiedName~DurableRollbackCommitRestoresDraftAndKeepsFrozenDeliveries|DisplayName~transaction-writing|DisplayName~preparing|FullyQualifiedName~RollbackDraftWrittenBeforeCommitRecoversOldVersionAndDraft|FullyQualifiedName~DurableRollbackKeepsDraftEditedAfterFreezeBeforeCommit))|FullyQualifiedName~ManualRollbackSharesOwnershipPreservesConcurrentDraftAndKeepsOldPendingRecords' --logger trx --results-directory /tmp/tenonedge-rollback-concurrent-draft-targeted-trx-CPPKFl --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**13项通过、0失败/跳过**，约1分11秒；原准备2行+指针写事务2行+应用/回滚COMMIT后4行+草稿写事务2行+本批2行+原进程内并发回滚1项（`...-targeted.log`）。`python3 .github/scripts/verify-test-results.py <TRX目录> --require TenonEdge.IntegrationTests` 门禁通过（`...-targeted-verified.log`）。
+- 同一命令将过滤条件改为 `FullyQualifiedName~DurableRollbackKeepsDraftEditedAfterFreezeBeforeCommit`，仅重复新增Theory **3轮各2项、共6次通过，0失败/跳过**，约11—12秒/轮。独立TRX目录列表 `...-repeat-trx-paths`，逐轮日志 `...-repeat{1,2,3}.log` 及门禁 `...-repeat{1,2,3}-verified.log`；不称完整矩阵重复三轮。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore -m:1 --logger trx --results-directory /tmp/tenonedge-rollback-concurrent-draft-full-trx-X6kDPX --blame-hang-timeout 5m --blame-hang-dump-type none -v minimal`：**1258单元+1385集成=2643项通过，0失败/跳过**，集成约12分4秒（`...-full.log`）。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-rollback-concurrent-draft-full-trx-X6kDPX --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 门禁通过（`...-full-verified.log`）。本类35项＝16强杀（12在线应用+1应用完成后的故障/积存窗口+3人工回滚窗口/分支）+12正常释放+1停止超时恢复+5同进程启动异常行+1身份辅助回归，不代表完整矩阵。
+- `python3 /tmp/tenonedge-rollback-concurrent-draft-audit.py --expected 41 --process-expected 40 <3个重复TRX目录> /tmp/tenonedge-rollback-concurrent-draft-full-trx-X6kDPX` 只读核对：**41次本类执行通过，其中40次真实进程，本批并发草稿强杀4次/正常释放4次**；准备与COMMIT检查点顺序、恢复及正常标记符合。40数据+37gate目录已删除，117个去重管理端口、26个去重Broker端口、8个本批新增HTTP端口均不再监听，无对应进程或测试标签容器（`...-audit-final.log`）。只审计本类及新增场景HTTP端口，不将其他HTTP端口算入；各类端口分别去重，集合可能重叠，不能相加当作全局去重。审计不删除目录、终止进程或删除容器。
+- 同一脚本分别审计首轮（`--expected 2 --process-expected 2`）与定向（`--expected 12 --process-expected 12`）TRX：首轮2数据+2gate目录已删除、6管理+2新增HTTP端口关闭；定向12数据+12gate目录已删除、36管理+2新增HTTP端口关闭，无对应进程或测试标签容器（`...-first-audit.log`、`...-targeted-audit.log`）。定向资源审计只算12项本类进程测试，不把另一项进程内测试算作进程审计。首轮、全量前后及提交前源码SHA-256一致（`...-source.sha256`、`...-first-source-verified.log`、`...-source-before-full.log`、`...-source-after-full.log`、`...-source-before-commit.log`）；之后只整理文档，`git diff --check`通过。按既有授权本地提交，不推送或发布。
+
+本批仅验证**冻结后另存草稿、人工回滚提交跳过草稿替换时的COMMIT后进程中断**及正常对照。并发保留分支的其他中断点、其他回滚窗口、慢盘/断电/fsync实物、最低浏览器和无JSON完整网页流程仍未验证；专用损坏快照恢复例外未批准。T3-06仍部分完成，不进入T3-07/08、T4/T5/G1；前端/API未变，不重跑或重计250Vitest/43Chromium基线，远端CI未执行。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -3957,9 +3978,10 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | AT-14 / AT-26 | T1-06 身份隔离与暂停 | 通过（本地核心子集）：三类隔离、旧记录不阻塞新身份、手动暂停重启保持、恢复与权限审计 | §2.19、§4.14 | 网页、迁移及平台身份：T3/T4 |
 | AT-12 / GW-14 | T1-06 配额与保留期 | 通过（本地核心子集）：目标条数/字节与全局字节上限、逐目标拒绝、隔离占用、过期计数、异常时间保留及事务回滚 | §2.19、§4.14 | 磁盘保护、资源压力与完整退出：T1-07/08 |
 | V-14 | 系统时钟同步检测 | 后端子场景通过（Linux x64 原生及受限 Docker）：只读内核检测、三状态分类/API、单调缓存、状态变化事件及无人访问周期检测 | §2.20 | 诊断网页 T3；ARM64 未验证；T1-07 后端交付见 §2.20 |
-| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 应用/回滚及提交后运行故障强杀子场景 | 十二项在线应用、一项应用完成后故障/积存窗口及两项人工回滚草稿写入后/持久COMMIT后真实强杀子场景通过（本地软件，含两路 MQTT 输入及 MQTT 输出共用客户端、HTTP 双目标；测试侧工厂/原事件包装及原 SQL/连接回调固定窗口）；另补共享 MQTT 停止超时同进程恢复和部分激活共享启动屏障、单次/连续三次输入启动异常及单条/三条未确认积存FIFO（含连续故障组合及原产品宿主强杀恢复）；最终2641项后端回归通过，既有端口冲突及测试辅助错误失败均保留，不代表完整矩阵 | §2.172—§2.191 | 其他人工回滚窗口、冻结后提交前并发编辑保留分支的强杀恢复、其他共享协议、MQTT其他停止/激活、大积存/溢出、无限持续故障、任意数量、断电与完整网页流程 |
-| AT-10 / AT-13 / AT-28 / GW-10 / 功能 §6.4 | 人工回滚持久COMMIT后、上层方法返回前 | 强杀及正常对照两行通过：回滚到r1生成r3，指针/审计/草稿42原子提交；原产品Host加载r3，保留提交后dirty126及旧r1/42+r2/84冻结FIFO/身份；新r3采样42，异常次数仅r3加1，无r4或自动回滚；原应用两行同时回归 | §2.190 | COMMIT前草稿写入窗口见§2.191；冻结后提交前并发编辑跳过草稿替换的强杀恢复、实物/完整网页未验证 |
-| AT-10 / AT-13 / AT-28 / GW-10 / 功能 §6.4 | 人工回滚草稿已替换但COMMIT前 | 强杀及正常对照两行通过：写事务r3/草稿42/r1编辑stamp/审计1，外部仍r2/pending3/原草稿84及版本/stamp/审计0；原产品Host恢复r2并标记r3中断，原草稿完整输入JSON及编辑stamp保留；旧冻结FIFO/身份不变，新采样84；正常放行提交r3/42 | §2.191 | 冻结后提交前并发编辑保留分支的强杀恢复、其他事务窗口及实物/完整网页未验证 |
+| AT-10 / AT-13 / AT-28 / GW-10 | T3-06 应用/回滚及提交后运行故障强杀子场景 | 十二项在线应用、一项应用完成后故障/积存窗口及三项人工回滚草稿写入后/持久COMMIT后（含并发草稿保留分支）真实强杀子场景通过（本地软件，含两路 MQTT 输入及 MQTT 输出共用客户端、HTTP 双目标；测试侧工厂/原事件包装及原 SQL/连接回调固定窗口）；另补共享 MQTT 停止超时同进程恢复和部分激活共享启动屏障、单次/连续三次输入启动异常及单条/三条未确认积存FIFO（含连续故障组合及原产品宿主强杀恢复）；最终2643项后端回归通过，既有端口冲突及测试辅助错误失败均保留，不代表完整矩阵 | §2.172—§2.192 | 其他人工回滚窗口、并发保留分支的其他中断点、其他共享协议、MQTT其他停止/激活、大积存/溢出、无限持续故障、任意数量、断电与完整网页流程 |
+| AT-10 / AT-13 / AT-28 / GW-10 / 功能 §6.4 | 人工回滚持久COMMIT后、上层方法返回前 | 强杀及正常对照两行通过：回滚到r1生成r3，指针/审计/草稿42原子提交；原产品Host加载r3，保留提交后dirty126及旧r1/42+r2/84冻结FIFO/身份；新r3采样42，异常次数仅r3加1，无r4或自动回滚；原应用两行同时回归 | §2.190 | COMMIT前草稿写入窗口见§2.191；冻结后提交前并发编辑保留见§2.192；其他窗口、实物/完整网页未验证 |
+| AT-10 / AT-13 / AT-28 / GW-10 / 功能 §6.4 | 人工回滚草稿已替换但COMMIT前 | 强杀及正常对照两行通过：写事务r3/草稿42/r1编辑stamp/审计1，外部仍r2/pending3/原草稿84及版本/stamp/审计0；原产品Host恢复r2并标记r3中断，原草稿完整输入JSON及编辑stamp保留；旧冻结FIFO/身份不变，新采样84；正常放行提交r3/42 | §2.191 | 并发编辑保留分支的COMMIT后恢复见§2.192；其他事务窗口及实物/完整网页未验证 |
+| AT-10 / AT-13 / AT-28 / GW-10 / 功能 §6.4 | 回滚冻结后提交前并发编辑，COMMIT后强杀 | 强杀及正常对照两行通过：准备窗口经认证API保存dirty126，r3持久提交后草稿版本/完整输入JSON/编辑stamp均保留；原产品Host恢复r3/42、旧冻结FIFO/身份不变、新源编号，异常次数仅r3加1；正常完成draftReplaced=false，changeCount仍1 | §2.192 | 并发保留分支其他中断点、实物/完整网页未验证 |
 | AT-13 / AT-25 / AT-28 / GW-10 / T3-06 | 共享 MQTT 输入启动异常、连续故障与单条/三条未确认积存及强杀恢复 | 六项软件子场景（五行同进程Theory＋一项强杀Fact）通过（测试包装在原循环前注入异常）：原释放/监督退避重建；积存不错误确认/接管、不重新发布，首条捕获DUP=true、双目标FIFO；无积存连续三次故障时快输入继续扇出；三次故障与三条积存组合中跨后两次异常仍不接管，第四实例恢复86→87→88；相同未接管窗口强杀后原产品宿主恢复FIFO、dirty保留、r2异常次数仅1；r2不自动回滚 | §2.184—§2.189 | 大积存/溢出、其他故障/积存数量组合、无限持续故障、真实适配器异常、其他协议/输入数量及完整网页流程 |
 | FS-02 / AT-13 / T3-06 | 应用停止超时不重复采集 | 共享 MQTT 双输入/双目标子场景通过（真实软件）：原 5 秒期限，原循环未退出不重建连接，退出后同进程恢复 r1、双目标原样补发，超时事件一次 | §2.181 | 其他协议/单元组合、实际设备与完整矩阵未验证 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
