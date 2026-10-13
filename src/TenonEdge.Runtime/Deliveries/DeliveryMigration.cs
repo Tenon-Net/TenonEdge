@@ -31,7 +31,7 @@ public static class DeliveryMigrationErrors
 public sealed class DeliveryMigrationCommand
 {
     private DeliveryMigrationCommand(string configStoreId, Guid operationId, long sourceConnectionId, long targetConnectionId,
-        string fingerprint, string summary, string? oldFingerprint, IReadOnlyList<DeliveryMigrationItem>? items)
+        string fingerprint, string summary, string? oldFingerprint, IReadOnlyList<DeliveryMigrationItem>? items, DeliveryMigrationHold? hold = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configStoreId);
         if (operationId == Guid.Empty)
@@ -55,9 +55,12 @@ public sealed class DeliveryMigrationCommand
         Summary = summary;
         OldFingerprint = oldFingerprint;
         Items = items is null ? null : Array.AsReadOnly(items.OrderBy(item => item.Sequence).ToArray());
+        Hold = hold;
         // 规范化元数据，不含报文/秘密。相同操作编号只能重放同一命令，不能扩大选择或改接收方。
-        RequestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
-        { Version = 1, ConfigStoreId, OperationId, SourceConnectionId, TargetConnectionId, Fingerprint, Summary, OldFingerprint, Items })));
+        RequestHash = Convert.ToHexString(SHA256.HashData(hold is null ? JsonSerializer.SerializeToUtf8Bytes(new
+        { Version = 1, ConfigStoreId, OperationId, SourceConnectionId, TargetConnectionId, Fingerprint, Summary, OldFingerprint, Items })
+            : JsonSerializer.SerializeToUtf8Bytes(new
+            { Version = 2, ConfigStoreId, OperationId, SourceConnectionId, TargetConnectionId, Fingerprint, Summary, OldFingerprint, IntentId = hold.IntentId })));
     }
 
     // B：调用方负责有界选择；这里不截断、不隐式拆批。允许发送结果落库后的状态改变，不允许换代。
@@ -76,6 +79,13 @@ public sealed class DeliveryMigrationCommand
         return new(configStoreId, operationId, connectionId, connectionId, fingerprint, summary, oldFingerprint, null);
     }
 
+    /// <summary>只执行该意图已隔离的范围；新的尝试编号可在拒绝后重试，不重复/扩大已提交的同一次尝试。</summary>
+    public static DeliveryMigrationCommand ForIntent(DeliveryMigrationHold hold, Guid operationId, string fingerprint, string summary)
+    {
+        ArgumentNullException.ThrowIfNull(hold);
+        return new(hold.ConfigStoreId, operationId, hold.ConnectionId, hold.ConnectionId, fingerprint, summary, hold.OldFingerprint, null, hold);
+    }
+
     public string ConfigStoreId { get; }
     public Guid OperationId { get; }
     public long SourceConnectionId { get; }
@@ -85,6 +95,7 @@ public sealed class DeliveryMigrationCommand
     public string? OldFingerprint { get; }
     public IReadOnlyList<DeliveryMigrationItem>? Items { get; }
     public string RequestHash { get; }
+    public DeliveryMigrationHold? Hold { get; }
 }
 
 internal sealed class MigrateDeliveriesRequest(DeliveryMigrationCommand command) : WriteRequest

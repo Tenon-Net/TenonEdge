@@ -4,6 +4,7 @@ using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
+using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 
@@ -166,15 +167,20 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
     });
 
     /// <summary>种子导入/启动回滚的接收方检查；T3 在线应用还须在静默后复核。</summary>
-    public string? TargetChangeProblem(RuntimePlanDocument next)
+    public string? TargetChangeProblem(RuntimePlanDocument next, IReadOnlyList<DeliveryMigrationIntentDraft>? migrationIntents = null)
     {
         var effective = ReadPointers().EffectiveRevision;
         if (effective is null || Load(effective.Value) is not { } snapshot)
         {
+            if (migrationIntents is { Count: > 0 })
+            { throw new InvalidOperationException("迁移意图需要原有效配置。"); }
             return null;
         }
 
-        return TargetChangeBlocks(RuntimeSnapshotDocument.ReadExecutionPlan(snapshot), next, CancellationToken.None).Length == 0 ? null
+        var previous = RuntimeSnapshotDocument.ReadExecutionPlan(snapshot);
+        var storeId = database.Client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId)?.ConfigStoreId;
+        var allowed = ValidateMigrationIntents(previous, next, migrationIntents ?? [], storeId);
+        return !TargetChangeBlocks(previous, next, CancellationToken.None).Any(block => !allowed.Contains(block.ConnectionId)) ? null
             : "存在待发或失败区记录，不能删除目标或修改接收方/Topic/路径；须先发送完、显式清理或迁移。";
     }
 
@@ -203,8 +209,10 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
     /// 人工回滚同时条件替换草稿；并发编辑使替换跳过，不阻止有效版本提交。
     /// </summary>
     /// <returns>是否替换了草稿，不表示提交成败；普通应用或保留并发草稿时为 false，提交失败抛异常。</returns>
-    public bool Commit(long revision, AuditEntry? auditEntry, string? seedHash = null, bool markRunning = false, string? replaceDraftVersion = null)
+    public bool Commit(long revision, AuditEntry? auditEntry, string? seedHash = null, bool markRunning = false, string? replaceDraftVersion = null,
+        IReadOnlyList<DeliveryMigrationIntentDraft>? migrationIntents = null)
     {
+        var intents = migrationIntents?.ToArray() ?? [];
         var frozen = replaceDraftVersion is null ? null : Load(revision) ?? throw new KeyNotFoundException("配置版本不存在。");
         var replacement = frozen is null ? null : new ConfigurationReplacement(RequiredDraft(frozen));
         return database.InTransaction(client =>
@@ -230,10 +238,16 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
 
             var checkpoint = RuntimeSnapshotDocument.ReadForExecution(snapshot);
             var document = checkpoint.Plan;
-            if (TargetChangeProblem(document) is { } problem)
-            {
-                throw new InvalidOperationException(problem);
-            }
+            var previous = state.EffectiveRevision is { } prior ? RuntimeSnapshotDocument.ReadExecutionPlan(RequiredSnapshot(client, prior)) : null;
+            var allowed = ValidateMigrationIntents(previous, document, intents, state.ConfigStoreId);
+            if (intents.Length > 0 && (snapshot.Origin != RuntimeSnapshotOrigins.Apply || !markRunning ||
+                auditEntry?.Action != AuditActions.SnapshotApplied || auditEntry.Result != AuditResults.Success ||
+                string.IsNullOrWhiteSpace(auditEntry.AccountName)))
+            { throw new InvalidOperationException("迁移意图只能随有操作人和审计的在线应用提交，不能隐式用于回滚或种子。"); }
+            if (previous is not null && TargetChangeBlocks(previous, document, CancellationToken.None).Any(block => !allowed.Contains(block.ConnectionId)))
+            { throw new InvalidOperationException("存在未获迁移确认的接收方/Topic/路径变更或目标删除。"); }
+            if (intents.Length > 0)
+            { DeliveryMigrationStore.RegisterIntents(client, intents, revision, state.EffectiveRevision!.Value, auditEntry!, time.GetUtcNow().ToUnixTimeMilliseconds(), audit); }
 
             credentials.InvalidateChangedRecipients(client, document);
             httpCredentials.InvalidateChangedRecipients(client, document);

@@ -8,7 +8,7 @@ namespace TenonEdge.Host.Features.Deliveries;
 
 /// <summary>执行尝试与开始/结果审计。两个库从不共享活跃事务；queue.db 完成记录是实际结果的唯一依据。
 /// 不执行迁移、不负责权限/选择准备；形式 A 的等待意图仍须随配置事务另外登记。</summary>
-internal sealed class DeliveryMigrationStore(ConfigDatabase database, GatewayIdentity identity, DeliveryCache queue, AuditTrail audit, TimeProvider time)
+internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, GatewayIdentity identity, DeliveryCache queue, AuditTrail audit, TimeProvider time)
 {
     public void Begin(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed, string account, string? sourceIp)
     {

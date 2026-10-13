@@ -168,9 +168,10 @@ public sealed class ApplicationSenderPauseTests
             var quiet = await quieting;
             Assert.True(quiet.Succeeded);
             await using var prepared = runtime.Prepare(Plan(2, next));
-            // Runtime-level caller contract only: emulate the coordinator's post-COMMIT isolation using the real writer.
-            // This is NOT a config.db intent/COMMIT test and does not claim crash recovery.
-            Assert.True((await runtime.Deliveries.ReconcileAsync(new Dictionary<long, string> { [1] = "new" }, false, Token)).Committed);
+            // Runtime-level caller contract only; no config.db COMMIT or crash is simulated here.
+            var hold = new DeliveryMigrationHold(RuntimeTesting.ConfigStoreId, Guid.NewGuid(), 1, "old");
+            Assert.True((await runtime.HoldMigrationAsync(hold, quiet, Token)).Committed);
+            Assert.Equal(1, runtime.Deliveries.ReadMigrationHold(hold.IntentId)!.HeldRecords);
             await runtime.ActivateCommittedAsync(prepared, quiet);
             Assert.Equal(2, runtime.ActiveRevision);
             Assert.True((await runtime.Deliveries.EnqueueAsync([Draft(1, "fresh", "new")], Token)).Committed);
@@ -261,7 +262,8 @@ public sealed class ApplicationSenderPauseTests
             old.FailSharing = false;
             var retryQuiet = await runtime.QuiesceInputsAsync(Token); // The prior barrier must survive this new lifecycle operation.
             Assert.True(retryQuiet.Succeeded);
-            Assert.True((await runtime.Deliveries.ReconcileAsync(new Dictionary<long, string> { [1] = "new" }, false, Token)).Committed);
+            var hold = new DeliveryMigrationHold(RuntimeTesting.ConfigStoreId, Guid.NewGuid(), 1, "old");
+            Assert.True((await runtime.HoldMigrationAsync(hold, retryQuiet, Token)).Committed);
             await using var retry = runtime.Prepare(Plan(2, next));
             await runtime.RetryEffectiveAsync(retry, retryQuiet);
             Assert.True((await runtime.Deliveries.EnqueueAsync([Draft(1, "fresh", "new")], Token)).Committed);
@@ -341,6 +343,34 @@ public sealed class ApplicationSenderPauseTests
             target.Result.TrySetResult(new(OutputSendStatus.Ack));
             await Until(() => target.Messages.Count == 2);
             Assert.Equal(1, target.Creates);
+        }
+        finally { target.Release(); }
+    }
+
+    [Theory]
+    [InlineData("running")]
+    [InlineData("ordinaryQuiet")]
+    [InlineData("copiedQuiet")]
+    public async Task OnlineIsolationRequiresOriginalSuccessfulQuiescenceAndSelectedSenderBarrier(string invalid)
+    {
+        using var data = TemporaryDirectory.Create();
+        var target = new Target(1, false);
+        await using var runtime = Create(data.Path, new InputFactory(), target);
+        await Start(runtime, target);
+        try
+        {
+            target.Release();
+            RuntimeQuiescenceResult? quiet = invalid switch
+            {
+                "ordinaryQuiet" => await runtime.QuiesceInputsAsync(Token),
+                "copiedQuiet" => (await runtime.QuiesceInputsAsync([1], Token)) with { },
+                _ => null,
+            };
+            var hold = new DeliveryMigrationHold(RuntimeTesting.ConfigStoreId, Guid.NewGuid(), 1, "old");
+            Assert.Equal(DeliveryMigrationErrors.NotQuiescent, (await runtime.HoldMigrationAsync(hold, quiet, Token)).Error);
+            Assert.Null(runtime.Deliveries.ReadMigrationHold(hold.IntentId));
+            Assert.Equal(2, runtime.Deliveries.ReadPending(1, 0, 10).Count);
+            Assert.Empty(runtime.Deliveries.ReadQuarantined(1, 0, 10));
         }
         finally { target.Release(); }
     }

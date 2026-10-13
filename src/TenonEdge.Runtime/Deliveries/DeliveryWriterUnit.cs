@@ -343,6 +343,8 @@ internal sealed partial class DeliveryWriterUnit(
             case MigrateDeliveriesRequest migration:
                 return queue.Store.MigrateDeliveries(insert.Connection!, insert.Transaction!, migration.Command, createdAt,
                     queue.StorageProtection.Status.RejectNewRecords);
+            case HoldMigrationRequest hold:
+                return queue.Store.HoldMigration(insert.Connection!, insert.Transaction!, hold.Command, createdAt);
             default:
                 throw new InvalidOperationException($"未知的写入请求 {request.GetType().Name}。");
         }

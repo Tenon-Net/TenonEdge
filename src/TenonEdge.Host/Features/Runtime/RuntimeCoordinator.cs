@@ -167,6 +167,7 @@ internal sealed partial class RuntimeCoordinator(
         {
             // 核对发生在启动任何发送者之前；仅补记结果，不重放上次已开始的人工操作。
             migrations.RecoverInterrupted();
+            await HoldWaitingMigrationIntentsAsync();
             decision = await EvaluateAsync();
         }
         catch (Exception exception) when (IsStorageError(exception))

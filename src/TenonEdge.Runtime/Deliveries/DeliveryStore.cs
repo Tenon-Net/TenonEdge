@@ -18,7 +18,7 @@ namespace TenonEdge.Runtime.Deliveries;
 /// </summary>
 internal sealed partial class DeliveryStore
 {
-    public const int SchemaVersion = 7;
+    public const int SchemaVersion = 8;
 
     public const string ExpectedJournalMode = "wal";
 
@@ -123,6 +123,22 @@ internal sealed partial class DeliveryStore
             affected_records INTEGER NOT NULL CHECK (affected_records >= 0),
             completed_at INTEGER NOT NULL,
             UNIQUE (config_store_id, operation_id)
+        );
+        """,
+        // 版本 8（T3-08）：形式 A 等待隔离的持久归属与原状态；隔离收据防止重启时扩大同一意图的范围。
+        """
+        ALTER TABLE delivery ADD COLUMN migration_intent_id TEXT;
+        ALTER TABLE delivery ADD COLUMN migration_previous_state TEXT CHECK (migration_previous_state IN ('pending', 'failed', 'quarantined'));
+        CREATE INDEX ix_delivery_migration_intent ON delivery (migration_intent_id) WHERE migration_intent_id IS NOT NULL;
+        CREATE TABLE delivery_migration_hold (
+            config_store_id TEXT NOT NULL,
+            intent_id TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            connection_id INTEGER NOT NULL,
+            old_fingerprint TEXT NOT NULL,
+            held_records INTEGER NOT NULL CHECK (held_records >= 0),
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (config_store_id, intent_id)
         );
         """,
     ];

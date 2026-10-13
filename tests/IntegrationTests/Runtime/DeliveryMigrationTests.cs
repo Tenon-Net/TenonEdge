@@ -442,7 +442,7 @@ public sealed class DeliveryMigrationTests
             before = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
             await runtime.StopAsync(Token);
         }
-        Sql(data.Path, "DROP TABLE delivery_migration_receipt; PRAGMA user_version=6;");
+        Sql(data.Path, "DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; PRAGMA user_version=6;");
         var cache = RuntimeTesting.CreateDeliveryCache(data.Path);
         try
         {
@@ -451,7 +451,7 @@ public sealed class DeliveryMigrationTests
             Assert.Equal(before.ByteSize, after.ByteSize);
             Assert.Null(after.MigrationId);
             Assert.Null(cache.ReadMigrationReceipt(Guid.NewGuid()));
-            Assert.Equal(7, cache.GetStatus().Store!.SchemaVersion);
+            Assert.Equal(8, cache.GetStatus().Store!.SchemaVersion);
             Assert.Equal(0L, Scalar(data.Path, "SELECT COUNT(*) FROM delivery_migration_receipt"));
         }
         finally { cache.Store.ClearReadPool(); }

@@ -74,9 +74,10 @@ internal sealed partial class DeliveryStore
         command.Parameters.AddWithValue("$summary", request.Summary);
         command.CommandText = """
             UPDATE delivery SET connection_id = $target, fingerprint = $fingerprint, fingerprint_summary = $summary,
-                state = CASE WHEN state = 'failed' THEN 'failed' ELSE 'pending' END,
+                state = (SELECT result_state FROM migration_selection WHERE seq = delivery.seq),
                 failure_count = 0, migration_id = $migration, quarantine_reason = NULL,
-                failed_at = CASE WHEN state = 'failed' THEN failed_at ELSE NULL END, last_retried_at = NULL,
+                failed_at = CASE WHEN (SELECT result_state FROM migration_selection WHERE seq = delivery.seq) = 'failed' THEN failed_at ELSE NULL END,
+                last_retried_at = NULL, migration_intent_id = NULL, migration_previous_state = NULL,
                 byte_size = (SELECT new_bytes FROM migration_selection WHERE seq = delivery.seq)
             WHERE seq IN (SELECT seq FROM migration_selection);
             """;
@@ -103,8 +104,8 @@ internal sealed partial class DeliveryStore
                 COUNT(*) FILTER (WHERE d.connection_id = $target AND d.state = 'pending'),
                 COALESCE(SUM(d.byte_size) FILTER (WHERE d.connection_id = $target AND d.state = 'pending'), 0),
                 COALESCE(SUM(d.byte_size) FILTER (WHERE d.state <> 'failed'), 0),
-                COALESCE(SUM(s.new_bytes) FILTER (WHERE d.state <> 'failed'), 0),
-                COUNT(*) FILTER (WHERE d.state = 'failed'),
+                COALESCE(SUM(s.new_bytes) FILTER (WHERE s.result_state <> 'failed'), 0),
+                COUNT(*) FILTER (WHERE s.result_state = 'failed'),
                 COUNT(*) FILTER (WHERE d.connection_id = $target AND d.state = 'failed')
             FROM migration_selection s JOIN delivery d ON d.seq = s.seq;
             """;
@@ -170,17 +171,37 @@ internal sealed partial class DeliveryStore
         command.Parameters.Clear();
         command.CommandText = """
             CREATE TEMP TABLE IF NOT EXISTS migration_selection (seq INTEGER PRIMARY KEY, delivery_id TEXT NOT NULL UNIQUE,
-                fingerprint TEXT NOT NULL, previous_migration_id INTEGER, new_bytes INTEGER NOT NULL DEFAULT 0);
+                fingerprint TEXT NOT NULL, previous_migration_id INTEGER, new_bytes INTEGER NOT NULL DEFAULT 0, result_state TEXT NOT NULL DEFAULT 'pending');
             DELETE FROM migration_selection;
             """;
         command.ExecuteNonQuery();
+        if (request.Hold is { } hold)
+        {
+            var receipt = ReadMigrationHold(command, hold.ConfigStoreId, hold.IntentId);
+            if (receipt?.RequestHash != hold.RequestHash)
+            { return false; }
+            command.Parameters.Clear();
+            command.Parameters.AddWithValue("$intent", hold.IntentId.ToString("D"));
+            command.Parameters.AddWithValue("$source", hold.ConnectionId);
+            command.Parameters.AddWithValue("$old", hold.OldFingerprint);
+            command.CommandText = """
+                INSERT INTO migration_selection (seq, delivery_id, fingerprint, previous_migration_id, result_state)
+                SELECT seq, delivery_id, fingerprint, migration_id,
+                    CASE WHEN migration_previous_state = 'failed' THEN 'failed' ELSE 'pending' END
+                FROM delivery WHERE migration_intent_id = $intent AND connection_id = $source AND fingerprint = $old
+                    AND state = 'quarantined' AND quarantine_reason = 'targetChanged';
+                """;
+            command.ExecuteNonQuery();
+            return true;
+        }
         command.Parameters.AddWithValue("$source", request.SourceConnectionId);
         if (request.OldFingerprint is not null)
         {
             command.Parameters.AddWithValue("$old", request.OldFingerprint);
             command.CommandText = """
-                INSERT INTO migration_selection (seq, delivery_id, fingerprint, previous_migration_id)
-                SELECT seq, delivery_id, fingerprint, migration_id FROM delivery WHERE connection_id = $source AND fingerprint = $old
+                INSERT INTO migration_selection (seq, delivery_id, fingerprint, previous_migration_id, result_state)
+                SELECT seq, delivery_id, fingerprint, migration_id, CASE WHEN state = 'failed' THEN 'failed' ELSE 'pending' END
+                FROM delivery WHERE connection_id = $source AND fingerprint = $old AND migration_intent_id IS NULL
                     AND (state IN ('pending', 'failed') OR (state = 'quarantined' AND quarantine_reason = 'targetChanged'));
                 """;
             command.ExecuteNonQuery();
@@ -210,7 +231,11 @@ internal sealed partial class DeliveryStore
         if (Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture) != 0)
         { return false; }
         // ACK/保留期清理后已不存在的记录不参与实际迁移；人工重试换 seq 或另一迁移换代不是“已删除”。
-        command.CommandText = "DELETE FROM migration_selection WHERE NOT EXISTS (SELECT 1 FROM delivery d WHERE d.seq = migration_selection.seq)";
+        command.CommandText = """
+            DELETE FROM migration_selection WHERE NOT EXISTS (SELECT 1 FROM delivery d WHERE d.seq = migration_selection.seq);
+            UPDATE migration_selection SET result_state = (
+                SELECT CASE WHEN d.state = 'failed' THEN 'failed' ELSE 'pending' END FROM delivery d WHERE d.seq = migration_selection.seq);
+            """;
         command.ExecuteNonQuery();
         return true;
     }

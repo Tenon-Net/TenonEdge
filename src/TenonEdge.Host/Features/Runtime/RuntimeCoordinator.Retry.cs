@@ -32,6 +32,7 @@ internal sealed partial class RuntimeCoordinator
             }
             // 准备/静默期间配置存储被修复或变化时，不激活旧的检查结果。
             _ = versions.ReadRetryCheckpoint(revision, planHash);
+            await HoldWaitingMigrationIntentsAsync(quiet);
             AdvanceApplication(operationId, RuntimeApplicationStage.Activating, revision);
             if (quiet.Revision is null)
             { await runtime.ActivateAsync(prepared); }

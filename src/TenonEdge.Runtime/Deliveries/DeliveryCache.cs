@@ -174,6 +174,12 @@ public sealed class DeliveryCache
     /// <summary>当前配置库归属下的持久完成记录；供宿主同步迁移状态/审计，不启动或重放迁移。</summary>
     public DeliveryMigrationReceipt? ReadMigrationReceipt(Guid operationId) => Store.ReadMigrationReceipt(operationId);
 
+    public DeliveryMigrationHoldReceipt? ReadMigrationHold(Guid intentId) => Store.ReadMigrationHold(intentId);
+
+    // 仅原运行时的提交后屏障或启动前隔离入口调用；不能在配置提交之前写入此状态。
+    internal Task<DeliveryWriteResult> HoldMigrationAsync(DeliveryMigrationHold command) =>
+        SubmitAsync(new HoldMigrationRequest(command), CancellationToken.None);
+
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>
         SubmitAsync(new QuarantineRequest(seq, reason), token);
 

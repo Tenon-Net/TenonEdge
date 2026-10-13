@@ -289,5 +289,27 @@ internal static class ConfigMigrations
             """,
             "CREATE INDEX ix_delivery_migration_status_started ON delivery_migration (status, started_at)",
         ]),
+        new(19, "delivery_migration_intent", [
+            """
+            CREATE TABLE delivery_migration_intent (
+                intent_id TEXT NOT NULL PRIMARY KEY,
+                config_store_id TEXT NOT NULL,
+                revision INTEGER NOT NULL,
+                source_revision INTEGER NOT NULL,
+                connection_id INTEGER NOT NULL,
+                protocol TEXT NOT NULL CHECK(protocol IN ('mqtt', 'http')),
+                old_fingerprint TEXT NOT NULL,
+                source_summary TEXT NOT NULL,
+                target_recipient TEXT NOT NULL,
+                account_name TEXT NOT NULL,
+                source_ip TEXT,
+                registered_at INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('waiting', 'rejected', 'completed')),
+                last_operation_id TEXT,
+                UNIQUE(revision, connection_id)
+            )
+            """,
+            "CREATE INDEX ix_delivery_migration_intent_waiting ON delivery_migration_intent(status, revision, connection_id)",
+        ]),
     ];
 }
