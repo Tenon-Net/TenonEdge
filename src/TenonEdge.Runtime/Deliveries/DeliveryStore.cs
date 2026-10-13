@@ -18,7 +18,7 @@ namespace TenonEdge.Runtime.Deliveries;
 /// </summary>
 internal sealed partial class DeliveryStore
 {
-    public const int SchemaVersion = 6;
+    public const int SchemaVersion = 7;
 
     public const string ExpectedJournalMode = "wal";
 
@@ -109,6 +109,21 @@ internal sealed partial class DeliveryStore
         // 版本 6（T3-08）：人工重试单独刷新待发保留期，不覆盖首次创建时间或原报文。
         """
         ALTER TABLE delivery ADD COLUMN last_retried_at INTEGER;
+        """,
+        // 版本 7（T3-08）：业务迁移完成记录。操作 UUID 来自持久意图；队列编号不随 config.db 恢复而复用。
+        // 与所选记录同事务提交，跨库状态/审计恢复时以此为准；不能在未同步 config.db 时删除。
+        """
+        CREATE TABLE delivery_migration_receipt (
+            migration_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_store_id TEXT NOT NULL,
+            operation_id TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            source_connection_id INTEGER NOT NULL,
+            target_connection_id INTEGER NOT NULL,
+            affected_records INTEGER NOT NULL CHECK (affected_records >= 0),
+            completed_at INTEGER NOT NULL,
+            UNIQUE (config_store_id, operation_id)
+        );
         """,
     ];
 

@@ -159,6 +159,12 @@ public sealed class DeliveryCache
     internal Task<DeliveryWriteResult> ClearPendingAsync(long connectionId) =>
         SubmitAsync(new ClearPendingRequest(connectionId), CancellationToken.None);
 
+    // 生命周期所有者必须持有源与目标的暂停租约直至提交完成；请求进入写者后不取消等待。
+    internal Task<DeliveryWriteResult> MigrateAsync(DeliveryMigrationCommand command) =>
+        SubmitAsync(new MigrateDeliveriesRequest(command), CancellationToken.None);
+
+    internal DeliveryMigrationReceipt? ReadMigrationReceipt(Guid operationId) => Store.ReadMigrationReceipt(operationId);
+
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>
         SubmitAsync(new QuarantineRequest(seq, reason), token);
 

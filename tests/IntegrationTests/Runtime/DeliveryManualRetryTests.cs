@@ -232,13 +232,13 @@ public sealed class DeliveryManualRetryTests
             await runtime.Deliveries.EnqueueAsync([Draft(1)], Token);
             await runtime.StopAsync(Token);
         }
-        Sql(data.Path, "ALTER TABLE delivery DROP COLUMN last_retried_at; PRAGMA user_version=5;");
+        Sql(data.Path, "DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; PRAGMA user_version=5;");
         var reopened = RuntimeTesting.CreateDeliveryCache(data.Path);
         try
         {
             var record = Assert.Single(reopened.ReadPending(1, 0, 10));
             Assert.Null(record.LastRetriedAt);
-            Assert.Equal(6, reopened.Store.Info!.SchemaVersion);
+            Assert.Equal(7, reopened.Store.Info!.SchemaVersion);
             Assert.Equal("{\"frozen\":true}", record.ProtocolMetadata);
         }
         finally { reopened.Store.ClearReadPool(); }

@@ -340,6 +340,9 @@ internal sealed partial class DeliveryWriterUnit(
                 return DeliveryStore.Cleanup(insert.Connection!, insert.Transaction!, cleanup.Selection);
             case ClearPendingRequest clear:
                 return DeliveryStore.ClearPending(insert.Connection!, insert.Transaction!, clear.ConnectionId);
+            case MigrateDeliveriesRequest migration:
+                return queue.Store.MigrateDeliveries(insert.Connection!, insert.Transaction!, migration.Command, createdAt,
+                    queue.StorageProtection.Status.RejectNewRecords);
             default:
                 throw new InvalidOperationException($"未知的写入请求 {request.GetType().Name}。");
         }

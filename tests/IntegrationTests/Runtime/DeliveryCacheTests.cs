@@ -29,7 +29,7 @@ public sealed class DeliveryCacheTests
         Assert.True(Version.Parse(info.SqliteVersion) >= new Version(3, 51, 3), info.SqliteVersion);
         Assert.Equal("wal", info.JournalMode);
         Assert.Equal(2, info.Synchronous);
-        Assert.Equal(6, info.SchemaVersion);
+        Assert.Equal(7, info.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, info.ConfigStoreId);
         if (!OperatingSystem.IsWindows())
         {
@@ -37,7 +37,7 @@ public sealed class DeliveryCacheTests
         }
 
         using var connection = Open(info.FilePath);
-        Assert.Equal(6L, Scalar(connection, "PRAGMA user_version;"));
+        Assert.Equal(7L, Scalar(connection, "PRAGMA user_version;"));
         Assert.Equal(RuntimeTesting.ConfigStoreId, Scalar(connection, "SELECT config_store_id FROM queue_meta;"));
     }
 
@@ -94,14 +94,14 @@ public sealed class DeliveryCacheTests
         await using (var first = WriterHarness.Start(directory.Path))
         { Assert.True((await first.EnqueueAsync([draft])).Committed); }
         using (var connection = Open(Path.Combine(directory.Path, "queue.db")))
-        { Execute(connection, "ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; PRAGMA user_version=4;"); }
+        { Execute(connection, "DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; PRAGMA user_version=4;"); }
         await using var second = WriterHarness.Start(directory.Path);
         await second.EnqueueAsync([Draft(connectionId: 2)]);
         var stored = Assert.Single(second.Cache.ReadPending(1, 0, 10));
         Assert.Null(stored.ProtocolMetadata);
         Assert.Equal(draft.ByteSize, stored.ByteSize);
         Assert.Equal(draft.Payload.ToArray(), stored.Payload.ToArray());
-        Assert.Equal(6, second.Cache.GetStatus().Store!.SchemaVersion);
+        Assert.Equal(7, second.Cache.GetStatus().Store!.SchemaVersion);
     }
 
     [Fact]

@@ -101,7 +101,7 @@ public sealed partial class ConfigStoreProcessTests(ITestOutputHelper output)
         command.CommandText = "PRAGMA journal_mode;";
         Assert.Equal("wal", command.ExecuteScalar());
         command.CommandText = "PRAGMA user_version;";
-        Assert.Equal(6L, command.ExecuteScalar());
+        Assert.Equal(7L, command.ExecuteScalar());
         command.CommandText = $"SELECT config_store_id FROM queue_meta;";
         var configStoreId = command.ExecuteScalar();
         command.CommandText = $"ATTACH DATABASE '{Path.Combine(dataDirectory.Path, ConfigDatabase.FileName)}' AS config; SELECT config_store_id FROM config.system_state;";
