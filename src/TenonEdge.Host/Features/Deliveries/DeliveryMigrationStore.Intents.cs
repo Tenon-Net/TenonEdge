@@ -8,7 +8,7 @@ namespace TenonEdge.Host.Features.Deliveries;
 
 /// <summary>由已授权协调者捕获原身份并完成预检后构造；不是管理请求模型，不接受客户端指纹或摘要。</summary>
 internal sealed record DeliveryMigrationIntentDraft(DeliveryMigrationHold Hold, OutputRecipientIdentity Source,
-    string TargetRecipient, bool SameOwnerConfirmed);
+    string TargetRecipient, bool SameOwnerConfirmed, OutputTargetIdentity Target);
 
 internal sealed partial class DeliveryMigrationStore
 {
@@ -49,6 +49,8 @@ internal sealed partial class DeliveryMigrationStore
                 OldFingerprint = intent.Hold.OldFingerprint,
                 SourceSummary = intent.Source.Freeze(),
                 TargetRecipient = intent.TargetRecipient,
+                TargetFingerprint = intent.Target.Fingerprint,
+                TargetSummary = intent.Target.Summary,
                 AccountName = application.AccountName!,
                 SourceIp = application.SourceIp,
                 RegisteredAt = now,
@@ -63,6 +65,7 @@ internal sealed partial class DeliveryMigrationStore
                     row.ConnectionId,
                     row.SourceSummary,
                     row.TargetRecipient,
+                    row.TargetSummary,
                     sameOwnerConfirmed = true,
                     message = "迁移意图随配置提交；等待隔离和目标身份，不代表已执行或已发送。",
                 })));
@@ -87,6 +90,10 @@ internal sealed class DeliveryMigrationIntentRecord
     [SugarColumn(ColumnName = "registered_at")] public long RegisteredAt { get; set; }
     [SugarColumn(ColumnName = "status")] public string Status { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "last_operation_id")] public string? LastOperationId { get; set; }
+
+    // v19 意图没有已确认的新身份；升级不能据当前凭证补造管理员确认，不自动执行这类旧意图。
+    [SugarColumn(ColumnName = "target_fingerprint")] public string? TargetFingerprint { get; set; }
+    [SugarColumn(ColumnName = "target_summary")] public string? TargetSummary { get; set; }
 
     public DeliveryMigrationHold ToHold() => new(ConfigStoreId, Guid.Parse(IntentId), ConnectionId, OldFingerprint);
 }

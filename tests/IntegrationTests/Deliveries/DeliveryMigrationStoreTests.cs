@@ -219,7 +219,7 @@ public sealed class DeliveryMigrationStoreTests
         using var store = TestConfigStore.Create();
         store.Initialize(ConfigMigrations.All.Where(migration => migration.Version <= 17).ToArray());
         var identity = GatewayIdentity.LoadOrCreate(store.Database, out _);
-        Assert.Equal(19, store.CreateMigrator().Migrate());
+        Assert.Equal(20, store.CreateMigrator().Migrate());
         Assert.Empty(store.Database.Client.Queryable<DeliveryMigrationRecord>().ToList());
         Assert.Empty(store.Database.Client.Queryable<DeliveryMigrationIntentRecord>().ToList());
         Assert.Equal(identity, GatewayIdentity.LoadOrCreate(store.Database, out var created));

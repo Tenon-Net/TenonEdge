@@ -39,6 +39,7 @@ internal sealed partial class RuntimeCoordinator
     {
         try
         {
+            var migrationPoll = Task.Delay(MigrationPollInterval, time, stoppingToken);
             while (!stoppingToken.IsCancellationRequested)
             {
                 Task changed;
@@ -50,12 +51,16 @@ internal sealed partial class RuntimeCoordinator
                     revision = _activeRevision;
                     delay = _state == RuntimeCoordinatorState.Active && revision is not null && !_activeIsStable ? _stabilityDelay : null;
                 }
-                if (delay is null)
+                // 版本/稳定信号不重置轮询期限；等待目标取得身份的意图无需另一个 HostedService。
+                if (migrationPoll.IsCompletedSuccessfully)
                 {
-                    await changed.WaitAsync(stoppingToken);
+                    await ExecuteWaitingMigrationIntentAsync();
+                    migrationPoll = Task.Delay(MigrationPollInterval, time, stoppingToken);
                     continue;
                 }
-                var completed = await Task.WhenAny(delay, changed).WaitAsync(stoppingToken);
+                var completed = await Task.WhenAny(delay ?? changed, changed, migrationPoll).WaitAsync(stoppingToken);
+                if (completed == migrationPoll)
+                { continue; }
                 if (completed == changed)
                 { continue; }
 
@@ -66,7 +71,7 @@ internal sealed partial class RuntimeCoordinator
                     { return; }
                     if (_application is not null)
                     { application = _application.Task; }
-                    else if (_activeRevision == revision && ReferenceEquals(delay, _stabilityDelay) && delay.IsCompletedSuccessfully &&
+                    else if (delay is not null && _activeRevision == revision && ReferenceEquals(delay, _stabilityDelay) && delay.IsCompletedSuccessfully &&
                         !_activeIsStable && _state == RuntimeCoordinatorState.Active)
                     {
                         try

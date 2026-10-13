@@ -13,6 +13,15 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
     public void Begin(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed, string account, string? sourceIp)
     {
         ArgumentNullException.ThrowIfNull(command);
+        if (command.Hold is not null)
+        { throw new ArgumentException("意图执行须使用原子关联的开始入口。", nameof(command)); }
+        BeginCore(command, revision, sourceSummary, sameOwnerConfirmed, account, sourceIp, null);
+    }
+
+    private void BeginCore(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed,
+        string account, string? sourceIp, DeliveryMigrationIntentRecord? intent)
+    {
+        ArgumentNullException.ThrowIfNull(command);
         ArgumentOutOfRangeException.ThrowIfLessThan(revision, 1);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceSummary);
         ArgumentException.ThrowIfNullOrWhiteSpace(account);
@@ -21,6 +30,7 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
         var row = new DeliveryMigrationRecord
         {
             OperationId = command.OperationId.ToString("D"),
+            IntentId = intent?.IntentId,
             ConfigStoreId = command.ConfigStoreId,
             RequestHash = command.RequestHash,
             Mode = command.OldFingerprint is null ? "selected" : "oldTarget",
@@ -37,8 +47,12 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
         };
         database.InTransaction(client =>
         {
+            if (intent is not null)
+            { BindIntentAttempt(client, intent, command, revision); }
             client.Insertable(row).ExecuteCommand();
-            audit.Append(client, Entry(row, "delivery.migrationStarted", AuditResults.Success, "已确认同一数据所有者并开始迁移；尚无执行结果。"));
+            audit.Append(client, Entry(row, "delivery.migrationStarted", AuditResults.Success, intent is null
+                ? "已确认同一数据所有者并开始迁移；尚无执行结果。"
+                : "按配置提交时的所有者声明开始核对意图；当前目标仍须匹配已确认身份，尚无执行结果。"));
             return true;
         });
     }
@@ -91,6 +105,7 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
             row.CompletedAt = receipt?.CompletedAt.ToUnixTimeMilliseconds() ?? time.GetUtcNow().ToUnixTimeMilliseconds();
             row.ErrorCode = receipt is not null ? null : result is null ? "delivery.migrationInterrupted" : SafeError(result.Error);
             client.Updateable(row).ExecuteCommand();
+            FinishIntent(client, row);
             audit.Append(client, Entry(row, "delivery.migrationFinished", receipt is null ? AuditResults.Failure : AuditResults.Success,
                 receipt is not null ? $"已迁移{receipt.AffectedRecords}条；以队列持久完成记录为准，不代表已发送。"
                     : result is null ? "未执行：进程中断。" : "未执行：迁移检查或写入未完成。"));
@@ -111,6 +126,7 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
         {
             message,
             row.Mode,
+            row.IntentId,
             row.Revision,
             row.SourceConnectionId,
             row.TargetConnectionId,
@@ -129,6 +145,7 @@ internal sealed class DeliveryMigrationRecord
 {
     [SugarColumn(ColumnName = "operation_id", IsPrimaryKey = true)] public string OperationId { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "config_store_id")] public string ConfigStoreId { get; set; } = string.Empty;
+    [SugarColumn(ColumnName = "intent_id")] public string? IntentId { get; set; }
     [SugarColumn(ColumnName = "request_hash")] public string RequestHash { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "mode")] public string Mode { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "revision")] public long Revision { get; set; }

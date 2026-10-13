@@ -1,4 +1,5 @@
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.Host.Features.Runtime;
@@ -34,19 +35,33 @@ internal sealed partial class RuntimeCoordinator
     }
 
     private async Task<DeliveryWriteResult> RunMigrationOwnedAsync(DeliveryMigrationCommand command, long revision,
-        string sourceSummary, string account, string? sourceIp, TaskCompletionSource completion)
+        string sourceSummary, string account, string? sourceIp, TaskCompletionSource completion,
+        DeliveryMigrationIntentRecord? intent = null, string? validationError = null)
     {
         var started = false;
         try
         {
-            migrations.Begin(command, revision, sourceSummary, true, account, sourceIp);
+            if (intent is null)
+            { migrations.Begin(command, revision, sourceSummary, true, account, sourceIp); }
+            else
+            { migrations.BeginIntent(command, revision); }
             started = true;
             DeliveryWriteResult result;
             try
-            { result = await runtime.MigrateDeliveriesAsync(command, revision, CancellationToken.None); }
+            {
+                result = validationError is not null ? new(DeliveryWriteStatus.Rejected, [], 0, validationError)
+                : await runtime.MigrateDeliveriesAsync(command, revision, CancellationToken.None);
+            }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             { result = new(DeliveryWriteStatus.StorageFailed, [], 0, "delivery.migrationExecutionFailed"); }
             var finished = migrations.Finish(command.OperationId, result);
+            if (intent is not null)
+            {
+                runtimeEvents.Record(finished.Status == "completed" ? RuntimeEventLevel.Info : RuntimeEventLevel.Warning,
+                    finished.Status == "completed" ? "delivery.migrationIntentCompleted" : "delivery.migrationIntentRejected", intent.IntentId,
+                    finished.Status == "completed" ? $"意图已迁移 {finished.AffectedRecords} 条，不代表已发送。"
+                        : $"意图未执行（{finished.ErrorCode}）；记录保持隔离，须管理员核对后处理。");
+            }
             if (finished.Status != "completed")
             { return result; }
             // 即使上层等待报告错误，已经持久化的 queue.db 结果仍优先；不要把实际成功写成“未执行”。

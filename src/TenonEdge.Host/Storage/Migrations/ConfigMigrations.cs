@@ -311,5 +311,12 @@ internal static class ConfigMigrations
             """,
             "CREATE INDEX ix_delivery_migration_intent_waiting ON delivery_migration_intent(status, revision, connection_id)",
         ]),
+        new(20, "delivery_migration_intent_execution", [
+            "ALTER TABLE delivery_migration ADD COLUMN intent_id TEXT REFERENCES delivery_migration_intent(intent_id)",
+            "CREATE INDEX ix_delivery_migration_intent_attempt ON delivery_migration(intent_id, started_at)",
+            "ALTER TABLE delivery_migration_intent ADD COLUMN target_fingerprint TEXT",
+            "ALTER TABLE delivery_migration_intent ADD COLUMN target_summary TEXT",
+            "CREATE INDEX ix_delivery_migration_intent_order ON delivery_migration_intent(config_store_id, connection_id, revision) WHERE status = 'waiting'",
+        ]),
     ];
 }

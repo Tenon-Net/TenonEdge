@@ -252,6 +252,38 @@ public sealed class DeliveryMigrationCoordinationTests
         Assert.Equal(1, target.Creates);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HeldIntentRechecksCompleteIdentityEvenWhenFingerprintStaysSame(bool duringPause)
+    {
+        using var data = TemporaryDirectory.Create();
+        var target = new Target(2);
+        await using var runtime = Create(data.Path, target);
+        runtime.StartCore();
+        await runtime.Deliveries.EnqueueAsync([new(Guid.NewGuid(), 2, Guid.NewGuid(), "meter", 1, "held"u8.ToArray(), "previous", "previous")], Token);
+        var hold = new DeliveryMigrationHold(RuntimeTesting.ConfigStoreId, Guid.NewGuid(), 2, "previous");
+        Assert.True((await runtime.HoldMigrationAsync(hold, null, Token)).Committed);
+        await runtime.Deliveries.EnqueueAsync([Draft(2, "current-inflight")], Token);
+        var command = DeliveryMigrationCommand.ForIntent(hold, Guid.NewGuid(), target.CurrentFingerprint, target.CaptureIdentity().Summary);
+        await Activate(runtime, target);
+        try
+        {
+            await target.Sending.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            Task<DeliveryWriteResult>? moving = null;
+            if (duringPause)
+            { moving = runtime.MigrateDeliveriesAsync(command, 1, Token); Assert.False(moving.IsCompleted); }
+            target.RecipientIdentity = target.RecipientIdentity with { ClientCertificateSubject = "changed-client-identity" };
+            moving ??= runtime.MigrateDeliveriesAsync(command, 1, Token);
+            target.Result.TrySetResult(new(OutputSendStatus.Ack));
+            Assert.Equal(DeliveryMigrationErrors.TargetChanged, (await moving).Error);
+            Assert.Null(runtime.Deliveries.ReadMigrationReceipt(command.OperationId));
+            Assert.Single(runtime.Deliveries.ReadQuarantined(2, 0, 10));
+            Assert.Equal(1, target.Creates);
+        }
+        finally { target.Release(); }
+    }
+
     private static void Sql(string path, string sql)
     {
         using var connection = new SqliteConnection($"Data Source={Path.Combine(path, "queue.db")};Pooling=False");
@@ -290,6 +322,8 @@ public sealed class DeliveryMigrationCoordinationTests
         public string CredentialVersion => "v1";
         public string Fingerprint = $"fp{connection}";
         public string CurrentFingerprint => Volatile.Read(ref Fingerprint);
+        public OutputRecipientIdentity RecipientIdentity { get; set; } = OutputRecipientIdentity.Http("http://target.test/", null);
+        public OutputTargetIdentity CaptureIdentity() => new(CurrentFingerprint, RecipientIdentity);
         public TimeSpan SendTimeout { get; init; } = TimeSpan.FromSeconds(10);
         public int Creates;
         public int Disposes;

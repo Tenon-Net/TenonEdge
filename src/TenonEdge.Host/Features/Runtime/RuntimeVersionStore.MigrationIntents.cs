@@ -13,7 +13,7 @@ internal sealed partial class RuntimeVersionStore
     {
         if (intents.Count == 0)
         { return []; }
-        if (previous is null || intents.Count > 500 || intents.Any(value => value is null || value.Hold is null || value.Source is null) ||
+        if (previous is null || intents.Count > 500 || intents.Any(value => value is null || value.Hold is null || value.Source is null || value.Target is null || value.Target.Recipient is null) ||
             intents.Select(value => value.Hold.ConnectionId).Distinct().Count() != intents.Count ||
             intents.Select(value => value.Hold.IntentId).Distinct().Count() != intents.Count)
         { throw new InvalidOperationException("迁移意图清单无效。"); }
@@ -24,7 +24,10 @@ internal sealed partial class RuntimeVersionStore
             var old = before[intent.Hold.ConnectionId].ToArray();
             var current = after[intent.Hold.ConnectionId].ToArray();
             _ = intent.Source.Freeze();
-            if (!intent.SameOwnerConfirmed || intent.Hold.ConfigStoreId != configStoreId ||
+            _ = intent.Target.Summary;
+            if (string.IsNullOrWhiteSpace(intent.Target.Fingerprint) || intent.Target.Recipient.Protocol != intent.Source.Protocol ||
+                intent.Target.Recipient.Address != intent.TargetRecipient || !intent.Target.Recipient.AccountRecorded ||
+                !intent.SameOwnerConfirmed || intent.Hold.ConfigStoreId != configStoreId ||
                 old.Length == 0 || current.Length == 0 || old.Any(value => value.Protocol != intent.Source.Protocol || value.Recipient != intent.Source.Address) ||
                 current.Any(value => value.Protocol != intent.Source.Protocol || value.Recipient != intent.TargetRecipient) ||
                 intent.Source.Address == intent.TargetRecipient ||

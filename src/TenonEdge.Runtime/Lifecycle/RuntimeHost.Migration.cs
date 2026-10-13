@@ -52,7 +52,7 @@ public sealed partial class RuntimeHost
                 if (target.Target.Id.Kind is not ("output.http" or "output.mqtt") ||
                     source is not null && source.Target.Id.Kind != target.Target.Id.Kind)
                 { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.ProtocolMismatch); }
-                if (target.Target.CurrentFingerprint != command.Fingerprint)
+                if (!MigrationIdentityMatches(target.Target, command))
                 { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.TargetChanged); }
                 timeout = source is null || source.Target.SendTimeout < target.Target.SendTimeout ? target.Target.SendTimeout : source.Target.SendTimeout;
                 if (timeout <= TimeSpan.Zero || timeout > TimeSpan.FromSeconds(60))
@@ -66,7 +66,7 @@ public sealed partial class RuntimeHost
             { await Task.WhenAll(pauses.Select(item => item.Pause.Reached.Task)).WaitAsync(timeout, _time, CancellationToken.None); }
             catch (TimeoutException)
             { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.NotQuiescent); }
-            if (target.Target.CurrentFingerprint != command.Fingerprint)
+            if (!MigrationIdentityMatches(target.Target, command))
             { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.TargetChanged); }
             var result = await _deliveries.MigrateAsync(command);
             if (result.Committed)
@@ -84,4 +84,14 @@ public sealed partial class RuntimeHost
             CompleteOperation(operation);
         }
     }
+
+    private static bool MigrationIdentityMatches(IOutputTarget target, DeliveryMigrationCommand command)
+    {
+        if (command.Hold is null)
+        { return target.CurrentFingerprint == command.Fingerprint; }
+        // 意图核对使用同一次凭证描述，不能拼接轮换前的指纹与轮换后的可读身份。
+        var identity = target.CaptureIdentity();
+        return identity?.Fingerprint == command.Fingerprint && identity.Summary == command.Summary;
+    }
+
 }

@@ -21,7 +21,7 @@ public sealed class DeliveryMigrationIntentTests
     private static DeliveryMigrationIntentDraft Intent(IServiceProvider services, string protocol = "http", string old = "old", string next = "new", long connection = 1) => new(
         new(services.GetRequiredService<GatewayIdentity>().ConfigStoreId, Guid.NewGuid(), connection, "fp-" + old),
         protocol == "http" ? OutputRecipientIdentity.Http(Recipient(protocol, old), null) : OutputRecipientIdentity.Mqtt(Recipient(protocol, old), false, null),
-        Recipient(protocol, next), true);
+        Recipient(protocol, next), true, new("fp-" + next, protocol == "http" ? OutputRecipientIdentity.Http(Recipient(protocol, next), null) : OutputRecipientIdentity.Mqtt(Recipient(protocol, next), false, null)));
     private static object Unit(string protocol, string host, string path = "send", bool queue = true, long connection = 1) => new
     {
         kind = "output." + protocol,
@@ -80,6 +80,10 @@ public sealed class DeliveryMigrationIntentTests
     [InlineData("oldAddress")]
     [InlineData("newAddress")]
     [InlineData("owner")]
+    [InlineData("newIdentityAddress")]
+    [InlineData("newIdentityProtocol")]
+    [InlineData("newFingerprint")]
+    [InlineData("newIdentityMissing")]
     [InlineData("foreignStore")]
     [InlineData("duplicateConnection")]
     [InlineData("unselectedTarget")]
@@ -100,6 +104,10 @@ public sealed class DeliveryMigrationIntentTests
         intent = invalid switch
         {
             "owner" => intent with { SameOwnerConfirmed = false },
+            "newIdentityAddress" => intent with { Target = intent.Target with { Recipient = intent.Target.Recipient with { Address = Recipient(protocol, "different") } } },
+            "newIdentityProtocol" => intent with { Target = new("fp-new", OutputRecipientIdentity.Mqtt("mqtt://new.test:1883", false, null)) },
+            "newFingerprint" => intent with { Target = intent.Target with { Fingerprint = "" } },
+            "newIdentityMissing" => intent with { Target = null! },
             "oldAddress" => intent with { Source = intent.Source with { Address = Recipient(protocol, "different") } },
             "newAddress" => intent with { TargetRecipient = Recipient(protocol, "different") },
             "foreignStore" => intent with { Hold = new(Guid.NewGuid().ToString("D"), intent.Hold.IntentId, 1, "fp-old") },
@@ -212,6 +220,9 @@ public sealed class DeliveryMigrationIntentTests
             var intent = Intent(setup.Services);
             intentId = intent.Hold.IntentId;
             versions.Commit(versions.FreezeDraft(next, "0", "admin"), Application, markRunning: true, migrationIntents: [intent]);
+            // Simulate v19's persisted intent: no reviewed new fingerprint. Startup must still isolate it,
+            // but upgrading must not invent a target identity or execute it without renewed review.
+            setup.Services.GetRequiredService<ConfigDatabase>().Client.Ado.ExecuteCommand("UPDATE delivery_migration_intent SET target_fingerprint=NULL, target_summary=NULL");
             versions.ClearRunningMarker(2); // Fixture persisted a commit, but never activated that plan; no fake crash evidence.
             Assert.Null(cache.ReadMigrationHold(intentId));
         }
