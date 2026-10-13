@@ -307,6 +307,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/deliveries/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 将选定失败记录原样移回队尾，可能产生重复
+         * @description 绑定有效运行版本和每条稳定编号/seq代次，最多1000条；全部状态/身份/配额检查通过才原子重排。只重试失败区，不解除暂停、不改变报文或目标。200只代表队列已提交，不代表发送成功。请求超时/响应丢失只重新查询，不自动重放；旧代次不能重复执行。
+         */
+        post: operations["retryFailedDeliveries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/test/mqtt": {
         parameters: {
             query?: never;
@@ -1542,6 +1562,21 @@ export interface components {
             /** Format: int64 */
             unknownQuarantineCount: number | string;
         };
+        DeliveryRetryItem: {
+            /** Format: int64 */
+            sequence: number | string;
+            /** Format: uuid */
+            deliveryId: string;
+        };
+        DeliveryRetryRequest: {
+            /** Format: int64 */
+            revision: number | string;
+            items: null | components["schemas"]["DeliveryRetryItem"][];
+        };
+        DeliveryRetryResponse: {
+            /** Format: int32 */
+            requeuedRecords: number | string;
+        };
         /** @enum {unknown} */
         DeliveryState: "pending" | "failed" | "quarantined";
         DeliveryStoreInfo: {
@@ -2523,6 +2558,8 @@ export interface components {
             reason: null | string;
             /** Format: int64 */
             activeRevision: null | number | string;
+            /** @default false */
+            queueOperationInProgress: boolean;
         };
         RuntimeCurrentValues: {
             /** Format: int64 */
@@ -3394,6 +3431,75 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    retryFailedDeliveries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRetryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

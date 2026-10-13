@@ -66,6 +66,8 @@ internal sealed partial class RuntimeCoordinator
             { throw new RuntimeApplicationUnavailableException(); }
             if (_application is not null)
             { throw new RuntimeApplicationBusyException(_applications[^1]); }
+            if (_deliveryWrite is not null)
+            { throw new RuntimeApplicationUnavailableException(); }
             if (kind == "retry" && _state != RuntimeCoordinatorState.RunFailed)
             { throw new RuntimeApplicationUnavailableException(); }
             operation = NewSignal();

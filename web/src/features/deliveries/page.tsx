@@ -13,6 +13,7 @@ import {
     type DeliveryFilter,
     type DeliveryItem,
 } from './api'
+import { FailedRetryControls } from './retry'
 
 const deliveries = createDeliveryApi(api)
 export function DeliveryRecordsPage() {
@@ -38,12 +39,22 @@ function Records({ connectionId }: { connectionId?: string }) {
     const [cursors, setCursors] = useState<string[]>([])
     const [invalid, setInvalid] = useState(false)
     const [selected, select] = useState<DeliveryItem>()
+    const [checked, check] = useState<DeliveryItem[]>([])
+    const [retryLocked, lockRetry] = useState(false)
+    const canRetry = canReadBody && filter.state === 'failed'
     const after = cursors.at(-1)
     const query = useQuery({
         queryKey: ['delivery-records', filter, after],
         queryFn: ({ signal }) => deliveries.records(filter, after, signal),
         gcTime: 0,
     })
+    const visibleChecked = checked.filter((entry) =>
+        query.data?.items.some(
+            (item) =>
+                item.sequence === entry.sequence &&
+                item.deliveryId === entry.deliveryId,
+        ),
+    )
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold">{t('deliveries.title')}</h1>
@@ -51,73 +62,77 @@ function Records({ connectionId }: { connectionId?: string }) {
                 {t('deliveries.notice')}
             </p>
             <DiagnosticPanel title={t('deliveries.records')} query={query}>
-                <form
-                    className="flex flex-wrap items-end gap-3"
-                    onSubmit={(event) => {
-                        event.preventDefault()
-                        try {
-                            setFilter(readFilter(draft))
-                            setCursors([])
-                            select(undefined)
-                            setInvalid(false)
-                        } catch {
-                            setInvalid(true)
-                        }
-                    }}
-                >
-                    <div className="space-y-1 text-sm">
-                        <label htmlFor="delivery-area">
-                            {t('deliveries.area')}
-                        </label>
-                        <select
-                            id="delivery-area"
-                            className="block h-9 rounded-md border bg-background px-3"
-                            value={draft.state}
-                            onChange={(event) =>
-                                setDraft({
-                                    ...draft,
-                                    state: event.target.value as DeliveryArea,
-                                })
+                <fieldset disabled={retryLocked}>
+                    <form
+                        className="flex flex-wrap items-end gap-3"
+                        onSubmit={(event) => {
+                            event.preventDefault()
+                            try {
+                                setFilter(readFilter(draft))
+                                setCursors([])
+                                check([])
+                                select(undefined)
+                                setInvalid(false)
+                            } catch {
+                                setInvalid(true)
                             }
-                        >
-                            <option value="failed">
-                                {t('deliveries.failed')}
-                            </option>
-                            <option value="quarantined">
-                                {t('deliveries.quarantined')}
-                            </option>
-                        </select>
-                    </div>
-                    {(
-                        [
-                            'connectionId',
-                            'deviceKey',
-                            'reason',
-                            'from',
-                            'to',
-                        ] as const
-                    ).map((key) => (
-                        <label key={key} className="space-y-1 text-sm">
-                            {t(`deliveries.${key}`)}
-                            <Input
-                                type={
-                                    key === 'from' || key === 'to'
-                                        ? 'datetime-local'
-                                        : 'text'
-                                }
-                                maxLength={key === 'reason' ? 1024 : 128}
-                                value={draft[key]}
+                        }}
+                    >
+                        <div className="space-y-1 text-sm">
+                            <label htmlFor="delivery-area">
+                                {t('deliveries.area')}
+                            </label>
+                            <select
+                                id="delivery-area"
+                                className="block h-9 rounded-md border bg-background px-3"
+                                value={draft.state}
                                 onChange={(event) =>
                                     setDraft({
                                         ...draft,
-                                        [key]: event.target.value,
+                                        state: event.target
+                                            .value as DeliveryArea,
                                     })
                                 }
-                            />
-                        </label>
-                    ))}
-                    <Button type="submit">{t('deliveries.filter')}</Button>
-                </form>
+                            >
+                                <option value="failed">
+                                    {t('deliveries.failed')}
+                                </option>
+                                <option value="quarantined">
+                                    {t('deliveries.quarantined')}
+                                </option>
+                            </select>
+                        </div>
+                        {(
+                            [
+                                'connectionId',
+                                'deviceKey',
+                                'reason',
+                                'from',
+                                'to',
+                            ] as const
+                        ).map((key) => (
+                            <label key={key} className="space-y-1 text-sm">
+                                {t(`deliveries.${key}`)}
+                                <Input
+                                    type={
+                                        key === 'from' || key === 'to'
+                                            ? 'datetime-local'
+                                            : 'text'
+                                    }
+                                    maxLength={key === 'reason' ? 1024 : 128}
+                                    value={draft[key]}
+                                    onChange={(event) =>
+                                        setDraft({
+                                            ...draft,
+                                            [key]: event.target.value,
+                                        })
+                                    }
+                                />
+                            </label>
+                        ))}
+                        <Button type="submit">{t('deliveries.filter')}</Button>
+                    </form>
+                </fieldset>
                 <p className="text-sm text-muted-foreground">
                     {t('deliveries.filterNotice')}
                 </p>
@@ -135,6 +150,11 @@ function Records({ connectionId }: { connectionId?: string }) {
                             <table className="w-full text-left text-sm">
                                 <thead>
                                     <tr>
+                                        {canRetry && (
+                                            <th className="p-2">
+                                                {t('deliveries.retry.select')}
+                                            </th>
+                                        )}
                                         {[
                                             'target',
                                             'identity',
@@ -156,6 +176,48 @@ function Records({ connectionId }: { connectionId?: string }) {
                                             className="border-t align-top"
                                             key={item.deliveryId}
                                         >
+                                            {canRetry && (
+                                                <td className="p-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        aria-label={t(
+                                                            'deliveries.retry.selectRecord',
+                                                            {
+                                                                id: item.deliveryId,
+                                                            },
+                                                        )}
+                                                        checked={checked.some(
+                                                            (entry) =>
+                                                                entry.sequence ===
+                                                                    item.sequence &&
+                                                                entry.deliveryId ===
+                                                                    item.deliveryId,
+                                                        )}
+                                                        disabled={
+                                                            retryLocked ||
+                                                            query.isFetching ||
+                                                            !!query.error
+                                                        }
+                                                        onChange={(event) =>
+                                                            check(
+                                                                event.target
+                                                                    .checked
+                                                                    ? [
+                                                                          ...visibleChecked,
+                                                                          item,
+                                                                      ]
+                                                                    : visibleChecked.filter(
+                                                                          (
+                                                                              entry,
+                                                                          ) =>
+                                                                              entry.deliveryId !==
+                                                                              item.deliveryId,
+                                                                      ),
+                                                            )
+                                                        }
+                                                    />
+                                                </td>
+                                            )}
                                             <td className="p-2">
                                                 <p>{item.connectionId}</p>
                                                 <p>{item.deviceKey}</p>
@@ -248,8 +310,13 @@ function Records({ connectionId }: { connectionId?: string }) {
                         <div className="flex items-center gap-3">
                             <Button
                                 variant="outline"
-                                disabled={!cursors.length || query.isFetching}
+                                disabled={
+                                    retryLocked ||
+                                    !cursors.length ||
+                                    query.isFetching
+                                }
                                 onClick={() => {
+                                    check([])
                                     setCursors(cursors.slice(0, -1))
                                     select(undefined)
                                 }}
@@ -264,12 +331,14 @@ function Records({ connectionId }: { connectionId?: string }) {
                             <Button
                                 variant="outline"
                                 disabled={
+                                    retryLocked ||
                                     query.data.nextSequence === null ||
                                     query.isFetching ||
                                     !!query.error
                                 }
                                 onClick={() => {
                                     if (query.data?.nextSequence != null) {
+                                        check([])
                                         setCursors([
                                             ...cursors,
                                             String(query.data.nextSequence),
@@ -284,6 +353,24 @@ function Records({ connectionId }: { connectionId?: string }) {
                     </>
                 )}
             </DiagnosticPanel>
+            {canRetry && (
+                <FailedRetryControls
+                    key={JSON.stringify([filter, after])}
+                    filter={filter}
+                    selected={visibleChecked}
+                    unavailable={
+                        query.isFetching ||
+                        !!query.error ||
+                        !query.data?.items.length
+                    }
+                    lock={lockRetry}
+                    reset={() => {
+                        check([])
+                        select(undefined)
+                        void query.refetch()
+                    }}
+                />
+            )}
             {canReadBody && selected && (
                 <Body
                     key={`${filter.state}/${selected.deliveryId}`}

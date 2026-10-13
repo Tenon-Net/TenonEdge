@@ -34,6 +34,7 @@ internal sealed partial class RuntimeCoordinator(
     RuntimeSettings settings,
     RuntimeStartConditions startConditions,
     RuntimeEventLog runtimeEvents,
+    AuditTrail audit,
     TimeProvider time,
     ILogger<RuntimeCoordinator> logger) : BackgroundService
 {
@@ -52,7 +53,7 @@ internal sealed partial class RuntimeCoordinator(
         {
             lock (_lock)
             {
-                return new RuntimeCoordinatorStatus(_state, _reason, _activeRevision);
+                return new RuntimeCoordinatorStatus(_state, _reason, _activeRevision, _deliveryWrite is not null);
             }
         }
     }
@@ -114,7 +115,7 @@ internal sealed partial class RuntimeCoordinator(
     {
         Task application;
         lock (_lock)
-        { application = _application?.Task ?? Task.CompletedTask; }
+        { application = Task.WhenAll(_application?.Task ?? Task.CompletedTask, _deliveryWrite?.Task ?? Task.CompletedTask); }
         await application;
         await base.StopAsync(cancellationToken);
         var faulted = ExecuteTask is { IsFaulted: true };
@@ -516,7 +517,7 @@ internal enum RuntimeCoordinatorState
     Stopped,
 }
 
-internal sealed record RuntimeCoordinatorStatus(RuntimeCoordinatorState State, string? Reason, long? ActiveRevision);
+internal sealed record RuntimeCoordinatorStatus(RuntimeCoordinatorState State, string? Reason, long? ActiveRevision, bool QueueOperationInProgress = false);
 
 /// <summary>启动判定：激活某个已构建的计划、进入“运行失败”，或尚无有效配置。</summary>
 internal sealed record StartupDecision(PreparedPlan? Prepared, bool ActiveIsStable, string? FailureReason)

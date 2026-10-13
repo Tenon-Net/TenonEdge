@@ -889,6 +889,88 @@
         }
       }
     },
+    "/api/edge-admin/v1/deliveries/retry": {
+      "post": {
+        "tags": [
+          "Deliveries"
+        ],
+        "summary": "将选定失败记录原样移回队尾，可能产生重复",
+        "description": "绑定有效运行版本和每条稳定编号/seq代次，最多1000条；全部状态/身份/配额检查通过才原子重排。只重试失败区，不解除暂停、不改变报文或目标。200只代表队列已提交，不代表发送成功。请求超时/响应丢失只重新查询，不自动重放；旧代次不能重复执行。",
+        "operationId": "retryFailedDeliveries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryRetryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryRetryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/test/mqtt": {
       "post": {
         "tags": [
@@ -7588,6 +7670,69 @@
           }
         }
       },
+      "DeliveryRetryItem": {
+        "required": [
+          "sequence",
+          "deliveryId"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "deliveryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DeliveryRetryRequest": {
+        "required": [
+          "revision",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "items": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryRetryItem"
+            }
+          }
+        }
+      },
+      "DeliveryRetryResponse": {
+        "required": [
+          "requeuedRecords"
+        ],
+        "type": "object",
+        "properties": {
+          "requeuedRecords": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "DeliveryState": {
         "enum": [
           "pending",
@@ -11840,6 +11985,10 @@
               "string"
             ],
             "format": "int64"
+          },
+          "queueOperationInProgress": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -13027,6 +13176,9 @@
       "name": "System"
     },
     {
+      "name": "Deliveries"
+    },
+    {
       "name": "Connections"
     },
     {
@@ -13040,9 +13192,6 @@
     },
     {
       "name": "Credentials"
-    },
-    {
-      "name": "Deliveries"
     },
     {
       "name": "Devices"

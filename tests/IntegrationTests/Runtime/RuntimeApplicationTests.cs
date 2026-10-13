@@ -29,6 +29,7 @@ public sealed class RuntimeApplicationTests
                 provider.GetRequiredService<RuntimeHost>(), provider.GetRequiredService<RuntimeVersionStore>(),
                 provider.GetRequiredService<RouteDraftStore>(), provider.GetRequiredService<RuntimeSettings>(),
                 provider.GetRequiredService<RuntimeStartConditions>(), provider.GetRequiredService<RuntimeEventLog>(),
+                provider.GetRequiredService<AuditTrail>(),
                 clock, provider.GetRequiredService<ILogger<RuntimeCoordinator>>()));
         });
         using var client = factory.CreateClient();

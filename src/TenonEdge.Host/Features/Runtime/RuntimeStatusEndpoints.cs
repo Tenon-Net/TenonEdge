@@ -22,8 +22,9 @@ internal static class RuntimeStatusEndpoints
         return api;
     }
 
-    private static Ok<RuntimeDiagnosticsResponse> Get(RuntimeCoordinator coordinator, DeliveryCache deliveries, IClockSyncStatus clock)
+    private static Ok<RuntimeDiagnosticsResponse> Get(RuntimeCoordinator coordinator, DeliveryCache deliveries, IClockSyncStatus clock, HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         IReadOnlyDictionary<string, long>? counters = null;
         var cache = deliveries.GetStatus();
         if (cache.Store is not null)

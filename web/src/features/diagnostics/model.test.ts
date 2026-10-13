@@ -14,7 +14,12 @@ const point: TrendPoint = {
     storageFailedRecordAttempts: '0',
 }
 const status: Diagnostics = {
-    coordinator: { state: 'active', reason: null, activeRevision: '1' },
+    coordinator: {
+        queueOperationInProgress: false,
+        state: 'active',
+        reason: null,
+        activeRevision: '1',
+    },
     runtime: { activeRevision: '1', units: [] },
     queue: {
         storageFault: false,
@@ -83,6 +88,7 @@ describe('diagnostic metadata and display', () => {
             runtimeHealth({
                 ...status,
                 coordinator: {
+                    queueOperationInProgress: false,
                     state: 'runFailed',
                     reason: 'invalid',
                     activeRevision: '1',

@@ -85,6 +85,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "previewRouteRecentSample",
         "previewRouteSample",
         "retryConfigurationRuntime",
+        "retryFailedDeliveries",
         "retryOutputNow",
         "reviewConfigurationDraft",
         "reviewConfigurationRollback",

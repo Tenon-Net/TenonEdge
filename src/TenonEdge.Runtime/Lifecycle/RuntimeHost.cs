@@ -484,6 +484,19 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         }
     }
 
+    /// <summary>供已获授权的队列操作读取有效输出身份；调用方须拥有配置应用/停机准入，不能使用客户端自报指纹。
+    /// 凭证随后变化仍由原发送者逐条比较指纹，人工重试不会改写记录的身份。</summary>
+    public IReadOnlyDictionary<long, string>? CaptureOutputFingerprints(long revision)
+    {
+        lock (_lock)
+        {
+            if (_stopping is not null || _operation is not null || _activeRevision != revision)
+            { return null; }
+            return _activeOutputs.GroupBy(output => output.Target.ConnectionId).ToDictionary(group => group.Key,
+                group => group.First().Target.CurrentFingerprint);
+        }
+    }
+
     public async ValueTask DisposeAsync() => await StopAsync(CancellationToken.None);
 
     /// <summary>诊断捕获失败次数（不含消息内容），不改变输入投递/确认结果。</summary>
