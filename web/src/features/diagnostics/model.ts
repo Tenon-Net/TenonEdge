@@ -58,3 +58,68 @@ export function eventTime(value: string): string | undefined {
     if (!Number.isFinite(parsed.getTime())) throw new Error('diagnostics-time')
     return parsed.toISOString()
 }
+
+// 只选互不重复的叶子口径，不相加为丢失总数。path 是连接汇总，route 为其重复的路径细分。
+export function classifyCounters(
+    counters: NonNullable<Diagnostics['persistentCounters']>,
+) {
+    const categories: Record<
+        string,
+        { category: 'policy' | 'data' | 'fault'; label: string }
+    > = {
+        globalQuotaRejectedRecords: {
+            category: 'policy',
+            label: 'lossGlobalQuota',
+        },
+        storageProtectionRejectedRecords: {
+            category: 'policy',
+            label: 'lossStorageProtection',
+        },
+        dataRejectedRecords: { category: 'data', label: 'lossWriterData' },
+        storageLostSourceMessages: {
+            category: 'fault',
+            label: 'lossSourceLost',
+        },
+        storageLostDeliveryRecords: {
+            category: 'fault',
+            label: 'lossDeliveriesLost',
+        },
+        storageFailedBatches: { category: 'fault', label: 'lossFailedBatches' },
+        storageFailedRecordAttempts: {
+            category: 'fault',
+            label: 'lossFailedAttempts',
+        },
+        storageUnavailableAttempts: {
+            category: 'fault',
+            label: 'lossUnavailableAttempts',
+        },
+    }
+    return Object.entries(counters).flatMap(([key, value]) => {
+        if (key.startsWith('route/')) return []
+        let info = categories[key]
+        if (/^target\/\d+\/quotaRejectedRecords$/.test(key))
+            info = { category: 'policy', label: 'lossTargetQuota' }
+        if (/^input\/.+\/overruns$/.test(key))
+            info = { category: 'policy', label: 'lossOverruns' }
+        if (/^(input|path)\/.+\/dataRejected$/.test(key))
+            info = {
+                category: 'data',
+                label: key.startsWith('path/')
+                    ? 'lossPathData'
+                    : 'lossInputData',
+            }
+        if (/^input\/.+\/readErrors$/.test(key))
+            info = { category: 'fault', label: 'lossReadErrors' }
+        if (/^input\/.+\/handoffFailed$/.test(key))
+            info = { category: 'fault', label: 'lossHandoffFailed' }
+        if (
+            /^connection\/\d+\/mqtt\/(bufferDropped|retainedIgnored|unmatched)$/.test(
+                key,
+            )
+        )
+            info = { category: 'policy', label: 'lossMqttPolicy' }
+        if (/^connection\/\d+\/mqtt\/(oversized|wireOversized)$/.test(key))
+            info = { category: 'data', label: 'lossMqttOversized' }
+        return info ? [{ key, value, ...info }] : []
+    })
+}

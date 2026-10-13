@@ -1,3 +1,5 @@
+import { LossCounters } from './loss-counters'
+import { OutputSummary } from './outputs'
 import { DeviceSummary } from './current-values'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -22,6 +24,8 @@ export function OverviewPage() {
             </h1>
             <p className="text-muted-foreground">{t('authenticated')}</p>
             <DeviceSummary />
+            <OutputSummary />
+            <LossCounters />
             <DiagnosticPanel title={t('diagnostics.state')} query={runtime}>
                 {status && (
                     <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

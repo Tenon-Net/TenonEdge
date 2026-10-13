@@ -78,6 +78,7 @@ internal sealed class InputDispatcherUnit(
                 }
 
                 state.Drafts = drafts;
+                deliveries.OutputTraffic.Generated(drafts);
             }
 
             var handoff = InputHandoffStatus.Rejected;

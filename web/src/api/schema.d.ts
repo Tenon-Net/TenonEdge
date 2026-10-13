@@ -253,6 +253,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/runtime/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查看输出状态、真实队列占用及容量估算边界 */
+        get: operations["getRuntimeOutputs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/runtime/outputs/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看输出队头、失败隔离统计及最近一小时趋势，不返回报文正文 */
+        get: operations["getRuntimeOutput"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/system/info": {
         parameters: {
             query?: never;
@@ -1110,6 +1144,12 @@ export interface components {
             result: string;
             detail: null | string;
         };
+        CapacityConstraint: {
+            kind: string;
+            /** Format: double */
+            seconds: null | number | string;
+            status: string;
+        };
         ChangePasswordRequest: {
             currentPassword: null | string;
             newPassword: null | string;
@@ -1349,6 +1389,54 @@ export interface components {
             rejectedRecords: number | string;
             store: null | components["schemas"]["DeliveryStoreInfo"];
         };
+        DeliveryQueueFiles: {
+            /** Format: int64 */
+            databaseBytes: number | string;
+            /** Format: int64 */
+            walBytes: number | string;
+            /** Format: int64 */
+            sharedMemoryBytes: number | string;
+        };
+        DeliveryQueuePolicyCounters: {
+            /** Format: int64 */
+            quotaRejected: number | string;
+            /** Format: int64 */
+            expired: number | string;
+            /** Format: int64 */
+            quarantined: number | string;
+            /** Format: int64 */
+            rejected: number | string;
+            /** Format: int64 */
+            poisoned: number | string;
+            /** Format: int64 */
+            failureOverflowed: number | string;
+            /** Format: int64 */
+            failureExpired: number | string;
+        };
+        DeliveryQueueUsage: {
+            /** Format: int64 */
+            pendingCount: number | string;
+            /** Format: int64 */
+            pendingBytes: number | string;
+            /** Format: int64 */
+            failedCount: number | string;
+            /** Format: int64 */
+            failedBytes: number | string;
+            /** Format: int64 */
+            quarantinedCount: number | string;
+            /** Format: int64 */
+            quarantinedBytes: number | string;
+            /** Format: int64 */
+            clockAnomalyCount: number | string;
+            /** Format: int64 */
+            targetChangedCount: number | string;
+            /** Format: int64 */
+            targetMissingCount: number | string;
+            /** Format: int64 */
+            configStoreChangedCount: number | string;
+            /** Format: int64 */
+            unknownQuarantineCount: number | string;
+        };
         DeliveryStoreInfo: {
             filePath: string;
             sqliteVersion: string;
@@ -1358,6 +1446,17 @@ export interface components {
             /** Format: int32 */
             schemaVersion: number | string;
             configStoreId: string;
+        };
+        DeliveryTargetQueueReport: {
+            /** Format: int64 */
+            connectionId: number | string;
+            usage: components["schemas"]["DeliveryQueueUsage"];
+            counters: components["schemas"]["DeliveryQueuePolicyCounters"];
+            /** Format: int64 */
+            headSequence: null | number | string;
+            /** Format: date-time */
+            headCreatedAt: null | string;
+            headClockAnomaly: boolean;
         };
         DeviceDraft: {
             /** Format: int64 */
@@ -1884,6 +1983,15 @@ export interface components {
             networks: components["schemas"]["OutboundNetworkGrant"][];
             localPorts: (number | string)[];
         };
+        OutputCapacityEstimate: {
+            /** Format: double */
+            seconds: null | number | string;
+            limitingConstraint: null | string;
+            /** Format: double */
+            quotaUpperBoundSeconds: null | number | string;
+            quotaLimitingConstraint: null | string;
+            constraints: components["schemas"]["CapacityConstraint"][];
+        };
         OutputControlRequest: {
             paused: boolean;
             confirmed: boolean;
@@ -1892,6 +2000,69 @@ export interface components {
         OutputControlState: {
             manuallyPaused: boolean;
             resumeVersion: null | string;
+        };
+        OutputQueueLimits: {
+            /** Format: int32 */
+            targetCount: number | string;
+            /** Format: int64 */
+            targetBytes: number | string;
+            /** Format: int64 */
+            globalBytes: number | string;
+            /** Format: double */
+            pendingRetentionSeconds: number | string;
+            /** Format: int32 */
+            failedTargetCount: number | string;
+            /** Format: int32 */
+            failedGlobalCount: number | string;
+            /** Format: double */
+            failedRetentionSeconds: number | string;
+            /** Format: int64 */
+            diskReserveBytes: number | string;
+            /** Format: double */
+            diskReserveFraction: number | string;
+        };
+        OutputSenderDiagnostics: {
+            state: string;
+            /** Format: date-time */
+            retryAt: null | string;
+            pauseReason: null | string;
+            lastResult: null | components["schemas"]["OutputSendStatus"];
+            lastError: null | string;
+            /** Format: date-time */
+            lastResultAt: null | string;
+            /** Format: int64 */
+            headSequence: null | number | string;
+            /** Format: date-time */
+            headBlockedSince: null | string;
+            unitId?: null | components["schemas"]["RuntimeUnitId"];
+        };
+        /** @enum {unknown} */
+        OutputSendStatus: "ack" | "retry" | "rejectMessage" | "suspendTarget" | null;
+        OutputTrafficPoint: {
+            /** Format: date-time */
+            at: string;
+            /** Format: double */
+            durationSeconds: number | string;
+            /** Format: int64 */
+            generated: number | string;
+            /** Format: int64 */
+            generatedBytes: number | string;
+            /** Format: int64 */
+            sent: number | string;
+            /** Format: int64 */
+            sendFailures: number | string;
+        };
+        OutputTrafficSnapshot: {
+            /** Format: int64 */
+            connectionId: number | string;
+            points: components["schemas"]["OutputTrafficPoint"][];
+            /** Format: double */
+            recordsPerSecond: null | number | string;
+            /** Format: double */
+            bytesPerSecond: null | number | string;
+            /** Format: double */
+            windowSeconds: null | number | string;
+            accumulating: null | boolean;
         };
         /** @enum {unknown} */
         PointCsvEncoding: "utf8" | "gbk" | null;
@@ -2313,6 +2484,42 @@ export interface components {
             items: components["schemas"]["RuntimeEventItem"][];
             /** Format: int64 */
             nextCursor: null | number | string;
+        };
+        RuntimeOutputInfo: {
+            /** Format: int64 */
+            connectionId: number | string;
+            key: null | string;
+            name: null | string;
+            kind: null | string;
+            active: boolean;
+            state: string;
+            unitState: null | components["schemas"]["RuntimeUnitState"];
+            sender: null | components["schemas"]["OutputSenderDiagnostics"];
+            queue: components["schemas"]["DeliveryTargetQueueReport"];
+            /** Format: double */
+            headWaitingSeconds: null | number | string;
+            /** Format: double */
+            headBlockedSeconds: null | number | string;
+            traffic: components["schemas"]["OutputTrafficSnapshot"];
+            capacity: components["schemas"]["OutputCapacityEstimate"];
+        };
+        RuntimeOutputPage: {
+            /** Format: int64 */
+            revision: null | number | string;
+            metadataAvailable: boolean;
+            /** Format: date-time */
+            capturedAt: string;
+            usage: components["schemas"]["DeliveryQueueUsage"];
+            counters: components["schemas"]["DeliveryQueuePolicyCounters"];
+            files: null | components["schemas"]["DeliveryQueueFiles"];
+            limits: components["schemas"]["OutputQueueLimits"];
+            storageProtection: components["schemas"]["StorageProtectionStatus"];
+            activeStates: {
+                [key: string]: number | string;
+            };
+            items: components["schemas"]["RuntimeOutputInfo"][];
+            /** Format: int64 */
+            nextConnectionId: null | number | string;
         };
         RuntimePointValue: {
             key: string;
@@ -2975,6 +3182,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeCurrentValues"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeOutputs: {
+        parameters: {
+            query?: {
+                after?: number | string;
+                limit?: number | string;
+                revision?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeOutputPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeOutput: {
+        parameters: {
+            query?: {
+                revision?: number | string;
+            };
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeOutputPage"];
                 };
             };
             /** @description Unauthorized */

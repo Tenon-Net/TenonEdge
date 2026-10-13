@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Outputs;
@@ -8,7 +9,7 @@ public sealed partial class RuntimeHost
 {
     // 与当前格式定义分开：保留的发送者可以仍使用旧路径 ID，但只发送已冻结的记录。
     private readonly Dictionary<long, PreparedOutput> _senders = [];
-    private readonly Dictionary<long, OutputSenderState> _senderStates = [];
+    private readonly ConcurrentDictionary<long, OutputSenderState> _senderStates = new();
     private readonly Dictionary<long, HashSet<RuntimeUnitId>> _retiringSenderGroups = [];
     private readonly Dictionary<long, HashSet<RuntimeUnitId>> _senderConnectionGroups = [];
 
@@ -45,6 +46,7 @@ public sealed partial class RuntimeHost
                 _currentQuiescence = null;
                 _activeRevision = prepared.Revision;
                 CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
+                _deliveries.OutputTraffic.RetainTargets(prepared.Outputs.Select(output => output.Target.ConnectionId));
                 _activeDefinition = prepared.Definition;
             }
 
@@ -156,7 +158,7 @@ public sealed partial class RuntimeHost
             _senders.Add(connection, output);
         }
         foreach (var connection in _senderStates.Keys.Where(connection => !next.ContainsKey(connection) && !_supervisor.IsGroupOccupied(SenderGroup(connection))).ToArray())
-        { _senderStates.Remove(connection); _senderConnectionGroups.Remove(connection); }
+        { _senderStates.TryRemove(connection, out _); _senderConnectionGroups.Remove(connection); }
         // 不对旧队列作全局 missing-target 隔离；每个发送者按冻结指纹核对自己的连接。
         return blockedGroups;
     }
@@ -192,6 +194,8 @@ public sealed partial class RuntimeHost
 
     private static void ResetSenderProbe(OutputSenderState state)
     {
+        state.ReportState("normal");
+        state.ReportHead(null);
         state.SuspendedVersion = null;
         state.RetryDelay = null;
         state.ConsecutiveRejects = 0;

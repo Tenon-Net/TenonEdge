@@ -28,3 +28,12 @@ export function useRuntimeDevices() {
         gcTime: 0,
     })
 }
+
+export function useRuntimeOutputs(after?: string, revision?: string) {
+    return useQuery({
+        queryKey: ['runtime-outputs', after, revision],
+        queryFn: ({ signal }) => diagnostics.outputs(after, revision, signal),
+        refetchInterval: 2000,
+        gcTime: 0,
+    })
+}

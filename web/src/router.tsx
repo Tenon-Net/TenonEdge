@@ -115,6 +115,14 @@ const runtimeDevicesRoute = createRoute({
         'RuntimeDevicesPage',
     ),
 })
+const runtimeOutputsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/runtime/outputs',
+    component: lazyRouteComponent(
+        () => import('./features/diagnostics/outputs'),
+        'RuntimeOutputsPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
@@ -122,6 +130,7 @@ export const router = createRouter({
         configurationRoute,
         diagnosticsRoute,
         runtimeDevicesRoute,
+        runtimeOutputsRoute,
         pointsRoute,
         canvasRoute,
         connectionsRoute,

@@ -4,6 +4,8 @@ import { readRouteJson, RouteNumber, type RouteJson } from '../canvas/json'
 import { revisionId } from '../configuration/api'
 
 type Schema = components['schemas']
+export type RuntimeOutputPage = Schema['RuntimeOutputPage']
+export type RuntimeOutputInfo = Schema['RuntimeOutputInfo']
 export type RuntimeDeviceList = Schema['RuntimeDeviceList']
 export type RuntimeCurrentValues = Schema['RuntimeCurrentValues']
 export type Diagnostics = Schema['RuntimeDiagnosticsResponse']
@@ -37,6 +39,62 @@ export function createDiagnosticsApi(
     api: ReturnType<typeof createGatewayClient>,
 ) {
     return {
+        async outputs(after?: string, revision?: string, signal?: AbortSignal) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/runtime/outputs',
+                {
+                    params: {
+                        query: {
+                            after:
+                                after === undefined
+                                    ? undefined
+                                    : (revisionId(after) as unknown as number),
+                            revision:
+                                revision === undefined
+                                    ? undefined
+                                    : revision === '0'
+                                      ? 0
+                                      : (revisionId(
+                                            revision,
+                                        ) as unknown as number),
+                            limit: 100,
+                        },
+                    },
+                    parseAs: 'text',
+                    signal,
+                },
+            )
+            return decodeDiagnosticsJson<RuntimeOutputPage>(data)
+        },
+        async output(
+            connectionId: string,
+            revision: string,
+            signal?: AbortSignal,
+        ) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/runtime/outputs/{connectionId}',
+                {
+                    params: {
+                        path: {
+                            connectionId: revisionId(
+                                connectionId,
+                            ) as unknown as number,
+                        },
+                        query: {
+                            revision:
+                                revision === '0'
+                                    ? 0
+                                    : (revisionId(
+                                          revision,
+                                      ) as unknown as number),
+                        },
+                    },
+                    parseAs: 'text',
+                    signal,
+                },
+            )
+            return decodeDiagnosticsJson<RuntimeOutputPage>(data)
+        },
         async devices(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/runtime/devices',

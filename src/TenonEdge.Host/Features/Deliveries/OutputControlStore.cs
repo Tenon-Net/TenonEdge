@@ -15,6 +15,13 @@ internal sealed class OutputControlStore(ConfigDatabase database, AuditTrail aud
         return row is null ? new(false, null) : new(row.ManuallyPaused, row.Version);
     }
 
+    public IReadOnlyDictionary<long, OutputControlState> ReadMany(long[] connectionIds)
+    {
+        using var client = database.CreateIsolatedClient();
+        return client.Queryable<OutputControlRecord>().Where(row => connectionIds.Contains(row.ConnectionId)).ToList()
+            .ToDictionary(row => row.ConnectionId, row => new OutputControlState(row.ManuallyPaused, row.Version));
+    }
+
     public OutputControlState Write(long connectionId, OutputControlRequest request, string? account, string? sourceIp)
     {
         if (connectionId is < 1 or > 9007199254740991L || !request.Confirmed)

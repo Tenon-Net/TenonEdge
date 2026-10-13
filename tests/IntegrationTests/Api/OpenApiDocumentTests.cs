@@ -59,6 +59,8 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getRouteDrafts",
         "getRuntimeCurrentValues",
         "getRuntimeDevices",
+        "getRuntimeOutput",
+        "getRuntimeOutputs",
         "getRuntimeStatus",
         "getRuntimeTrends",
         "getSession",

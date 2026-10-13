@@ -9,6 +9,39 @@ namespace TenonEdge.Runtime.Outputs;
 /// <summary>目标内存状态跨监督者重建保留；最多一条发送结果等待提交。</summary>
 internal sealed class OutputSenderState
 {
+    private OutputSenderDiagnostics _diagnostics = new("normal", null, null, null, null, null, null, null);
+    public OutputSenderDiagnostics Diagnostics => Volatile.Read(ref _diagnostics);
+
+    internal void ReportUnit(RuntimeUnitId id) => Volatile.Write(ref _diagnostics, Diagnostics with { UnitId = id });
+
+    internal void ReportState(string status, DateTimeOffset? retryAt = null, string? pauseReason = null)
+    {
+        var previous = Diagnostics;
+        Volatile.Write(ref _diagnostics, previous with { State = status, RetryAt = retryAt, PauseReason = SafeLength(pauseReason) });
+    }
+
+    internal void ReportHead(long? sequence)
+    {
+        var previous = Diagnostics;
+        if (previous.HeadSequence != sequence)
+        { Volatile.Write(ref _diagnostics, previous with { HeadSequence = sequence, HeadBlockedSince = null }); }
+    }
+
+    internal void ReportResult(OutputSendResult result, DateTimeOffset at)
+    {
+        var previous = Diagnostics;
+        Volatile.Write(ref _diagnostics, previous with
+        {
+            LastResult = result.Status,
+            LastError = SafeLength(result.Error),
+            LastResultAt = at,
+            HeadBlockedSince = result.Status is OutputSendStatus.Retry or OutputSendStatus.SuspendTarget
+                ? previous.HeadBlockedSince ?? at : previous.HeadBlockedSince,
+        });
+    }
+
+    private static string? SafeLength(string? text) => text?.Length > 500 ? text[..500] : text;
+
     public long? QuarantiningSeq { get; set; }
     public string? ReconciledFingerprint { get; set; }
     public string? ResumeVersion { get; set; }
@@ -45,6 +78,7 @@ internal sealed class OutputSenderUnit(
     public async Task RunAsync(CancellationToken stoppingToken)
     {
         stoppingToken.ThrowIfCancellationRequested();
+        state.ReportUnit(Id);
         // 准备草稿不借用运行中的物理连接；只有监督者实际启动本实例后才取得租约。
         _ = _adapter.Value;
         while (!stoppingToken.IsCancellationRequested)
@@ -93,6 +127,7 @@ internal sealed class OutputSenderUnit(
             var control = controls?.Read(target.ConnectionId);
             if (control?.ManuallyPaused == true)
             {
+                state.ReportState("manuallyPaused", pauseReason: "管理员手动暂停。");
                 await Task.Delay(TimeSpan.FromMilliseconds(250), time, stoppingToken);
                 continue;
             }
@@ -104,6 +139,7 @@ internal sealed class OutputSenderUnit(
                 state.RetryDelay = null;
                 state.ConsecutiveRejects = 0;
                 state.ConsecutiveRetries = 0;
+                state.ReportState("normal");
             }
 
             if (state.SuspendedVersion is { } suspended)
@@ -117,12 +153,14 @@ internal sealed class OutputSenderUnit(
                 state.SuspendedVersion = null;
                 state.ConsecutiveRejects = 0;
                 state.ConsecutiveRetries = 0;
+                state.ReportState("normal");
                 events.Record(RuntimeEventSeverity.Info, "output.resuming", Id.ToString(), "凭证变化，重新探测输出目标。");
             }
 
             if (state.RetryDelay is { } delay)
             {
                 var started = time.GetTimestamp();
+                state.ReportState("backoff", time.GetUtcNow() + delay);
                 while (time.GetElapsedTime(started) < delay)
                 {
                     var currentControl = controls?.Read(target.ConnectionId);
@@ -139,10 +177,12 @@ internal sealed class OutputSenderUnit(
                 }
 
                 state.RetryDelay = null;
+                state.ReportState("normal");
             }
 
             var pending = deliveries.ReadPending(target.ConnectionId, 0, 1);
             var head = pending.Count == 0 ? null : pending[0];
+            state.ReportHead(head?.Seq);
             if (head is null)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(100), time, stoppingToken);
@@ -174,6 +214,8 @@ internal sealed class OutputSenderUnit(
                 continue;
             }
 
+            state.ReportResult(result, time.GetUtcNow());
+            deliveries.OutputTraffic.Sent(target.ConnectionId, result.Status);
             deliveries.PendingCounters.RecordActivity(result.Status == OutputSendStatus.Ack
                 ? RuntimeActivity.Sent : RuntimeActivity.SendFailure);
 
@@ -196,6 +238,7 @@ internal sealed class OutputSenderUnit(
                     if (!poison)
                     {
                         state.RetryDelay = state.NextRetry(backoff, result.RetryAfter);
+                        state.ReportState("backoff", time.GetUtcNow() + state.RetryDelay.Value);
                         events.Record(RuntimeEventSeverity.Warning, "output.retry", Id.ToString(),
                             result.Error ?? "输出暂时失败，目标退避后重试。");
                     }
@@ -242,6 +285,7 @@ internal sealed class OutputSenderUnit(
     private void Suspend(string version, string error)
     {
         state.SuspendedVersion = version;
+        state.ReportState("automaticallyPaused", pauseReason: error);
         events.Record(RuntimeEventSeverity.Error, "output.suspended", Id.ToString(), error);
     }
 

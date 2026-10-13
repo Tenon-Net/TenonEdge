@@ -87,3 +87,32 @@ it('current values preserve signed 64-bit text and use version-bound field pages
     expect(requests[0].method).toBe('GET')
     expect(requests[0].headers.has('X-CSRF-Token')).toBe(false)
 })
+
+it('output metadata uses bounded revision-bound pages and keeps exact queue counts without fetching messages', async () => {
+    const requests: Request[] = []
+    const api = client(async (input) => {
+        requests.push(input as Request)
+        return new Response(
+            '{"revision":9223372036854775807,"items":[],"usage":{"pendingCount":9223372036854775806},"nextConnectionId":9007199254740991}',
+        )
+    })
+    const result = await api.outputs('9007199254740990', '9223372036854775807')
+    expect(result.usage.pendingCount).toBe('9223372036854775806')
+    expect(Object.fromEntries(new URL(requests[0].url).searchParams)).toEqual({
+        after: '9007199254740990',
+        revision: '9223372036854775807',
+        limit: '100',
+    })
+    await api.output('9007199254740991', '0')
+    expect(new URL(requests[1].url).pathname).toBe(
+        '/api/edge-admin/v1/runtime/outputs/9007199254740991',
+    )
+    expect(new URL(requests[1].url).searchParams.get('revision')).toBe('0')
+    expect(
+        requests.every(
+            (request) => request.method === 'GET' && request.body === null,
+        ),
+    ).toBe(true)
+    await expect(api.outputs('-1')).rejects.toThrow()
+    expect(requests).toHaveLength(2)
+})

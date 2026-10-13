@@ -1,3 +1,4 @@
+import { OutputSummary } from './outputs'
 import { DeviceSummary } from './current-values'
 import { useTranslation } from 'react-i18next'
 import { useRuntimeStatus } from './queries'
@@ -13,6 +14,7 @@ export function DiagnosticsPage() {
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold">{t('diagnostics.title')}</h1>
             <DeviceSummary />
+            <OutputSummary />
             <DiagnosticPanel title={t('diagnostics.units')} query={query}>
                 {data && (
                     <>

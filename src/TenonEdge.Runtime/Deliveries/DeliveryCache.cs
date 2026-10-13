@@ -38,6 +38,7 @@ public sealed class DeliveryCache
     {
         Options = options.Validate();
         _time = time;
+        OutputTraffic = new OutputTrafficHistory(time);
         Store = new DeliveryStore(options, time, events);
         StorageProtection = new StorageProtection(Path.GetDirectoryName(options.DatabasePath)!,
             options.MinimumDiskFreeBytes, options.MinimumDiskFreeFraction, readSpace);
@@ -66,6 +67,7 @@ public sealed class DeliveryCache
     internal PendingCounters PendingCounters { get; } = new();
 
     public DeliveryCacheOptions Options { get; }
+    public OutputTrafficHistory OutputTraffic { get; }
 
     internal DeliveryStore Store { get; }
 
@@ -117,6 +119,9 @@ public sealed class DeliveryCache
 
     public IReadOnlyList<StoredDelivery> ReadQuarantined(long connectionId, long afterSeq, int limit) =>
         Store.Read(connectionId, afterSeq, limit, DeliveryState.Quarantined);
+
+    public DeliveryQueueReport GetQueueReport(IReadOnlyCollection<long> activeConnections, long after = 0, int limit = 100) =>
+        Store.ReadQueueReport(activeConnections, after, limit);
 
     public DeliveryQueueTotals GetQueueTotals(long connectionId) => Store.ReadQueueTotals(connectionId);
 

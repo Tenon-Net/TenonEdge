@@ -300,6 +300,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             prepared.HandOver();
             _activeRevision = prepared.Revision;
             CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
+            _deliveries.OutputTraffic.RetainTargets(prepared.Outputs.Select(output => output.Target.ConnectionId));
             _activeOutputs = prepared.Outputs;
             _activeDefinition = prepared.Definition;
             foreach (var input in prepared.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
@@ -462,6 +463,10 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             return new RuntimeStatusReport(_activeRevision, [.. _supervisor.Snapshot(), .. _notStarted]);
         }
     }
+
+    /// <summary>按连接发布的发送诊断；并发枚举不会暴露生命周期正在修改的字典。</summary>
+    public RuntimeOutputSender[] GetOutputSenders() => _senderStates.OrderBy(pair => pair.Key)
+        .Select(pair => new RuntimeOutputSender(pair.Key, pair.Value.Diagnostics)).ToArray();
 
     public async ValueTask DisposeAsync() => await StopAsync(CancellationToken.None);
 

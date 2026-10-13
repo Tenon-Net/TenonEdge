@@ -12,7 +12,7 @@ internal sealed class RuntimeTrendMonitor(DeliveryCache cache, RuntimeTrendHisto
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
-            { history.Sample(cache.GetActivityTotals()); }
+            { history.Sample(cache.GetActivityTotals()); cache.OutputTraffic.Sample(); }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
