@@ -19,3 +19,12 @@ export function useSystemInfo() {
         gcTime: 0,
     })
 }
+
+export function useRuntimeDevices() {
+    return useQuery({
+        queryKey: ['runtime-devices'],
+        queryFn: ({ signal }) => diagnostics.devices(signal),
+        refetchInterval: 2000,
+        gcTime: 0,
+    })
+}

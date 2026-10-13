@@ -1,3 +1,4 @@
+import { DeviceSummary } from './current-values'
 import { useTranslation } from 'react-i18next'
 import { useRuntimeStatus } from './queries'
 import { DiagnosticPanel, dateText } from './view'
@@ -11,6 +12,7 @@ export function DiagnosticsPage() {
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold">{t('diagnostics.title')}</h1>
+            <DeviceSummary />
             <DiagnosticPanel title={t('diagnostics.units')} query={query}>
                 {data && (
                     <>

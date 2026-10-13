@@ -621,6 +621,118 @@
         }
       }
     },
+    "/api/edge-admin/v1/runtime/devices": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "查看运行设备与来源状态，单列未应用设备",
+        "operationId": "getRuntimeDevices",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeDeviceList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/devices/{deviceKey}/inputs/{inputKey}/values": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "分页查看运行快照的点位当前值及最后成功值",
+        "operationId": "getRuntimeCurrentValues",
+        "parameters": [
+          {
+            "name": "deviceKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inputKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeCurrentValues"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/system/info": {
       "get": {
         "tags": [
@@ -6439,6 +6551,111 @@
           }
         }
       },
+      "CurrentFieldValue": {
+        "required": [
+          "key",
+          "type",
+          "text",
+          "quality",
+          "reason",
+          "isStale",
+          "collectedAt",
+          "receivedAt",
+          "timeSource"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FieldType"
+              }
+            ]
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quality": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isStale": {
+            "type": "boolean"
+          },
+          "collectedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "receivedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "timeSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TimeSource"
+              }
+            ]
+          }
+        }
+      },
+      "CurrentValueCacheStatus": {
+        "required": [
+          "fields",
+          "chargedBytes",
+          "evictions"
+        ],
+        "type": "object",
+        "properties": {
+          "fields": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "chargedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "evictions": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "DeliveryCacheStatus": {
         "required": [
           "storageFault",
@@ -6836,7 +7053,8 @@
           "boolean",
           "integer",
           "number",
-          "string"
+          "string",
+          null
         ]
       },
       "FirstSetupInfo": {
@@ -10360,6 +10578,191 @@
           }
         }
       },
+      "RuntimeCurrentValues": {
+        "required": [
+          "revision",
+          "deviceKey",
+          "inputKey",
+          "items",
+          "nextKey",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "deviceKey": {
+            "type": "string"
+          },
+          "inputKey": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimePointValue"
+            }
+          },
+          "nextKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "RuntimeDeviceInfo": {
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "health",
+          "draftOnly",
+          "removedFromDraft",
+          "sources"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "health": {
+            "type": "string"
+          },
+          "draftOnly": {
+            "type": "boolean"
+          },
+          "removedFromDraft": {
+            "type": "boolean"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeDeviceSource"
+            }
+          }
+        }
+      },
+      "RuntimeDeviceList": {
+        "required": [
+          "revision",
+          "devices",
+          "cache"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeDeviceInfo"
+            }
+          },
+          "cache": {
+            "$ref": "#/components/schemas/CurrentValueCacheStatus"
+          }
+        }
+      },
+      "RuntimeDeviceSource": {
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "enabled",
+          "periodMs",
+          "fields",
+          "state",
+          "reads",
+          "lastReceivedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "periodMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "fields": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "state": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RuntimeUnitState"
+              }
+            ]
+          },
+          "reads": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InputReadSnapshot"
+              }
+            ]
+          },
+          "lastReceivedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
       "RuntimeDiagnosticsResponse": {
         "required": [
           "coordinator",
@@ -10500,6 +10903,39 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "RuntimePointValue": {
+        "required": [
+          "key",
+          "name",
+          "unit",
+          "enabled",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unit": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/components/schemas/CurrentFieldValue"
           }
         }
       },
@@ -11104,7 +11540,8 @@
           "device",
           "upstream",
           "gateway",
-          "gateway-unsynced"
+          "gateway-unsynced",
+          null
         ]
       },
       "UpstreamTimeFormat": {

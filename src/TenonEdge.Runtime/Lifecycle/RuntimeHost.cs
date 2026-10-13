@@ -46,6 +46,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     public InFlightBudget InFlight { get; }
     /// <summary>进程内唯一的诊断消息缓存，独立于界面订阅；不代表来源当前可取样。</summary>
     public RuntimeMessageCache Messages { get; }
+    public CurrentValueCache CurrentValues { get; }
 
     private bool _coreStarted;
     private long? _activeRevision;
@@ -109,6 +110,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         _options = options.Validate();
         InFlight = new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
         Messages = new RuntimeMessageCache(time);
+        CurrentValues = new CurrentValueCache(time);
         _logger = logger;
         _supervisor = new UnitSupervisor(_options, time, events, logger, random);
     }
@@ -297,6 +299,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             // 已释放或已激活过的计划在这里被拒绝，不改变运行时的状态。
             prepared.HandOver();
             _activeRevision = prepared.Revision;
+            CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
             _activeOutputs = prepared.Outputs;
             _activeDefinition = prepared.Definition;
             foreach (var input in prepared.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
@@ -508,7 +511,13 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             return Failed(id, "输入单元的业务标识应为 deviceKey/inputKey 两段。");
         }
 
-        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight, message => Messages.CaptureInput(id, revision, message)) { UsesDurableHandoff = factory.UsesDurableHandoff };
+        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight, message =>
+        {
+            try
+            { CurrentValues.Capture(id, revision, message); }
+            finally { Messages.CaptureInput(id, revision, message); }
+        })
+        { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
         var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation, _options.InputBufferBytes > 0 ? InFlight : null);
         IRuntimeUnit Build()

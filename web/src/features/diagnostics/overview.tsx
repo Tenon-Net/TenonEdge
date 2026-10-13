@@ -1,3 +1,4 @@
+import { DeviceSummary } from './current-values'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +21,7 @@ export function OverviewPage() {
                 {t('diagnostics.overview')}
             </h1>
             <p className="text-muted-foreground">{t('authenticated')}</p>
+            <DeviceSummary />
             <DiagnosticPanel title={t('diagnostics.state')} query={runtime}>
                 {status && (
                     <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

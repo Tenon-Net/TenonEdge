@@ -58,3 +58,32 @@ it('does not retry failures and propagates query cancellation', async () => {
     await expect(client(fetcher).trends(controller.signal)).rejects.toThrow()
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
+
+it('current values preserve signed 64-bit text and use version-bound field pages', async () => {
+    const requests: Request[] = []
+    const api = client(async (input) => {
+        requests.push(input as Request)
+        return new Response(
+            '{"revision":9223372036854775807,"deviceKey":"meter","inputKey":"main","items":[{"key":"v","value":{"type":"integer","text":"9223372036854775807","quality":"good","isStale":false}}],"nextKey":"v","total":105}',
+        )
+    })
+    const values = await api.values(
+        'meter',
+        'main',
+        '9223372036854775807',
+        'p099',
+    )
+    expect(values.items[0].value.text).toBe('9223372036854775807')
+    expect(values.revision).toBe('9223372036854775807')
+    const url = new URL(requests[0].url)
+    expect(url.pathname).toBe(
+        '/api/edge-admin/v1/runtime/devices/meter/inputs/main/values',
+    )
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+        revision: '9223372036854775807',
+        after: 'p099',
+        limit: '100',
+    })
+    expect(requests[0].method).toBe('GET')
+    expect(requests[0].headers.has('X-CSRF-Token')).toBe(false)
+})

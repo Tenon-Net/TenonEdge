@@ -1,3 +1,4 @@
+import { currentValueStrings } from '../features/diagnostics/current-value-strings'
 import { configurationStrings } from '../features/configuration/strings'
 import { diagnosticsStrings } from '../features/diagnostics/strings'
 import { routeStrings } from '../features/routes/strings'
@@ -20,6 +21,7 @@ void i18n.use(initReactI18next).init({
             translation: {
                 configuration: configurationStrings,
                 diagnostics: diagnosticsStrings,
+                currentValues: currentValueStrings,
                 routes: routeStrings,
                 devices: deviceStrings,
                 inputs: inputStrings,

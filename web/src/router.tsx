@@ -107,12 +107,21 @@ const diagnosticsRoute = createRoute({
         'DiagnosticsPage',
     ),
 })
+const runtimeDevicesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/runtime/devices',
+    component: lazyRouteComponent(
+        () => import('./features/diagnostics/current-values'),
+        'RuntimeDevicesPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
         accountRoute,
         configurationRoute,
         diagnosticsRoute,
+        runtimeDevicesRoute,
         pointsRoute,
         canvasRoute,
         connectionsRoute,

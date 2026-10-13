@@ -4,6 +4,8 @@ import { readRouteJson, RouteNumber, type RouteJson } from '../canvas/json'
 import { revisionId } from '../configuration/api'
 
 type Schema = components['schemas']
+export type RuntimeDeviceList = Schema['RuntimeDeviceList']
+export type RuntimeCurrentValues = Schema['RuntimeCurrentValues']
 export type Diagnostics = Schema['RuntimeDiagnosticsResponse']
 export type TrendPoint = Schema['RuntimeTrendPoint']
 export type EventPage = Schema['RuntimeEventPage']
@@ -35,6 +37,37 @@ export function createDiagnosticsApi(
     api: ReturnType<typeof createGatewayClient>,
 ) {
     return {
+        async devices(signal?: AbortSignal) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/runtime/devices',
+                { parseAs: 'text', signal },
+            )
+            return decodeDiagnosticsJson<RuntimeDeviceList>(data)
+        },
+        async values(
+            deviceKey: string,
+            inputKey: string,
+            revision: string,
+            after?: string,
+            signal?: AbortSignal,
+        ) {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/runtime/devices/{deviceKey}/inputs/{inputKey}/values',
+                {
+                    params: {
+                        path: { deviceKey, inputKey },
+                        query: {
+                            revision: revisionId(revision) as unknown as number,
+                            after,
+                            limit: 100,
+                        },
+                    },
+                    parseAs: 'text',
+                    signal,
+                },
+            )
+            return decodeDiagnosticsJson<RuntimeCurrentValues>(data)
+        },
         async status(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/runtime/status',

@@ -44,6 +44,7 @@ public sealed partial class RuntimeHost
                 prepared.HandOver();
                 _currentQuiescence = null;
                 _activeRevision = prepared.Revision;
+                CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
                 _activeDefinition = prepared.Definition;
             }
 

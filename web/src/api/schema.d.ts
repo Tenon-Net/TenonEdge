@@ -219,6 +219,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/runtime/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看运行设备与来源状态，单列未应用设备 */
+        get: operations["getRuntimeDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/runtime/devices/{deviceKey}/inputs/{inputKey}/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查看运行快照的点位当前值及最后成功值 */
+        get: operations["getRuntimeCurrentValues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/system/info": {
         parameters: {
             query?: never;
@@ -1275,6 +1309,27 @@ export interface components {
             code?: null | string;
             timingGroup?: null | string;
         };
+        CurrentFieldValue: {
+            key: string;
+            type: null | components["schemas"]["FieldType"];
+            text: null | string;
+            quality: string;
+            reason: null | string;
+            isStale: boolean;
+            /** Format: date-time */
+            collectedAt: null | string;
+            /** Format: date-time */
+            receivedAt: null | string;
+            timeSource: null | components["schemas"]["TimeSource"];
+        };
+        CurrentValueCacheStatus: {
+            /** Format: int32 */
+            fields: number | string;
+            /** Format: int64 */
+            chargedBytes: number | string;
+            /** Format: int64 */
+            evictions: number | string;
+        };
         DeliveryCacheStatus: {
             storageFault: boolean;
             lastError: null | string;
@@ -1366,7 +1421,7 @@ export interface components {
             required: boolean;
         };
         /** @enum {unknown} */
-        FieldType: "boolean" | "integer" | "number" | "string";
+        FieldType: "boolean" | "integer" | "number" | "string" | null;
         FirstSetupInfo: {
             /** Format: date-time */
             completedAt: string;
@@ -2185,6 +2240,45 @@ export interface components {
             /** Format: int64 */
             activeRevision: null | number | string;
         };
+        RuntimeCurrentValues: {
+            /** Format: int64 */
+            revision: number | string;
+            deviceKey: string;
+            inputKey: string;
+            items: components["schemas"]["RuntimePointValue"][];
+            nextKey: null | string;
+            /** Format: int32 */
+            total: number | string;
+        };
+        RuntimeDeviceInfo: {
+            key: string;
+            name: string;
+            kind: string;
+            health: string;
+            draftOnly: boolean;
+            removedFromDraft: boolean;
+            sources: components["schemas"]["RuntimeDeviceSource"][];
+        };
+        RuntimeDeviceList: {
+            /** Format: int64 */
+            revision: null | number | string;
+            devices: components["schemas"]["RuntimeDeviceInfo"][];
+            cache: components["schemas"]["CurrentValueCacheStatus"];
+        };
+        RuntimeDeviceSource: {
+            key: string;
+            name: string;
+            kind: string;
+            enabled: boolean;
+            /** Format: int32 */
+            periodMs: null | number | string;
+            /** Format: int32 */
+            fields: number | string;
+            state: null | components["schemas"]["RuntimeUnitState"];
+            reads: null | components["schemas"]["InputReadSnapshot"];
+            /** Format: date-time */
+            lastReceivedAt: null | string;
+        };
         RuntimeDiagnosticsResponse: {
             coordinator: components["schemas"]["RuntimeCoordinatorStatus"];
             runtime: components["schemas"]["RuntimeStatusReport"];
@@ -2219,6 +2313,13 @@ export interface components {
             items: components["schemas"]["RuntimeEventItem"][];
             /** Format: int64 */
             nextCursor: null | number | string;
+        };
+        RuntimePointValue: {
+            key: string;
+            name: null | string;
+            unit: null | string;
+            enabled: boolean;
+            value: components["schemas"]["CurrentFieldValue"];
         };
         RuntimeStartBlocker: {
             code: string;
@@ -2362,7 +2463,7 @@ export interface components {
             clockSyncState: components["schemas"]["ClockSyncState"];
         };
         /** @enum {unknown} */
-        TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced";
+        TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced" | null;
         /** @enum {unknown} */
         UpstreamTimeFormat: "rfc3339" | "unixSeconds" | "unixMilliseconds" | null;
         /** @enum {unknown} */
@@ -2809,6 +2910,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeTrendPoint"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeDeviceList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeCurrentValues: {
+        parameters: {
+            query: {
+                revision: number | string;
+                after?: string;
+                limit?: number | string;
+            };
+            header?: never;
+            path: {
+                deviceKey: string;
+                inputKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeCurrentValues"];
                 };
             };
             /** @description Unauthorized */
