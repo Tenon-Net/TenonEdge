@@ -5,6 +5,8 @@ public sealed record DeliveryExportFilter(DeliveryState State, long? ConnectionI
     string? Reason = null, DateTimeOffset? From = null, DateTimeOffset? To = null)
 {
     internal DeliveryInspectionQuery Query => new(State, ConnectionId, DeviceKey, Reason, From, To);
+
+    public void Validate() => Query.Validate();
 }
 
 /// <summary>只含核对信息的不可变凭据，由原缓存生成并在服务端保留；不是客户端可以自行构造的授权令牌。

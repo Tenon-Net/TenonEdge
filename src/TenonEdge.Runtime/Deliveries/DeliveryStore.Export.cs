@@ -15,7 +15,7 @@ internal sealed partial class DeliveryStore
     internal DeliveryExportReview ReviewExport(DeliveryExportFilter filter, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        filter.Query.Validate();
+        filter.Validate();
         token.ThrowIfCancellationRequested();
         EnsureInitialized();
         var captured = _time.GetUtcNow();

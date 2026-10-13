@@ -45,6 +45,8 @@ internal static class RuntimeRegistration
             },
             provider.GetRequiredService<TimeProvider>(), events: provider.GetRequiredService<IRuntimeEventSink>()));
         services.AddSingleton<OutputControlStore>();
+        services.AddSingleton<DeliveryExportFiles>();
+        services.AddSingleton<DeliveryExportManager>();
         services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());
         services.AddSingleton<MqttCredentialStore>();
         services.AddSingleton<IMqttSubscriptionStore, MqttSubscriptionStore>();
