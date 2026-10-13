@@ -14,6 +14,7 @@ import {
     type DeliveryItem,
 } from './api'
 import { DeliveryRecordActions } from './actions'
+import { DeliveryExport } from './export'
 
 const deliveries = createDeliveryApi(api)
 export function DeliveryRecordsPage() {
@@ -373,6 +374,14 @@ function Records({ connectionId }: { connectionId?: string }) {
                         select(undefined)
                         void query.refetch()
                     }}
+                />
+            )}
+            {canCleanup && (
+                <DeliveryExport
+                    filter={filter}
+                    unavailable={
+                        operationLocked || query.isFetching || !!query.error
+                    }
                 />
             )}
             {canReadBody && selected && (

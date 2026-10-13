@@ -47,7 +47,7 @@
 | T3 | T3-05 图编译与样本预览 | 部分实现，整项未完成 | 自有图格式、路径限制、持久画布、映射/输出表单、字段分析及手工/现场/运行缓存样本已实现；剩余：按功能 §4/5 逐项核对画布操作与无 JSON 路线验收，不用已有局部用例代替完整闭环 | §2.123—§2.148，T3-11 收口 |
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
-| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；网页入口和浏览器验收仍未完成。剩余：目标待发清空、导出页面与验收、两种原子迁移及 FS-23 中断审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.202；功能 §8 |
+| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203。剩余：目标待发清空、两种原子迁移及 FS-23 中断审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.203；功能 §8 |
 | T3 | T3-09 用户审计与系统管理 | 未完成 | 既有登录/权限、审计查询、系统信息和出站白名单 API 不等于管理产品已完成；须补用户/临时密码/强制下线/最后管理员、HTTPS API Token、审计导出、运行参数/白名单/访问策略页面与真实授权验收。宿主管理证书替换按 T5-01 | 功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
@@ -4242,6 +4242,37 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 - `git diff --check` 通过，最终文件哈希 `...-source-final.json`。以上为本地软件验证，远端CI未执行。
 
 剩余：网页导出准备/确认/状态恢复/取消、原生下载及跨角色/丢响应/大文件浏览器验收；清理失败的专门状态提示；其他队列迁移/清空与T3缺项继续按§1。未推送、发布或进入T4/T5/G1。
+
+### 2.203 T3-08 导出确认页面、原生大文件下载与清理失败提示（2026-10-13）
+
+基线 `3f42730`，按已授权 T3 持续收口。**本批补齐 §2.201—§2.202 的失败／隔离导出页面及软件验收，不代表 T3-08 或 T3 整体完成。** 对应功能 §8.2/8.4/8.6、AT-18 的导出权限子场景；沿用 PLAN T3-08 和已生成的真实 OpenAPI，不标 AT-18 全部通过。未新增依赖、路由、运行服务或生产故障注入入口。
+
+实现：
+
+- `/deliveries` 仅管理员显示导出区域。准备采用**已应用筛选**，不是未应用草稿、本页或勾选项；不复用重试／清理的1000条批量读取。显示服务端核对的冻结筛选、完整条数、正文总字节、最坏转义文件估算及首次入队时间范围，勾选二次确认才生成。明确敏感业务正文和准备起15分钟绝对有效期（包含核对、确认、生成及下载）。
+- 按会话epoch隔离查询，活跃资源每秒读取状态。请求不自动重试；写响应丢失时只读恢复，不自动重放准备、确认或取消。同一资源一旦尝试确认，不再启用旧确认；未生效时须取消后重新准备。状态读取失败不当作空资源，`busy`未释放前不准备下一份。
+- 文件使用固定同源、校验UUID后的原生下载链接，不通过管理客户端的 `arrayBuffer()`、`fetch`或Blob缓冲整份文件。普通元数据仍使用openapi-fetch及保留Int64的JSON解析；条数和大小使用字符串。页面区分文件生成、HTTP响应写出和浏览器真正保存，服务器不声称用户已保存。
+- 文件关闭或删除失败时，当前资源显式报告 `delivery.exportCleanupFailed`，后续导出禁用，提示主机管理员检查存储／权限并处理后重启。`cancelled`、`responseWritten`不代表物理文件已删除；导出审计detail增加 `cleanupFailed`。不更改队列数据、计数、暂停或导出API形状。
+
+新增验证：
+
+- 9项Vitest覆盖完整筛选（无分页/1000条限制）、安全数字和UUID、独立确认/取消、只读恢复、原生URL、HTTP失败/丢响应不重放、显式null与无效响应拒绝。
+- 2项Linux集成测试：把已打开的暂存文件移到测试保留路径，再在产品文件路径创建目录，制造真实unlink失败；分别覆盖取消与HTTP写出后的资源错误、503拒绝继续准备和原文件仍存在。此为文件系统故障夹具，不是物理磁盘写满验证。
+- 浏览器1：独立Production Host，真实模拟来源→HTTP422，正文超过64KiB。已应用原因422与未应用草稿UNAPPLIED明确区分；取消不改队列；同账号另一个浏览器会话不能读资源／下载；真实确认已返回202后仅丢弃响应，页面只读恢复且确认只发生一次；文件ready后产生新失败，原下载仍只含核对记录，逐行与真实HTTP收到的冻结正文精确比对；并发清理使下一份核对失效，整份拒绝无下载链接。实际chmod0500造成取消后删除失败，提示错误且禁用准备。配置人员／只读页面无导出区，直接API403。角色修改是离线账号夹具，不是用户管理页面验收；新增记录发生在ready后，不冒充确认前水位用例（后者见§2.201）。
+- 浏览器2：离线SQLite夹具填充1025条隔离记录，每条正文约70KiB。原生下载超过64MiB，以Node逐行校验全部投递编号、顺序和完整正文；无分页/1000条截断，队列隔离数仍1025。页面内禁止通过 `window.fetch` 请求download URL，原生下载仍成功。此为下载规模夹具，不是协议、迁移或无JSON配置验收。
+- 浏览器初轮2项失败：登录helper点击后立即导航，打断登录；改为等待真实导航。第二轮2项失败：原生文件已下载，但测试错误依赖Playwright request事件；改用Download事件、URL和文件校验，并禁用fetch下载；另一项误写队列统计路径 `.queue.usage`，修正为实际 `.usage`。第三轮2项通过；两轮失败不记通过。
+- 已目视检查 `/tmp/tenonedge-export-ui-downloaded.png`、`...-cleanup-failed.png`：冻结范围、大小/时间、下载状态及清理失败警告可见。截图含种子夹具配置状态，不作为完整无代码验收。
+
+环境：Linux7.0.0-31-generic x64（UID1000）、SDK10.0.401、Node22.23.2、固定npm11.21.0；浏览器为当前Playwright Chromium156，不代表Chrome/Edge111最低版本。证据前缀 `/tmp/tenonedge-export-ui`：
+
+- `dotnet format TenonEdge.sln --no-restore --include src/TenonEdge.Host/Features/Deliveries/DeliveryExportManager.cs tests/IntegrationTests/Deliveries/DeliveryExportLifecycleTests.cs` 与 `dotnet build TenonEdge.sln -c Release --no-restore`：通过，0警告/错误（`...-dotnet-format.log`、`...-dotnet-build.log`）。
+- `dotnet test tests/IntegrationTests -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --filter 'FullyQualifiedName~DeliveryExport' --logger trx --results-directory /tmp/tenonedge-export-ui-target-trx`：**41项通过，0失败/跳过**（`...-target.log`、TRX；`verify-test-results.py --require TenonEdge.IntegrationTests` 核对通过，`...-target-verified.log`）。
+- 固定npm `run build`、`run lint`、`run format:check`、`test`：通过，**305项Vitest**（`...-build-final.log`、`...-lint-final.log`、`...-format-final.log`、`...-unit-final.log`）。既有Vite主块约526kB提示未消除。
+- 固定npm `run test:e2e -- tests/delivery-export.spec.ts`：最终 **2项通过，0失败/跳过**（`...-browser-r3.log`）。固定npm `run test:e2e -- --reporter=line,json`：全量 **52项通过，0失败/跳过/flaky**，6.5分钟（`...-browser-full.log`、`...-browser-full.json`）；逐项核对均单次执行passed，报告无全局错误（`...-browser-full-verified.log`）。
+- `dotnet format TenonEdge.sln --no-restore --verify-no-changes` 通过（`...-dotnet-format-final.log`）。`dotnet test TenonEdge.sln -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --logger trx --results-directory /tmp/tenonedge-export-ui-full-trx`：**1282单元 + 1497集成 = 2779项全部通过，0失败/跳过**，集成12分24秒；`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-export-ui-full-trx --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 核对通过（`...-full.log`、`...-full-verified.log`）。
+- `git diff --check` 通过；最终文件哈希 `...-source-final.json`。导出浏览器测试的临时数据目录已清除；未推送，远端CI未执行。
+
+剩余按§1继续：目标全部待发清空须与原发送者的在途和未提交结果协调，不能直接暴露DeleteAsync；两类迁移与FS-23跨库恢复审计、对方错误摘要及其他T3任务。未推送、发布或进入T4/T5/G1。
 
 ## 3. 验收编号登记
 

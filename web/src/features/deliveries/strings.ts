@@ -2,6 +2,75 @@ export const deliveryStrings = {
     title: '失败区与隔离区',
     notice: '列表查询不触发发送，人工重试须另外核对确认。记录按排队序号升序分页，每页最多 100 条；翻页期间记录可能过期或被操作，各页不是同一快照。',
     actions: '队列记录操作',
+    export: {
+        title: '导出故障记录',
+        notice: '管理员可导出整个已应用筛选范围，不是本页或勾选项，也不受清理批次 1000 条限制。JSON Lines 每行一条，保留完整正文（UTF-8 文本或 Base64），不含连接凭证；文件可能包含敏感业务数据，请妥善保存。不会删除、重试或重新导入队列。',
+        lifetime:
+            '一台网关同时只保留一份临时导出，仅创建它的登录会话可用。自准备起 15 分钟到期，包含核对、生成和下载；文件较大时请预留足够下载时间。关闭页面不会取消生成，可回到此页读取状态。',
+        applied: '下一次准备采用：',
+        scope: '{{area}} · 目标 {{target}} · 设备 {{device}} · 原因 {{reason}} · 首次入队自 {{from}} 至 {{to}}（不含）',
+        prepare: '核对整个已应用筛选的导出',
+        refresh: '重新读取导出状态',
+        loading: '正在读取本会话导出状态。',
+        readFailed: '无法读取导出状态，不按空资源处理。请重新读取后操作。',
+        unknownResult:
+            '请求失败或响应丢失，结果不确定。只重新读取状态，不自动重放。若确认请求未生效，请取消该资源后重新准备。',
+        sending: '正在提交导出请求；响应不代表文件已生成。',
+        none: '本登录会话没有导出资源；其他会话的资源不会在此显示。',
+        expires: '到期时间：{{time}}',
+        frozen: '本次已核对的冻结筛选：',
+        summary:
+            '完整范围 {{count}} 条 · 原始正文 {{bytes}} 字节 · 文件最坏估算 {{maximum}} 字节（含 JSON 转义，不是实际大小）',
+        timeRange: '本次记录首次入队时间范围：{{from}} 至 {{to}}',
+        snapshot:
+            '后续新增记录不加入；未读记录被清理、重试、迁移或改变状态时整份拒绝。已读取的冻结内容不因后续清理而撤回。当前列表、筛选草稿或页面勾选不改变这次核对。',
+        empty: '核对范围为空，不能生成文件。请取消资源后重新筛选。',
+        confirmation:
+            '我已核对完整范围、条数和时间，确认导出并妥善保护完整业务正文',
+        confirm: '确认生成完整导出文件',
+        fileReady:
+            '完整文件已生成：{{bytes}} 字节。下载使用浏览器原生能力，不在页面内缓冲整份文件。',
+        download: '下载完整 JSON Lines 文件',
+        downloadRequested:
+            '已请求浏览器下载，请检查下载列表；没有保存成功时先读取状态，不自动再次下载。',
+        cancel: '取消导出并清理临时文件',
+        releasing: '原任务或下载租约仍在退出，暂不能准备新的导出。',
+        genericError: '导出失败，请重新读取状态并检查网关存储，不自动重放。',
+        states: {
+            preparing: '正在核对完整导出范围，尚未生成正文文件。',
+            awaitingConfirmation: '等待管理员确认导出。',
+            generating: '正在生成完整文件，当前还不能下载。',
+            ready: '文件已就绪，等待下载。',
+            downloading: '正在写出下载响应。',
+            responseWritten:
+                'HTTP 下载响应已写出，请自行确认浏览器已完整保存；服务器不能证明保存成功。',
+            failed: '本次导出未完成，请查看错误；不会提供部分生成的文件。',
+            cancelled: '导出已取消。',
+            expired: '导出已到期，原确认和下载地址不再可用。',
+        },
+        errors: {
+            'delivery.exportSelectionChanged':
+                '核对范围内的记录已变化，整份文件已拒绝。请重新准备并确认。',
+            'delivery.exportInsufficientSpace':
+                '可用空间不足或无法读取空间，不能占用队列预留余量。请缩小目标/时间范围或处理存储后重新准备。',
+            'delivery.exportCleanupFailed':
+                '临时文件清理失败，敏感正文可能仍留在受限数据目录。后续导出已禁用，请主机管理员检查存储/权限，处理后重启；不要把取消当作文件已删除。',
+            'delivery.exportReviewFailed':
+                '无法完整核对队列，不按零记录处理。请检查存储后重新准备。',
+            'delivery.exportGenerationFailed':
+                '文件生成失败，不能下载部分文件。请检查存储后重新准备。',
+            'delivery.exportDownloadFailed':
+                '下载响应未完整写出，临时资源不可重用。请重新准备，并检查浏览器是否留下不完整文件。',
+            'delivery.exportBusy':
+                '网关已有导出资源或原任务尚未退出。请读取本会话状态；其他会话资源须由创建者取消或等待到期。',
+            'delivery.exportUnavailable':
+                '暂存路径不可用或网关正在停止。请主机管理员检查存储与路径；不自动重放。',
+            'delivery.exportNotConfirmable':
+                '该资源当前不能确认，请重新读取状态。',
+            'delivery.exportNotFound':
+                '资源不存在或不属于本登录会话，请重新读取状态。',
+        },
+    },
     select: '选择记录',
     selectRecord: '选择记录 {{id}}',
     all: '全部',

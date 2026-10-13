@@ -155,11 +155,11 @@ internal sealed class DeliveryExportManager : IAsyncDisposable
             {
                 try
                 { await file.DisposeAsync(); }
-                catch (IOException) { lock (_gate) { _available = false; } }
-                finally { DeleteFile(); }
+                catch (IOException) { CleanupFailed(export); }
+                finally { DeleteFile(export); }
             }
             else if (!generated)
-            { DeleteFile(); } // 构造文件流失败也可能留下已创建的空路径。
+            { DeleteFile(export); } // 构造文件流失败也可能留下已创建的空路径。
             if (!generated)
             { WriteAudit(export, "delivery.export", AuditResults.Failure, export.Error ?? "cancelledOrExpired", null); }
         }
@@ -242,21 +242,30 @@ internal sealed class DeliveryExportManager : IAsyncDisposable
         export.File = null;
         try
         { file.Dispose(); }
-        catch (IOException) { _available = false; }
-        finally { DeleteFile(); }
+        catch (IOException) { CleanupFailed(export); }
+        finally { DeleteFile(export); }
     }
 
-    private void DeleteFile()
+    private void DeleteFile(Export export)
     {
         try
         { _files.Delete(); }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        { lock (_gate) { _available = false; } }
+        { CleanupFailed(export); }
+    }
+
+    private void CleanupFailed(Export export)
+    {
+        lock (_gate)
+        {
+            _available = false;
+            export.Error = "delivery.exportCleanupFailed";
+        }
     }
 
     private void WriteAudit(Export export, string action, string result, string stage, long? bytes) =>
         _audit.AppendOrLog(new(action, result, export.Actor.AccountName, export.Actor.SourceIp, export.Id.ToString("D"),
-            JsonSerializer.Serialize(new { stage, state = export.Filter.State.ToString(), export.Filter.ConnectionId, export.Filter.From, export.Filter.To, count = export.Review?.Count, bytes })));
+            JsonSerializer.Serialize(new { stage, state = export.Filter.State.ToString(), export.Filter.ConnectionId, export.Filter.From, export.Filter.To, count = export.Review?.Count, bytes, cleanupFailed = export.Error == "delivery.exportCleanupFailed" })));
 
     private Export Owned(Guid id, string owner) => _current is { } export && export.Id == id && export.Actor.Owner == owner
         ? export : throw Error(404, "delivery.exportNotFound");

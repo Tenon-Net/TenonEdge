@@ -207,6 +207,46 @@ public sealed class DeliveryExportLifecycleTests
         Assert.Equal("do-not-touch", await File.ReadAllTextAsync(privateTarget, Token));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CleanupFailureIsVisibleAndDisablesFurtherExportsUntilRestart(bool downloaded)
+    {
+        if (!OperatingSystem.IsLinux())
+        { return; }
+        using var data = TemporaryDirectory.Create();
+        await using var factory = Factory(data.Path);
+        await DeliveryExportApiTests.SeedAsync(factory.Services.GetRequiredService<DeliveryCache>(), DeliveryState.Failed);
+        var manager = factory.Services.GetRequiredService<DeliveryExportManager>();
+        var prepared = manager.Prepare(Actor, new(DeliveryState.Failed));
+        await WaitAsync(manager, DeliveryExportState.AwaitingConfirmation);
+        manager.Confirm(prepared.Id, Actor.Owner);
+        await WaitAsync(manager, DeliveryExportState.Ready);
+        var path = DeliveryExportApiTests.FilePath(data.Path);
+        // Linux permits moving an open file. A directory at the reserved path makes unlink fail even under root.
+        // This is a test-side filesystem fault, not a product file-move operation or physical disk-full test.
+        var held = path + ".fixture-held";
+        File.Move(path, held);
+        Directory.CreateDirectory(path);
+        try
+        {
+            if (downloaded)
+            {
+                using var lease = manager.OpenDownload(prepared.Id, Actor.Owner);
+                using var destination = new MemoryStream();
+                await lease.CopyToAsync(destination, Token);
+            }
+            else
+            { manager.Cancel(prepared.Id, Actor.Owner); }
+            var status = manager.GetCurrent(Actor.Owner)!;
+            Assert.Equal(downloaded ? DeliveryExportState.ResponseWritten : DeliveryExportState.Cancelled, status.State);
+            Assert.Equal("delivery.exportCleanupFailed", status.Error);
+            Assert.Equal(503, Assert.Throws<DeliveryExportRequestException>(() => manager.Prepare(Actor, new(DeliveryState.Failed))).StatusCode);
+            Assert.True(File.Exists(held));
+        }
+        finally { Directory.Delete(path); File.Move(held, path); }
+    }
+
     private static FixedDataDirectoryApplicationFactory Factory(string path, Func<StorageSpace?>? space = null, TimeProvider? time = null) =>
         new(path, configureServices: services =>
         {
