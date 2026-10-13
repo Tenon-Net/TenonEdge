@@ -155,6 +155,10 @@ public sealed class DeliveryCache
 
     public DeliveryQueueTotals GetQueueTotals(long connectionId) => Store.ReadQueueTotals(connectionId);
 
+    // 仅由运行时在持有原发送者暂停租约时调用，不能直接开放为管理 API。
+    internal Task<DeliveryWriteResult> ClearPendingAsync(long connectionId) =>
+        SubmitAsync(new ClearPendingRequest(connectionId), CancellationToken.None);
+
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>
         SubmitAsync(new QuarantineRequest(seq, reason), token);
 

@@ -6,6 +6,7 @@ namespace TenonEdge.Host.Features.Runtime;
 
 internal sealed class DeliveryRetryUnavailableException : InvalidOperationException;
 internal sealed class DeliveryCleanupUnavailableException : InvalidOperationException;
+internal sealed class DeliveryClearPendingUnavailableException : InvalidOperationException;
 
 internal sealed partial class RuntimeCoordinator
 {
@@ -37,7 +38,7 @@ internal sealed partial class RuntimeCoordinator
             _deliveryWrite = operation;
         }
         return OwnDeliveryWrite(() => runtime.Deliveries.RetryFailedAsync(selected, targets, CancellationToken.None),
-            new("delivery.retryFailed", AuditResults.Success, account, sourceIp, Target(revision),
+            _ => new("delivery.retryFailed", AuditResults.Success, account, sourceIp, Target(revision),
                 $"已将{selected.Length}条失败记录移至队尾；保留投递编号，可能重复，不代表已发送。"),
             "delivery.retryOutcomeUnknown", operation, token);
     }
@@ -61,12 +62,35 @@ internal sealed partial class RuntimeCoordinator
         }
         var area = selection.State == DeliveryState.Failed ? "failed" : "quarantined";
         return OwnDeliveryWrite(() => runtime.Deliveries.CleanupAsync(selection, CancellationToken.None),
-            new("delivery.cleanup", AuditResults.Success, account, sourceIp, area,
+            _ => new("delivery.cleanup", AuditResults.Success, account, sourceIp, area,
                 $"已按确认永久清理{selection.Items.Count}条记录，涉及{selection.Items.Select(item => item.ConnectionId).Distinct().Count()}个目标；属于人工丢弃，不是发送成功。"),
             "delivery.cleanupOutcomeUnknown", operation, token);
     }
 
-    private Task<DeliveryWriteResult> OwnDeliveryWrite(Func<Task<DeliveryWriteResult>> write, AuditEntry success,
+    public Task<DeliveryWriteResult> ClearPendingDeliveriesAsync(long connectionId, long revision,
+        string account, string? sourceIp, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        if (connectionId is < 1 or > 9007199254740991L || revision < 1)
+        { throw new ArgumentException("清空目标或有效版本无效。"); }
+        TaskCompletionSource operation;
+        lock (_lock)
+        {
+            if (_stopping is not null || _application is not null || _deliveryWrite is not null ||
+                _state is not (RuntimeCoordinatorState.Active or RuntimeCoordinatorState.RunFailed) || _activeRevision != revision)
+            { throw new DeliveryClearPendingUnavailableException(); }
+            operation = NewSignal();
+            _deliveryWrite = operation;
+        }
+        return OwnDeliveryWrite(() => runtime.ClearPendingAsync(connectionId, revision, CancellationToken.None),
+            result => new("delivery.clearPending", AuditResults.Success, account, sourceIp,
+                connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                $"在有效版本r{revision}下清空执行边界时仍待发的{result.AffectedRecords}条记录；人工丢弃，非发送确认。"),
+            "delivery.clearPendingOutcomeUnknown", operation, token);
+    }
+
+    private Task<DeliveryWriteResult> OwnDeliveryWrite(Func<Task<DeliveryWriteResult>> write, Func<DeliveryWriteResult, AuditEntry> success,
         string unknownCode, TaskCompletionSource completion, CancellationToken token)
     {
         Task<DeliveryWriteResult> owned;
@@ -75,14 +99,14 @@ internal sealed partial class RuntimeCoordinator
         return owned.WaitAsync(token);
     }
 
-    private async Task<DeliveryWriteResult> RunDeliveryWriteAsync(Func<Task<DeliveryWriteResult>> write, AuditEntry success,
+    private async Task<DeliveryWriteResult> RunDeliveryWriteAsync(Func<Task<DeliveryWriteResult>> write, Func<DeliveryWriteResult, AuditEntry> success,
         string unknownCode, TaskCompletionSource completion)
     {
-        var failure = success with { Result = AuditResults.Failure, Detail = "队列管理操作未完成或结果不可确定，请重新读取；不自动重放。" };
+        var failure = success(new(DeliveryWriteStatus.Rejected, [], 0, unknownCode)) with { Result = AuditResults.Failure, Detail = "队列管理操作未完成或结果不可确定，请重新读取；不自动重放。" };
         try
         {
             var result = await write();
-            audit.AppendOrLog(result.Committed ? success : failure);
+            audit.AppendOrLog(result.Committed ? success(result) : failure);
             return result;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

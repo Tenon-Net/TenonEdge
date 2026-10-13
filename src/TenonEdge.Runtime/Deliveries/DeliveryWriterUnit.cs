@@ -338,6 +338,8 @@ internal sealed partial class DeliveryWriterUnit(
                     : queue.Store.RetryFailed(insert.Connection!, insert.Transaction!, retry, createdAt);
             case CleanupRequest cleanup:
                 return DeliveryStore.Cleanup(insert.Connection!, insert.Transaction!, cleanup.Selection);
+            case ClearPendingRequest clear:
+                return DeliveryStore.ClearPending(insert.Connection!, insert.Transaction!, clear.ConnectionId);
             default:
                 throw new InvalidOperationException($"未知的写入请求 {request.GetType().Name}。");
         }

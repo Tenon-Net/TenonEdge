@@ -1,4 +1,5 @@
 import { OutputControls } from '../deliveries/controls'
+import { ClearPending } from '../deliveries/clear-pending'
 import { LossCounters } from './loss-counters'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
@@ -325,6 +326,20 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                             if (result.error) throw result.error
                         }}
                     />
+                    {item.active && (
+                        <ClearPending
+                            key={`${id}/${revision}`}
+                            id={id}
+                            name={item.name ?? id}
+                            revision={revision}
+                            count={String(item.queue.usage.pendingCount)}
+                            unavailable={query.isFetching || query.isError}
+                            refresh={async () => {
+                                const result = await query.refetch()
+                                if (result.error) throw result.error
+                            }}
+                        />
+                    )}
                     <dl className="grid gap-4 sm:grid-cols-3">
                         <Fact
                             label={t('outputs.lastResult')}

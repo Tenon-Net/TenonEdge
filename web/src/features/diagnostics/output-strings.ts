@@ -15,6 +15,7 @@ export const outputStrings = {
     lossMqttOversized: 'MQTT 解码层 / 线级超限（见键名）',
     lossPathData: '未生成投递的错误路径（连接汇总）',
     lossInputData: '数据错误的读取次数',
+    lossManualPending: '人工清空的待发记录（条，全局）',
     lossManualFailed: '人工清理的失败记录（条，全局）',
     lossManualQuarantined: '人工清理的隔离记录（条，全局）',
     lossTitle: '按规则丢弃、数据错误与异常',

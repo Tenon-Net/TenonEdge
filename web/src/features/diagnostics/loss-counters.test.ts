@@ -29,6 +29,8 @@ it('separates units and categories without double-counting path aliases or label
 
 it('shows durable global manual cleanup as policy loss without double-counting per-target breakdown', () => {
     const rows = classifyCounters({
+        manuallyClearedPendingRecords: '1025',
+        'target/11/manuallyClearedPendingRecords': '1025',
         manuallyClearedFailedRecords: '9223372036854775807',
         manuallyClearedQuarantinedRecords: '3',
         'target/11/manuallyClearedFailedRecords': '9',
@@ -36,6 +38,12 @@ it('shows durable global manual cleanup as policy loss without double-counting p
         acknowledgedRecords: '7',
     })
     expect(rows).toEqual([
+        {
+            key: 'manuallyClearedPendingRecords',
+            value: '1025',
+            category: 'policy',
+            label: 'lossManualPending',
+        },
         {
             key: 'manuallyClearedFailedRecords',
             value: '9223372036854775807',

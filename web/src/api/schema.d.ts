@@ -347,6 +347,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/clear-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 管理员确认后清空目标全部待发记录
+         * @description 绑定有效版本；等待原发送者提交在途结果后，在唯一写者事务中删除当时仍待发的全部记录并累计人工丢弃。不是核对时的固定清单：期间新入队记录可能包括在内，删除边界之后入队的保留。不清理失败/隔离、不改变暂停或退避；超时不删除。不自动重试，响应丢失只重新读取。请求断开不撤销已接受操作。
+         */
+        post: operations["clearPendingDeliveries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/test/mqtt": {
         parameters: {
             query?: never;
@@ -1597,6 +1617,11 @@ export interface components {
         DeliveryCleanupResponse: {
             /** Format: int32 */
             clearedRecords: number | string;
+        };
+        DeliveryClearPendingRequest: {
+            /** Format: int64 */
+            revision: number | string;
+            confirmed: boolean;
         };
         DeliveryExportConfirmation: {
             confirmed: boolean;
@@ -3678,6 +3703,77 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DeliveryCleanupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryCleanupResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    clearPendingDeliveries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeliveryClearPendingRequest"];
             };
         };
         responses: {

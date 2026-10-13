@@ -27,6 +27,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "cleanupDeliveryRecords",
         "clearHttpCredential",
         "clearMqttCredential",
+        "clearPendingDeliveries",
         "compareConfigurationVersionToDraft",
         "compareConfigurationVersions",
         "compileRouteDrafts",

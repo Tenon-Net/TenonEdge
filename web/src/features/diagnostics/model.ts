@@ -67,6 +67,10 @@ export function classifyCounters(
         string,
         { category: 'policy' | 'data' | 'fault'; label: string }
     > = {
+        manuallyClearedPendingRecords: {
+            category: 'policy',
+            label: 'lossManualPending',
+        },
         manuallyClearedFailedRecords: {
             category: 'policy',
             label: 'lossManualFailed',

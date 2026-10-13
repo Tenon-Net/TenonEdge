@@ -13,6 +13,24 @@ export function createOutputControlsApi(
         return { connectionId: value as unknown as number }
     }
     return {
+        async clearPending(id: string, revision: string, confirmed: boolean) {
+            if (!confirmed) throw new Error('output-confirmation')
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/connections/{connectionId}/clear-pending',
+                {
+                    params: { path: path(id) },
+                    body: { revision: revisionId(revision), confirmed: true },
+                },
+            )
+            if (
+                !data ||
+                typeof data.clearedRecords !== 'number' ||
+                !Number.isSafeInteger(data.clearedRecords) ||
+                data.clearedRecords < 0
+            )
+                throw new Error('output-clear-response')
+            return data.clearedRecords
+        },
         async read(id: string) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/connections/{connectionId}/delivery-control',

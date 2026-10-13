@@ -7,7 +7,7 @@ using TenonEdge.Runtime.Lifecycle;
 namespace TenonEdge.Runtime.Outputs;
 
 /// <summary>目标内存状态跨监督者重建保留；最多一条发送结果等待提交。</summary>
-internal sealed class OutputSenderState
+internal sealed partial class OutputSenderState
 {
     private OutputSenderDiagnostics _diagnostics = new("normal", null, null, null, null, null, null, null);
     private BackoffWindow? _backoff;
@@ -149,6 +149,9 @@ internal sealed class OutputSenderUnit(
                 continue;
             }
 
+            // 管理操作只能在原发送结果已持久化后取得队列；暂停期间不释放适配器或创建第二个发送者。
+            await state.WaitForQueuePauseAsync(stoppingToken);
+
             var fingerprint = target.CurrentFingerprint;
             if (state.ReconciledFingerprint != fingerprint)
             {
@@ -194,11 +197,14 @@ internal sealed class OutputSenderUnit(
             if (state.RetryDelay is { } delay)
             {
                 var started = time.GetTimestamp();
+                var queuePause = false;
                 state.BeginBackoff(time.GetUtcNow() + delay);
                 try
                 {
                     while (time.GetElapsedTime(started) < delay)
                     {
+                        if (state.QueuePauseRequested)
+                        { queuePause = true; break; }
                         var currentControl = controls?.Read(target.ConnectionId);
                         if (currentControl?.ManuallyPaused == true || currentControl is not null && currentControl.ResumeVersion != state.ResumeVersion || state.ImmediateRetryRequested)
                         {
@@ -214,6 +220,13 @@ internal sealed class OutputSenderUnit(
                 }
                 finally { state.EndBackoff(); }
 
+                if (queuePause)
+                {
+                    // 清空不等同“立即重试”，也不解除退避。暂停结束后接着等待剩余时间。
+                    var remaining = delay - time.GetElapsedTime(started);
+                    state.RetryDelay = remaining > TimeSpan.Zero ? remaining : null;
+                    continue;
+                }
                 state.RetryDelay = null;
                 state.ReportState("normal");
             }

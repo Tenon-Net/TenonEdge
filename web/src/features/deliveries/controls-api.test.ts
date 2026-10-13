@@ -94,3 +94,56 @@ it('does not accept an unexpected 200 or automatically replay a lost response', 
     await expect(client(lost).write('11', true, token, true)).rejects.toThrow()
     expect(lost).toHaveBeenCalledTimes(1)
 })
+
+it('clear is an explicit CSRF protected administrator command bound to exact revision, not a batch or ACK', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+        const request = input as Request
+        expect(new URL(request.url).pathname).toBe(
+            '/api/edge-admin/v1/connections/11/clear-pending',
+        )
+        expect(request.method).toBe('POST')
+        expect(request.headers.get('X-CSRF-Token')).toBe('csrf-test')
+        expect(await request.json()).toEqual({
+            revision: '9223372036854775807',
+            confirmed: true,
+        })
+        return Response.json({ clearedRecords: 1025 })
+    })
+    const api = client(fetcher)
+    await expect(api.clearPending('11', '1', false)).rejects.toThrow(
+        'output-confirmation',
+    )
+    await expect(api.clearPending('0', '1', true)).rejects.toThrow()
+    await expect(api.clearPending('11', '0', true)).rejects.toThrow()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(await api.clearPending('11', '9223372036854775807', true)).toBe(1025)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+})
+it.each([403, 409, 503])(
+    'never replays a failed clear on HTTP %i',
+    async (status) => {
+        const fetcher = vi.fn(async () => Response.json({ status }, { status }))
+        await expect(
+            client(fetcher).clearPending('11', '1', true),
+        ).rejects.toThrow()
+        expect(fetcher).toHaveBeenCalledTimes(1)
+    },
+)
+it('clear lost replies remain unknown, while malformed counts are not reported as successful deletion', async () => {
+    const fetcher = vi.fn(async () => {
+        throw new TypeError('reply lost')
+    })
+    await expect(
+        client(fetcher).clearPending('11', '1', true),
+    ).rejects.toThrow()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    for (const clearedRecords of [-1, 1.5, '1025', null]) {
+        await expect(
+            client(async () => Response.json({ clearedRecords })).clearPending(
+                '11',
+                '1',
+                true,
+            ),
+        ).rejects.toThrow()
+    }
+})

@@ -47,7 +47,7 @@
 | T3 | T3-05 图编译与样本预览 | 部分实现，整项未完成 | 自有图格式、路径限制、持久画布、映射/输出表单、字段分析及手工/现场/运行缓存样本已实现；剩余：按功能 §4/5 逐项核对画布操作与无 JSON 路线验收，不用已有局部用例代替完整闭环 | §2.123—§2.148，T3-11 收口 |
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
-| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203。剩余：目标待发清空、两种原子迁移及 FS-23 中断审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.203；功能 §8 |
+| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204。剩余：两种原子迁移及 FS-23 中断审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.204；功能 §8 |
 | T3 | T3-09 用户审计与系统管理 | 未完成 | 既有登录/权限、审计查询、系统信息和出站白名单 API 不等于管理产品已完成；须补用户/临时密码/强制下线/最后管理员、HTTPS API Token、审计导出、运行参数/白名单/访问策略页面与真实授权验收。宿主管理证书替换按 T5-01 | 功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
@@ -4273,6 +4273,42 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 - `git diff --check` 通过；最终文件哈希 `...-source-final.json`。导出浏览器测试的临时数据目录已清除；未推送，远端CI未执行。
 
 剩余按§1继续：目标全部待发清空须与原发送者的在途和未提交结果协调，不能直接暴露DeleteAsync；两类迁移与FS-23跨库恢复审计、对方错误摘要及其他T3任务。未推送、发布或进入T4/T5/G1。
+
+### 2.204 T3-08 目标全部待发清空：原发送者协调、原子人工丢弃与确认页面（2026-10-13）
+
+基线 `0e4ca7e`，按已授权 T3 继续；对应功能 §8.1/8.6、AT-18 的队列权限子场景。复核设计 §8.2/8.3、PLAN T3-08，以及本机参考 SUMMARY / app-functions-sdk-go 笔记；未复制源码。**本批不交付迁移或 FS-23 跨库完成记录，不代表 T3-08 或 AT-18 整项通过。**
+
+实现与边界：
+
+- `OutputSenderState` 增加一份原循环拥有的队列暂停信号，沿用监督者重建时保留的状态。原发送者只有在已确认删除、失败状态或隔离结果全部持久提交后才到达安全边界；请求线程不修改这些状态、不借用连接、不创建第二个发送器。退避中按既有250毫秒检查间隔响应暂停，清空后继续剩余退避，不将清空解释为立即重试或解除手动／自动暂停。
+- `RuntimeHost.ClearPendingAsync` 与生命周期操作互斥，核对有效版本、目标和写者。等待安全边界最多现有 `UnitStopTimeout`（默认5秒）；原请求／结果提交未及时结束时拒绝清空，保留原发送者和记录，迟到确认仍按原规则落库，不以超时为由启动替代发送器。无法确认原发送者边界的目标不猜测为可清空。
+- 唯一队列写者在同一事务中执行目标 `state=pending` 的整条DELETE及 `manuallyClearedPendingRecords` 全局／目标计数，不使用协议确认的DeleteRequest，不计为发送成功。无1000条批次限制，不读正文，不影响失败区、隔离区或其他目标，不改变配额/保留期/目标暂停。清空允许在拒绝新入库的存储保护状态下执行；真实写入失败仍整体回滚。
+- **“全部”是执行DELETE边界时仍待发的全部记录，不是准备时冻结的清单。** 核对后、DELETE前新入队的记录包括在内；DELETE后入队的记录保留，即使同属后续分组提交。因此成功后队列不保证持续为零，采集不停止。页面、确认文案及OpenAPI均明确这个范围，显示条数只是最近一次查询，不把它当实际删除数。
+- 分组Minimal API `POST /connections/{connectionId}/clear-pending`：仅管理员、CSRF、`confirmed=true`、当前有效版本；未知目标／旧版本／其他队列或应用操作冲突拒绝。宿主拥有已接受操作，HTTP断开只取消等待，停机等待原写入和审计完成。成功返回实际清空数，`delivery.clearPending` 审计记录目标、版本、账号、来源和实际条数，不记录正文或存储异常消息；使用原队列操作准入，不新建后台服务或请求作用域运行时。
+- 输出目标详情增加管理员二次确认区域；只读／配置人员不显示，服务端独立拒绝。写入不自动重试，响应丢失后只能先重新读取，再重新准备确认；读取失败不能视为空队列或开启确认。诊断页按策略性人工丢弃显示持久全局计数，不重复相加目标细分，不把它记为确认/故障丢失。OpenAPI及TypeScript从独立临时Development Host重新生成，无新依赖或队列schema迁移。
+
+验证：
+
+- 新增11项Runtime集成场景：在途Ack／RejectMessage／Retry／SuspendTarget分别先提交原结果再清空；失败／隔离／其他目标保留；DELETE后入库保留；超时不删除、原实例处理迟到ACK；真实SQLite触发器使ACK删除失败，监督者重建后仍先重试提交且不重发，清空不能越过；调用方取消不提前释放操作，停机等原清空；旧版本／未知目标／无效参数拒绝；1025条原子清空、计数失败全部回滚及重开库计数保留；清空写库失败后释放暂停但不解除自动暂停；存储保护下仍可清空。触发器／磁盘余量参数为故障夹具，不是物理磁盘写满或断电验收。
+- 新增2项真实HTTP API场景：原模拟输入生成冻结报文，原HTTP发送被接收方阻塞；管理员手动暂停后清空等待原ACK，只有ACK后剩余待发才计人工丢弃；覆盖匿名／两种非管理员／缺CSRF、未确认、旧版本、未知目标、并发清空/应用拒绝；实际HTTP请求取消后，宿主仍完成清空、审计并允许停机；原发送者仅一次发送，手动暂停不被解除。后台持续采集可能在删除后再入库，不错误断言最终队列永远为空。
+- 新增5项Vitest验证确认、CSRF、精确Int64版本、目标校验、超过1000条返回、错误码和丢响应不重放、异常计数拒绝；既有计数分类用例补人工清空并排除目标重复计数。
+- 新增1项Production Host/Chromium浏览器用例：真实模拟输入→HTTP401自动暂停→显式恢复原冻结请求→接收方阻塞→手动暂停；准备后继续入队，确认后检查管理操作确实等待、人工计数仍为0，放行真实204后ACK单独计数而剩余全部清空；验证取消不写、明确实时范围、查询500不能开启下一次确认；第二次真实清空返回200后只丢响应，计数不重放；原Host重启后计数及暂停保留；配置人员／只读页面无入口且API403。角色变更为离线账号夹具，不是用户管理页面验收；使用种子配置，不是完整无JSON流程。
+- 已目视检查 `/tmp/tenonedge-clear-pending-browser.png`：清空范围和安全说明、人工丢弃计数、原目标手动暂停、删除后新待发记录同时可见；页头含种子配置状态，不能冒充完整配置产品验收。
+
+失败记录与修正：首轮Host构建错误使用Runtime内部的Rejected辅助方法，改为构造公开结果；第二轮测试CA1861常量数组改为静态字段。首次执行定向19项中15通过、4失败：一个规模用例错误以2000调用只允许1000的分页读取，改读真实总数；另三个端点／operationId库存清单排序错误，按现有排序修正。前端首轮构建因生成契约的 `number|string` 未先收窄而失败，增加实际返回数字类型校验。随后定向42项通过，再补两项边界后44项通过。首轮全量后端中两个新API用例在6/7秒后断言ACK计数失败（实际0）：夹具保持默认HTTP5秒，却先执行启动和账号／权限检查，可能在放行前已超时；仅将测试连接设为支持的60秒，并在发起清空前明确断言原发送尚无结果，产品超时规则未改。该轮最终1282单元通过、1510集成中1508通过/2失败（`...-full.log`、`...-full-first-verified.log`），不记全量通过。修正后2项API用例连续3轮共6次通过（`...-fixture-1/2/3.log`及各TRX核对），修正后的全量结果见下。
+
+环境：Linux7.0.0-31-generic x64、SDK10.0.401、Node22.23.2、固定npm11.21.0、当前Chromium156（不是最低Chrome/Edge111）。证据前缀 `/tmp/tenonedge-clear-pending`：
+
+- Release构建0警告／错误（`...-build-final.log`）；`dotnet format TenonEdge.sln --no-restore --verify-no-changes` 通过（`...-format-verified.log`）。
+- `dotnet test tests/IntegrationTests -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --filter 'FullyQualifiedName~ClearPending|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~OutputControlTests|FullyQualifiedName~SenderOwnershipTests|FullyQualifiedName~OutputPipelineTests|FullyQualifiedName~DeliveryCleanupApiTests' --logger trx --results-directory /tmp/tenonedge-clear-pending-target-final-trx`：**44项通过，0失败/跳过**，TRX核对通过（`...-target-final.log`、`...-target-verified.log`）；这是测试HTTP期限修正之前的定向结果，不代替修正后复验。
+- `python3 /tmp/tenonedge-export-host-openapi.py`：使用当前Release宿主和独立临时数据目录重新生成OpenAPI/TypeScript，宿主SIGTERM退出0（`...-openapi-final.log`），未改持久部署。
+- 固定npm `run build`、`run lint`、`run format:check`、`test`：通过，**310项Vitest**（`...-web-*-final.log`）；既有Vite主块约527kB提示保留。固定npm `run test:e2e -- tests/clear-pending.spec.ts`：**1项通过**（`...-browser-r1.log`，23.7秒）。固定npm `run test:e2e -- --reporter=line,json`：全量 **53项通过，0失败/跳过/flaky**，7.1分钟（`...-browser-full.log`、`...-browser-full.json`）；逐项核对均单次passed，报告无全局错误（`...-browser-verified.log`）。浏览器覆盖的产品／前端文件哈希与当前一致；后端测试夹具期限修正后的回归见下。
+
+- 夹具修正后 `dotnet format TenonEdge.sln --no-restore --include tests/IntegrationTests/Deliveries/ClearPendingApiTests.cs`、Release构建和全仓 `dotnet format --verify-no-changes` 通过（`...-fixture-format.log`、`...-fixture-build.log`、`...-format-final-r2.log`）；构建0警告/错误。两项API用例按 `FullyQualifiedName~ClearPendingApiTests` 连续3轮通过，共6次，逐轮TRX核对通过（`...-fixture-1/2/3-verified.log`）。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --logger trx --results-directory /tmp/tenonedge-clear-pending-full-final-trx`：**1282单元 + 1510集成 = 2792项全部通过，0失败/跳过**，集成12分19秒。`python3 .github/scripts/verify-test-results.py /tmp/tenonedge-clear-pending-full-final-trx --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests` 完整报告核对通过（`...-full-final.log`、`...-full-final-verified.log`）。
+- `git diff --check` 通过。验证源码哈希 `...-code-final.json` 最终核对无变化，含文档的最终文件哈希 `...-source-final.json`；浏览器临时数据目录已清除。以上均为本地软件验证，不补写真实设备、最低浏览器或远端CI通过。
+
+剩余仍按§1：两类迁移及FS-23中断审计、HTTP对方错误摘要和其他T3任务。本批未推送／发布，远端CI未执行，未进入T4/T5/G1。
 
 ## 3. 验收编号登记
 
