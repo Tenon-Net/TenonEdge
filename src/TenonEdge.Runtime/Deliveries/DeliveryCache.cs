@@ -128,6 +128,16 @@ public sealed class DeliveryCache
     /// <summary>调用方必须先执行正文权限校验。仅查看指定失败/隔离区中仍存在的稳定投递编号。</summary>
     public DeliveryBodyPreview? InspectBody(Guid deliveryId, DeliveryState state) => Store.InspectBody(deliveryId, state);
 
+    /// <summary>仅供已授权管理员核对整个导出范围；不读正文、不写队列、不保留数据库事务。</summary>
+    public DeliveryExportReview ReviewExport(DeliveryExportFilter filter, CancellationToken cancellationToken) =>
+        Store.ReviewExport(filter, cancellationToken);
+
+    /// <summary>仅供已确认的管理员操作，把完整 JSON Lines 写入调用方的空私有暂存文件。
+    /// 不得边生成边下载：仅返回 true 后调用方才可发布文件；false、取消或异常必须丢弃暂存文件。
+    /// 不拥有或关闭流；调用方负责磁盘余量、flush/关闭、授权、审计、下载与残留清理。</summary>
+    public Task<bool> WriteExportSpoolAsync(DeliveryExportReview review, Stream spool, CancellationToken cancellationToken) =>
+        Store.WriteExportSpoolAsync(review, spool, cancellationToken);
+
     /// <summary>授权的管理调用方提供已选择的失败记录代次及当前有效目标指纹。
     /// 全部记录匹配且配额足够时，由唯一写者原子移到队尾；旧 seq 不复用，重复提交不能再次入队。
     /// 不解除目标暂停、修改目标身份或生成报文；取消等待不撤销已交给写者的操作。</summary>

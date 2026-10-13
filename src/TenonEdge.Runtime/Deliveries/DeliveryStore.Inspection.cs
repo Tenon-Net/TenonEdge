@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.Data.Sqlite;
 
 namespace TenonEdge.Runtime.Deliveries;
 
@@ -15,6 +16,32 @@ internal sealed partial class DeliveryStore
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         // 刻意不复用 SelectColumns/Read：Viewer 查询不能先加载正文再在 DTO 中丢掉。
+        var conditions = InspectionConditions(command, query);
+        command.CommandText = $"""
+            SELECT {InspectionColumns}
+            FROM delivery WHERE {string.Join(" AND ", conditions)} ORDER BY seq LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$limit", query.Limit + 1);
+        var items = new List<DeliveryInspectionItem>();
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                items.Add(ReadInspectionItem(reader, query.State));
+            }
+        }
+        transaction.Commit();
+        return new(captured, items.Take(query.Limit).ToArray(), items.Count > query.Limit ? items[query.Limit - 1].Sequence : null);
+    }
+
+    private const string InspectionColumns = """
+        seq, delivery_id, connection_id, device_key, route_id, node_label, revision,
+        created_at, failed_at, failure_count, quarantine_reason, last_error, byte_size, clock_anomaly, migration_id
+        """;
+
+    // 查看和导出使用同一筛选口径；导出另外加确认水位，而不把分页上限作为总条数上限。
+    private static List<string> InspectionConditions(SqliteCommand command, DeliveryInspectionQuery query)
+    {
         var conditions = new List<string> { "state = $state", "seq > $after" };
         command.Parameters.AddWithValue("$state", query.State == DeliveryState.Failed ? "failed" : "quarantined");
         command.Parameters.AddWithValue("$after", query.After);
@@ -31,28 +58,16 @@ internal sealed partial class DeliveryStore
         { conditions.Add("created_at >= $from"); command.Parameters.AddWithValue("$from", CeilingMilliseconds(from)); }
         if (query.To is { } to)
         { conditions.Add("created_at < $to"); command.Parameters.AddWithValue("$to", CeilingMilliseconds(to)); }
-        command.CommandText = $"""
-            SELECT seq, delivery_id, connection_id, device_key, route_id, node_label, revision,
-                created_at, failed_at, failure_count, quarantine_reason, last_error, byte_size, clock_anomaly, migration_id
-            FROM delivery WHERE {string.Join(" AND ", conditions)} ORDER BY seq LIMIT $limit;
-            """;
-        command.Parameters.AddWithValue("$limit", query.Limit + 1);
-        var items = new List<DeliveryInspectionItem>();
-        using (var reader = command.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                items.Add(new(reader.GetInt64(0), Guid.Parse(reader.GetString(1)), reader.GetInt64(2), reader.GetString(3),
-                    reader.IsDBNull(4) ? null : reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6),
-                    DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(7)),
-                    reader.IsDBNull(8) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(8)), reader.GetInt32(9), query.State,
-                    reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11),
-                    reader.GetInt64(12), reader.GetBoolean(13), reader.IsDBNull(14) ? null : reader.GetInt64(14)));
-            }
-        }
-        transaction.Commit();
-        return new(captured, items.Take(query.Limit).ToArray(), items.Count > query.Limit ? items[query.Limit - 1].Sequence : null);
+        return conditions;
     }
+
+    private static DeliveryInspectionItem ReadInspectionItem(SqliteDataReader reader, DeliveryState state) => new(
+        reader.GetInt64(0), Guid.Parse(reader.GetString(1)), reader.GetInt64(2), reader.GetString(3),
+        reader.IsDBNull(4) ? null : reader.GetInt64(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6),
+        DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(7)),
+        reader.IsDBNull(8) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(8)), reader.GetInt32(9), state,
+        reader.IsDBNull(10) ? null : reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetString(11),
+        reader.GetInt64(12), reader.GetBoolean(13), reader.IsDBNull(14) ? null : reader.GetInt64(14));
 
     // 存储精度为毫秒；对两个比较边界均向上取整，保留 API 的左闭右开语义，不把半毫秒条件向下截断。
     private static long CeilingMilliseconds(DateTimeOffset value) => value.ToUnixTimeMilliseconds() +
