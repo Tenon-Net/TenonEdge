@@ -432,6 +432,13 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                             </tbody>
                         </table>
                     </section>
+                    <Link
+                        className="underline"
+                        to="/deliveries"
+                        search={{ connectionId: id }}
+                    >
+                        {t('deliveries.inspectTarget')}
+                    </Link>
                     <QueuePolicies counters={item.queue.counters} />
                     <OutputTrend traffic={item.traffic} />
                 </>

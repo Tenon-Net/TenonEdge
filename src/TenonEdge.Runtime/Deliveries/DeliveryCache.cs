@@ -123,6 +123,11 @@ public sealed class DeliveryCache
     public DeliveryQueueReport GetQueueReport(IReadOnlyCollection<long> activeConnections, long after = 0, int limit = 100) =>
         Store.ReadQueueReport(activeConnections, after, limit);
 
+    public DeliveryInspectionPage Inspect(DeliveryInspectionQuery query) => Store.Inspect(query);
+
+    /// <summary>调用方必须先执行正文权限校验。仅查看指定失败/隔离区中仍存在的稳定投递编号。</summary>
+    public DeliveryBodyPreview? InspectBody(Guid deliveryId, DeliveryState state) => Store.InspectBody(deliveryId, state);
+
     public DeliveryQueueTotals GetQueueTotals(long connectionId) => Store.ReadQueueTotals(connectionId);
 
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>

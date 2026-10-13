@@ -46,6 +46,8 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getConfigurationRuntimeState",
         "getConfigurationVersion",
         "getConnectionDrafts",
+        "getDeliveryBody",
+        "getDeliveryRecords",
         "getDeviceDrafts",
         "getHttpCredentialStatus",
         "getInputDrafts",

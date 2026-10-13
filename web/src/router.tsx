@@ -123,6 +123,26 @@ const runtimeOutputsRoute = createRoute({
         'RuntimeOutputsPage',
     ),
 })
+const deliveryRecordsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/deliveries',
+    validateSearch: (
+        search: Record<string, unknown>,
+    ): { connectionId?: string } => {
+        const value = String(search.connectionId ?? '')
+        return {
+            connectionId:
+                /^[1-9][0-9]{0,15}$/.test(value) &&
+                BigInt(value) <= 9007199254740991n
+                    ? value
+                    : undefined,
+        }
+    },
+    component: lazyRouteComponent(
+        () => import('./features/deliveries/page'),
+        'DeliveryRecordsPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
@@ -131,6 +151,7 @@ export const router = createRouter({
         diagnosticsRoute,
         runtimeDevicesRoute,
         runtimeOutputsRoute,
+        deliveryRecordsRoute,
         pointsRoute,
         canvasRoute,
         connectionsRoute,

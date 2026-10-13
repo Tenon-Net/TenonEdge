@@ -47,7 +47,7 @@
 | T3 | T3-05 图编译与样本预览 | 部分实现，整项未完成 | 自有图格式、路径限制、持久画布、映射/输出表单、字段分析及手工/现场/运行缓存样本已实现；剩余：按功能 §4/5 逐项核对画布操作与无 JSON 路线验收，不用已有局部用例代替完整闭环 | §2.123—§2.148，T3-11 收口 |
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
-| T3 | T3-08 队列操作与迁移 | 未完成 | 仅既有持久手动暂停 API/底层队列行为；须完成失败/隔离列表及正文权限、重试/清理/导出页面、两种原子迁移及 FS-23 中断审计。平台身份分支不提前到 T3 | §2.18—§2.19；功能 §8 |
+| T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权；既有持久手动暂停 API 保留。剩余：立即重试及人工重试、暂停/恢复/清理/导出页面、两种原子迁移及 FS-23 中断审计；HTTP 对方错误正文摘要尚未保留。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196；功能 §8 |
 | T3 | T3-09 用户审计与系统管理 | 未完成 | 既有登录/权限、审计查询、系统信息和出站白名单 API 不等于管理产品已完成；须补用户/临时密码/强制下线/最后管理员、HTTPS API Token、审计导出、运行参数/白名单/访问策略页面与真实授权验收。宿主管理证书替换按 T5-01 | 功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
@@ -4023,6 +4023,39 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 
 剩余：磁盘k校准与完整容量验收、完整运行调试面板/通用测试发送、分类计数的全协议压力验收仍属T3-07；失败/隔离列表、正文权限及操作页面等T3-08继续。未做最低浏览器、长期整机压力、实物/断电、无JSON完整流程或远端CI验证；本批不推送、不发布、不进入T4/T5/G1。
 
+### 2.196 T3-08 失败区／隔离区查询、正文权限与真实页面（2026-10-13）
+
+基线 `9140b9c`，延续“继续直到 T3 完成”的授权。本批只交付功能 §8.2/8.4/8.6、设计 §10.1 的记录查看子场景，不标记 T3-08、FS-23 或整个 T3 完成。实施前复核唯一队列写者、短读事务、三角色和原发送循环；阅读本机参考 SUMMARY 与 app-functions-sdk-go 笔记，只借思路、不复制代码。
+
+交付：
+
+- 原 `DeliveryCache` 提供独立只读查询投影；SQL **不选择 payload、headers、目标地址、指纹/摘要或协议元数据**，不复用先加载完整 `StoredDelivery` 再删字段的路径。失败／隔离区按冻结目标编号、设备业务标识精确值、区分大小写的原因字面子串及首次入队时间筛选；不使用草稿名称替代历史身份，也不把 SQL 通配符当模式。以 seq 升序键集分页，每页最多100条，最多读取101条判断下一页；页面之间不承诺一致快照。短事务只看到已提交数据，空页与数据库不可读取明确区分。
+- `from` 包含、`to` 不包含，过滤 `created_at` 而非 `failed_at`；单独返回两种时间和时钟异常。毫秒存储上的亚毫秒边界向上取整，避免误包含/排除边界记录。稳定 `DeliveryId` 用于正文选择，不把可因后续重试而改变的 seq 当作身份。
+- 正文独立 SQL `length(payload), substr(payload,1,65536)`，不先加载完整 BLOB。有效 UTF-8 保留原文，截断时舍去末尾不完整字符；无效 UTF-8 前缀显式返回 Base64，并明示原始总字节、展示字节和截断，不冒充完整文本。单次查询读取长度和前缀，不持有跨 HTTP 响应的数据库事务。
+- 新增 `GET /api/edge-admin/v1/deliveries` 与 `GET /api/edge-admin/v1/deliveries/{deliveryId}/body`：前者三种已登录角色可查，后者仅配置人员／管理员；匿名401、只读正文403。指定失败或隔离区域，记录不存在或状态变化404；参数400，队列不可读503；响应 no-store。无需新增 DI 注册、写者、迁移或队列操作权限。OpenAPI 和 TS 由真实 Development Host 生成，契约／授权清单更新。
+- 新 `/deliveries` 页面和导航入口；输出详情可带目标编号进入。支持区域／目标／设备／原因／时间表单、前后键集分页、记录原因与次数、两种时间、冻结版本/路线/节点；64位游标保留精确原文。只在明确选择记录后请求正文，关闭/切换/离页释放查询，正文仅作为文本渲染。元数据刷新失败保留最后数据并展示错误、禁用正文与下一页；正文刷新失败不继续显示旧正文。只读角色页面不发正文请求，也没有正文按钮。失败次数明确按设计的毒消息计数规则解释，不冒充全部发送失败尝试，直接拒绝记录可以为0。
+
+验证边界与修正：
+
+- 集成覆盖真实唯一写者产生的失败/隔离记录、105条跨目标键集页、字面 `%_`/SQL注入文本/大小写/时间筛选、孤立目标、64KiB两侧及256KiB正文、UTF-8四字节字符的三种截断位置、无效/不完整UTF-8、未提交删除不可见、三角色/匿名/无效参数/404/503。专用测试侧 SQLite 视图让读取任一敏感列立即报错，证明元数据 SQL 不求值这些列，不只检查序列化结果没出现正文。
+- 初轮契约测试因新增端点/operationId排序、分组根斜杠和角色声明清单未对齐而失败；按真实端点修正后通过，未放宽授权。前端类型检查识别 OpenAPI 根路径不带末尾斜杠，按生成契约修正。
+- 浏览器先使用独立 Production Host、模拟输入种子和真实 HTTP 422 软件接收端生成失败记录，验证正文未混入列表及 HTML 文本不执行；随后停机，用明确的离线 SQL fixture 补105条失败记录和两条隔离记录，验证分页、筛选、64KiB多字节截断、Base64、503保留元数据、404隐藏旧正文、离页取消。离线角色 fixture 重启验证 Viewer403／无正文请求和 Configurator真实正文。fixture不冒充真实隔离触发、用户管理页面、无JSON配置或实物验证。
+- 浏览器初轮在首次设置尚未完成即发受保护查询，被正确401拒绝；改为等待已登录入口。下一轮因 fixture 的目标12不在有效计划而在真实重启中被正确隔离，导致下一页不可用；修正为计划中两个真实HTTP目标，并在停机前分别持久暂停，不关闭身份隔离。随后定位区域下拉的包裹式label把选项文本并入可访问名称，改为独立label/for关联。修复后定向浏览器场景通过，最终回归另记。
+
+环境：Linux7.0.0-31-generic x64、.NET SDK10.0.401、Node22.23.2、固定npm11.21.0（入口 `/home/shiny/.npm/_npx/676e59db29371ba5/node_modules/npm/bin/npm-cli.js`）。证据前缀 `/tmp/tenonedge-queue-inspection`。
+
+实际命令与结果（软件子场景，不是完整任务验收）：
+
+- `dotnet format TenonEdge.sln --no-restore --verify-no-changes`、`dotnet build TenonEdge.sln -c Release --no-restore`：最终构建通过，0警告/错误（`...-format-release.log`、`...-build-release.log`）。
+- `dotnet test TenonEdge.sln -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --logger trx --results-directory /tmp/tenonedge-queue-inspection-full-trx`：**1274单元＋1419集成＝2693项通过，0失败/跳过**，集成12分11秒（`...-backend-full.log`、`...-backend-full-verified.log`）。此全量二进制包含16个新增集成子场景及敏感列SQL防读测试，**不含其后补充的亚毫秒时间边界修正**，不将旧二进制回归冒充该修正的验证。
+- 亚毫秒边界修正及两项断言完成后，重新Release构建并运行 `dotnet test tests/IntegrationTests -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --filter 'FullyQualifiedName~Deliveries|FullyQualifiedName~Delivery|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~RuntimeOutputEndpointTests' --logger trx --results-directory /tmp/tenonedge-queue-inspection-release-trx`：**124项通过，0失败/跳过**，3分11秒（`...-backend-release.log`、`...-backend-release-verified.log`），涵盖新查询/API、配额/保留期/隔离、投递退出、输出报告及契约/授权。两份报告分别通过仓库 `verify-test-results.py` 核对；这是最终定向复验，不声称再次执行了全部2693项。
+- 固定npm执行 `npm run typecheck`、`npm run lint`、`npm run format:check`、`npm run build`、`npm test -- --reporter=json --outputFile=/tmp/tenonedge-queue-inspection-vitest-release.json`：通过，**265项Vitest，0失败/跳过**（`...-web-release.log`、`...-vitest-release.json`）；主包超过500kB的构建警告保留，未改阈值或加依赖。
+- `PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-queue-inspection-playwright-release.json TENONEDGE_TEST_URL=http://192.168.0.88:18082 node node_modules/@playwright/test/cli.js test --reporter=line,json --output=/tmp/tenonedge-queue-inspection-browser-release-artifacts`：最终 **47项Chromium通过，0失败/跳过/重试通过**，约4分16秒（`...-browser-release.log`、`...-playwright-release.json`）。`node scripts/verify-results.mjs` 核对两份报告通过（`...-web-release-verified.log`）。此前47项通过后补充失败次数的毒消息口径说明，最终重新构建并全量前端复验，不以旧页面代替当前页面。实际HeadlessChrome156.0.8078.4，不是最低浏览器；共享Host走真实网卡HTTP，独立重启Host用回环动态端口。
+- 最终Release源码构建的独立Development Host（127.0.0.1:18081）运行 `npm run api:generate`，核对实时OpenAPI与生成文件结构相同；OpenAPI/TS哈希见 `...-openapi-verified.log`。19个产品/测试/生成文件在对应最终回归后哈希未变（`...-source-release.json`、`...-source-verified.log`）。最终管理员/Viewer截图 `...-browser.png`、`...-viewer.png` 已目视检查：查看权限、区域标签、截断/编码说明与失败计数口径可见，不当作实物验收。
+- 资源审计最初发现本批早先120秒超时场景遗留的已知临时fixture目录；确认无Host持有后仅清理该目录，未清理未知数据或进程（`...-cleanup.log`）。随后核对可识别端口关闭、本批浏览器/OpenAPI临时目录和Host无残留（`...-resource-audit.log`）；未单独记录的动态端口只由测试自身等待关闭，不夸大为逐一独立核验。
+
+剩余：管理员暂停/恢复页面、立即重试、失败记录回队尾重试、清理/导出及两类迁移/FS-23中断补审计仍未实现；本批沿用已存储的安全失败说明，尚未增加HTTP对方错误正文摘要。没有导出一致性或跨库原子迁移承诺。整个T3按§1继续，未做最低浏览器、实物、断电、长期压力或远端CI验证；不推送、不发布、不进入T4/T5/G1。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -4082,6 +4115,7 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 | GW-15 / T3-07 / 功能 §7.1/7.4 | 真实总览、运行诊断与事件分页 | 本地软件子项通过：状态/读取计数、真实趋势、首次设置/系统信息、事件筛选及50+5分页，500保留筛选/旧数据，离页停止轮询；重启趋势清空、事件保留，只读可查元数据 | §2.193，256 Vitest / 44 Chromium | 当前值/设备汇总续见§2.194；输出详情/容量、计数分类、测试发送/完整调试及最低浏览器未完成 |
 | FE-AT-02/06 / T3-01 / 功能 §1.2 | 登录后HTTP持续风险提示 | 普通网卡HTTP下，登录/导航后仍显示明文风险与HTTPS说明；修改密码页不丢提示，既有认证/画布回归通过 | §2.193 | 最低浏览器、强制改密/重置完整流程及HTTPS策略仍未完整验收 |
 | GW-15 / AT-08 / T3-07 / 功能 §7.1/7.2/4.6 | 设备分类、当前值与最后成功值 | 本地软件子项通过：有界独立缓存、原文大整数、历史快照元数据、三角色/匿名/分页/版本边界；真实HTTP浏览器失败过期/恢复、隐私清除、只读重启重新采样，查询500保护和离页取消 | §2.194，2660后端 / 257 Vitest / 45 Chromium | Modbus/MQTT当前值的完整网页现场链路、10,000点整机性能、最低浏览器和实物未验证；非整个AT/T3完成 |
+| GW-14 / GW-15 / T3-08 / 功能 §8.2/8.4/8.6 | 失败/隔离元数据查看与正文权限 | 本地软件子项通过：唯一写者真实记录＋短事务查询、100+5分页/筛选、敏感列SQL防读、单独64KiB正文/UTF-8边界、三角色与匿名拒绝；浏览器真实HTTP 422加明确离线fixture验证查看流程 | §2.196 | 重试/暂停恢复页面/清理/导出/迁移、FS-23审计及最低浏览器未完成；不把fixture算作真实隔离触发 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录

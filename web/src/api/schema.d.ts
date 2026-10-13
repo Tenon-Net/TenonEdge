@@ -901,6 +901,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 筛选失败区或隔离区元数据，不读取正文
+         * @description state 必须是 failed 或 quarantined；按 seq 升序，每页最多 100。deviceKey 精确匹配；reason 为区分大小写的字面子串。from（包含）/to（不包含）筛选首次入队时间。独立页面不是跨页一致快照，期间记录可能过期或被操作。
+         */
+        get: operations["getDeliveryRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/deliveries/{deliveryId}/body": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 按稳定投递编号查看最多 64 KiB 正文
+         * @description 指定 failed 或 quarantined 区域；记录删除或状态变化返回 404。非 UTF-8 前缀返回显式 Base64。只读角色禁止访问；不返回头、凭证或指纹。
+         */
+        get: operations["getDeliveryBody"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/system/outbound-policy": {
         parameters: {
             query?: never;
@@ -1370,6 +1410,18 @@ export interface components {
             /** Format: int64 */
             evictions: number | string;
         };
+        DeliveryBodyPreview: {
+            /** Format: uuid */
+            deliveryId: string;
+            state: components["schemas"]["DeliveryState"];
+            encoding: string;
+            content: string;
+            /** Format: int64 */
+            totalBytes: number | string;
+            /** Format: int32 */
+            displayedBytes: number | string;
+            truncated: boolean;
+        };
         DeliveryCacheStatus: {
             storageFault: boolean;
             lastError: null | string;
@@ -1388,6 +1440,39 @@ export interface components {
             /** Format: int64 */
             rejectedRecords: number | string;
             store: null | components["schemas"]["DeliveryStoreInfo"];
+        };
+        DeliveryInspectionItem: {
+            /** Format: int64 */
+            sequence: number | string;
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: int64 */
+            connectionId: number | string;
+            deviceKey: string;
+            /** Format: int64 */
+            routeId: null | number | string;
+            nodeLabel: null | string;
+            /** Format: int64 */
+            revision: number | string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            failedAt: null | string;
+            /** Format: int32 */
+            failureCount: number | string;
+            state: components["schemas"]["DeliveryState"];
+            quarantineReason: null | string;
+            lastError: null | string;
+            /** Format: int64 */
+            byteSize: number | string;
+            clockAnomaly: boolean;
+        };
+        DeliveryInspectionPage: {
+            /** Format: date-time */
+            capturedAt: string;
+            items: components["schemas"]["DeliveryInspectionItem"][];
+            /** Format: int64 */
+            nextSequence: null | number | string;
         };
         DeliveryQueueFiles: {
             /** Format: int64 */
@@ -1437,6 +1522,8 @@ export interface components {
             /** Format: int64 */
             unknownQuarantineCount: number | string;
         };
+        /** @enum {unknown} */
+        DeliveryState: "pending" | "failed" | "quarantined";
         DeliveryStoreInfo: {
             filePath: string;
             sqliteVersion: string;
@@ -5847,6 +5934,131 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getDeliveryRecords: {
+        parameters: {
+            query?: {
+                state?: string;
+                connectionId?: number | string;
+                deviceKey?: string;
+                reason?: string;
+                from?: string;
+                to?: string;
+                after?: number | string;
+                limit?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryInspectionPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getDeliveryBody: {
+        parameters: {
+            query?: {
+                state?: string;
+            };
+            header?: never;
+            path: {
+                deliveryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryBodyPreview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

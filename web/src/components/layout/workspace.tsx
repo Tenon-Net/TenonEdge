@@ -51,6 +51,14 @@ export function Workspace() {
                         {t('diagnostics.title')}
                     </Link>
                     <Link
+                        to="/deliveries"
+                        search={{}}
+                        className="rounded-md p-2 hover:bg-accent"
+                        activeProps={{ className: 'bg-accent font-medium' }}
+                    >
+                        {t('deliveries.title')}
+                    </Link>
+                    <Link
                         to="/account"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
