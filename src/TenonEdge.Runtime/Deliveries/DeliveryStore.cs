@@ -18,7 +18,7 @@ namespace TenonEdge.Runtime.Deliveries;
 /// </summary>
 internal sealed partial class DeliveryStore
 {
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 6;
 
     public const string ExpectedJournalMode = "wal";
 
@@ -32,7 +32,7 @@ internal sealed partial class DeliveryStore
     private const string SelectColumns = """
         seq, delivery_id, connection_id, source_message_id, device_key, route_id, node_label, revision, payload,
         target_address, qos, headers, fingerprint, fingerprint_summary, created_at, failure_count, state,
-        quarantine_reason, last_error, migration_id, failed_at, byte_size, clock_anomaly, protocol_metadata
+        quarantine_reason, last_error, migration_id, failed_at, byte_size, clock_anomaly, protocol_metadata, last_retried_at
         """;
 
     /// <summary>各版本的迁移语句；只追加，不修改已发布的版本。</summary>
@@ -105,6 +105,10 @@ internal sealed partial class DeliveryStore
         // 版本 5（T2-06）：非秘密协议约定随报文冻结；旧记录保留 null，既有配额字节不变。
         """
         ALTER TABLE delivery ADD COLUMN protocol_metadata TEXT;
+        """,
+        // 版本 6（T3-08）：人工重试单独刷新待发保留期，不覆盖首次创建时间或原报文。
+        """
+        ALTER TABLE delivery ADD COLUMN last_retried_at INTEGER;
         """,
     ];
 
@@ -358,7 +362,8 @@ internal sealed partial class DeliveryStore
         FailedAt: reader.IsDBNull(20) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(20)),
         ByteSize: reader.GetInt64(21),
         ClockAnomaly: reader.GetInt64(22) != 0,
-        ProtocolMetadata: reader.IsDBNull(23) ? null : reader.GetString(23));
+        ProtocolMetadata: reader.IsDBNull(23) ? null : reader.GetString(23),
+        LastRetriedAt: reader.IsDBNull(24) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(24)));
 
     private static SqliteConnection Open(string connectionString)
     {

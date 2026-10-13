@@ -128,6 +128,13 @@ public sealed class DeliveryCache
     /// <summary>调用方必须先执行正文权限校验。仅查看指定失败/隔离区中仍存在的稳定投递编号。</summary>
     public DeliveryBodyPreview? InspectBody(Guid deliveryId, DeliveryState state) => Store.InspectBody(deliveryId, state);
 
+    /// <summary>授权的管理调用方提供已选择的失败记录代次及当前有效目标指纹。
+    /// 全部记录匹配且配额足够时，由唯一写者原子移到队尾；旧 seq 不复用，重复提交不能再次入队。
+    /// 不解除目标暂停、修改目标身份或生成报文；取消等待不撤销已交给写者的操作。</summary>
+    public Task<DeliveryWriteResult> RetryFailedAsync(IReadOnlyList<DeliveryRetryItem> items,
+        IReadOnlyDictionary<long, string> targetFingerprints, CancellationToken cancellationToken) =>
+        SubmitAsync(new RetryFailedRequest(items, targetFingerprints), cancellationToken);
+
     public DeliveryQueueTotals GetQueueTotals(long connectionId) => Store.ReadQueueTotals(connectionId);
 
     internal Task<DeliveryWriteResult> QuarantineAsync(long seq, string reason, CancellationToken token) =>

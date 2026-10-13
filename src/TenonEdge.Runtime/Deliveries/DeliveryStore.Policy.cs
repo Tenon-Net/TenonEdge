@@ -120,7 +120,7 @@ internal sealed partial class DeliveryStore
         // 启动时相差一年以上，或创建/入失败区时间在未来，不能据此自动清理。标记持久保留供诊断。
         command.CommandText = """
             UPDATE delivery SET clock_anomaly = 1 WHERE clock_anomaly = 0 AND
-                (created_at > $now OR failed_at > $now OR created_at < $oldest);
+                (created_at > $now OR failed_at > $now OR last_retried_at > $now OR created_at < $oldest);
             """;
         command.Parameters.AddWithValue("$now", now.ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("$oldest", (_maintenanceStart - TimeSpan.FromDays(365)).ToUnixTimeMilliseconds());
@@ -128,7 +128,7 @@ internal sealed partial class DeliveryStore
         command.CommandText = """
             DELETE FROM delivery WHERE seq IN (
                 SELECT seq FROM delivery WHERE state IN ('pending', 'quarantined') AND clock_anomaly = 0
-                AND ((failed_at IS NULL AND created_at <= $pendingCutoff)
+                AND ((failed_at IS NULL AND COALESCE(last_retried_at, created_at) <= $pendingCutoff)
                     OR (failed_at IS NOT NULL AND failed_at >= created_at AND failed_at <= $failedCutoff))
                 ORDER BY seq LIMIT 100
             ) RETURNING connection_id;

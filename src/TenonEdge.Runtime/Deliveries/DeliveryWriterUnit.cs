@@ -332,6 +332,10 @@ internal sealed partial class DeliveryWriterUnit(
                 return DeliveryWriteResult.Deleted(0);
             case FailureRequest failure:
                 return queue.Store.ApplyFailure(insert.Connection!, insert.Transaction!, failure, createdAt);
+            case RetryFailedRequest retry:
+                return queue.StorageProtection.Status.RejectNewRecords
+                    ? DeliveryWriteResult.Rejected(DeliveryRetryErrors.StorageProtection)
+                    : queue.Store.RetryFailed(insert.Connection!, insert.Transaction!, retry, createdAt);
             default:
                 throw new InvalidOperationException($"未知的写入请求 {request.GetType().Name}。");
         }
