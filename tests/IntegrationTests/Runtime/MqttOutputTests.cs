@@ -244,6 +244,53 @@ public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixt
         Assert.Equal(2, connector.Connections);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task QueueOnlyTargetMigratesAndSendsOriginalTopicQosAndPayloadWithoutAnyInput(int qos)
+    {
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("unrouted-migration");
+        var (subscriber, _) = await MqttProbe.ConnectAsync(MqttProbe.Options(broker, NewClientId()), Token);
+        using (subscriber)
+        using (var data = TemporaryDirectory.Create())
+        {
+            var received = ReceivedMessages.Attach(subscriber);
+            await MqttProbe.SubscribeAsync(subscriber, topic, Token);
+            var connector = new CountingConnector();
+            var factory = new MqttOutputFactory(new Credentials(), TimeProvider.System, connector, new TenonEdge.Runtime.Connections.SharedConnections());
+            var id = Guid.NewGuid();
+            var frozen = factory.Build(Plan(broker.Port, topic, qos)).CreateMessage(Message(), id);
+            var unit = new RuntimeUnitPlan(RuntimeUnitId.Create("output.mqtt", "queue/target/sender"), JsonSerializer.SerializeToElement(new
+            { connectionId = 1, queueOnly = true, host = "127.0.0.1", port = broker.Port, usePassword = true, timeoutMs = 5000 }));
+            var identity = factory.Build(unit).CaptureIdentity()!;
+            await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, outputs: [factory]);
+            await using var prepared = runtime.Prepare(new RuntimePlan(1, [unit]));
+            Assert.Empty(prepared.Failures);
+            Assert.Equal(0, connector.Connections);
+            runtime.StartCore();
+            await runtime.Deliveries.EnqueueAsync([new(id, 9, Guid.NewGuid(), "meter", 1, frozen.Payload, frozen.Fingerprint,
+                frozen.FingerprintSummary, frozen.Address, frozen.QualityOfService)], Token);
+            await runtime.ActivateAsync(prepared);
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.ReadQuarantined(9, 0, 1).Count == 1);
+            var record = Assert.Single(runtime.Deliveries.ReadQuarantined(9, 0, 10));
+            var command = DeliveryMigrationCommand.Selected(RuntimeTesting.ConfigStoreId, Guid.NewGuid(), 9, 1, identity.Fingerprint,
+                identity.Summary, [new(record.Seq, record.DeliveryId, record.Fingerprint, record.MigrationId)]);
+            var result = await runtime.MigrateDeliveriesAsync(command, 1, Token);
+            Assert.True(result.Committed, result.Error);
+            var wire = (await received.NextAsync(Token)).ApplicationMessage;
+            Assert.Equal(frozen.Payload.ToArray(), wire.Payload.ToArray());
+            Assert.Equal(topic, wire.Topic);
+            Assert.Equal(qos, (int)wire.QualityOfServiceLevel);
+            await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().DeletedRecords == 1);
+            Assert.Single(runtime.GetOutputSenders());
+            Assert.DoesNotContain(runtime.GetStatus().Units, item => item.Id.Kind.StartsWith("input.", StringComparison.Ordinal));
+            Assert.Equal(1, runtime.Deliveries.GetStatus().CommittedRecords);
+            Assert.Equal(1, connector.Connections);
+            Assert.Equal(1, runtime.Deliveries.ReadMigrationReceipt(command.OperationId)!.AffectedRecords);
+        }
+    }
+
     private sealed class CountingConnector : IOutboundConnector
     {
         public int Connections { get; private set; }

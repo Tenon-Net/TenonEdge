@@ -196,13 +196,23 @@ public sealed class RuntimeRollbackTests
         var routes = factory.Services.GetRequiredService<RouteDraftStore>();
         var deleted = routes.Delete(saved.RouteId, saved.Version, "operator", null);
         var connections = factory.Services.GetRequiredService<ConnectionDraftStore>();
-        var version = connections.Delete(saved.ConnectionId, deleted.Version, "operator", null);
         var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
+        // 无路线的启用连接现也有有效发送者。先验证它不能被直接删掉，再停用并轮出previous保护。
+        Assert.Equal("connection.referenced", Assert.Throws<DraftWriteException>(() =>
+            connections.Delete(saved.ConnectionId, deleted.Version, "operator", null)).Code);
+        var connection = Assert.Single(connections.Read().Connections);
+        var disabled = connections.Write(connection.Id, new(deleted.Version, connection.Key, connection.Name,
+            connection.Kind, Enabled: false, Http: connection.Http), "operator", null);
+        Assert.True((await coordinator.ApplyDraftAsync(disabled.Version, "operator", null, Token)).Activated);
+        Assert.Equal("connection.referenced", Assert.Throws<DraftWriteException>(() =>
+            connections.Delete(saved.ConnectionId, disabled.Version, "operator", null)).Code);
+        Assert.True((await coordinator.ApplyDraftAsync(disabled.Version, "operator", null, Token)).Activated);
+        var version = connections.Delete(saved.ConnectionId, disabled.Version, "operator", null);
         await coordinator.ApplyDraftAsync(version.Version, "operator", null, Token);
         var error = await Assert.ThrowsAsync<DraftWriteException>(() => coordinator.RollbackAsync(1, version.Version, "operator", null, Token));
         Assert.Equal("configuration.rollbackConnectionMissing", error.Code);
-        Assert.Equal(3, coordinator.Runtime.ActiveRevision);
-        Assert.Null(factory.Services.GetRequiredService<RuntimeVersionStore>().Load(4));
+        Assert.Equal(5, coordinator.Runtime.ActiveRevision);
+        Assert.Null(factory.Services.GetRequiredService<RuntimeVersionStore>().Load(6));
     }
 
     [Theory]

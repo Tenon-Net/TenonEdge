@@ -22,7 +22,7 @@ internal sealed record RouteCompiledPath(RouteTopologyPath Path, RuntimeUnitId O
 internal sealed record RoutePlanCompilation(RuntimePlanDocument Document, RouteTopologyResult Topology, ImmutableArray<RouteCompiledPath> Paths);
 
 /// <summary>纯本地编译：来源只生成一次，逐路径传播字段和映射，最终复用运行快照静态校验。没有运行时、数据库或网络依赖。</summary>
-internal static class RoutePlanCompiler
+internal static partial class RoutePlanCompiler
 {
     public static RoutePlanCompilation Compile(RouteCompilationSnapshot snapshot, CancellationToken token)
     {
@@ -103,6 +103,8 @@ internal static class RoutePlanCompiler
                 catch (Exception error) when (ConfigurationError(error)) { throw Error("output.configuration", route.Key, output.Id); }
             }
         }
+        foreach (var queue in QueueOutputs(snapshot.Connections.Values, units, id => snapshot.MqttCredentials.Contains(id), token))
+        { Add(queue, "", queue.Id.Key); }
         token.ThrowIfCancellationRequested();
         var serialized = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units = units.Select(unit => new { kind = unit.Id.Kind, key = unit.Id.Key, unit.Configuration }) }, RouteSourceCompiler.Json);
         if (serialized.LongLength > RuntimePlanDocument.MaximumBytes)

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Storage;
 
 namespace TenonEdge.Host.Features.Runtime;
@@ -26,6 +27,15 @@ internal sealed record RuntimeSnapshotDocument(int SchemaVersion, string Content
     }
 
     public static RuntimePlanDocument ReadPlan(RuntimeSnapshotRecord snapshot) => Read(snapshot).Plan;
+
+    // 执行视图与历史存储视图区分：兼容旧完整快照的无路线目标，保留原存储哈希和原始计划供历史检查。
+    public static RuntimePlanDocument ReadExecutionPlan(RuntimeSnapshotRecord snapshot) => ReadForExecution(snapshot).Plan;
+
+    public static (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft) ReadForExecution(RuntimeSnapshotRecord snapshot)
+    {
+        var (plan, draft) = Read(snapshot);
+        return (draft is null ? plan : RoutePlanCompiler.WithQueueOutputs(plan, draft), draft);
+    }
 
     public static (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft) Read(RuntimeSnapshotRecord snapshot)
     {

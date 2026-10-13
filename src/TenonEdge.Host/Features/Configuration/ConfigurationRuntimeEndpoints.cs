@@ -46,7 +46,7 @@ internal static class ConfigurationRuntimeEndpoints
             try
             {
                 var snapshot = versions.Load(revision) ?? throw new KeyNotFoundException();
-                hash = RuntimeSnapshotDocument.ReadPlan(snapshot).ContentHash;
+                hash = RuntimeSnapshotDocument.ReadExecutionPlan(snapshot).ContentHash;
             }
             catch (Exception error) when (error is RuntimePlanDocumentException or KeyNotFoundException)
             { code = "configuration.invalidSnapshot"; }

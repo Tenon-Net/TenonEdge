@@ -115,7 +115,7 @@ internal static class RuntimeOutputEndpoints
         if (revision is null)
         { return []; }
         var snapshot = versions.Load(revision.Value) ?? throw new RuntimePlanDocumentException("运行快照不存在。");
-        var (plan, draft) = RuntimeSnapshotDocument.Read(snapshot);
+        var (plan, draft) = RuntimeSnapshotDocument.ReadForExecution(snapshot);
         return plan.Units.Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal))
             .GroupBy(unit => unit.Configuration.GetProperty("connectionId").GetInt64()).ToDictionary(group => group.Key, group =>
             {

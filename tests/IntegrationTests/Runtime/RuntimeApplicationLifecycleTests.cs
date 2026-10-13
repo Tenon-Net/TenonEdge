@@ -138,8 +138,10 @@ public sealed class RuntimeApplicationLifecycleTests
         Assert.DoesNotContain("fixture-sensitive-build-detail", snapshot.NotEffectiveReason!, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task SavedRouteRunsOnlyAfterApplyAndPendingDataBlocksRemovingItsTarget()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SavedRouteRunsOnlyAfterApplyAndRemovingItsTargetIsDistinctFromRemovingItsLastRoute(bool removeTarget)
     {
         using var data = TemporaryDirectory.Create();
         using var input = new ControlledInput();
@@ -154,11 +156,25 @@ public sealed class RuntimeApplicationLifecycleTests
         var edited = drafts.Write(saved.Route.Id, new(saved.Version, saved.Route.Key, saved.Route.Name, false, saved.Route.Graph), "editor", null);
         Assert.Equal(1, input.Runs);
         Assert.Equal(1, coordinator.Runtime.ActiveRevision);
-        var rejected = await coordinator.ApplyDraftAsync(edited.Version, "operator", null, Token);
-        Assert.False(rejected.Committed);
-        Assert.Equal("runtime.targetChangeBlocked", rejected.Code);
-        Assert.Equal(1, input.Runs); // First target check rejects without interrupting old collection.
-        Assert.Equal(1, coordinator.Runtime.ActiveRevision);
+        var connections = factory.Services.GetRequiredService<ConnectionDraftStore>();
+        var connection = Assert.Single(connections.Read().Connections);
+        var version = removeTarget ? connections.Write(connection.Id, new(edited.Version, connection.Key, connection.Name,
+            connection.Kind, Enabled: false, Http: connection.Http), "editor", null).Version : edited.Version;
+        var frozen = coordinator.Runtime.Deliveries.ReadPending(connection.Id, 0, 10).ToArray();
+        var result = await coordinator.ApplyDraftAsync(version, "operator", null, Token);
+        Assert.Equal(!removeTarget, result.Committed);
+        Assert.Equal(removeTarget ? "runtime.targetChangeBlocked" : "runtime.applied", result.Code);
+        Assert.Equal(1, input.Runs); // Neither branch starts another input; rejection keeps the old input alive.
+        Assert.Equal(removeTarget ? 1 : 2, coordinator.Runtime.ActiveRevision);
+        Assert.Equal(frozen.Select(row => (row.Seq, row.DeliveryId)),
+            coordinator.Runtime.Deliveries.ReadPending(connection.Id, 0, 10).Select(row => (row.Seq, row.DeliveryId)));
+        Assert.Single(coordinator.Runtime.GetOutputSenders());
+        if (!removeTarget)
+        {
+            var effective = RuntimeSnapshotDocument.ReadExecutionPlan(factory.Services.GetRequiredService<RuntimeVersionStore>().Load(2)!);
+            Assert.True(Assert.Single(effective.Units).Configuration.GetProperty("queueOnly").GetBoolean());
+            Assert.DoesNotContain(coordinator.Runtime.GetStatus().Units, unit => unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
@@ -252,7 +268,12 @@ public sealed class RuntimeApplicationLifecycleTests
         Assert.Equal(0, coordinator.Runtime.Deliveries.GetStatus().CommittedRecords);
         var drafts = factory.Services.GetRequiredService<RouteDraftStore>();
         var edited = drafts.Write(saved.Route.Id, new(saved.Version, saved.Route.Key, saved.Route.Name, false, saved.Route.Graph), "editor", null);
-        var rejected = await coordinator.ApplyDraftAsync(edited.Version, "operator", null, Token);
+        // 仅禁用最后路线现仍保留发送接续；这里真正停用目标，保留提交前第二次检查的原安全场景。
+        var connections = factory.Services.GetRequiredService<ConnectionDraftStore>();
+        var connection = Assert.Single(connections.Read().Connections);
+        var disabled = connections.Write(connection.Id, new(edited.Version, connection.Key, connection.Name,
+            connection.Kind, Enabled: false, Http: connection.Http), "editor", null);
+        var rejected = await coordinator.ApplyDraftAsync(disabled.Version, "operator", null, Token);
         Assert.Equal("runtime.targetChangeBlocked", rejected.Code);
         Assert.False(rejected.Committed);
         await OutputPipelineTests.UntilAsync(() => input.Runs == 2);

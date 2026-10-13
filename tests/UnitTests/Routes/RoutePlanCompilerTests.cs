@@ -108,7 +108,11 @@ public sealed class RoutePlanCompilerTests
         var inputs = snapshot.Inputs.ToDictionary();
         inputs[1] = inputs[1] with { Enabled = false };
         Assert.Equal("source.disabled", Assert.Throws<RouteTopologyException>(() => Compile(snapshot with { Inputs = inputs })).Issue.Code);
-        Assert.Empty(Compile(snapshot with { Routes = [snapshot.Routes[0] with { Enabled = false }], Inputs = inputs }).Document.Units);
+        var stopped = Compile(snapshot with { Routes = [snapshot.Routes[0] with { Enabled = false }], Inputs = inputs });
+        Assert.Empty(stopped.Topology.Paths);
+        var queue = Assert.Single(stopped.Document.Units);
+        Assert.True(queue.Configuration.GetProperty("queueOnly").GetBoolean());
+        Assert.Empty(queue.Configuration.GetProperty("inputs").EnumerateArray());
         using var stop = new CancellationTokenSource();
         stop.Cancel();
         Assert.Throws<OperationCanceledException>(() => RoutePlanCompiler.Compile(snapshot, stop.Token));

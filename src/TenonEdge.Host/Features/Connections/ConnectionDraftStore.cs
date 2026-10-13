@@ -98,7 +98,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         {
             var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
                 ?? throw new InvalidOperationException("运行版本引用缺失。");
-            var plan = RuntimeSnapshotDocument.ReadPlan(snapshot);
+            var plan = RuntimeSnapshotDocument.ReadExecutionPlan(snapshot);
             if (plan.Units.Any(unit => unit.Configuration.TryGetProperty("connectionId", out var value) && value.Deserialize<long>(JsonSerializerOptions.Web) == id))
             { return true; }
         }

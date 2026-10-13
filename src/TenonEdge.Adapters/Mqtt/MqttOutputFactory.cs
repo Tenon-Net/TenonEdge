@@ -22,6 +22,8 @@ public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvi
         try
         {
             var settings = MqttOutputSettings.Parse(plan.Configuration);
+            if (settings.QueueCredentialReferenceMissing)
+            { throw new RuntimeUnitBuildException(plan.Id, "旧快照未记录此 MQTT 连接的凭证引用，发送接续不可用；请核对并重新应用配置。"); }
             if (settings.UsePassword && credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) is null)
             {
                 throw new ArgumentException("MQTT 认证凭证未设置或接收方已变化，须重新填写凭证。");

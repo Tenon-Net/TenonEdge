@@ -65,6 +65,15 @@ internal sealed partial class RouteDraftStore
         var devices = deviceIds.Length == 0 ? [] : client.Queryable<DeviceDraftRecord>().Where(row => deviceIds.Contains(row.Id)).ToList().Select(DeviceDraftStore.Decode).ToArray();
         foreach (var device in devices)
         { if (device.ConnectionId is { } id) { connectionIds.Add(id); } }
+        // 全部应用/编译须包含没有路线的启用输出连接；在读取内容之前仍做SQL总大小/数量检查。
+        // 单图预览只读取其引用，不让无关连接影响当前图的字段/样本分析。
+        if (graph is null)
+        {
+            if (client.Queryable<ConnectionDraftRecord>().Count() > 500)
+            { throw new RouteTopologyException(new("plan.configuration", "")); }
+            foreach (var id in client.Queryable<ConnectionDraftRecord>().Select(row => row.Id).ToList())
+            { connectionIds.Add(id); }
+        }
         var selectedConnections = connectionIds.ToArray();
         CheckSelected("connection_draft", selectedConnections);
         var connections = selectedConnections.Length == 0 ? [] : client.Queryable<ConnectionDraftRecord>().Where(row => selectedConnections.Contains(row.Id)).ToList().Select(ConnectionDraftStore.Decode).ToArray();

@@ -33,7 +33,7 @@ internal sealed partial class RuntimeVersionStore
         });
         token.ThrowIfCancellationRequested();
         // 损坏快照不能假装为空；让调用方报告存储/快照故障，禁止确认。
-        (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft)? previous = captured.Effective is null ? null : RuntimeSnapshotDocument.Read(captured.Effective);
+        (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft)? previous = captured.Effective is null ? null : RuntimeSnapshotDocument.ReadForExecution(captured.Effective);
         var before = captured.Effective is null ? new ConfigurationCheckpoint("0", [], [], [], []) : previous!.Value.Draft;
         var warnings = new List<string>
         {
@@ -79,7 +79,7 @@ internal sealed partial class RuntimeVersionStore
     {
         token.ThrowIfCancellationRequested();
         var captured = ReadManualRollback(targetRevision, expectedDraftVersion);
-        var target = RuntimeSnapshotDocument.Read(captured.Target);
+        var target = RuntimeSnapshotDocument.ReadForExecution(captured.Target);
         var draft = target.Draft ?? throw new NotSupportedException("旧版快照没有完整草稿，不能确认人工回滚。");
         token.ThrowIfCancellationRequested();
         database.InTransaction(client =>
@@ -91,7 +91,7 @@ internal sealed partial class RuntimeVersionStore
             ValidateRollbackReferences(client, draft);
             return true;
         });
-        var blocks = TargetChangeBlocks(RuntimeSnapshotDocument.ReadPlan(captured.Effective), target.Plan, token);
+        var blocks = TargetChangeBlocks(RuntimeSnapshotDocument.ReadExecutionPlan(captured.Effective), target.Plan, token);
         var warnings = new List<string>
         {
             "configuration.allInputsPause",
@@ -118,6 +118,11 @@ internal sealed partial class RuntimeVersionStore
         {
             token.ThrowIfCancellationRequested();
             if (current.Contains(old))
+            { continue; }
+            var sameRecipient = current.Where(value => value.ConnectionId == old.ConnectionId && value.Kind == old.Kind && value.Recipient == old.Recipient).ToArray();
+            // 去掉最后一条路线仍由该启用连接原样补发；给queue-only连接新增路线也不改写旧记录。
+            // 若新计划仍有格式化路线，则不能用额外queue-only单元绕过既有Topic/路径变更保护。
+            if (sameRecipient.Length > 0 && (old.QueueOnly || sameRecipient.All(value => value.QueueOnly)))
             { continue; }
             var pending = deliveries.ReadPending(old.ConnectionId, 0, 1).Count > 0;
             var failed = deliveries.ReadFailed(old.ConnectionId, 0, 1).Count > 0;

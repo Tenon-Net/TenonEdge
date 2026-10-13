@@ -7,7 +7,7 @@ public sealed partial class RuntimeHost
 {
     /// <summary>宿主已确认有效配置、每条原记录的同协议与所有者声明，并持久登记迁移开始。
     /// 原源/目标发送者都提交在途结果后，才交给唯一写者；不取消/替换发送者，不解除暂停。
-    /// 本入口只支持已有目标发送者；无输出路线目标的接续由宿主另行准备，不能把不存在的发送者当作已暂停。
+    /// 本入口只支持已有目标发送者；宿主计划为无输出路线的启用连接准备queue-only单元，不在迁移中另建发送者。
     /// 接受后由运行时拥有，调用方取消仅结束等待；停机等待同一操作完成。</summary>
     public Task<DeliveryWriteResult> MigrateDeliveriesAsync(DeliveryMigrationCommand command, long revision, CancellationToken token)
     {

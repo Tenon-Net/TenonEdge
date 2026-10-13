@@ -233,8 +233,10 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         Assert.Equal(1, connector.Connections);
     }
 
-    [Fact]
-    public async Task CompiledInputGroupSharesOneClientAcrossTwoInputBindingsAndTwoOutputBorrowers()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompiledInputGroupSharesOneClientAcrossTwoInputBindingsAndTwoOutputBorrowers(bool queueOnly)
     {
         var broker = fixture.Require();
         var topic = MqttProbe.NewTopic("compiled-group");
@@ -259,8 +261,9 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
                 port = settings.Port,
                 usePassword = true,
                 clientId,
-                topic = topic + "/" + name,
-                inputs = InputKeys,
+                queueOnly,
+                topic = queueOnly ? "" : topic + "/" + name,
+                inputs = queueOnly ? Array.Empty<string>() : InputKeys,
             })));
         var targetOne = BuildOutput("one");
         var targetTwo = BuildOutput("two");
@@ -269,10 +272,18 @@ public sealed class MqttInputSessionTests(MosquittoBrokerFixture fixture) : ICla
         await using var outputTwo = targetTwo.CreateAdapter();
         Assert.Equal(0, connector.Connections);
         using var deadline = MqttProbe.Timeout(Token);
+        var fingerprint = settings.Fingerprint(MosquittoBroker.UserName, "account");
+        var blockedSend = queueOnly ? outputOne.SendAsync(new("one"u8.ToArray(), topic + "/one", 1, fingerprint, "test"), deadline.Token) : null;
+        if (blockedSend is not null)
+        {
+            Assert.False(blockedSend.IsCompleted);
+            Assert.Equal(0, connector.Connections); // Queue-only still observes the shared-input activation barrier.
+        }
         activation.SetResult();
         Assert.Equal(OutputSendStatus.Ack, (await inputLease.ExecuteAsync((session, token) => session.MaintainAsync(token), deadline.Token)).Status);
-        var fingerprint = settings.Fingerprint(MosquittoBroker.UserName, "account");
-        Assert.Equal(OutputSendStatus.Ack, (await outputOne.SendAsync(new("one"u8.ToArray(), topic + "/one", 1, fingerprint, "test"), deadline.Token)).Status);
+        Assert.Equal(OutputSendStatus.Ack, (blockedSend is null
+            ? await outputOne.SendAsync(new("one"u8.ToArray(), topic + "/one", 1, fingerprint, "test"), deadline.Token)
+            : await blockedSend).Status);
         Assert.Equal(OutputSendStatus.Ack, (await outputTwo.SendAsync(new("two"u8.ToArray(), topic + "/two", 1, fingerprint, "test"), deadline.Token)).Status);
         Assert.Equal("one", await first.Task.WaitAsync(deadline.Token));
         Assert.Equal("two", await second.Task.WaitAsync(deadline.Token));

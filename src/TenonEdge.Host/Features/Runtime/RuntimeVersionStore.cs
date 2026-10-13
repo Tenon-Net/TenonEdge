@@ -174,23 +174,23 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             return null;
         }
 
-        return TargetChangeBlocks(RuntimeSnapshotDocument.ReadPlan(snapshot), next, CancellationToken.None).Length == 0 ? null
+        return TargetChangeBlocks(RuntimeSnapshotDocument.ReadExecutionPlan(snapshot), next, CancellationToken.None).Length == 0 ? null
             : "存在待发或失败区记录，不能删除目标或修改接收方/Topic/路径；须先发送完、显式清理或迁移。";
     }
 
-    private static IEnumerable<(long ConnectionId, string Kind, string Recipient, string Address)> OutputRecipients(RuntimePlanDocument document)
+    private static IEnumerable<(long ConnectionId, string Kind, string Recipient, string Address, bool QueueOnly)> OutputRecipients(RuntimePlanDocument document)
     {
         foreach (var unit in document.Units)
         {
             if (unit.Id.Kind == "output.mqtt")
             {
                 var settings = MqttOutputSettings.Parse(unit.Configuration);
-                yield return (settings.ConnectionId, unit.Id.Kind, settings.Recipient, settings.Topic);
+                yield return (settings.ConnectionId, unit.Id.Kind, settings.Recipient, settings.Topic, settings.QueueOnly);
             }
             else if (unit.Id.Kind == "output.http")
             {
                 var settings = HttpOutputSettings.Parse(unit.Configuration);
-                yield return (settings.ConnectionId, unit.Id.Kind, settings.BaseAddress, settings.Endpoint.AbsoluteUri);
+                yield return (settings.ConnectionId, unit.Id.Kind, settings.BaseAddress, settings.QueueOnly ? "" : settings.Endpoint.AbsoluteUri, settings.QueueOnly);
             }
         }
     }
@@ -228,7 +228,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
                     .ExecuteCommand();
             }
 
-            var checkpoint = RuntimeSnapshotDocument.Read(snapshot);
+            var checkpoint = RuntimeSnapshotDocument.ReadForExecution(snapshot);
             var document = checkpoint.Plan;
             if (TargetChangeProblem(document) is { } problem)
             {

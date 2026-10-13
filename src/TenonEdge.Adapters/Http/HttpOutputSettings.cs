@@ -14,6 +14,9 @@ public sealed record HttpOutputSettings : HttpRequestSettings
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     public ImmutableArray<string> Inputs { get; init; } = [];
+    /// <summary>仅接续该连接已有的冻结队列，不是路线，也不从任何输入生成投递。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool QueueOnly { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Mapping { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -28,6 +31,15 @@ public sealed record HttpOutputSettings : HttpRequestSettings
     {
         var settings = json.Deserialize<HttpOutputSettings>(Options) ?? throw new ArgumentException("HTTP 配置不能为空。");
         settings = (HttpOutputSettings)settings.ValidateRequest();
+        if (settings.QueueOnly)
+        {
+            if (settings.Inputs.IsDefault || settings.Inputs.Length != 0 || settings.Path != string.Empty || settings.Headers.Count != 0 ||
+                settings.SuccessPath is not null || settings.SuccessValue.ValueKind != JsonValueKind.Undefined ||
+                settings.Mapping.ValueKind != JsonValueKind.Undefined || settings.MappingStages.ValueKind != JsonValueKind.Undefined ||
+                settings.Payload.ValueKind != JsonValueKind.Undefined)
+            { throw new ArgumentException("仅发送冻结队列的 HTTP 目标不能声明输入、路径、头、成功规则、映射或报文格式。"); }
+            return settings;
+        }
         if (settings.Inputs.IsDefaultOrEmpty || settings.Inputs.Length > 2000 || settings.Inputs.Distinct(StringComparer.Ordinal).Count() != settings.Inputs.Length)
         { throw new ArgumentException("HTTP 输出须引用 1—2000 个不重复输入。"); }
         foreach (var input in settings.Inputs)

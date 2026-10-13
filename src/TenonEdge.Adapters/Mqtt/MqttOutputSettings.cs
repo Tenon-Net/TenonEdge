@@ -16,6 +16,12 @@ public sealed record MqttOutputSettings : MqttConnectionSettings
 
     public string Topic { get; init; } = string.Empty;
     public int Qos { get; init; } = 1;
+    /// <summary>仅接续该连接已有的冻结队列，不是路线，也不从任何输入生成投递。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool QueueOnly { get; init; }
+    /// <summary>仅用于旧完整快照的执行视图：缺失凭证引用时禁止猜测匿名认证，单独报告该发送单元构建失败。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool QueueCredentialReferenceMissing { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Mapping { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -28,6 +34,16 @@ public sealed record MqttOutputSettings : MqttConnectionSettings
     {
         var settings = element.Deserialize<MqttOutputSettings>(JsonOptions) ?? throw new ArgumentException("MQTT 配置不能为空。");
         settings = (MqttOutputSettings)settings.ValidateConnection();
+        if (settings.QueueOnly)
+        {
+            if (settings.Inputs is not { Length: 0 } || settings.Topic != string.Empty || settings.Qos != 1 ||
+                settings.Mapping.ValueKind != JsonValueKind.Undefined || settings.MappingStages.ValueKind != JsonValueKind.Undefined ||
+                settings.Payload.ValueKind != JsonValueKind.Undefined)
+            { throw new ArgumentException("仅发送冻结队列的 MQTT 目标不能声明输入、主题、QoS、映射或报文格式。"); }
+            return settings;
+        }
+        if (settings.QueueCredentialReferenceMissing)
+        { throw new ArgumentException("凭证引用缺失标志只适用于旧快照的队列接续单元。"); }
         if (settings.Qos is not (0 or 1) || settings.Inputs is null || settings.Inputs.Length == 0 || settings.Inputs.Length > 2000)
         {
             throw new ArgumentException("MQTT QoS 只能为 0 或 1，且至少引用一个输入（最多 2000）。");

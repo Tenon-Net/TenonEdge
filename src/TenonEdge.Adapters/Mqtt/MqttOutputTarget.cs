@@ -37,6 +37,8 @@ internal sealed class MqttOutputTarget(
 
     public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
     {
+        if (settings.QueueOnly)
+        { throw new InvalidOperationException("仅发送冻结队列的目标不能生成新投递。"); }
         // 暂停期间仍按当前非秘密账户身份入队；只有 SendAsync 才取得接收方绑定的秘密。
         var identity = CaptureIdentity();
         return new OutputMessage(_payload.Serialize(message, deliveryId), settings.TopicFor(message.DeviceKey), settings.Qos,

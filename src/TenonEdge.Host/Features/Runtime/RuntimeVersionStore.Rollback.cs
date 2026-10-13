@@ -15,7 +15,7 @@ internal sealed partial class RuntimeVersionStore
     {
         var captured = ReadManualRollback(targetRevision, expectedDraftVersion);
         var draft = RequiredDraft(captured.Target);
-        var document = RuntimeSnapshotDocument.ReadPlan(captured.Target);
+        var document = RuntimeSnapshotDocument.ReadExecutionPlan(captured.Target);
         if (expectation is not null && document.ContentHash != expectation.PlanHash)
         { throw new DraftWriteException("configuration.reviewChanged"); }
         var revision = FreezeCore(new(captured.Target.SchemaVersion, captured.Target.Content, captured.Target.ContentHash),

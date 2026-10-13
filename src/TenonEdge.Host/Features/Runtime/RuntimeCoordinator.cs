@@ -409,7 +409,7 @@ internal sealed partial class RuntimeCoordinator(
         document = null!;
         try
         {
-            document = RuntimeSnapshotDocument.ReadPlan(snapshot);
+            document = RuntimeSnapshotDocument.ReadExecutionPlan(snapshot);
         }
         catch (RuntimePlanDocumentException exception)
         {

@@ -41,6 +41,8 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
 
     public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
     {
+        if (settings.QueueOnly)
+        { throw new InvalidOperationException("仅发送冻结队列的目标不能生成新投递。"); }
         var identity = credentials.DescribeHttp(ConnectionId);
         if (identity is { Kind: HttpCredentialKind.ApiKeyHeader, Name: { } name } && settings.Headers.ContainsKey(name))
         { throw new ArgumentException("API Key 请求头不能同时保存在非秘密静态请求头中。"); }

@@ -20,7 +20,7 @@ internal sealed partial class RuntimeVersionStore
             { throw new DraftWriteException("runtime.applicationInProgress"); }
             return RequiredSnapshot(client, expectedRevision);
         });
-        var plan = RuntimeSnapshotDocument.ReadPlan(snapshot);
+        var plan = RuntimeSnapshotDocument.ReadExecutionPlan(snapshot);
         if (plan.ContentHash != expectedPlanHash)
         { throw new DraftWriteException("configuration.reviewChanged"); }
         return new(snapshot, plan);

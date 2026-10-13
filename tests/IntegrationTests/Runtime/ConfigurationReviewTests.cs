@@ -217,6 +217,65 @@ public sealed class ConfigurationReviewTests
         Assert.Equal(2, summaries.Length);
     }
 
+    [Theory]
+    [InlineData("http", "removeRoute", false)]
+    [InlineData("mqtt", "removeRoute", false)]
+    [InlineData("http", "addRoute", false)]
+    [InlineData("mqtt", "addRoute", false)]
+    [InlineData("http", "changePath", true)]
+    [InlineData("mqtt", "changePath", true)]
+    [InlineData("http", "changeRecipient", true)]
+    [InlineData("mqtt", "changeRecipient", true)]
+    [InlineData("http", "removeTarget", true)]
+    [InlineData("mqtt", "removeTarget", true)]
+    [InlineData("http", "protocol", true)]
+    [InlineData("mqtt", "protocol", true)]
+    public async Task QueueContinuationDoesNotBypassRecipientOrRemainingRouteAddressProtection(string protocol, string change, bool blocked)
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
+        object Unit(string kind, bool queue, string key, string address = "old", bool changedRecipient = false) => new
+        {
+            kind = "output." + kind,
+            key,
+            configuration = kind == "http" ? (object)new
+            {
+                connectionId = 1,
+                queueOnly = queue,
+                baseAddress = changedRecipient ? "http://other.test/" : "http://server.test/",
+                path = queue ? "" : address,
+                inputs = queue ? Array.Empty<string>() : Inputs
+            }
+                : new
+                {
+                    connectionId = 1,
+                    queueOnly = queue,
+                    host = changedRecipient ? "other.test" : "server.test",
+                    topic = queue ? "" : address,
+                    inputs = queue ? Array.Empty<string>() : Inputs
+                },
+        };
+        RuntimePlanDocument Plan(params object[] units) => RuntimePlanDocument.Parse(JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units }));
+        var oldQueue = change == "addRoute";
+        versions.Commit(versions.Freeze(Plan(Unit(protocol, oldQueue, "old")), RuntimeSnapshotOrigins.Seed, null, "test"), null);
+        var cache = factory.Services.GetRequiredService<DeliveryCache>();
+        var seq = Assert.Single((await cache.EnqueueAsync([new(Guid.NewGuid(), 1, Guid.NewGuid(), "device", 1,
+            "{}"u8.ToArray(), "fp", "summary", "old", 1)], Token)).Seqs);
+        var next = change switch
+        {
+            "removeRoute" => Plan(Unit(protocol, true, "queue/target/sender")),
+            "addRoute" => Plan(Unit(protocol, false, "route/new", "new")),
+            "changePath" => Plan(Unit(protocol, false, "route/new", "new"), Unit(protocol, true, "queue/target/sender")),
+            "changeRecipient" => Plan(Unit(protocol, true, "queue/target/sender", changedRecipient: true)),
+            "protocol" => Plan(Unit(protocol == "http" ? "mqtt" : "http", true, "queue/target/sender")),
+            _ => Empty,
+        };
+        Assert.Equal(blocked, versions.TargetChangeProblem(next) is not null);
+        await cache.RecordFailureAsync(new(seq, 1, "rejected", true, false), Token);
+        Assert.Equal(blocked, versions.TargetChangeProblem(next) is not null);
+        Assert.Single(cache.ReadFailed(1, 0, 10));
+    }
+
     private static RouteGraph InvalidGraph() => new(1,
         [new("in", "input.simulator", 1, "Input", JsonSerializer.SerializeToElement(new { sourceIds = MissingSourceIds }))], [], new([]));
 }

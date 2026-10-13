@@ -16,7 +16,7 @@ using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
-public sealed class HttpOutputTests
+public sealed partial class HttpOutputTests
 {
     private static readonly string[] Inputs = ["device/input"];
     private static CancellationToken Token => TestContext.Current.CancellationToken;

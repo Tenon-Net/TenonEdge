@@ -9,6 +9,7 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
@@ -92,7 +93,9 @@ public sealed class RouteCompileTests
         store.Write(saved.Route.Id, new(saved.Version, saved.Route.Key, saved.Route.Name, false, saved.Route.Graph), "test", null);
         Assert.Throws<DraftWriteException>(() => store.ReadCompilation(saved.Version, Token));
         Assert.Equal(2, RoutePlanCompiler.Compile(snapshot, Token).Topology.Paths.Length);
-        Assert.Empty(RoutePlanCompiler.Compile(store.ReadCompilation(store.Read().Version, Token), Token).Document.Units);
+        var stopped = RoutePlanCompiler.Compile(store.ReadCompilation(store.Read().Version, Token), Token);
+        Assert.Empty(stopped.Topology.Paths);
+        Assert.True(Assert.Single(stopped.Document.Units).Configuration.GetProperty("queueOnly").GetBoolean());
     }
 
     [Fact]
@@ -136,6 +139,40 @@ public sealed class RouteCompileTests
         database.Client.Ado.ExecuteCommand("UPDATE input_draft SET content = printf('%.*c', 17000000, 'x')");
         var store = factory.Services.GetRequiredService<RouteDraftStore>();
         Assert.Equal("plan.snapshotSize", Assert.Throws<RouteTopologyException>(() => store.ReadCompilation(saved.Version, Token)).Issue.Code);
+    }
+
+    [Fact]
+    public async Task UnreferencedConnectionsParticipateInFullCompilationAndReviewButNotGraphPreview()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        var saved = Seed(factory);
+        var connections = factory.Services.GetRequiredService<ConnectionDraftStore>();
+        var extra = connections.Write(null, new(saved.Version, "unrouted", "Unrouted", ConnectionKind.Mqtt, Mqtt: new("broker.test")), "test", null);
+        var store = factory.Services.GetRequiredService<RouteDraftStore>();
+        var full = RoutePlanCompiler.Compile(store.ReadCompilation(extra.Version, Token), Token);
+        var queue = Assert.Single(full.Document.Units, unit => unit.Id.Kind == "output.mqtt");
+        Assert.True(queue.Configuration.GetProperty("queueOnly").GetBoolean());
+        Assert.Equal(2, full.Topology.Paths.Length);
+        Assert.Equal(full.Document.ContentHash, factory.Services.GetRequiredService<RuntimeVersionStore>().ReviewDraft(extra.Version, Token).PlanHash);
+        Assert.DoesNotContain(extra.Connection.Id, store.ReadGraphCompilation(extra.Version, saved.Route.Graph, Token).Connections.Keys);
+        // 未引用内容也先在SQL里核对字节预算，不能先反序列化巨大JSON。单图预览仍隔离无关内容。
+        factory.Services.GetRequiredService<ConfigDatabase>().Client.Ado.ExecuteCommand(
+            "UPDATE connection_draft SET content = printf('%.*c', 17000000, 'x') WHERE business_key = 'unrouted'");
+        Assert.Equal("plan.snapshotSize", Assert.Throws<RouteTopologyException>(() => store.ReadCompilation(extra.Version, Token)).Issue.Code);
+        Assert.Equal(2, RoutePlanCompiler.Compile(store.ReadGraphCompilation(extra.Version, saved.Route.Graph, Token), Token).Topology.Paths.Length);
+    }
+
+    [Fact]
+    public async Task TooManyUnreferencedConnectionsAreRejectedBeforeDecoding()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        database.Client.Ado.ExecuteCommand("""
+            WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<501)
+            INSERT INTO connection_draft(id,business_key,content) SELECT x, 'c'||x, 'invalid' FROM n
+            """);
+        var store = factory.Services.GetRequiredService<RouteDraftStore>();
+        Assert.Equal("plan.configuration", Assert.Throws<RouteTopologyException>(() => store.ReadCompilation("0", Token)).Issue.Code);
     }
 
     private static RouteDraftResult Seed(TenonEdgeApplicationFactory factory)

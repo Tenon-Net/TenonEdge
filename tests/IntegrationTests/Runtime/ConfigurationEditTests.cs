@@ -57,7 +57,7 @@ public sealed class ConfigurationEditTests
         var devices = factory.Services.GetRequiredService<DeviceDraftStore>();
         var inputs = factory.Services.GetRequiredService<InputDraftStore>();
         var routes = factory.Services.GetRequiredService<RouteDraftStore>();
-        var connection = connections.Write(null, new("0", "http", "HTTP", ConnectionKind.Http, Http: new("http://localhost/")), "creator", null);
+        var connection = connections.Write(null, new("0", "http", "HTTP", ConnectionKind.Http, Enabled: false, Http: new("http://localhost/")), "creator", null);
         var device = devices.Write(null, new(connection.Version, "meter", "Meter", DeviceKind.Simulator), "creator", null);
         var input = inputs.Write(device.Device.Id, null, new(device.Version, "sample", "Sample", Simulator: new()), "creator", null);
         var route = routes.Write(null, new(input.Version, "route", "Route", false, new(1, [], [], new([]))), "creator", null);
