@@ -1,3 +1,4 @@
+import { useSession } from '../../lib/session'
 import { OutputControls } from '../deliveries/controls'
 import { ClearPending } from '../deliveries/clear-pending'
 import { LossCounters } from './loss-counters'
@@ -294,6 +295,7 @@ function QueuePolicies({
     )
 }
 function OutputDetail({ id, revision }: { id: string; revision: string }) {
+    const administrator = useSession((s) => s.value?.role === 'administrator')
     const { t } = useTranslation()
     const query = useQuery({
         queryKey: ['runtime-output', id, revision],
@@ -314,6 +316,16 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                         {item.name ?? item.connectionId} ·{' '}
                         {t(`outputs.states.${item.state}`)}
                     </h3>
+                    {administrator && (
+                        <Button variant="outline" asChild>
+                            <Link
+                                to="/deliveries/migrate"
+                                search={{ connectionId: id }}
+                            >
+                                {t('migration.open')}
+                            </Link>
+                        </Button>
+                    )}
                     <OutputControls
                         id={id}
                         name={item.name ?? id}

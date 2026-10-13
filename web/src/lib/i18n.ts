@@ -1,3 +1,4 @@
+import { migrationStrings } from '../features/deliveries/migration-strings'
 import { outputControlStrings } from '../features/deliveries/control-strings'
 import { deliveryStrings } from '../features/deliveries/strings'
 import { outputStrings } from '../features/diagnostics/output-strings'
@@ -22,6 +23,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                migration: migrationStrings,
                 configuration: configurationStrings,
                 diagnostics: diagnosticsStrings,
                 currentValues: currentValueStrings,

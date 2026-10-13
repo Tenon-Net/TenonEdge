@@ -143,6 +143,32 @@ const deliveryRecordsRoute = createRoute({
         'DeliveryRecordsPage',
     ),
 })
+const deliveryMigrationRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/deliveries/migrate',
+    validateSearch: (
+        search: Record<string, unknown>,
+    ): { connectionId?: string; operationId?: string } => {
+        const id = String(search.connectionId ?? '')
+        const operation = String(search.operationId ?? '').toLowerCase()
+        return {
+            connectionId:
+                /^[1-9][0-9]{0,15}$/.test(id) && BigInt(id) <= 9007199254740991n
+                    ? id
+                    : undefined,
+            operationId:
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
+                    operation,
+                ) && operation !== '00000000-0000-0000-0000-000000000000'
+                    ? operation
+                    : undefined,
+        }
+    },
+    component: lazyRouteComponent(
+        () => import('./features/deliveries/migration'),
+        'DeliveryMigrationPage',
+    ),
+})
 export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
@@ -152,6 +178,7 @@ export const router = createRouter({
         runtimeDevicesRoute,
         runtimeOutputsRoute,
         deliveryRecordsRoute,
+        deliveryMigrationRoute,
         pointsRoute,
         canvasRoute,
         connectionsRoute,
