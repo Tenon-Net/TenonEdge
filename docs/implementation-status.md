@@ -48,7 +48,7 @@
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
 | T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；无路线启用HTTP/MQTT目标已补发送接续，含旧完整快照执行视图，验证见§2.208；形式B管理员迁移准备/确认API已通过本地软件回归（§2.209），逐条核对冻结原协议/接收方，绑定登录会话、选择代次和目标身份。形式B迁移页面已通过本地软件回归（§2.210），支持分区/跨页勾选、旧新身份并排核对、同会话准备恢复和响应丢失后按编号查询。已补形式A提交前发送屏障（§2.211），配置同事务意图登记、原状态持久隔离、启动/人工重试前补隔离及受限变更检查（§2.212）；已补确认目标完整身份绑定、原协调者串行执行、拒绝及两库结果/中断恢复（§2.213）；管理员形式A应用准备/确认/意图查询API与真实应用协调已接线（§2.214），含完整配置核对、同所有者声明、配额预检及提交后隔离保护。已补持久意图元数据分页、当前身份/完整配额缺口查询，以及拒绝/旧版未确认意图的管理员重新核对和显式重试API（§2.215），新审批/尝试/审计原子提交，未知结果不重放。形式A换址应用及持久意图/重新审批重试页面已接入，含一次确认、刷新恢复与角色保护，验证边界见§2.216。FS-23已补两种迁移/HTTP及MQTT的三个持久窗口、真实SIGKILL/正常放行、原Host双重重启与审计幂等，24项及3170后端全量通过（§2.217）；仅软件故障注入，不是实物断电。HTTP对方错误摘要已补有界采集、同事务存储及正文权限页面（§2.218）；本项权限澄清尚待答复，暂不扩宽Viewer。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.218；功能 §8 |
-| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）；管理员改名/清空、同事务审计及页头/标签页更新见§2.225。三协议连接保存后的公网解析检查及管理员精确IP/端口确认授权见§2.226。预览并发与审计保留运行参数子项见§2.227；队列配额/保留期/存储阈值及原写者即时采用见§2.229。剩余：Token跨预览/迁移的真实Bearer补充验收、其余资源参数、访问策略页面与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.227；功能 §9/10.1/12.3；AT-18/32 |
+| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）；管理员改名/清空、同事务审计及页头/标签页更新见§2.225。三协议连接保存后的公网解析检查及管理员精确IP/端口确认授权见§2.226。预览并发与审计保留运行参数子项见§2.227；队列配额/保留期/存储阈值及原写者即时采用见§2.229。Token跨预览预算/形式B迁移资源归属的真实TLS Bearer补验见§2.230。剩余：其余资源参数、访问策略页面与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.227；功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | §2.223的CSV超限传输竞态已最小复现并改用真实浏览器传输严格验证，完整浏览器基线73/73通过（§2.224），改名后75/75通过（§2.225）；连接页授权与历史刷新竞态修复后77/77通过（§2.226），运行参数子项后79/79通过（§2.227），队列参数后81/81通过（§2.229）；§2.225后端全量25分钟超时，剩余11项已独立补验，§2.228定向并行对照未证明全量修复，仍须收口单次完整回归，不等于本任务全部需求完成。须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
@@ -5132,7 +5132,7 @@ python3 .github/scripts/verify-test-results.py /tmp/tenonedge-backend-scheduling
 
 ```sh
 dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~QueueParameterTests|FullyQualifiedName~RuntimeParameterTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~DeliveryPolicyTests|FullyQualifiedName~DeliveryMigrationTests|FullyQualifiedName~DeliveryRetryTests|FullyQualifiedName~StorageProtectionTests|FullyQualifiedName~RuntimeOutputEndpointTests' --logger trx --results-directory /tmp/tenonedge-queue-parameters/backend-first --blame-hang-timeout 2m --blame-hang-dump-type none
-dotnet format TenonEdge.sln --no-restore --include <本轮变更的C#文件>
+dotnet format TenonEdge.sln --no-restore --include $(git diff --name-only -- '*.cs'; git ls-files --others --exclude-standard -- '*.cs')
 dotnet build TenonEdge.sln -c Release --no-restore
 dotnet test tests/UnitTests -c Release --no-build --no-restore --logger trx --results-directory /tmp/tenonedge-queue-parameters/unit --blame-hang-timeout 2m --blame-hang-dump-type none
 python3 .github/scripts/verify-test-results.py /tmp/tenonedge-queue-parameters --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
@@ -5147,6 +5147,24 @@ TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx
 ```
 
 后端关联测试不能替代单次全量，§2.225/2.228全量超时仍待收口。本节是本地软件/浏览器与受控时间/磁盘夹具证据，不是平台去重窗口、长期存储容量、实物断电或远端CI通过。继续Token资源归属补验、其余资源/访问策略、连接TLS、导入/扩展表单及无JSON/最低浏览器退出验收；未获损坏快照恢复及HTTP摘要Viewer权限专项确认，不擅自扩权。不推送/发布。
+
+### 2.230 T3-09 Token跨预览与迁移的真实TLS资源归属补验（2026-10-14）
+
+基线 `2bd35eb`。只补两个真实进程测试，原 `ApiTokenProcessTests` 改为partial共享已有严格证书信任客户端；没有修改生产认证、授权、预算、迁移、审计或测试超时。覆盖功能§12.3、AT-18/29/32、BE-AT-03/05与T3-08/09交叉子场景。
+
+- 原产品Host/Kestrel通过HTTPS接受真实Bearer请求，不附CSRF。信任材料在进程启动前从自有数据目录取得公共证书，用原自定义根信任及标准主机名校验，不关闭TLS验证。
+- 预览：真实HTTP诊断持有三个未完成响应，证明同一令牌的第二个客户端被同一会话预算拒绝；另一令牌和创建者Cookie会话分别可用，第四分区仍被全局预算拒绝。Viewer在外发前403，吊销后同令牌下一请求401；已接管的I/O完成并释放后其他令牌重新获得额度，草稿没有新增连接。
+- 形式B迁移：先用测试夹具在真实库构造一个冻结隔离记录与两个暂停的有效HTTP目标，再由未经注入的产品进程执行。创建者Cookie和同账号另一管理员令牌不能读取/确认/取消该准备，低权限令牌403；同一令牌换客户端可以确认。一次整批迁移后旧编号保留、结果持久、确认重放404，开始/结果审计均带原令牌名。吊销后原令牌401，但其他管理员仍能核对已完成结果。目标保持暂停，本项不是外部发送或真实设备证明。
+
+环境：Linux x64、SDK10.0.401、.NET10.0.12。`/tmp/tenonedge-token-resources/build-first.log` 构建0警告/错误；`first.log`及`first/*.trx`为 **6/6通过，0失败/跳过，28秒**（新2项、原4项真实TLS/代理/限流用例）。没有把6项定向测试写成后端全量；§2.225/2.228全量超时仍待收口。
+
+```sh
+dotnet format TenonEdge.sln --no-restore --include tests/IntegrationTests/Processes/ApiTokenResourceProcessTests.cs tests/IntegrationTests/Processes/ApiTokenProcessTests.cs
+dotnet build tests/IntegrationTests -c Release --no-restore
+dotnet test tests/IntegrationTests -c Release --no-restore --filter FullyQualifiedName~ApiTokenProcessTests --logger trx --results-directory /tmp/tenonedge-token-resources/first --blame-hang-timeout 2m --blame-hang-dump-type none
+```
+
+与§2.221原Token角色/吊销/用户生命周期、§2.222审计导出及§2.229浏览器回归共同作为子场景证据；不代替HTTPS-only、可信代理网页编辑、配置导入/扩展表单或T3完整退出验收。继续剩余T3，不推进T4/T5/G1，不推送/发布。
 
 ## 3. 验收编号登记
 

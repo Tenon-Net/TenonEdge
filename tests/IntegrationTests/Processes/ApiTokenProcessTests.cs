@@ -11,7 +11,7 @@ using TenonEdge.IntegrationTests.Infrastructure;
 
 namespace TenonEdge.IntegrationTests.Processes;
 
-public sealed class ApiTokenProcessTests
+public sealed partial class ApiTokenProcessTests
 {
     private const string Root = "/api/edge-admin/v1/tokens";
     private static CancellationToken Token => TestContext.Current.CancellationToken;
