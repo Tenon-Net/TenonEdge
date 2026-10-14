@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication;
@@ -54,7 +55,7 @@ internal static class SessionAuthentication
     }
 
     /// <summary>为账号签发会话，返回写入会话的防 CSRF 令牌（客户端在写操作的请求头中回传）。</summary>
-    public static async Task<string> SignInAsync(HttpContext context, UserAccountRecord user)
+    public static async Task<string> SignInAsync(HttpContext context, UserAccountRecord user, DateTimeOffset? previousLoginAt = null, string? previousLoginIp = null)
     {
         var csrfToken = Base64Url(RandomNumberGenerator.GetBytes(32));
         var identity = new ClaimsIdentity(
@@ -73,9 +74,19 @@ internal static class SessionAuthentication
             Scheme,
             SessionClaims.AccountName,
             SessionClaims.Role);
+        if (previousLoginAt is { } at)
+        { identity.AddClaim(new Claim(SessionClaims.PreviousLoginAt, at.ToString("O", CultureInfo.InvariantCulture))); }
+        if (previousLoginIp is not null)
+        { identity.AddClaim(new Claim(SessionClaims.PreviousLoginIp, previousLoginIp)); }
         await context.SignInAsync(Scheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = false, AllowRefresh = true });
         return csrfToken;
     }
+
+    // 绑定登录当时的历史，不能在后续请求读取数据库里已被本次/其他会话覆盖的 LastLogin。
+    public static (DateTimeOffset? At, string? Ip) PreviousLogin(ClaimsPrincipal principal) => (
+        DateTimeOffset.TryParseExact(principal.FindFirstValue(SessionClaims.PreviousLoginAt), "O", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var at) ? at : null,
+        principal.FindFirstValue(SessionClaims.PreviousLoginIp));
 
     public static Task SignOutAsync(HttpContext context) => context.SignOutAsync(Scheme);
 
@@ -99,6 +110,10 @@ internal static class SessionClaims
     public const string CsrfToken = "tenonedge:csrf_token";
 
     public const string MustChangePassword = "tenonedge:must_change_password";
+
+    public const string PreviousLoginAt = "tenonedge:previous_login_at";
+
+    public const string PreviousLoginIp = "tenonedge:previous_login_ip";
 
     public const string SessionGeneration = "tenonedge:session_generation";
 }

@@ -11,6 +11,7 @@ using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Features.SystemInfo;
+using TenonEdge.Host.Features.Users;
 
 // 只负责启动装配；服务注册、启动检查、请求管道和各功能端点分别在 Bootstrap 与 Features 中实现。
 // 主机侧维护命令（例如 reset-admin）使用独立的通用宿主，不启动 Web 服务。
@@ -37,6 +38,7 @@ app.MapHealthEndpoints();
 app.MapManagementApi()
     .MapSetupEndpoints()
     .MapAuthEndpoints()
+    .MapUserEndpoints()
     .MapAuditEndpoints()
     .MapRuntimeEventEndpoints()
     .MapRuntimeStatusEndpoints()

@@ -26,15 +26,18 @@ internal sealed class AccountService(
 {
     private readonly ConcurrentDictionary<long, int> _wrongCurrentPasswords = new();
 
+    internal void ClearPasswordAttempts(long userId) => _wrongCurrentPasswords.TryRemove(userId, out _);
+
     public async Task<PasswordChangeOutcome> ChangePasswordAsync(
         long userId,
+        string expectedSecurityStamp,
         string? currentPassword,
         string? newPassword,
         string? sourceIp,
         CancellationToken cancellationToken)
     {
         var user = database.Client.Queryable<UserAccountRecord>().InSingle(userId);
-        if (user is null || !user.IsEnabled)
+        if (user is null || !user.IsEnabled || user.SecurityStamp != expectedSecurityStamp)
         {
             return new PasswordChangeOutcome.AccountUnavailable();
         }
@@ -65,7 +68,7 @@ internal sealed class AccountService(
 
         using var attempt = await lockout.EnterAsync(user.NormalizedAccountName, cancellationToken);
         user = database.Client.Queryable<UserAccountRecord>().InSingle(userId);
-        if (user is null || !user.IsEnabled)
+        if (user is null || !user.IsEnabled || user.SecurityStamp != expectedSecurityStamp)
         {
             return new PasswordChangeOutcome.AccountUnavailable();
         }
@@ -80,7 +83,7 @@ internal sealed class AccountService(
         var updated = database.InTransaction<UserAccountRecord?>(client =>
         {
             var fresh = client.Queryable<UserAccountRecord>().InSingle(userId);
-            if (fresh is null || !fresh.IsEnabled || fresh.PasswordHash != verifiedHash)
+            if (fresh is null || !fresh.IsEnabled || fresh.SecurityStamp != expectedSecurityStamp || fresh.PasswordHash != verifiedHash)
             {
                 return null;
             }
@@ -142,7 +145,7 @@ internal abstract record PasswordChangeOutcome
 
     public sealed record Invalid(IDictionary<string, string[]> Errors) : PasswordChangeOutcome;
 
-    /// <summary>会话对应的账号已不存在或已停用。</summary>
+    /// <summary>会话对应的账号已不存在、已停用或安全戳已变化。</summary>
     public sealed record AccountUnavailable : PasswordChangeOutcome;
 
     /// <summary>原密码连续错误达到上限，已更换安全戳，该账号的全部会话（包括当前会话）已结束。</summary>

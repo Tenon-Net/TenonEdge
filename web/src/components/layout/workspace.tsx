@@ -58,6 +58,15 @@ export function Workspace() {
                     >
                         {t('deliveries.title')}
                     </Link>
+                    {session?.role === 'administrator' && (
+                        <Link
+                            to="/users"
+                            className="rounded-md p-2 hover:bg-accent"
+                            activeProps={{ className: 'bg-accent font-medium' }}
+                        >
+                            {t('users.title')}
+                        </Link>
+                    )}
                     <Link
                         to="/account"
                         className="rounded-md p-2 hover:bg-accent"
@@ -124,6 +133,18 @@ export function Workspace() {
                             {session && t(`roles.${session.role}`)}
                         </p>
                     </div>
+                    <p className="text-xs text-muted-foreground">
+                        {session?.previousLoginAt
+                            ? t('previousLogin', {
+                                  time: new Date(
+                                      session.previousLoginAt,
+                                  ).toLocaleString(),
+                                  ip:
+                                      session.previousLoginIp ??
+                                      t('users.unknown'),
+                              })
+                            : t('noPreviousLogin')}
+                    </p>
                     <ConfigurationHeader />
                     <LogoutButton />
                 </header>

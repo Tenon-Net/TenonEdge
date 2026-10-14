@@ -1,3 +1,4 @@
+import { refreshConfigurationHistory } from './history-refresh'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { createStore } from 'zustand/vanilla'
@@ -120,9 +121,12 @@ export function ConfigurationPage() {
             await queryClient.invalidateQueries({ refetchType: 'none' })
             await queryClient.refetchQueries({ queryKey: summaryKey })
             await queryClient.refetchQueries({
-                predicate: (query) => query.queryKey[0] !== summaryKey[0],
+                predicate: (query) =>
+                    query.queryKey[0] !== summaryKey[0] &&
+                    query.queryKey[0] !== 'configuration-history',
                 type: 'active',
             })
+            await refreshConfigurationHistory(queryClient)
         },
         onError: () => store.setState({ uncertain: true }),
     })
@@ -132,15 +136,15 @@ export function ConfigurationPage() {
         if (!completedOperationId) return
         // These reads share a bounded per-session budget. Finish the summary
         // before refreshing detail/comparison, rather than starting all three together.
-        void queryClient.invalidateQueries({ queryKey: summaryKey }).then(() =>
-            Promise.all([
-                queryClient.invalidateQueries({ queryKey: operationsKey }),
-                queryClient.invalidateQueries({ queryKey: runtimeKey }),
-                queryClient.invalidateQueries({
-                    queryKey: ['configuration-history'],
-                }),
-            ]),
-        )
+        void queryClient
+            .invalidateQueries({ queryKey: summaryKey })
+            .then(() =>
+                Promise.all([
+                    queryClient.invalidateQueries({ queryKey: operationsKey }),
+                    queryClient.invalidateQueries({ queryKey: runtimeKey }),
+                    refreshConfigurationHistory(queryClient),
+                ]),
+            )
     }, [completedOperationId])
     const waiting =
         apply.isPending || discard.isPending || review.isPending || retryPending
@@ -162,9 +166,7 @@ export function ConfigurationPage() {
         await queryClient.invalidateQueries({
             queryKey: runtimeKey,
         })
-        await queryClient.invalidateQueries({
-            queryKey: ['configuration-history'],
-        })
+        await refreshConfigurationHistory(queryClient)
     }
     return (
         <div className="mx-auto max-w-6xl space-y-6">

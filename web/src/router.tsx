@@ -38,6 +38,14 @@ const indexRoute = createRoute({
         'OverviewPage',
     ),
 })
+const usersRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/users',
+    component: lazyRouteComponent(
+        () => import('./features/users/page'),
+        'UsersPage',
+    ),
+})
 const accountRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/account',
@@ -210,6 +218,7 @@ export const router = createRouter({
     routeTree: rootRoute.addChildren([
         indexRoute,
         accountRoute,
+        usersRoute,
         configurationRoute,
         configurationMigrationRoute,
         configurationMigrationIntentsRoute,

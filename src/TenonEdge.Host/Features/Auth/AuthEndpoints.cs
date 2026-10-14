@@ -81,8 +81,8 @@ internal static class AuthEndpoints
         switch (await login.LoginAsync(request.AccountName!, request.Password!, SourceAddress.Of(context), context.RequestAborted))
         {
             case LoginOutcome.Succeeded succeeded:
-                var csrfToken = await SessionAuthentication.SignInAsync(context, succeeded.User);
-                return TypedResults.Ok(SessionResponse.From(succeeded.User, csrfToken));
+                var csrfToken = await SessionAuthentication.SignInAsync(context, succeeded.User, succeeded.PreviousLoginAt, succeeded.PreviousLoginIp);
+                return TypedResults.Ok(SessionResponse.From(succeeded.User, csrfToken, succeeded.PreviousLoginAt, succeeded.PreviousLoginIp));
             case LoginOutcome.LockedOut lockedOut:
                 return LockedOut(context, time, lockedOut.Until);
             default:
@@ -109,9 +109,10 @@ internal static class AuthEndpoints
     {
         var user = CurrentUser(database, context);
         var csrfToken = context.User.FindFirst(SessionClaims.CsrfToken)?.Value;
+        var previous = SessionAuthentication.PreviousLogin(context.User);
         return user is null || csrfToken is null
             ? SessionEnded()
-            : TypedResults.Ok(SessionResponse.From(user, csrfToken));
+            : TypedResults.Ok(SessionResponse.From(user, csrfToken, previous.At, previous.Ip));
     }
 
     private static async Task<Results<Ok<SessionResponse>, ValidationProblem, ProblemHttpResult>> ChangePasswordAsync(
@@ -119,13 +120,14 @@ internal static class AuthEndpoints
         AccountService accounts,
         HttpContext context)
     {
-        if (!TryGetUserId(context, out var userId))
+        if (!TryGetUserId(context, out var userId) || context.User.FindFirst(SessionClaims.SecurityStamp)?.Value is not { } stamp)
         {
             return SessionEnded();
         }
 
         var outcome = await accounts.ChangePasswordAsync(
             userId,
+            stamp,
             request.CurrentPassword,
             request.NewPassword,
             SourceAddress.Of(context),
@@ -133,8 +135,9 @@ internal static class AuthEndpoints
         switch (outcome)
         {
             case PasswordChangeOutcome.Changed changed:
-                var csrfToken = await SessionAuthentication.SignInAsync(context, changed.User);
-                return TypedResults.Ok(SessionResponse.From(changed.User, csrfToken));
+                var previous = SessionAuthentication.PreviousLogin(context.User);
+                var csrfToken = await SessionAuthentication.SignInAsync(context, changed.User, previous.At, previous.Ip);
+                return TypedResults.Ok(SessionResponse.From(changed.User, csrfToken, previous.At, previous.Ip));
             case PasswordChangeOutcome.Invalid invalid:
                 return ApiProblems.Validation(invalid.Errors);
             case PasswordChangeOutcome.SessionsEnded:

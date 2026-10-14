@@ -92,6 +92,8 @@ internal sealed partial class LoginService(
     private LoginOutcome Succeed(UserAccountRecord user, string password, bool needsRehash, string? sourceIp, DateTimeOffset now)
     {
         var signedIn = user;
+        var previousAt = user.LastLoginAt is { } at ? DateTimeOffset.FromUnixTimeMilliseconds(at) : (DateTimeOffset?)null;
+        var previousIp = user.LastLoginIp;
         try
         {
             var outcome = database.InTransaction<LoginOutcome>(client =>
@@ -102,6 +104,8 @@ internal sealed partial class LoginService(
                     return new LoginOutcome.LockedOut(DateTimeOffset.FromUnixTimeMilliseconds(lockoutEnd));
                 }
 
+                previousAt = fresh.LastLoginAt is { } last ? DateTimeOffset.FromUnixTimeMilliseconds(last) : null;
+                previousIp = fresh.LastLoginIp;
                 fresh.FailedLoginCount = 0;
                 fresh.LockoutEnd = null;
                 fresh.LastLoginAt = now.ToUnixTimeMilliseconds();
@@ -129,7 +133,7 @@ internal sealed partial class LoginService(
         }
 
         audit.AppendOrLog(new AuditEntry(AuditActions.Login, AuditResults.Success, signedIn.AccountName, sourceIp));
-        return new LoginOutcome.Succeeded(signedIn);
+        return new LoginOutcome.Succeeded(signedIn, previousAt, previousIp);
     }
 
     private void ReportCounterUpdateFailed(string accountName, Exception exception)
@@ -147,7 +151,7 @@ internal sealed partial class LoginService(
 /// <summary>登录结果。</summary>
 internal abstract record LoginOutcome
 {
-    public sealed record Succeeded(UserAccountRecord User) : LoginOutcome;
+    public sealed record Succeeded(UserAccountRecord User, DateTimeOffset? PreviousLoginAt = null, string? PreviousLoginIp = null) : LoginOutcome;
 
     public sealed record InvalidCredentials : LoginOutcome;
 

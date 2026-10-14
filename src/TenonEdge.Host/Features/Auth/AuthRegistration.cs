@@ -1,3 +1,4 @@
+using TenonEdge.Host.Features.Users;
 using TenonEdge.Host.Security;
 
 namespace TenonEdge.Host.Features.Auth;
@@ -18,6 +19,7 @@ internal static class AuthRegistration
         services.AddSingleton<SetupService>();
         services.AddSingleton<LoginService>();
         services.AddSingleton<AccountService>();
+        services.AddSingleton<UserManagementService>();
         return services;
     }
 }

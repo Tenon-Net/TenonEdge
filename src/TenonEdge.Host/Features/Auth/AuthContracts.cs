@@ -22,14 +22,17 @@ internal sealed record LoginRequest(string? AccountName, string? Password);
 internal sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
 /// <summary>当前会话：账号、角色、是否须先修改密码，以及写操作须在请求头中回传的防 CSRF 令牌。</summary>
-internal sealed record SessionResponse(string AccountName, string? DisplayName, UserRole Role, bool MustChangePassword, string CsrfToken)
+internal sealed record SessionResponse(string AccountName, string? DisplayName, UserRole Role, bool MustChangePassword, string CsrfToken,
+    DateTimeOffset? PreviousLoginAt, string? PreviousLoginIp)
 {
     public const string CsrfHeaderName = "X-CSRF-Token";
 
-    public static SessionResponse From(UserAccountRecord user, string csrfToken) => new(
+    public static SessionResponse From(UserAccountRecord user, string csrfToken, DateTimeOffset? previousLoginAt = null, string? previousLoginIp = null) => new(
         user.AccountName,
         user.DisplayName,
         Enum.Parse<UserRole>(user.Role),
         user.MustChangePassword,
-        csrfToken);
+        csrfToken,
+        previousLoginAt,
+        previousLoginIp);
 }
