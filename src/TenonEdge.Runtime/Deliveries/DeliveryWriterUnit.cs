@@ -302,12 +302,14 @@ internal sealed partial class DeliveryWriterUnit(
                 }
 
                 var seqs = new List<long>();
+                var insertedIds = new HashSet<Guid>();
                 var quotaRejected = 0;
                 foreach (var draft in inserting.Drafts)
                 {
                     if (queue.Store.Admit(insert.Connection!, insert.Transaction!, draft))
                     {
                         seqs.Add(DeliveryStore.Insert(insert, draft, createdAt));
+                        insertedIds.Add(draft.DeliveryId);
                     }
                     else
                     {
@@ -315,7 +317,7 @@ internal sealed partial class DeliveryWriterUnit(
                     }
                 }
 
-                return DeliveryWriteResult.Inserted(seqs, quotaRejected);
+                return DeliveryWriteResult.Inserted(seqs, quotaRejected, insertedIds);
             case DeleteRequest deleting:
                 var count = 0;
                 foreach (var seq in deleting.Seqs)

@@ -302,6 +302,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             prepared.HandOver();
             _activeRevision = prepared.Revision;
             CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
+            Messages.RetainObjects(prepared.Definition.Units.Select(unit => unit.Id).ToHashSet());
             _deliveries.OutputTraffic.RetainTargets(prepared.Outputs.Select(output => output.Target.ConnectionId));
             _activeOutputs = prepared.Outputs;
             _activeDefinition = prepared.Definition;
@@ -407,7 +408,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var state = new InputDispatcherState();
                 var mappings = prepared.Outputs.Where(output => output.Mapping is not null && output.Target.Inputs.Contains(unit.Id.Key, StringComparer.Ordinal))
                     .ToDictionary(output => output.Target.Id, output => output.Mapping!);
-                IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings);
+                IRuntimeUnit BuildDispatcher() => new InputDispatcherUnit(unit.Id, ((BudgetedInputChannel)unit.Channel).HoldingReader, targets, state, prepared.Revision, _deliveries, _time, _events, (BudgetedInputChannel)unit.Channel, mappings, Messages);
                 _dispatchers.Add((unit.Id, unit.Channel, state));
                 _supervisor.TryStart(BuildDispatcher(), BuildDispatcher, reads: null);
             }

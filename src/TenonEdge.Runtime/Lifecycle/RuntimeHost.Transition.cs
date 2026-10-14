@@ -47,6 +47,7 @@ public sealed partial class RuntimeHost
                 _currentQuiescence = null;
                 _activeRevision = prepared.Revision;
                 CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
+                Messages.RetainObjects(prepared.Definition.Units.Select(unit => unit.Id).ToHashSet());
                 _deliveries.OutputTraffic.RetainTargets(prepared.Outputs.Select(output => output.Target.ConnectionId));
                 _activeDefinition = prepared.Definition;
             }

@@ -13,13 +13,15 @@ internal sealed class InputDispatcherState
 {
     public EdgeMessage? Message { get; set; }
     public IReadOnlyList<DeliveryDraft>? Drafts { get; set; }
+    public Dictionary<Guid, (RuntimeUnitId ObjectId, long Sequence)> Diagnostics { get; } = [];
     public TaskCompletionSource Drained { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
 internal sealed class InputDispatcherUnit(
     RuntimeUnitId inputId, ChannelReader<EdgeMessage> input, IReadOnlyList<IOutputTarget> targets,
     InputDispatcherState state, long revision, DeliveryCache deliveries,
-    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null) : IRuntimeUnit
+    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null,
+    RuntimeMessageCache? messages = null) : IRuntimeUnit
 {
     public RuntimeUnitId Id { get; } = RuntimeUnitId.Create("delivery.dispatcher", inputId.Key);
 
@@ -50,18 +52,23 @@ internal sealed class InputDispatcherUnit(
                 foreach (var target in targets)
                 {
                     var id = Guid.CreateVersion7(time.GetUtcNow());
+                    var source = state.Message;
+                    var invalidFields = 0;
+                    var missingFields = 0;
                     try
                     {
-                        var source = state.Message;
                         if (mappings?.TryGetValue(target.Id, out var mapping) == true)
                         {
                             var mapped = mapping.Apply(source);
+                            invalidFields = mapped.InvalidFields;
+                            missingFields = mapped.MissingFields;
                             CountPath(target, "mappingInvalidFields", mapped.InvalidFields);
                             CountPath(target, "mappingMissingFields", mapped.MissingFields);
                             if (mapped.Message is null)
                             {
                                 CountPath(target, "requiredFieldFailures");
                                 RejectPath(target, "必填映射字段缺失或转换失败，本路径未入队。");
+                                Capture(target, null, null, id, RuntimeMessageOutcome.MappingRejected, invalidFields, missingFields, mapped.FailedStage);
                                 continue;
                             }
                             source = mapped.Message;
@@ -70,10 +77,12 @@ internal sealed class InputDispatcherUnit(
                         drafts.Add(new DeliveryDraft(id, target.ConnectionId, state.Message.SourceMessageId, state.Message.DeviceKey,
                             revision, output.Payload, output.Fingerprint, output.FingerprintSummary,
                             output.Address, output.QualityOfService, output.Headers, protocolMetadata: output.ProtocolMetadata));
+                        Capture(target, source, output, id, RuntimeMessageOutcome.Generated, invalidFields, missingFields);
                     }
                     catch (ArgumentException)
                     {
                         RejectPath(target, "映射结果、报文格式或大小不满足输出约束，本目标未入队。");
+                        Capture(target, source, null, id, RuntimeMessageOutcome.FormattingRejected, invalidFields, missingFields);
                     }
                 }
 
@@ -84,7 +93,17 @@ internal sealed class InputDispatcherUnit(
             var handoff = InputHandoffStatus.Rejected;
             if (state.Drafts.Count > 0)
             {
-                var result = await deliveries.EnqueueAsync(state.Drafts, stoppingToken);
+                DeliveryWriteResult result;
+                try
+                { result = await deliveries.EnqueueAsync(state.Drafts, stoppingToken); }
+                catch (OperationCanceledException)
+                {
+                    // Request cancellation may race a durable queue commit; do
+                    // not report an unobserved outcome as rejected or queued.
+                    CompleteDiagnostics(null);
+                    throw;
+                }
+                CompleteDiagnostics(result);
                 handoff = result.Status switch
                 {
                     DeliveryWriteStatus.Committed => result.Seqs.Count > 0 ? InputHandoffStatus.Committed : InputHandoffStatus.Rejected,
@@ -111,6 +130,7 @@ internal sealed class InputDispatcherUnit(
                     budgetedChannel?.Release(state.Message, InputHandoffStatus.Stopped);
                     state.Message = null;
                     state.Drafts = null;
+                    state.Diagnostics.Clear();
                     return;
                 }
 
@@ -128,6 +148,45 @@ internal sealed class InputDispatcherUnit(
             budgetedChannel?.Release(state.Message, handoff);
             state.Message = null;
             state.Drafts = null;
+            state.Diagnostics.Clear();
+        }
+    }
+
+    private void Capture(IOutputTarget target, EdgeMessage? mapped, OutputMessage? output, Guid id,
+        RuntimeMessageOutcome outcome, int invalidFields, int missingFields, int? failedStage = null)
+    {
+        if (messages is null)
+        { return; }
+        try
+        {
+            var sequence = messages.CaptureOutput(inputId, target.Id, revision, state.Message!, mapped, output,
+                new(inputId.Key, id, outcome, invalidFields, missingFields, failedStage));
+            if (outcome == RuntimeMessageOutcome.Generated)
+            { state.Diagnostics[id] = (target.Id, sequence); }
+        }
+        // Diagnostic allocation/encoding must never change business admission.
+        catch (Exception) { deliveries.PendingCounters.Add("debugCaptureFailures"); }
+    }
+
+    private void CompleteDiagnostics(DeliveryWriteResult? result)
+    {
+        if (messages is null)
+        { return; }
+        foreach (var (id, record) in state.Diagnostics)
+        {
+            var outcome = result?.Status switch
+            {
+                DeliveryWriteStatus.StorageFailed => RuntimeMessageOutcome.StorageFailed,
+                DeliveryWriteStatus.Rejected => RuntimeMessageOutcome.DataRejected,
+                DeliveryWriteStatus.Stopped => RuntimeMessageOutcome.Stopped,
+                DeliveryWriteStatus.Committed when result.StorageProtectionRejectedRecords > 0 => RuntimeMessageOutcome.StorageProtected,
+                DeliveryWriteStatus.Committed when result.InsertedDeliveryIds?.Contains(id) == true => RuntimeMessageOutcome.Queued,
+                DeliveryWriteStatus.Committed when result.InsertedDeliveryIds is not null && result.QuotaRejectedRecords > 0 => RuntimeMessageOutcome.QuotaRejected,
+                _ => RuntimeMessageOutcome.QueueOutcomeUnknown,
+            };
+            try
+            { messages.CompleteOutput(record.ObjectId, record.Sequence, outcome); }
+            catch (Exception) { deliveries.PendingCounters.Add("debugCaptureFailures"); }
         }
     }
 

@@ -50,11 +50,16 @@ public sealed record DeliveryWriteResult(DeliveryWriteStatus Status, IReadOnlyLi
 {
     public bool Committed => Status == DeliveryWriteStatus.Committed;
 
+    // Internal per-record receipt for diagnostics of partially admitted batches.
+    // Never infer acceptance from Seq position when earlier records were rejected.
+    internal IReadOnlySet<Guid>? InsertedDeliveryIds { get; init; }
+
     public DeliveryMigrationReceipt? Migration { get; init; }
     public DeliveryMigrationQuotaDeficit? MigrationQuota { get; init; }
     public DeliveryMigrationHoldReceipt? MigrationHold { get; init; }
 
-    internal static DeliveryWriteResult Inserted(IReadOnlyList<long> seqs, int quotaRejected = 0) => new(DeliveryWriteStatus.Committed, seqs, seqs.Count, null, quotaRejected);
+    internal static DeliveryWriteResult Inserted(IReadOnlyList<long> seqs, int quotaRejected = 0, IReadOnlySet<Guid>? insertedIds = null) =>
+        new(DeliveryWriteStatus.Committed, seqs, seqs.Count, null, quotaRejected) { InsertedDeliveryIds = insertedIds };
 
     internal static DeliveryWriteResult Deleted(int count) => new(DeliveryWriteStatus.Committed, [], count, null);
 
