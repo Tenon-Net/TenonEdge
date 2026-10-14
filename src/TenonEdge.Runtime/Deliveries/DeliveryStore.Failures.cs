@@ -22,6 +22,7 @@ internal sealed partial class DeliveryStore
     /// <summary>状态、失败次数、计数与满额删除在同一写者事务内完成；重复结果不重复计数。</summary>
     internal DeliveryWriteResult ApplyFailure(SqliteConnection connection, SqliteTransaction transaction, FailureRequest request, long now)
     {
+        var policy = _policy.Read();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "SELECT connection_id, COALESCE(length(CAST(response_summary AS BLOB)), 0) FROM delivery WHERE seq = $seq AND state = 'pending'";
@@ -48,7 +49,7 @@ internal sealed partial class DeliveryStore
                 """;
             using var reader = command.ExecuteReader();
             reader.Read();
-            if (delta > _options.MaximumPendingBytesPerTarget - reader.GetInt64(0) || delta > _options.MaximumQueueBytes - reader.GetInt64(1))
+            if (delta > policy.MaximumPendingBytesPerTarget - reader.GetInt64(0) || delta > policy.MaximumQueueBytes - reader.GetInt64(1))
             {
                 summary = null;
                 delta = -oldSummaryBytes;
@@ -63,7 +64,7 @@ internal sealed partial class DeliveryStore
             var targetCount = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
             command.CommandText = "SELECT COUNT(*) FROM delivery WHERE state = 'failed'";
             var globalCount = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-            overflow = targetCount >= _options.MaximumFailedPerTarget || globalCount >= _options.MaximumFailedGlobal;
+            overflow = targetCount >= policy.MaximumFailedPerTarget || globalCount >= policy.MaximumFailedGlobal;
         }
 
         command.CommandText = overflow ? "DELETE FROM delivery WHERE seq = $seq AND state = 'pending'" : """
@@ -89,6 +90,8 @@ internal sealed partial class DeliveryStore
     /// <summary>每轮最多清理 100 条；墙钟明显跳变时保守保留，计数和删除同事务提交。</summary>
     internal void ExpireFailures(SqliteConnection connection)
     {
+        using var policyLease = _policy.AcquireRead();
+        var policy = _policy.Read();
         var now = _time.GetUtcNow();
         var expected = _maintenanceStart + _time.GetElapsedTime(_maintenanceTimestamp);
         if ((now - expected).Duration() > TimeSpan.FromHours(1))
@@ -106,7 +109,7 @@ internal sealed partial class DeliveryStore
                 ORDER BY failed_at LIMIT 100
             ) RETURNING connection_id;
             """;
-        command.Parameters.AddWithValue("$cutoff", now.ToUnixTimeMilliseconds() - (long)_options.FailedRetention.TotalMilliseconds);
+        command.Parameters.AddWithValue("$cutoff", now.ToUnixTimeMilliseconds() - (long)policy.FailedRetention.TotalMilliseconds);
         var counts = new Dictionary<long, int>();
         using (var reader = command.ExecuteReader())
         {

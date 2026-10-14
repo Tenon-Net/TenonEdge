@@ -81,6 +81,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getMqttCredentialStatus",
         "getOutboundPolicy",
         "getOutputControl",
+        "getQueueParameters",
         "getReadiness",
         "getRouteCatalog",
         "getRouteDraft",
@@ -143,6 +144,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "writeMqttCredential",
         "writeOutboundPolicy",
         "writeOutputControl",
+        "writeQueueParameters",
         "writeRuntimeParameters",
     ];
 

@@ -71,7 +71,7 @@ internal static class RuntimeOutputEndpoints
             }
             var traffic = catalog.Keys.ToDictionary(id => id, id => cache.OutputTraffic.Read(id, includePoints: id == selected));
             var storage = cache.StorageProtection.Status;
-            var options = cache.Options;
+            var options = cache.CurrentPolicy;
             var items = report.Targets.Select(queue =>
             {
                 var id = queue.ConnectionId;

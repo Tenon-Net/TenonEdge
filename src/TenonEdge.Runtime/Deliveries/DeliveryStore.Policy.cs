@@ -30,6 +30,7 @@ internal sealed partial class DeliveryStore
 
     internal bool Admit(SqliteConnection connection, SqliteTransaction transaction, DeliveryDraft draft)
     {
+        var policy = _policy.Read();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "SELECT COUNT(*), COALESCE(SUM(byte_size), 0) FROM delivery WHERE connection_id = $id AND state = 'pending'";
@@ -45,8 +46,8 @@ internal sealed partial class DeliveryStore
 
         command.CommandText = "SELECT COALESCE(SUM(byte_size), 0) FROM delivery WHERE state IN ('pending', 'quarantined')";
         var global = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-        var globalFull = draft.ByteSize > _options.MaximumQueueBytes - global;
-        if (!globalFull && count < _options.MaximumPendingPerTarget && draft.ByteSize <= _options.MaximumPendingBytesPerTarget - bytes)
+        var globalFull = draft.ByteSize > policy.MaximumQueueBytes - global;
+        if (!globalFull && count < policy.MaximumPendingPerTarget && draft.ByteSize <= policy.MaximumPendingBytesPerTarget - bytes)
         {
             return true;
         }
@@ -108,6 +109,8 @@ internal sealed partial class DeliveryStore
 
     internal void ExpirePending(SqliteConnection connection)
     {
+        using var policyLease = _policy.AcquireRead();
+        var policy = _policy.Read();
         var now = _time.GetUtcNow();
         if ((now - (_maintenanceStart + _time.GetElapsedTime(_maintenanceTimestamp))).Duration() > TimeSpan.FromHours(1))
         {
@@ -133,8 +136,8 @@ internal sealed partial class DeliveryStore
                 ORDER BY seq LIMIT 100
             ) RETURNING connection_id;
             """;
-        command.Parameters.AddWithValue("$pendingCutoff", now.ToUnixTimeMilliseconds() - (long)_options.PendingRetention.TotalMilliseconds);
-        command.Parameters.AddWithValue("$failedCutoff", now.ToUnixTimeMilliseconds() - (long)_options.FailedRetention.TotalMilliseconds);
+        command.Parameters.AddWithValue("$pendingCutoff", now.ToUnixTimeMilliseconds() - (long)policy.PendingRetention.TotalMilliseconds);
+        command.Parameters.AddWithValue("$failedCutoff", now.ToUnixTimeMilliseconds() - (long)policy.FailedRetention.TotalMilliseconds);
         var counts = new Dictionary<long, int>();
         using (var reader = command.ExecuteReader())
         {

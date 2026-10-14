@@ -9,6 +9,7 @@ internal sealed partial class DeliveryStore
     /// seq/稳定编号/失败状态/目标指纹、所有目标配额及全局配额全部检查后才改动。</summary>
     internal DeliveryWriteResult RetryFailed(SqliteConnection connection, SqliteTransaction transaction, RetryFailedRequest request, long now)
     {
+        var policy = _policy.Read();
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -64,14 +65,14 @@ internal sealed partial class DeliveryStore
             command.Parameters.AddWithValue("$target", id);
             using var reader = command.ExecuteReader();
             reader.Read();
-            if (selectedTotal.Count > _options.MaximumPendingPerTarget - reader.GetInt64(0) ||
-                selectedTotal.Bytes > _options.MaximumPendingBytesPerTarget - reader.GetInt64(1))
+            if (selectedTotal.Count > policy.MaximumPendingPerTarget - reader.GetInt64(0) ||
+                selectedTotal.Bytes > policy.MaximumPendingBytesPerTarget - reader.GetInt64(1))
             { return DeliveryWriteResult.Rejected(DeliveryRetryErrors.QuotaExceeded); }
         }
         command.Parameters.Clear();
         command.CommandText = "SELECT COALESCE(SUM(byte_size), 0) FROM delivery WHERE state IN ('pending', 'quarantined')";
         var currentGlobal = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-        if (selectedBytes > _options.MaximumQueueBytes - currentGlobal)
+        if (selectedBytes > policy.MaximumQueueBytes - currentGlobal)
         { return DeliveryWriteResult.Rejected(DeliveryRetryErrors.QuotaExceeded); }
         command.CommandText = """
             UPDATE delivery SET seq = (SELECT next_seq FROM retry_selection WHERE seq = delivery.seq),

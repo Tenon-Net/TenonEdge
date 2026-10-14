@@ -44,7 +44,8 @@ internal static class RuntimeRegistration
                 DatabasePath = Path.Combine(provider.GetRequiredService<DataDirectoryLock>().Directory.Root, DeliveryCacheOptions.FileName),
                 ConfigStoreId = provider.GetRequiredService<GatewayIdentity>().ConfigStoreId,
             },
-            provider.GetRequiredService<TimeProvider>(), events: provider.GetRequiredService<IRuntimeEventSink>()));
+            provider.GetRequiredService<TimeProvider>(), events: provider.GetRequiredService<IRuntimeEventSink>(),
+            policy: provider.GetRequiredService<IDeliveryPolicySource>()));
         services.AddSingleton<OutputControlStore>();
         services.AddSingleton<DeliveryMigrationStore>();
         services.AddSingleton<DeliveryMigrationPreparation>();

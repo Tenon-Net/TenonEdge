@@ -352,5 +352,15 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(24, "queue_parameters", [
+            """
+            CREATE TABLE queue_parameters (
+                id INTEGER NOT NULL PRIMARY KEY CHECK(id = 1),
+                version TEXT NOT NULL,
+                values_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

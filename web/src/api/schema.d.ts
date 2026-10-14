@@ -1368,6 +1368,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/system/queue-parameters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前队列配额、保留期和磁盘保护参数 */
+        get: operations["getQueueParameters"];
+        /**
+         * 管理员确认后持久化队列运行参数，后续队列事务采用新值
+         * @description 与审计同事务；版本条件、明确确认。降低配额不删除旧记录；缩短保留期影响下一轮清理。原队列事务正在使用参数时409，不排队。仅通用输出，平台去重窗口在T4联动。
+         */
+        put: operations["writeQueueParameters"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -3338,6 +3359,35 @@ export interface components {
         };
         /** @enum {unknown} */
         QualityCode: "readTimeout" | "deviceException" | "readError" | "overflow" | "nonFinite" | "conversionFailed" | null;
+        QueueParameterRequest: {
+            values: components["schemas"]["QueueParameterValues"];
+            expectedVersion: null | string;
+            confirmed: boolean;
+        };
+        QueueParameterState: {
+            version: null | string;
+            values: components["schemas"]["QueueParameterValues"];
+        };
+        QueueParameterValues: {
+            /** Format: int32 */
+            maximumPendingPerTarget: number | string;
+            /** Format: int64 */
+            maximumPendingBytesPerTarget: number | string;
+            /** Format: int64 */
+            maximumQueueBytes: number | string;
+            /** Format: int32 */
+            pendingRetentionHours: number | string;
+            /** Format: int32 */
+            maximumFailedPerTarget: number | string;
+            /** Format: int32 */
+            maximumFailedGlobal: number | string;
+            /** Format: int32 */
+            failedRetentionHours: number | string;
+            /** Format: int64 */
+            minimumDiskFreeBytes: number | string;
+            /** Format: int32 */
+            minimumDiskFreePercent: number | string;
+        };
         RouteCatalogItem: {
             /** Format: int64 */
             id?: number | string;
@@ -8881,6 +8931,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeParameterState"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getQueueParameters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueParameterState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    writeQueueParameters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueueParameterRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueParameterState"];
                 };
             };
             /** @description Bad Request */

@@ -221,6 +221,7 @@ internal sealed partial class DeliveryWriterUnit(
         var counters = queue.PendingCounters.Snapshot();
         try
         {
+            using var policyLease = queue.PolicySource.AcquireRead();
             RefreshProtection();
             using var transaction = connection.BeginTransaction();
             using var insert = DeliveryStore.CreateInsertCommand(connection, transaction);

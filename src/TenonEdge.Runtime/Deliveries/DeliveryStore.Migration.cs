@@ -92,6 +92,7 @@ internal sealed partial class DeliveryStore
     // 准备与最终事务使用同一配额公式；准备只在只读连接的TEMP表中计算，不写主库或收据。
     private DeliveryMigrationQuotaDeficit CheckMigrationQuota(SqliteCommand command, DeliveryMigrationCommand request, out int selected)
     {
+        var policy = _policy.Read();
         command.Parameters.Clear();
         command.Parameters.AddWithValue("$target", request.TargetConnectionId);
         command.Parameters.AddWithValue("$identityBytes", (long)Encoding.UTF8.GetByteCount(request.Fingerprint) + Encoding.UTF8.GetByteCount(request.Summary));
@@ -138,10 +139,10 @@ internal sealed partial class DeliveryStore
                 // §8.3 明确要求待发剩余额度容纳全部选择（包括迁移后仍为 failed 的记录）。
                 // 同连接原已占用的 pending 先扣除，不能重复收费；全局实际仍只计 pending/quarantined。
                 deficit = new(
-                    Math.Max(0, checked(reader.GetInt64(0) - alreadyPending + selected - _options.MaximumPendingPerTarget)),
-                    Math.Max(0, checked(reader.GetInt64(1) - alreadyPendingBytes + selectedBytes - _options.MaximumPendingBytesPerTarget)),
-                    Math.Max(0, checked(reader.GetInt64(2) - previousGlobalBytes + nextGlobalBytes - _options.MaximumQueueBytes)),
-                    Math.Max(0, checked(reader.GetInt64(3) - alreadyFailed + failed - _options.MaximumFailedPerTarget)));
+                    Math.Max(0, checked(reader.GetInt64(0) - alreadyPending + selected - policy.MaximumPendingPerTarget)),
+                    Math.Max(0, checked(reader.GetInt64(1) - alreadyPendingBytes + selectedBytes - policy.MaximumPendingBytesPerTarget)),
+                    Math.Max(0, checked(reader.GetInt64(2) - previousGlobalBytes + nextGlobalBytes - policy.MaximumQueueBytes)),
+                    Math.Max(0, checked(reader.GetInt64(3) - alreadyFailed + failed - policy.MaximumFailedPerTarget)));
             }
             return deficit;
         }

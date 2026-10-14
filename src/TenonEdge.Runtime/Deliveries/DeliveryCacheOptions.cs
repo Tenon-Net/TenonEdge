@@ -1,3 +1,5 @@
+using TenonEdge.Abstractions.Contracts;
+
 namespace TenonEdge.Runtime.Deliveries;
 
 /// <summary>
@@ -34,6 +36,20 @@ public sealed class DeliveryCacheOptions
     public long MaximumPendingBytesPerTarget { get; init; } = 64L * 1024 * 1024;
     public long MaximumQueueBytes { get; init; } = 256L * 1024 * 1024;
     public TimeSpan PendingRetention { get; init; } = TimeSpan.FromHours(24);
+
+    /// <summary>运行参数与路径、写者通道等启动配置分离；既有独立调用者使用此固定快照。</summary>
+    public DeliveryPolicy ToPolicy() => new()
+    {
+        MaximumPendingPerTarget = MaximumPendingPerTarget,
+        MaximumPendingBytesPerTarget = MaximumPendingBytesPerTarget,
+        MaximumQueueBytes = MaximumQueueBytes,
+        PendingRetention = PendingRetention,
+        MaximumFailedPerTarget = MaximumFailedPerTarget,
+        MaximumFailedGlobal = MaximumFailedGlobal,
+        FailedRetention = FailedRetention,
+        MinimumDiskFreeBytes = MinimumDiskFreeBytes,
+        MinimumDiskFreeFraction = MinimumDiskFreeFraction,
+    };
 
     /// <summary>检查参数，不合理时抛出异常。</summary>
     public DeliveryCacheOptions Validate()

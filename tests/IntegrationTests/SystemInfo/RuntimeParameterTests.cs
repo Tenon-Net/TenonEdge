@@ -235,8 +235,8 @@ public sealed class RuntimeParameterTests
         using var store = TestConfigStore.Create();
         store.Initialize(ConfigMigrations.All.Where(m => m.Version <= 22).ToArray());
         var identity = GatewayIdentity.LoadOrCreate(store.Database, out _);
-        Assert.Equal(23, store.CreateMigrator().Migrate());
-        Assert.Equal(23, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All.Max(m => m.Version), store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All.Max(m => m.Version), store.CreateMigrator().Migrate());
         Assert.Equal(identity, GatewayIdentity.LoadOrCreate(store.Database, out _));
         Assert.Empty(store.Database.Client.Queryable<RuntimeParameterRecord>().ToList());
     }

@@ -9,11 +9,10 @@ public sealed record StorageProtectionStatus(bool RejectNewRecords, bool SpaceUn
 public sealed class StorageProtection
 {
     private readonly Func<StorageSpace?> _read;
-    private readonly long _minimumBytes;
-    private readonly double _minimumFraction;
+    private readonly Func<(long Bytes, double Fraction)> _readLimits;
     private StorageProtectionStatus _status = new(true, true, null);
 
-    public StorageProtection(string directory, long minimumBytes, double minimumFraction, Func<StorageSpace?>? read = null)
+    public StorageProtection(string directory, long minimumBytes, double minimumFraction, Func<StorageSpace?>? read = null, Func<(long Bytes, double Fraction)>? readLimits = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(minimumBytes);
         if (!double.IsFinite(minimumFraction) || minimumFraction is < 0 or >= 1)
@@ -21,12 +20,11 @@ public sealed class StorageProtection
             throw new ArgumentOutOfRangeException(nameof(minimumFraction));
         }
 
-        _minimumBytes = minimumBytes;
-        _minimumFraction = minimumFraction;
+        _readLimits = readLimits ?? (() => (minimumBytes, minimumFraction));
         _read = read ?? (() => ReadSpace(directory));
     }
 
-    public StorageProtectionStatus Status => Volatile.Read(ref _status);
+    public StorageProtectionStatus Status => Evaluate(Volatile.Read(ref _status).Space);
 
     internal StorageProtectionStatus Refresh()
     {
@@ -36,10 +34,19 @@ public sealed class StorageProtection
             space = null;
         }
 
-        var status = new StorageProtectionStatus(space is null || space.AvailableBytes < _minimumBytes
-            || space.AvailableBytes < space.TotalBytes * _minimumFraction, space is null, space);
+        var status = Evaluate(space);
         Volatile.Write(ref _status, status);
         return status;
+    }
+
+    private StorageProtectionStatus Evaluate(StorageSpace? space)
+    {
+        var limits = _readLimits();
+        ArgumentOutOfRangeException.ThrowIfNegative(limits.Bytes);
+        if (!double.IsFinite(limits.Fraction) || limits.Fraction is < 0 or >= 1)
+        { throw new InvalidOperationException("磁盘保护参数提供者返回了无效百分比。"); }
+        return new(space is null || space.AvailableBytes < limits.Bytes
+            || space.AvailableBytes < space.TotalBytes * limits.Fraction, space is null, space);
     }
 
     private static StorageSpace? ReadSpace(string directory)

@@ -13,6 +13,12 @@ public static class OutputCapacityEstimator
     public static OutputCapacityEstimate Estimate(DeliveryCacheOptions options, DeliveryQueueUsage target,
         DeliveryQueueUsage global, double? recordsPerSecond, double? bytesPerSecond, double? accumulatingBytesPerSecond,
         StorageProtectionStatus storage, double? calibratedDiskAmplification = null)
+        => Estimate(options.ToPolicy(), target, global, recordsPerSecond, bytesPerSecond, accumulatingBytesPerSecond,
+            storage, calibratedDiskAmplification);
+
+    public static OutputCapacityEstimate Estimate(TenonEdge.Abstractions.Contracts.DeliveryPolicy options, DeliveryQueueUsage target,
+        DeliveryQueueUsage global, double? recordsPerSecond, double? bytesPerSecond, double? accumulatingBytesPerSecond,
+        StorageProtectionStatus storage, double? calibratedDiskAmplification = null)
     {
         ValidateRate(recordsPerSecond);
         ValidateRate(bytesPerSecond);

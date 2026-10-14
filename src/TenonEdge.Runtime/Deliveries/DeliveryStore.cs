@@ -149,15 +149,17 @@ internal sealed partial class DeliveryStore
     ];
 
     private readonly DeliveryCacheOptions _options;
+    private readonly TenonEdge.Abstractions.Contracts.IDeliveryPolicySource _policy;
     private readonly string _writeConnectionString;
     private readonly string _readConnectionString;
     private readonly TimeProvider _time;
     private readonly Lock _initializeLock = new();
     private DeliveryStoreInfo? _info;
 
-    public DeliveryStore(DeliveryCacheOptions options, TimeProvider time, TenonEdge.Abstractions.Contracts.IRuntimeEventSink? events = null)
+    public DeliveryStore(DeliveryCacheOptions options, TimeProvider time, TenonEdge.Abstractions.Contracts.IRuntimeEventSink? events = null, TenonEdge.Abstractions.Contracts.IDeliveryPolicySource? policy = null)
     {
         _options = options.Validate();
+        _policy = policy ?? new FixedDeliveryPolicySource(options.ToPolicy());
         _events = events;
         _time = time;
         _maintenanceStart = time.GetUtcNow();

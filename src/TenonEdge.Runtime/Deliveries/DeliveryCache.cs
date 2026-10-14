@@ -37,14 +37,19 @@ public sealed class DeliveryCache
     private long _failedRecords;
     private long _rejectedRecords;
 
-    public DeliveryCache(DeliveryCacheOptions options, TimeProvider time, Func<StorageSpace?>? readSpace = null, TenonEdge.Abstractions.Contracts.IRuntimeEventSink? events = null)
+    public DeliveryCache(DeliveryCacheOptions options, TimeProvider time, Func<StorageSpace?>? readSpace = null, TenonEdge.Abstractions.Contracts.IRuntimeEventSink? events = null, IDeliveryPolicySource? policy = null)
     {
         Options = options.Validate();
         _time = time;
         OutputTraffic = new OutputTrafficHistory(time);
-        Store = new DeliveryStore(options, time, events);
+        PolicySource = policy ?? new FixedDeliveryPolicySource(options.ToPolicy());
+        Store = new DeliveryStore(options, time, events, PolicySource);
         StorageProtection = new StorageProtection(Path.GetDirectoryName(options.DatabasePath)!,
-            options.MinimumDiskFreeBytes, options.MinimumDiskFreeFraction, readSpace);
+            options.MinimumDiskFreeBytes, options.MinimumDiskFreeFraction, readSpace, () =>
+            {
+                var current = PolicySource.Read();
+                return (current.MinimumDiskFreeBytes, current.MinimumDiskFreeFraction);
+            });
         _requests = Channel.CreateBounded<WriteRequest>(new BoundedChannelOptions(options.RequestQueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -52,6 +57,8 @@ public sealed class DeliveryCache
         });
     }
 
+    internal IDeliveryPolicySource PolicySource { get; }
+    public DeliveryPolicy CurrentPolicy => PolicySource.Read();
     public StorageProtection StorageProtection { get; }
 
     /// <summary>MQTT 接收器的有限诊断计数，由原有唯一写者合并持久化；不逐条写运行事件或另开事务。</summary>
