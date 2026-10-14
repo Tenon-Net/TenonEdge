@@ -11,12 +11,14 @@ const debug = {
     debugGlobalBytes: 33554432,
     debugObjectRecords: 100,
     inFlightBytes: 67108864,
+    inputChannelCapacity: 100,
 }
 const debugForm = {
     debugObjectBytes: '1048576',
     debugGlobalBytes: '33554432',
     debugObjectRecords: '100',
     inFlightBytes: '67108864',
+    inputChannelCapacity: '100',
 }
 const state: RuntimeParameters = {
     version: 'a'.repeat(32),
@@ -70,6 +72,9 @@ it.each([
     ['debugGlobalBytes', '1073741825'],
     ['debugObjectRecords', '0'],
     ['debugObjectRecords', '101'],
+    ['inputChannelCapacity', '0'],
+    ['inputChannelCapacity', '10001'],
+    ['inputChannelCapacity', '1.5'],
     ['inFlightBytes', '16777215'],
     ['inFlightBytes', '1073741825'],
 ] as const)('rejects %s=%s', (key, value) => {

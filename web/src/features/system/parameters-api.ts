@@ -19,6 +19,7 @@ export function editParameters(state: RuntimeParameters): ParameterForm {
             debugGlobalBytes: String(state.values.debugGlobalBytes),
             debugObjectRecords: String(state.values.debugObjectRecords),
             inFlightBytes: String(state.values.inFlightBytes),
+            inputChannelCapacity: String(state.values.inputChannelCapacity),
         },
     }
 }
@@ -44,6 +45,11 @@ export function parameterRequest(form: ParameterForm, confirmed: boolean) {
         expectedVersion: form.expectedVersion,
         confirmed: true,
         values: {
+            inputChannelCapacity: integer(
+                form.values.inputChannelCapacity,
+                1,
+                10000,
+            ),
             inFlightBytes: integer(
                 form.values.inFlightBytes,
                 16777216,

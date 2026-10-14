@@ -18080,7 +18080,8 @@
           "debugObjectBytes",
           "debugGlobalBytes",
           "debugObjectRecords",
-          "inFlightBytes"
+          "inFlightBytes",
+          "inputChannelCapacity"
         ],
         "type": "object",
         "properties": {
@@ -18143,6 +18144,15 @@
             ],
             "format": "int64",
             "default": 67108864
+          },
+          "inputChannelCapacity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 100
           }
         },
         "additionalProperties": false

@@ -15,9 +15,11 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 {
     private readonly Channel<EdgeMessage> _inner;
     private readonly InFlightBudget _budget;
-    private readonly int _capacity;
+    private readonly InputChannelLimit _limits;
+    private TaskCompletionSource _space = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Action<EdgeMessage>? _capture;
     private readonly Lock _captureGate = new();
+    private readonly Lock _spaceGate = new();
     private long _captureFailures;
     internal long CaptureFailures => Interlocked.Read(ref _captureFailures);
     private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -29,22 +31,23 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     internal long MinimumSerializationReservationBytes { get; set; }
     internal long MappingWorkingReservationBytes { get; set; }
 
-    public BudgetedInputChannel(int capacity, InFlightBudget budget, Action<EdgeMessage>? capture = null)
+    public BudgetedInputChannel(int capacity, InFlightBudget budget, Action<EdgeMessage>? capture = null, InputChannelLimit? limits = null)
     {
         _capture = capture;
         _budget = budget;
-        _capacity = capacity;
-        _inner = Channel.CreateBounded<EdgeMessage>(new BoundedChannelOptions(capacity)
+        _limits = limits ?? new InputChannelLimit(capacity);
+        _inner = Channel.CreateBounded<EdgeMessage>(new BoundedChannelOptions(InputChannelLimit.MaximumCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = true,
         });
         Writer = new BudgetWriter(this);
-        Reader = new BudgetReader(this);
+        Reader = new BudgetReader(this, release: true);
+        HoldingReader = new BudgetReader(this, release: false);
     }
 
-    internal ChannelReader<EdgeMessage> HoldingReader => _inner.Reader;
+    internal ChannelReader<EdgeMessage> HoldingReader { get; }
     private long Charge(long sourceBytes) => checked(sourceBytes + OutputReservationBytes
         + (UsesDurableHandoff ? 1024 : 0) // 回执、异步等待与索引项的保守固定预约。
         + MappingWorkingReservationBytes
@@ -67,7 +70,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     {
         lock (_captureGate)
         {
-            if (!_inner.Writer.TryWrite(message))
+            if (!_limits.TryPublish(_inner, message))
             { return false; }
             try
             { _capture?.Invoke(message); }
@@ -80,13 +83,39 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
     private async ValueTask PublishAsync(EdgeMessage message, CancellationToken cancellationToken)
     {
-        while (await _inner.Writer.WaitToWriteAsync(cancellationToken))
+        while (await WaitForSpaceAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (TryPublish(message))
             { return; }
         }
         throw new ChannelClosedException(_completionError);
+    }
+
+    private async ValueTask<bool> WaitForSpaceAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_closed.Task.IsCompleted)
+            { return await _inner.Writer.WaitToWriteAsync(cancellationToken); }
+            Task space;
+            Task changed;
+            lock (_spaceGate)
+            {
+                var limit = _limits.Snapshot;
+                if (_inner.Reader.Count < limit.Capacity && !_closed.Task.IsCompleted)
+                { return true; }
+                space = _space.Task;
+                changed = limit.Changed;
+            }
+            // Cancellation must complete the WhenAny itself, not just an outer
+            // WaitAsync wrapper retaining losers until the next read/configuration.
+            var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = cancellationToken.Register(() => cancelled.TrySetResult());
+            await Task.WhenAny(space, changed, _closed.Task, cancelled.Task);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
     }
 
     private sealed class BudgetWriter(BudgetedInputChannel owner) : InputMessageWriter
@@ -113,7 +142,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
             if (owner._closed.Task.IsCompleted)
             { throw new ChannelClosedException(owner._completionError); }
             // 单写者：检查后只有读取者能减少数量，不在满通道时先分配正文或解析树。
-            if (owner._inner.Reader.Count >= owner._capacity)
+            if (owner._inner.Reader.Count >= owner._limits.Capacity)
             { return false; }
             var reserved = Math.Max(maximumWorkingBytes, Math.Min(owner.Charge(maximumMessageBytes), owner._budget.WorkingCapacity));
             if (!owner._budget.TryReserve(reserved))
@@ -267,7 +296,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
         public override async ValueTask<bool> WaitToWriteAsync(CancellationToken cancellationToken = default)
         {
-            if (!await owner._inner.Writer.WaitToWriteAsync(cancellationToken))
+            if (!await owner.WaitForSpaceAsync(cancellationToken))
             { return false; }
             try
             { await WaitForBudgetAsync(_requiredBytes, reserve: false, cancellationToken); }
@@ -276,20 +305,30 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
                 // 保持 ChannelWriter 的完成语义：正常关闭为 false，异常关闭传播原因。
             }
 
-            return await owner._inner.Writer.WaitToWriteAsync(cancellationToken);
+            return await owner.WaitForSpaceAsync(cancellationToken);
         }
     }
 
-    private sealed class BudgetReader(BudgetedInputChannel owner) : ChannelReader<EdgeMessage>
+    private sealed class BudgetReader(BudgetedInputChannel owner, bool release) : ChannelReader<EdgeMessage>
     {
         public override bool CanCount => owner._inner.Reader.CanCount;
         public override int Count => owner._inner.Reader.Count;
         public override Task Completion => owner._inner.Reader.Completion;
         public override bool TryRead([MaybeNullWhen(false)] out EdgeMessage item)
         {
-            if (!owner._inner.Reader.TryRead(out item))
-            { return false; }
-            owner.Release(item);
+            TaskCompletionSource space;
+            // Reading may overlap diagnostic capture; only releasing byte ownership
+            // must wait for capture. A separate gate protects the wake-up snapshot.
+            lock (owner._spaceGate)
+            {
+                if (!owner._inner.Reader.TryRead(out item))
+                { return false; }
+                space = owner._space;
+                owner._space = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            space.TrySetResult();
+            if (release)
+            { owner.Release(item); }
             return true;
         }
 

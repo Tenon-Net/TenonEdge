@@ -34,6 +34,7 @@ internal static class RuntimeRegistration
         services.AddHostedService<ClockSyncMonitor>();
         services.AddSingleton<RuntimeTrendHistory>();
         services.AddSingleton<RuntimeMessageCache>();
+        services.AddSingleton(provider => new InputChannelLimit(provider.GetRequiredService<RuntimeOptions>().InputChannelCapacity));
         services.AddSingleton(provider =>
         {
             var options = provider.GetRequiredService<RuntimeOptions>();

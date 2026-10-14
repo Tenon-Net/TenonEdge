@@ -380,5 +380,8 @@ internal static class ConfigMigrations
         new(27, "in_flight_parameter", [
             "ALTER TABLE runtime_parameters ADD COLUMN in_flight_bytes INTEGER NOT NULL DEFAULT 67108864 CHECK(in_flight_bytes BETWEEN 16777216 AND 1073741824)",
         ]),
+        new(28, "input_channel_parameter", [
+            "ALTER TABLE runtime_parameters ADD COLUMN input_channel_capacity INTEGER NOT NULL DEFAULT 100 CHECK(input_channel_capacity BETWEEN 1 AND 10000)",
+        ]),
     ];
 }

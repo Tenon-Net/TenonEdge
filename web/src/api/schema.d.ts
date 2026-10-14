@@ -3876,6 +3876,11 @@ export interface components {
              * @default 67108864
              */
             inFlightBytes: number | string;
+            /**
+             * Format: int32
+             * @default 100
+             */
+            inputChannelCapacity: number | string;
         };
         RuntimePointValue: {
             key: string;

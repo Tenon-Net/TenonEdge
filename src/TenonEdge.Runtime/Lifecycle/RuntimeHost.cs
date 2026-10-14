@@ -66,8 +66,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels)
     {
     }
 
@@ -82,7 +82,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         ILogger<RuntimeHost> logger,
         Func<double>? random,
         IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null)
     {
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
@@ -110,6 +110,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         _options = options.Validate();
         InFlight = inFlight ?? new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
         Messages = messages ?? new RuntimeMessageCache(time);
+        InputChannels = inputChannels ?? new InputChannelLimit(options.InputChannelCapacity);
         CurrentValues = new CurrentValueCache(time);
         _logger = logger;
         _supervisor = new UnitSupervisor(_options, time, events, logger, random);
@@ -128,6 +129,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     }
 
     public DeliveryCache Deliveries => _deliveries;
+    public InputChannelLimit InputChannels { get; }
 
     /// <summary>宿主确认没有有效配置时调用；损坏/启动保护中的有效配置不能当成目标已删除。</summary>
     public async Task QuarantineUnconfiguredTargetsAsync(CancellationToken token)
@@ -550,7 +552,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             try
             { CurrentValues.Capture(id, revision, message); }
             finally { Messages.CaptureInput(id, revision, message); }
-        })
+        }, InputChannels)
         { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
         var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation, _options.InputBufferBytes > 0 ? InFlight : null);

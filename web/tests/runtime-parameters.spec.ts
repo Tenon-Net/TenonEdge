@@ -84,6 +84,7 @@ test('runtime parameter confirmation changes real preview admission, persists ac
             await page.request.get(root + '/devices')
         ).json()
         await edit(view, '365', '1', '1')
+        await view.getByLabel('每个输入通道条数上限', { exact: true }).fill('7')
         await view
             .getByLabel('全局在途字节预算', { exact: true })
             .fill('33554432')
@@ -116,6 +117,9 @@ test('runtime parameter confirmation changes real preview admission, persists ac
         await expect(
             view.locator('[data-parameter="debugObjectRecords"]'),
         ).toHaveText('2')
+        await expect(
+            view.locator('[data-parameter="inputChannelCapacity"]'),
+        ).toHaveText('7')
         const runtimeBudget = await (
             await page.request.get(root + '/runtime/status')
         ).json()
@@ -208,6 +212,9 @@ test('runtime parameter confirmation changes real preview admission, persists ac
         await expect(
             view.locator('[data-parameter="previewGlobalLimit"]'),
         ).toHaveText('6')
+        await expect(
+            view.locator('[data-parameter="inputChannelCapacity"]'),
+        ).toHaveText('7')
         expect(await (await page.request.get(endpoint)).json()).toEqual(current)
         const audit = await (
             await page.request.get(
@@ -334,6 +341,7 @@ test('parameter editor retains validation input, freezes version and never repla
                             debugGlobalBytes: 33554432,
                             debugObjectRecords: 100,
                             inFlightBytes: 67108864,
+                            inputChannelCapacity: 100,
                         },
                         expectedVersion: null,
                         confirmed: true,
