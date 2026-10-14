@@ -80,7 +80,7 @@ public sealed record MqttOutputSettings : MqttConnectionSettings
         return topic;
     }
 
-    private static void ValidateTopic(string topic)
+    internal static void ValidateTopic(string topic)
     {
         if (string.IsNullOrEmpty(topic) || Encoding.UTF8.GetByteCount(topic) > 65535 || topic.IndexOfAny(['+', '#', '\0', '{', '}']) >= 0)
         {
