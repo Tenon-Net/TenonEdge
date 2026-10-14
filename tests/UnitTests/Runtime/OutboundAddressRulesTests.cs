@@ -6,6 +6,28 @@ namespace TenonEdge.UnitTests.Runtime;
 public sealed class OutboundAddressRulesTests
 {
     [Theory]
+    [InlineData("203.0.113.5", 443, OutboundAddressDecision.PublicGrantRequired)]
+    [InlineData("::ffff:203.0.113.5", 443, OutboundAddressDecision.PublicGrantRequired)]
+    [InlineData("2001:db8::5", 443, OutboundAddressDecision.PublicGrantRequired)]
+    [InlineData("10.1.2.3", 443, OutboundAddressDecision.Allowed)]
+    [InlineData("127.0.0.1", 443, OutboundAddressDecision.LocalPortRequired)]
+    [InlineData("203.0.113.10", 443, OutboundAddressDecision.LocalPortRequired)]
+    [InlineData("203.0.113.10", 8080, OutboundAddressDecision.Forbidden)]
+    [InlineData("::1", 8080, OutboundAddressDecision.Forbidden)]
+    [InlineData("169.254.169.254", 443, OutboundAddressDecision.Forbidden)]
+    [InlineData("224.0.0.1", 443, OutboundAddressDecision.Forbidden)]
+    [InlineData("fe80::1", 443, OutboundAddressDecision.Forbidden)]
+    public void GrantAdviceUsesTheSameVerdictAsTheConnection(string address, int port, OutboundAddressDecision decision)
+    {
+        var rules = new OutboundAddressRules([], []);
+        IPAddress[] local = [IPAddress.Parse("203.0.113.10")];
+        var management = new HashSet<int> { 8080 };
+        var ip = IPAddress.Parse(address);
+        Assert.Equal(decision, rules.Check(ip, port, local, management));
+        Assert.Equal(decision == OutboundAddressDecision.Allowed, rules.IsAllowed(ip, port, local, management));
+    }
+
+    [Theory]
     [InlineData("10.1.2.3", true)]
     [InlineData("172.16.0.1", true)]
     [InlineData("172.31.255.254", true)]

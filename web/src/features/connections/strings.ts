@@ -54,6 +54,31 @@ const mqttTestStrings = {
 
 export const connectionStrings = {
     title: '连接草稿',
+    outbound: {
+        title: '已保存目标的出站授权',
+        target: '核对目标：{{host}}，端口 {{port}}',
+        notice: '保存草稿后只解析目标并检查出站规则，不建立目标连接、不发送凭证、不自动添加授权。检查结果是本次快照，之后的 DNS 或规则可能变化；正式连接仍逐次校验实际 IP。',
+        refresh: '重新解析并检查规则',
+        checking: '正在解析并检查（DNS 上限 5 秒）…',
+        system: '查看系统出站规则',
+        decisions: {
+            allowed: '此 IP 与端口当前允许，不代表连接或认证成功',
+            publicGrantRequired: '此公网 IP 与端口尚未授权',
+            localPortRequired:
+                '本机端口未授权；不能用公网 CIDR 放行，请由管理员在系统设置核对本机例外',
+            forbidden: '危险地址或本机管理端口，不提供快捷授权',
+        },
+        risk: '仅加入上方尚未授权的精确主机 CIDR（IPv4 /32、IPv6 /128）与本次端口，不授权整个网段或未来 DNS 地址。授权立即影响后续连接，包括其他配置人员的连接；不保存或应用运行配置。原网页规则与本机例外保持不变，部署规则不变。',
+        confirm: '我已核对列出的公网 IP、端口和访问风险，确认加入白名单',
+        grant: '确认加入公网白名单',
+        contact: '目标不在允许范围内，请联系管理员。',
+        limit: '加入后将超过 1000 条规则，未进行部分授权。请到系统设置核对已有规则。',
+        unknown:
+            '授权请求失败或结果未确认，未自动重放。请重新解析并核对当前规则后再决定。',
+        saved: '公网主机授权已保存并记审计，不代表目标已连接或草稿已应用。',
+        leaving:
+            '授权请求仍在处理。离开可能无法确认结果；返回后应重新检查而不是重放，确定离开？',
+    },
     mqttTest: mqttTestStrings,
     modbusTest: {
         ...mqttTestStrings,
@@ -105,7 +130,7 @@ export const connectionStrings = {
             'protocol.invalid': '收到无效 HTTP 响应',
         },
     },
-    notice: '这些连接保存在网关配置库的全局草稿中，刷新页面后仍保留。保存、启停或删除草稿均不改变运行配置；编译与应用界面尚在实施。',
+    notice: '这些连接保存在网关配置库的全局草稿中，刷新页面后仍保留。保存、启停或删除草稿均不改变运行配置，运行需另行应用。保存后自动解析目标并检查出站规则，不连接目标或自动授权。',
     security:
         '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。Modbus/MQTT/HTTP 可显式测试连接；Modbus、MQTT、HTTP 设备可在来源页显式读取或采样；客户端证书和信任证书表单尚未接入。',
     add: '新建连接',

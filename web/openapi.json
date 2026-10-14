@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:36565/"
+      "url": "http://127.0.0.1:40025/"
     }
   ],
   "paths": {
@@ -1014,6 +1014,108 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/inspect-outbound": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "解析未保存目标并按当前出站规则检查，不连接或修改白名单",
+        "description": "DNS限5秒/32地址；与测试预览共用并发预算。仅公网拒绝生成/32或/128主机CIDR建议；管理员仍须确认后调用版本化白名单写接口。检查不保证之后DNS/规则不变，实际连接仍逐次校验。",
+        "operationId": "inspectConnectionOutbound",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboundInspectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundInspectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14754,6 +14856,14 @@
         },
         "additionalProperties": false
       },
+      "OutboundAddressDecision": {
+        "enum": [
+          "allowed",
+          "publicGrantRequired",
+          "localPortRequired",
+          "forbidden"
+        ]
+      },
       "OutboundDeploymentRules": {
         "required": [
           "networks",
@@ -14776,6 +14886,84 @@
                 "string"
               ],
               "format": "int32"
+            }
+          }
+        }
+      },
+      "OutboundInspectionAddress": {
+        "required": [
+          "address",
+          "decision",
+          "grant"
+        ],
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/OutboundAddressDecision"
+          },
+          "grant": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutboundNetworkGrant"
+              }
+            ]
+          }
+        }
+      },
+      "OutboundInspectionRequest": {
+        "required": [
+          "host",
+          "port"
+        ],
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OutboundInspectionResult": {
+        "required": [
+          "host",
+          "port",
+          "policy",
+          "addresses"
+        ],
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/OutboundPolicyState"
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundInspectionAddress"
             }
           }
         }
@@ -18352,10 +18540,10 @@
       "name": "System"
     },
     {
-      "name": "Deliveries"
+      "name": "Connections"
     },
     {
-      "name": "Connections"
+      "name": "Deliveries"
     },
     {
       "name": "Routes"

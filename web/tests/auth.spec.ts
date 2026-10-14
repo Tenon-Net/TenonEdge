@@ -576,9 +576,9 @@ test('real connection drafts persist, conflicts and query failures retain edits,
     await page.getByLabel('连接名称', { exact: true }).fill('浏览器 PLC')
     await page.getByLabel('主机或 IP', { exact: true }).fill('10.20.30.40')
     await page.getByRole('button', { name: '保存到草稿', exact: true }).click()
-    await expect(page.getByRole('status')).toContainText(
-        '已保存到网关草稿，尚未应用',
-    )
+    await expect(
+        page.getByRole('status').filter({ hasText: '已保存到网关草稿' }),
+    ).toContainText('已保存到网关草稿，尚未应用')
     await page.reload()
     const row = page.getByRole('row').filter({ hasText: 'browser-plc' })
     await expect(row).toContainText('10.20.30.40:502')
@@ -690,7 +690,9 @@ test('real connection drafts persist, conflicts and query failures retain edits,
     ).toHaveCount(0)
     expect(
         writes.every((path) =>
-            /^\/api\/edge-admin\/v1\/connections(?:\/\d+)?$/.test(path),
+            /^\/api\/edge-admin\/v1\/connections(?:\/\d+|\/inspect-outbound)?$/.test(
+                path,
+            ),
         ),
     ).toBe(true)
     expect(versionResponse.status()).toBe(200)

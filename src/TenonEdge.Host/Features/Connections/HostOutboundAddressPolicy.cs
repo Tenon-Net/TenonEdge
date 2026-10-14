@@ -15,6 +15,10 @@ namespace TenonEdge.Host.Features.Connections;
 internal sealed class HostOutboundAddressPolicy(IConfiguration configuration, ListenerSettings listeners, IServer server, Func<OutboundPolicyState> readStored) : IOutboundAddressPolicy
 {
     public bool IsAllowed(IPAddress address, int port)
+        => Capture().Check(address, port) == OutboundAddressDecision.Allowed;
+
+    // A single read binds every address in an inspection to the same editable policy version.
+    internal HostOutboundPolicySnapshot Capture()
     {
         var management = new HashSet<int>();
         if (listeners.Http is { } http)
@@ -33,10 +37,11 @@ internal sealed class HostOutboundAddressPolicy(IConfiguration configuration, Li
         }
 
         OutboundAddressRules rules;
+        OutboundPolicyState stored;
         try
         {
             var deployment = OutboundDeploymentRules.Read(configuration);
-            var stored = readStored();
+            stored = readStored();
             rules = new OutboundAddressRules(deployment.Networks.Concat(stored.Networks).Select(rule => new OutboundNetworkRule(IPNetwork.Parse(rule.Cidr), rule.Port)),
                 deployment.LocalPorts.Concat(stored.LocalPorts));
         }
@@ -59,6 +64,12 @@ internal sealed class HostOutboundAddressPolicy(IConfiguration configuration, Li
         {
             throw new IOException("无法确认本机地址，暂不建立出站连接。", exception);
         }
-        return rules.IsAllowed(address, port, local, management);
+        return new(stored, rules, local, management);
     }
+}
+
+internal sealed record HostOutboundPolicySnapshot(OutboundPolicyState Stored, OutboundAddressRules Rules,
+    IPAddress[] LocalAddresses, IReadOnlySet<int> ManagementPorts)
+{
+    public OutboundAddressDecision Check(IPAddress address, int port) => Rules.Check(address, port, LocalAddresses, ManagementPorts);
 }

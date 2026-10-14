@@ -60,9 +60,11 @@ internal static class RuntimeRegistration
         services.AddSingleton<HttpCredentialStore>();
         services.AddSingleton<IHttpCredentialResolver>(provider => provider.GetRequiredService<HttpCredentialStore>());
         services.AddSingleton<OutboundPolicyStore>();
-        services.AddSingleton<IOutboundAddressPolicy>(provider => new HostOutboundAddressPolicy(
+        services.AddSingleton(provider => new HostOutboundAddressPolicy(
             provider.GetRequiredService<IConfiguration>(), provider.GetRequiredService<TenonEdge.Host.Bootstrap.ListenerSettings>(),
             provider.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>(), provider.GetRequiredService<OutboundPolicyStore>().Read));
+        services.AddSingleton<IOutboundAddressPolicy>(provider => provider.GetRequiredService<HostOutboundAddressPolicy>());
+        services.AddScoped<OutboundPolicyInspector>();
         services.AddSingleton<IOutboundConnector, OutboundConnector>();
         services.AddSingleton<ISharedConnections, SharedConnections>();
         services.AddSingleton<PreviewOperationBudget>();

@@ -2,6 +2,8 @@ import { CredentialPanel } from './credential-panel'
 import { MqttTestPanel } from './mqtt-test-panel'
 import { ModbusTestPanel } from './modbus-test-panel'
 import { HttpTestPanel } from './http-test-panel'
+import { ConnectionOutboundPanel } from './outbound-panel'
+import { outboundTarget, type OutboundTarget } from './outbound-api'
 import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
@@ -44,6 +46,8 @@ export function ConnectionsPage() {
     const [notice, setNotice] = useState('')
     const [testGeneration, setTestGeneration] = useState(0)
     const [localError, setLocalError] = useState('')
+    const [savedTarget, setSavedTarget] = useState<OutboundTarget | null>(null)
+    const [outboundBusy, setOutboundBusy] = useState(false)
     const dirty = form !== null && JSON.stringify(form) !== original
     useBlocker({
         disabled: !dirty,
@@ -84,7 +88,7 @@ export function ConnectionsPage() {
             }
             return action.type
         },
-        onSuccess: async (type) => {
+        onSuccess: async (type, action) => {
             void queryClient.invalidateQueries({
                 queryKey: ['configuration-summary'],
             })
@@ -97,13 +101,19 @@ export function ConnectionsPage() {
             )
             setForm(null)
             setOriginal('')
+            // Inspect only after the draft was saved; no automatic target connection or policy write.
+            setSavedTarget(
+                action.type === 'save' ? outboundTarget(action.form) : null,
+            )
             await queryClient.invalidateQueries({ queryKey })
         },
     })
     function open(connection?: Connection) {
+        if (outboundBusy) return
         if (!query.data || (dirty && !window.confirm(t('connections.discard'))))
             return
         setTestGeneration((value) => value + 1)
+        setSavedTarget(null)
         const next = connectionForm(query.data.version, connection)
         setForm(next)
         setOriginal(JSON.stringify(next))
@@ -219,7 +229,9 @@ export function ConnectionsPage() {
                 </Button>
                 {canEdit && (
                     <Button
-                        disabled={!query.data || mutation.isPending}
+                        disabled={
+                            !query.data || mutation.isPending || outboundBusy
+                        }
                         onClick={() => open()}
                     >
                         {t('connections.add')}
@@ -233,6 +245,12 @@ export function ConnectionsPage() {
                 )}
             {localError && <p role="alert">{localError}</p>}
             {notice && <p role="status">{notice}</p>}
+            {savedTarget && (
+                <ConnectionOutboundPanel
+                    target={savedTarget}
+                    onBusy={setOutboundBusy}
+                />
+            )}
             {query.data && (
                 <p className="text-xs text-muted-foreground">
                     {t('connections.version', { version: query.data.version })}
@@ -289,7 +307,10 @@ export function ConnectionsPage() {
                                     <td className="space-x-2 border-b p-2">
                                         <Button
                                             variant="outline"
-                                            disabled={mutation.isPending}
+                                            disabled={
+                                                mutation.isPending ||
+                                                outboundBusy
+                                            }
                                             onClick={() => open(connection)}
                                         >
                                             {t(
@@ -301,7 +322,10 @@ export function ConnectionsPage() {
                                         {canEdit && (
                                             <Button
                                                 variant="outline"
-                                                disabled={mutation.isPending}
+                                                disabled={
+                                                    mutation.isPending ||
+                                                    outboundBusy
+                                                }
                                                 onClick={() => {
                                                     if (
                                                         (!dirty ||
@@ -561,14 +585,17 @@ export function ConnectionsPage() {
                     </p>
                     <div className="flex gap-2">
                         {canEdit && (
-                            <Button type="submit" disabled={mutation.isPending}>
+                            <Button
+                                type="submit"
+                                disabled={mutation.isPending || outboundBusy}
+                            >
                                 {t('connections.save')}
                             </Button>
                         )}
                         <Button
                             type="button"
                             variant="outline"
-                            disabled={mutation.isPending}
+                            disabled={mutation.isPending || outboundBusy}
                             onClick={() => {
                                 if (
                                     !dirty ||

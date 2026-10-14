@@ -347,6 +347,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/inspect-outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 解析未保存目标并按当前出站规则检查，不连接或修改白名单
+         * @description DNS限5秒/32地址；与测试预览共用并发预算。仅公网拒绝生成/32或/128主机CIDR建议；管理员仍须确认后调用版本化白名单写接口。检查不保证之后DNS/规则不变，实际连接仍逐次校验。
+         */
+        post: operations["inspectConnectionOutbound"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/deliveries/retry": {
         parameters: {
             query?: never;
@@ -3127,9 +3147,28 @@ export interface components {
             processRetained: boolean;
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
         };
+        /** @enum {unknown} */
+        OutboundAddressDecision: "allowed" | "publicGrantRequired" | "localPortRequired" | "forbidden";
         OutboundDeploymentRules: {
             networks: components["schemas"]["OutboundNetworkGrant"][];
             localPorts: (number | string)[];
+        };
+        OutboundInspectionAddress: {
+            address: string;
+            decision: components["schemas"]["OutboundAddressDecision"];
+            grant: null | components["schemas"]["OutboundNetworkGrant"];
+        };
+        OutboundInspectionRequest: {
+            host: string;
+            /** Format: int32 */
+            port: number | string;
+        };
+        OutboundInspectionResult: {
+            host: string;
+            /** Format: int32 */
+            port: number | string;
+            policy: components["schemas"]["OutboundPolicyState"];
+            addresses: components["schemas"]["OutboundInspectionAddress"][];
         };
         OutboundNetworkGrant: {
             cidr: string;
@@ -4630,6 +4669,93 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    inspectConnectionOutbound: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutboundInspectionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboundInspectionResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };

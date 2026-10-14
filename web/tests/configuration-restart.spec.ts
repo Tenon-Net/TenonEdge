@@ -160,19 +160,38 @@ test('fresh browser login after a normal Host restart reads persistent draft and
         await expect(detail.getByLabel('版本差异')).toContainText(
             '没有对象内容差异',
         )
+        // The history row remains visible during refresh. Its old count is not
+        // a completion signal. Await the actual UI reads before adding a test-
+        // side request that shares their bounded per-session preview budget.
+        const refreshed = [
+            '/api/edge-admin/v1/configuration/draft',
+            '/api/edge-admin/v1/configuration/versions',
+            `/api/edge-admin/v1/configuration/versions/${revision}`,
+            `/api/edge-admin/v1/configuration/versions/${revision}/compare-draft`,
+        ].map((path) =>
+            reopened.waitForResponse(
+                (read) =>
+                    read.request().method() === 'GET' &&
+                    new URL(read.url()).pathname.replace(/\/$/, '') === path,
+            ),
+        )
         await reopened
             .getByRole('button', { name: '刷新配置状态', exact: true })
             .click()
+        for (const read of await Promise.all(refreshed)) {
+            expect(read.status(), new URL(read.url()).pathname).toBe(200)
+            await read.finished()
+        }
         await expect(history.locator('[data-version]')).toHaveCount(1)
+        const restoredDraftResponse = await reopened.request.get(
+            '/api/edge-admin/v1/configuration/draft',
+        )
+        const restoredDraft = await restoredDraftResponse.json()
         expect(
-            (
-                await (
-                    await reopened.request.get(
-                        '/api/edge-admin/v1/configuration/draft',
-                    )
-                ).json()
-            ).version,
-        ).toBe(initial.version)
+            restoredDraftResponse.status(),
+            JSON.stringify(restoredDraft),
+        ).toBe(200)
+        expect(restoredDraft.version).toBe(initial.version)
         expect(
             await (
                 await reopened.request.get(
