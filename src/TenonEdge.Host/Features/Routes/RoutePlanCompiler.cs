@@ -17,7 +17,10 @@ using TenonEdge.Runtime.Mapping;
 namespace TenonEdge.Host.Features.Routes;
 
 internal sealed record RouteCompilationSnapshot(string Version, RouteDraft[] Routes, IReadOnlyDictionary<long, DeviceDraft> Devices,
-    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials);
+    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null)
+{
+    public RouteCompilationLimits Admission => Limits ?? RouteCompilationLimits.Default;
+}
 internal sealed record RouteCompiledPath(RouteTopologyPath Path, RuntimeUnitId OutputId, ImmutableArray<MappedFieldSchema> Fields);
 internal sealed record RoutePlanCompilation(RuntimePlanDocument Document, RouteTopologyResult Topology, ImmutableArray<RouteCompiledPath> Paths);
 
@@ -27,6 +30,8 @@ internal static partial class RoutePlanCompiler
     public static RoutePlanCompilation Compile(RouteCompilationSnapshot snapshot, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
+        var limits = snapshot.Admission;
+        limits.Validate();
         var routes = snapshot.Routes.Where(route => route.Enabled).OrderBy(route => route.Key, StringComparer.Ordinal).ToArray();
         var graphs = new List<RouteTopology>();
         var normalizedGraphs = new Dictionary<string, RouteGraph>(StringComparer.Ordinal);
@@ -53,7 +58,7 @@ internal static partial class RoutePlanCompiler
                     token.ThrowIfCancellationRequested();
                     if (sources.ContainsKey(id))
                     { continue; }
-                    if (sources.Count == RouteTopologyCompiler.MaximumSources)
+                    if (sources.Count == limits.Sources)
                     { throw Error("sources.totalLimit", route.Key, node.Id, id); }
                     if (!snapshot.Inputs.TryGetValue(id, out var input))
                     { throw Error("source.missing", route.Key, node.Id, id); }
@@ -72,7 +77,7 @@ internal static partial class RoutePlanCompiler
             }
             graphs.Add(new(route.Key, true, graph.SchemaVersion, nodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray()));
         }
-        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token);
+        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits);
         var compiled = ImmutableArray.CreateBuilder<RouteCompiledPath>(topology.Paths.Length);
         var pathsByRoute = topology.Paths.ToLookup(path => path.RouteKey, StringComparer.Ordinal);
         foreach (var route in routes)
@@ -113,6 +118,7 @@ internal static partial class RoutePlanCompiler
         try
         { document = RuntimePlanDocument.Parse(serialized); }
         catch (RuntimePlanDocumentException) { throw Error("plan.configuration", ""); }
+        limits.Check(document);
         return new(document, topology, compiled.MoveToImmutable());
 
         void Add(RuntimeUnitPlan unit, string route, string node)

@@ -5,6 +5,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Deliveries;
+using TenonEdge.Host.Features.SystemInfo;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 
@@ -21,6 +22,9 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
 
     /// <summary>提交前中断的版本标为“未生效”时的原因。</summary>
     public const string InterruptedReason = "进程中断";
+
+    public void CheckNewPlanLimits(RuntimePlanDocument document) => database.InTransaction(client =>
+    { RuntimeParameterStore.ReadPlanLimits(client).Check(document); return true; });
 
     public RuntimeVersionPointers ReadPointers()
     {
@@ -84,7 +88,8 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
     {
         if (origin is not (RuntimeSnapshotOrigins.Seed or RuntimeSnapshotOrigins.AutoRollback))
         { throw new ArgumentException("在线应用必须使用带草稿版本检查的冻结入口。", nameof(origin)); }
-        return FreezeCore(RuntimeSnapshotDocument.FromPlan(document), origin, originDetail, createdBy, expectedDraftVersion: null);
+        return FreezeCore(RuntimeSnapshotDocument.FromPlan(document), origin, originDetail, createdBy, expectedDraftVersion: null,
+            validate: origin == RuntimeSnapshotOrigins.Seed ? client => RuntimeParameterStore.ReadPlanLimits(client).Check(document) : null);
     }
 
     /// <summary>在线应用的冻结入口：编译在事务外完成；确认草稿版本、分配版本、写快照和 pending 在同一事务。
@@ -97,7 +102,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
         { throw new DraftWriteException("configuration.reviewChanged"); }
         var draft = database.InTransaction(client => ConfigurationCheckpoint.Read(client, expectedDraftVersion));
         var snapshot = RuntimeSnapshotDocument.Create(document, draft);
-        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, changeDescription: changeDescription, edits: draft.Edits, expectation: expectation);
+        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, client => RuntimeParameterStore.ReadPlanLimits(client).Check(document), changeDescription: changeDescription, edits: draft.Edits, expectation: expectation);
     }
 
     public long FreezeRollback(RuntimeSnapshotRecord target, string createdBy)
@@ -248,6 +253,9 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
 
             var checkpoint = RuntimeSnapshotDocument.ReadForExecution(snapshot);
             var document = checkpoint.Plan;
+            // 系统上限可能在冻结之后降低；只复核新编译/导入的配置，历史内容恢复不受新准入策略追溯影响。
+            if (snapshot.Origin is RuntimeSnapshotOrigins.Apply or RuntimeSnapshotOrigins.Seed)
+            { RuntimeParameterStore.ReadPlanLimits(client).Check(document); }
             var previous = recovery is null && state.EffectiveRevision is { } prior ? RuntimeSnapshotDocument.ReadExecutionPlan(RequiredSnapshot(client, prior)) : null;
             var allowed = ValidateMigrationIntents(previous, document, intents, state.ConfigStoreId);
             if (intents.Length > 0 && (snapshot.Origin != RuntimeSnapshotOrigins.Apply || !markRunning ||

@@ -1388,11 +1388,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 读取当前有效的审计保留期、共享预览并发和调试缓存预算 */
+        /** 读取当前有效的资源预算、计划准入上限与审计保留期 */
         get: operations["getRuntimeParameters"];
         /**
          * 管理员确认后持久化运行参数并立即供后续准入及清理采用
-         * @description 版本条件、确认和审计同事务。降低并发不取消已有租约；审计不得短于180天或部署下限。清理/导出正在执行时立即拒绝，不排队。调试缓存降低预算即时按捕获顺序淘汰诊断副本，单条64KiB不变。无草稿/运行版本变化。
+         * @description 版本条件、确认和审计同事务。降低并发不取消已有租约；审计不得短于180天或部署下限。清理/导出正在执行时立即拒绝，不排队。调试缓存降低预算即时按捕获顺序淘汰诊断副本，单条64KiB不变。计划上限只约束新编译/新种子，冻结与提交复核；不停止现有计划或使完整历史失效。无草稿/运行版本变化。
          */
         put: operations["writeRuntimeParameters"];
         post?: never;
@@ -3952,6 +3952,31 @@ export interface components {
              * @default 100
              */
             inputChannelCapacity: number | string;
+            /**
+             * Format: int32
+             * @default 2000
+             */
+            planSources: number | string;
+            /**
+             * Format: int32
+             * @default 500
+             */
+            planConnections: number | string;
+            /**
+             * Format: int32
+             * @default 256
+             */
+            planModbusConnections: number | string;
+            /**
+             * Format: int32
+             * @default 32
+             */
+            planPathsPerSource: number | string;
+            /**
+             * Format: int32
+             * @default 20000
+             */
+            planTotalPaths: number | string;
         };
         RuntimePointValue: {
             key: string;

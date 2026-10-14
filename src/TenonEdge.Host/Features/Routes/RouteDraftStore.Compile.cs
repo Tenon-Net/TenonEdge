@@ -6,6 +6,7 @@ using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Features.SystemInfo;
 
 namespace TenonEdge.Host.Features.Routes;
 
@@ -22,11 +23,12 @@ internal sealed partial class RouteDraftStore
         if (string.IsNullOrEmpty(expectedVersion) || expectedVersion.Length > 64)
         { throw new ArgumentException("须提供草稿版本。"); }
         ConfigurationDraft.CheckVersion(client, expectedVersion);
+        var limits = RuntimeParameterStore.ReadPlanLimits(client);
         long bytes = 0;
         RouteDraft[] routes;
         if (graph is null)
         {
-            if (client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).Count() > RouteTopologyCompiler.MaximumPaths)
+            if (client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).Count() > limits.TotalPaths)
             { throw new RouteTopologyException(new("paths.totalLimit", "")); }
             CheckSize("route_draft", "graph", "enabled = 1", []);
             routes = client.Queryable<RouteDraftRecord>().Where(row => row.Enabled).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
@@ -46,7 +48,7 @@ internal sealed partial class RouteDraftStore
                 if (reference.Kind == "input")
                 {
                     sourceIds.Add(reference.TargetId);
-                    if (sourceIds.Count > RouteTopologyCompiler.MaximumSources)
+                    if (sourceIds.Count > limits.Sources)
                     { throw new RouteTopologyException(new("sources.totalLimit", route.Key, SourceId: reference.TargetId)); }
                 }
                 else
@@ -75,11 +77,15 @@ internal sealed partial class RouteDraftStore
             { connectionIds.Add(id); }
         }
         var selectedConnections = connectionIds.ToArray();
+        if (graph is not null && selectedConnections.Length > limits.Connections)
+        { throw new RouteTopologyException(new("connections.totalLimit", "draft-graph")); }
         CheckSelected("connection_draft", selectedConnections);
         var connections = selectedConnections.Length == 0 ? [] : client.Queryable<ConnectionDraftRecord>().Where(row => selectedConnections.Contains(row.Id)).ToList().Select(ConnectionDraftStore.Decode).ToArray();
+        if (graph is not null && connections.Count(connection => connection.Kind == ConnectionKind.Modbus) > limits.ModbusConnections)
+        { throw new RouteTopologyException(new("connections.modbusLimit", "draft-graph")); }
         var credentials = selectedConnections.Length == 0 ? [] : client.Queryable<MqttCredentialRecord>().Where(row => selectedConnections.Contains(row.ConnectionId)).Select(row => row.ConnectionId).ToList();
         return new RouteCompilationSnapshot(expectedVersion, routes, devices.ToDictionary(device => device.Id), inputs.ToDictionary(input => input.Id),
-            connections.ToDictionary(connection => connection.Id), credentials.ToHashSet());
+            connections.ToDictionary(connection => connection.Id), credentials.ToHashSet(), limits);
 
         void CheckSelected(string table, long[] ids)
         {

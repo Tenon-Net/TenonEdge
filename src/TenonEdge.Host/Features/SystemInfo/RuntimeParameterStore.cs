@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using SqlSugar;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Diagnostics;
@@ -30,7 +31,8 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
             try
             {
                 var values = row is null ? new RuntimeParameterValues(180, 4, 2)
-                    : new(row.AuditRetentionDays, row.PreviewGlobalLimit, row.PreviewSessionLimit, row.DebugObjectBytes, row.DebugGlobalBytes, row.DebugObjectRecords, row.InFlightBytes, row.InputChannelCapacity);
+                    : new(row.AuditRetentionDays, row.PreviewGlobalLimit, row.PreviewSessionLimit, row.DebugObjectBytes, row.DebugGlobalBytes, row.DebugObjectRecords, row.InFlightBytes, row.InputChannelCapacity,
+                        row.PlanSources, row.PlanConnections, row.PlanModbusConnections, row.PlanPathsPerSource, row.PlanTotalPaths);
                 Validate(values, DataRetentionSettings.MinimumAuditRetentionDays);
                 if (row is not null && !Guid.TryParseExact(row.Version, "N", out _))
                 { throw new ArgumentException("持久版本无效。"); }
@@ -79,6 +81,11 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
                 row.DebugObjectRecords = request.Values.DebugObjectRecords;
                 row.InFlightBytes = request.Values.InFlightBytes;
                 row.InputChannelCapacity = request.Values.InputChannelCapacity;
+                row.PlanSources = request.Values.PlanSources;
+                row.PlanConnections = request.Values.PlanConnections;
+                row.PlanModbusConnections = request.Values.PlanModbusConnections;
+                row.PlanPathsPerSource = request.Values.PlanPathsPerSource;
+                row.PlanTotalPaths = request.Values.PlanTotalPaths;
                 row.UpdatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
                 if (existed)
                 { client.Updateable(row).ExecuteCommand(); }
@@ -99,9 +106,21 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
         }
     }
 
+    // 使用调用者已有的草稿/配置事务读取，同一次编译或提交不会混用不同版本的策略。
+    // 不取得参数发布锁，避免与参数写入的锁/数据库事务顺序反转。
+    internal static RouteCompilationLimits ReadPlanLimits(SqlSugarClient client)
+    {
+        var row = client.Queryable<RuntimeParameterRecord>().InSingle(1);
+        var limits = row is null ? RouteCompilationLimits.Default
+            : new(row.PlanSources, row.PlanConnections, row.PlanModbusConnections, row.PlanPathsPerSource, row.PlanTotalPaths);
+        limits.Validate();
+        return limits;
+    }
+
     private static void Validate(RuntimeParameterValues values, int minimumAuditDays)
     {
         ArgumentNullException.ThrowIfNull(values);
+        values.PlanLimits.Validate();
         InputChannelLimit.Validate(values.InputChannelCapacity);
         if (values.InFlightBytes is < 16 * 1024 * 1024 or > 1024 * 1024 * 1024)
         { throw new ArgumentException("在途预算须为16777216—1073741824字节，含固定8MiB原始缓冲分区；调高须在本机实测。"); }
@@ -119,8 +138,14 @@ internal sealed record RuntimeParameterValues(int AuditRetentionDays, int Previe
     [property: JsonRequired] int DebugGlobalBytes = RuntimeMessageCache.MaximumGlobalBytes,
     [property: JsonRequired] int DebugObjectRecords = RuntimeMessageCache.MaximumObjectRecords,
     [property: JsonRequired] long InFlightBytes = 64L * 1024 * 1024,
-    [property: JsonRequired] int InputChannelCapacity = 100)
+    [property: JsonRequired] int InputChannelCapacity = 100,
+    [property: JsonRequired] int PlanSources = 2000,
+    [property: JsonRequired] int PlanConnections = 500,
+    [property: JsonRequired] int PlanModbusConnections = 256,
+    [property: JsonRequired] int PlanPathsPerSource = 32,
+    [property: JsonRequired] int PlanTotalPaths = 20000)
 {
+    [JsonIgnore] public RouteCompilationLimits PlanLimits => new(PlanSources, PlanConnections, PlanModbusConnections, PlanPathsPerSource, PlanTotalPaths);
     [JsonIgnore] public PreviewOperationLimits Preview => new(PreviewGlobalLimit, PreviewSessionLimit);
 }
 internal sealed record RuntimeParameterState(string? Version, RuntimeParameterValues Values, int DeploymentAuditMinimumDays);
@@ -142,5 +167,10 @@ internal sealed class RuntimeParameterRecord
     [SugarColumn(ColumnName = "debug_object_records")] public int DebugObjectRecords { get; set; } = RuntimeMessageCache.MaximumObjectRecords;
     [SugarColumn(ColumnName = "in_flight_bytes")] public long InFlightBytes { get; set; } = 64L * 1024 * 1024;
     [SugarColumn(ColumnName = "input_channel_capacity")] public int InputChannelCapacity { get; set; } = 100;
+    [SugarColumn(ColumnName = "plan_sources")] public int PlanSources { get; set; } = 2000;
+    [SugarColumn(ColumnName = "plan_connections")] public int PlanConnections { get; set; } = 500;
+    [SugarColumn(ColumnName = "plan_modbus_connections")] public int PlanModbusConnections { get; set; } = 256;
+    [SugarColumn(ColumnName = "plan_paths_per_source")] public int PlanPathsPerSource { get; set; } = 32;
+    [SugarColumn(ColumnName = "plan_total_paths")] public int PlanTotalPaths { get; set; } = 20000;
     [SugarColumn(ColumnName = "updated_at")] public long UpdatedAt { get; set; }
 }

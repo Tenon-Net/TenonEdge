@@ -27,6 +27,11 @@ const fields: (keyof ParameterValues)[] = [
     'debugObjectRecords',
     'inFlightBytes',
     'inputChannelCapacity',
+    'planSources',
+    'planConnections',
+    'planModbusConnections',
+    'planPathsPerSource',
+    'planTotalPaths',
 ]
 export function RuntimeParameterPanel() {
     const { t } = useTranslation()
@@ -117,6 +122,9 @@ export function RuntimeParameterPanel() {
             <p className="text-sm">{t('systemSettings.parameters.notice')}</p>
             <p className="text-sm text-muted-foreground">
                 {t('systemSettings.parameters.boundary')}
+            </p>
+            <p className="text-sm text-muted-foreground">
+                {t('systemSettings.parameters.planScope')}
             </p>
             <div className="flex gap-3">
                 <Button

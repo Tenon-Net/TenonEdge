@@ -47,7 +47,7 @@ internal static class RouteSamplePreview
             {
                 if (sources.ContainsKey(id))
                 { continue; }
-                if (sources.Count == RouteTopologyCompiler.MaximumSources)
+                if (sources.Count == snapshot.Admission.Sources)
                 { throw Error("sources.totalLimit", node.Id, id); }
                 if (!snapshot.Inputs.TryGetValue(id, out var input) || !snapshot.Devices.TryGetValue(input.DeviceId, out var device))
                 { throw Error("source.missing", node.Id, id); }
@@ -66,7 +66,7 @@ internal static class RouteSamplePreview
         // Validate/count the entire graph before expansion; then execute only this sample's source paths.
         var topology = RouteTopologyCompiler.Compile([new(route.Key, true, graph.SchemaVersion, topologyNodes.ToImmutableArray(),
             graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())],
-            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token);
+            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission);
         var paths = topology.Paths.Where(path => path.SourceId == sourceId).ToArray();
         var nodes = graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
         var propagation = new RouteFieldPropagation(nodes);

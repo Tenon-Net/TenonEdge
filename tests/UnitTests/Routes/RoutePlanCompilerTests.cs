@@ -8,7 +8,7 @@ using TenonEdge.Host.Features.Routes;
 
 namespace TenonEdge.UnitTests.Routes;
 
-public sealed class RoutePlanCompilerTests
+public sealed partial class RoutePlanCompilerTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static JsonElement Json(string json) => JsonSerializer.Deserialize<JsonElement>(json);

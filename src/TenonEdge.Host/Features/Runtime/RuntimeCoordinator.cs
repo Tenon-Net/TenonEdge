@@ -336,8 +336,10 @@ internal sealed partial class RuntimeCoordinator(
             }
 
             document = RuntimePlanDocument.Parse(await File.ReadAllBytesAsync(path));
+            if (versions.ReadPointers().SeedHash != document.ContentHash)
+            { versions.CheckNewPlanLimits(document); }
         }
-        catch (Exception exception) when (exception is RuntimePlanDocumentException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is RuntimePlanDocumentException or TenonEdge.Host.Features.Routes.RouteTopologyException or IOException or UnauthorizedAccessException)
         {
             LogSeedRejected(logger, path, exception.Message);
             runtimeEvents.Record(RuntimeEventLevel.Error, RuntimeEventTypes.SeedRejected, path, Truncate($"种子快照无效，没有导入：{exception.Message}"));

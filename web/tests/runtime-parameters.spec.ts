@@ -328,21 +328,13 @@ test('parameter editor retains validation input, freezes version and never repla
         const session = await (
             await page.request.get(root + '/auth/session')
         ).json()
+        const before = await (await page.request.get(endpoint)).json()
         expect(
             (
                 await page.request.put(endpoint, {
                     headers: { 'X-CSRF-Token': session.csrfToken },
                     data: {
-                        values: {
-                            auditRetentionDays: 730,
-                            previewGlobalLimit: 4,
-                            previewSessionLimit: 2,
-                            debugObjectBytes: 1048576,
-                            debugGlobalBytes: 33554432,
-                            debugObjectRecords: 100,
-                            inFlightBytes: 67108864,
-                            inputChannelCapacity: 100,
-                        },
+                        values: { ...before.values, auditRetentionDays: 730 },
                         expectedVersion: null,
                         confirmed: true,
                     },
@@ -403,6 +395,206 @@ test('parameter editor retains validation input, freezes version and never repla
     } finally {
         await context.close()
         await host.stop()
+        await rm(data, { recursive: true, force: true })
+    }
+})
+
+test('plan scale limits affect new admission without stopping live inputs or invalidating the effective snapshot on restart', async ({
+    browser,
+}) => {
+    test.setTimeout(90_000)
+    let received = 0
+    const server = createServer((request, response) => {
+        request.resume()
+        request.on('end', () => {
+            received++
+            response.writeHead(204).end()
+        })
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('listener')
+    const data = await mkdtemp(join(tmpdir(), 'tenonedge-plan-limits-browser-'))
+    const args = [`--TenonEdge:Outbound:LocalPorts:0=${address.port}`]
+    let host = await startOwnedHost(data, 0, args)
+    let context = await browser.newContext({ baseURL: host.url })
+    try {
+        let page = await context.newPage()
+        await setup(page)
+        const session = await (
+            await page.request.get(root + '/auth/session')
+        ).json()
+        const headers = { 'X-CSRF-Token': session.csrfToken }
+        // API fixture only: this test exercises the system form and real runtime,
+        // not the separate T3-11 all-UI configuration acceptance.
+        async function post(path: string, data: unknown) {
+            const response = await page.request.post(root + path, {
+                headers,
+                data,
+            })
+            expect(response.status()).toBe(200)
+            return response.json()
+        }
+        let version = '0'
+        const sourceIds: number[] = []
+        for (let i = 0; i < 2; i++) {
+            const device = await post('/devices', {
+                expectedVersion: version,
+                key: `meter${i}`,
+                name: `Meter ${i}`,
+                kind: 'simulator',
+            })
+            const input = await post(`/devices/${device.device.id}/inputs`, {
+                expectedVersion: device.version,
+                key: 'sample',
+                name: 'Sample',
+                simulator: { periodMs: 1000, sampleJson: '{"value":42}' },
+            })
+            version = input.version
+            sourceIds.push(input.input.id)
+        }
+        const connection = await post('/connections', {
+            expectedVersion: version,
+            key: 'http',
+            name: 'HTTP',
+            kind: 'http',
+            http: { baseAddress: `http://127.0.0.1:${address.port}/` },
+        })
+        const route = await post('/routes', {
+            expectedVersion: connection.version,
+            key: 'route',
+            name: 'Route',
+            enabled: true,
+            graph: {
+                schemaVersion: 1,
+                nodes: [
+                    {
+                        id: 'in',
+                        type: 'input.simulator',
+                        version: 1,
+                        name: 'Input',
+                        config: { sourceIds },
+                    },
+                    {
+                        id: 'out',
+                        type: 'output.http',
+                        version: 1,
+                        name: 'Output',
+                        config: { connectionId: connection.connection.id },
+                    },
+                ],
+                edges: [{ source: 'in', target: 'out' }],
+                layout: { nodes: {} },
+            },
+        })
+        version = route.version
+        const review = await post('/configuration/review', {
+            expectedVersion: version,
+        })
+        expect(review.preflightPassed).toBe(true)
+        const apply = await page.request.post(root + '/configuration/apply', {
+            headers,
+            data: {
+                expectedVersion: version,
+                expectedEffectiveRevision: review.effectiveRevision,
+                expectedPlanHash: review.planHash,
+                confirmed: true,
+            },
+        })
+        expect(apply.status()).toBe(202)
+        await expect
+            .poll(
+                async () =>
+                    (
+                        await (
+                            await page.request.get(root + '/runtime/status')
+                        ).json()
+                    ).runtime.activeRevision,
+            )
+            .toBe(1)
+        await expect.poll(() => received).toBeGreaterThanOrEqual(2)
+        const original = await (
+            await page.request.get(root + '/configuration/versions/1')
+        ).json()
+        let view = panel(page)
+        await edit(view, '365', '4', '2')
+        for (const label of [
+            '新计划数据来源上限',
+            '新计划连接上限',
+            '新计划 Modbus 连接上限',
+            '新计划每来源路径上限',
+            '新计划总路径上限',
+        ]) {
+            await view.getByLabel(label, { exact: true }).fill('1')
+        }
+        await expect(view.getByText(/降低不停止现有计划/)).toBeVisible()
+        await save(view)
+        await saved(view)
+        await expect(view.locator('[data-parameter="planSources"]')).toHaveText(
+            '1',
+        )
+        const blocked = await post('/routes/compile', {
+            expectedVersion: version,
+        })
+        expect(blocked.compiled).toBe(false)
+        expect(blocked.issues[0].code).toBe('sources.totalLimit')
+        expect(
+            (await post('/configuration/review', { expectedVersion: version }))
+                .preflightPassed,
+        ).toBe(false)
+        expect(
+            await (
+                await page.request.get(root + '/configuration/versions/1')
+            ).json(),
+        ).toEqual(original)
+        const current = received
+        await context.close()
+        await expect.poll(() => received).toBeGreaterThan(current)
+        expect(await host.stop()).toBe(0)
+        const stopped = received
+        host = await startOwnedHost(data, 0, args)
+        context = await browser.newContext({ baseURL: host.url })
+        page = await context.newPage()
+        await page.goto('/system')
+        await page.getByLabel('账号', { exact: true }).fill('parameters-admin')
+        await page.getByLabel('密码', { exact: true }).fill(password)
+        await page.getByRole('button', { name: '登录', exact: true }).click()
+        view = panel(page)
+        await expect(view.locator('[data-parameter="planSources"]')).toHaveText(
+            '1',
+        )
+        await expect.poll(() => received).toBeGreaterThan(stopped)
+        expect(
+            (await (await page.request.get(root + '/runtime/status')).json())
+                .runtime.activeRevision,
+        ).toBe(1)
+        expect(
+            await (
+                await page.request.get(root + '/configuration/versions/')
+            ).json(),
+        ).toHaveLength(1)
+        await edit(view, '365', '4', '2')
+        await view.getByLabel('新计划数据来源上限', { exact: true }).fill('2')
+        await view.getByLabel('新计划总路径上限', { exact: true }).fill('2')
+        await save(view)
+        await saved(view)
+        const own = await (
+            await page.request.get(root + '/auth/session')
+        ).json()
+        headers['X-CSRF-Token'] = own.csrfToken
+        expect(
+            (await post('/routes/compile', { expectedVersion: version }))
+                .compiled,
+        ).toBe(true)
+        expect(
+            (await (await page.request.get(root + '/runtime/status')).json())
+                .runtime.activeRevision,
+        ).toBe(1)
+    } finally {
+        await context.close()
+        await host.stop()
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
         await rm(data, { recursive: true, force: true })
     }
 })

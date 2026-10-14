@@ -20,6 +20,11 @@ export function editParameters(state: RuntimeParameters): ParameterForm {
             debugObjectRecords: String(state.values.debugObjectRecords),
             inFlightBytes: String(state.values.inFlightBytes),
             inputChannelCapacity: String(state.values.inputChannelCapacity),
+            planSources: String(state.values.planSources),
+            planConnections: String(state.values.planConnections),
+            planModbusConnections: String(state.values.planModbusConnections),
+            planPathsPerSource: String(state.values.planPathsPerSource),
+            planTotalPaths: String(state.values.planTotalPaths),
         },
     }
 }
@@ -45,6 +50,15 @@ export function parameterRequest(form: ParameterForm, confirmed: boolean) {
         expectedVersion: form.expectedVersion,
         confirmed: true,
         values: {
+            planSources: integer(form.values.planSources, 1, 2000),
+            planConnections: integer(form.values.planConnections, 1, 500),
+            planModbusConnections: integer(
+                form.values.planModbusConnections,
+                1,
+                256,
+            ),
+            planPathsPerSource: integer(form.values.planPathsPerSource, 1, 32),
+            planTotalPaths: integer(form.values.planTotalPaths, 1, 20000),
             inputChannelCapacity: integer(
                 form.values.inputChannelCapacity,
                 1,

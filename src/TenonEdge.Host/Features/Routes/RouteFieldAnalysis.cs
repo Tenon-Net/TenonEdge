@@ -73,7 +73,7 @@ internal static class RouteFieldAnalysis
                 { throw Error("source.configuration", node.Id, id); }
             }
         }
-        var topology = RouteTopologyCompiler.Compile([new(Key, true, 1, topologyNodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())], sources, token);
+        var topology = RouteTopologyCompiler.Compile([new(Key, true, 1, topologyNodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())], sources, token, snapshot.Admission);
         var schemas = new Dictionary<string, ImmutableArray<MappedFieldSchema>>(StringComparer.Ordinal);
         var propagation = new RouteFieldPropagation(graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal));
         foreach (var path in topology.Paths)

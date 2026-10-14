@@ -16,11 +16,13 @@ internal static class RouteTopologyCompiler
     { "input.modbus", "input.mqtt", "input.http", "input.simulator", "transform.map", "output.mqtt", "output.http", "output.tenon" };
 
     internal static RouteTopologyResult Compile(IReadOnlyList<RouteTopology> routes,
-        IReadOnlyDictionary<long, RouteTopologySource> sources, CancellationToken cancellationToken)
+        IReadOnlyDictionary<long, RouteTopologySource> sources, CancellationToken cancellationToken, RouteCompilationLimits? limits = null)
     {
         ArgumentNullException.ThrowIfNull(routes);
         ArgumentNullException.ThrowIfNull(sources);
         cancellationToken.ThrowIfCancellationRequested();
+        limits ??= RouteCompilationLimits.Default;
+        limits.Validate();
         var active = new List<RouteTopology>();
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var route in routes)
@@ -34,7 +36,7 @@ internal static class RouteTopologyCompiler
             { Reject("route.key", route.Key); }
             active.Add(route);
             // 每条有效启用路线至少产生一条路径，此处是全局路径上限的必要条件，不另加路线限制。
-            if (active.Count > MaximumPaths)
+            if (active.Count > limits.TotalPaths)
             { Reject("paths.totalLimit", route.Key); }
         }
         active.Sort((left, right) => string.CompareOrdinal(left.Key, right.Key));
@@ -45,7 +47,7 @@ internal static class RouteTopologyCompiler
         var total = 0;
         foreach (var route in active)
         {
-            var graph = Validate(route, sources, schemas, identities, cancellationToken);
+            var graph = Validate(route, sources, schemas, identities, limits, cancellationToken);
             graphs.Add(graph);
             var paths = new Dictionary<string, int>(StringComparer.Ordinal);
             for (var index = graph.Order.Count - 1; index >= 0; index--)
@@ -54,7 +56,7 @@ internal static class RouteTopologyCompiler
                 var id = graph.Order[index];
                 var count = graph.Nodes[id].Kind.StartsWith("output.", StringComparison.Ordinal) ? 1 : 0;
                 foreach (var child in graph.Next[id])
-                { count = Math.Min(MaximumPathsPerSource + 1, count + paths[child]); }
+                { count = Math.Min(limits.PathsPerSource + 1, count + paths[child]); }
                 paths[id] = count;
             }
             foreach (var input in graph.Inputs)
@@ -62,12 +64,12 @@ internal static class RouteTopologyCompiler
                 foreach (var source in input.SourceIds)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var count = Math.Min(MaximumPathsPerSource + 1, counts.GetValueOrDefault(source) + paths[input.Id]);
-                    if (count > MaximumPathsPerSource)
+                    var count = Math.Min(limits.PathsPerSource + 1, counts.GetValueOrDefault(source) + paths[input.Id]);
+                    if (count > limits.PathsPerSource)
                     { Reject("paths.sourceLimit", graph.Route.Key, input.Id, source); }
                     counts[source] = count;
                     total += paths[input.Id];
-                    if (total > MaximumPaths)
+                    if (total > limits.TotalPaths)
                     { Reject("paths.totalLimit", graph.Route.Key, input.Id, source); }
                 }
             }
@@ -99,7 +101,7 @@ internal static class RouteTopologyCompiler
     }
 
     private static Graph Validate(RouteTopology route, IReadOnlyDictionary<long, RouteTopologySource> sources,
-        Dictionary<long, Dictionary<string, FieldType>> schemas, Dictionary<string, long> identities, CancellationToken token)
+        Dictionary<long, Dictionary<string, FieldType>> schemas, Dictionary<string, long> identities, RouteCompilationLimits limits, CancellationToken token)
     {
         if (route.SchemaVersion != 1)
         { Reject("route.version", route.Key); }
@@ -146,7 +148,7 @@ internal static class RouteTopologyCompiler
                 { Reject("source.kind", route.Key, node.Id, id); }
                 if (!schemas.TryGetValue(id, out var fields))
                 {
-                    if (schemas.Count == MaximumSources)
+                    if (schemas.Count == limits.Sources)
                     { Reject("sources.totalLimit", route.Key, node.Id, id); }
                     if (!identities.TryAdd(source.UnitId.Key, id))
                     { Reject("source.identityDuplicate", route.Key, node.Id, id); }

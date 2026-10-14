@@ -383,5 +383,12 @@ internal static class ConfigMigrations
         new(28, "input_channel_parameter", [
             "ALTER TABLE runtime_parameters ADD COLUMN input_channel_capacity INTEGER NOT NULL DEFAULT 100 CHECK(input_channel_capacity BETWEEN 1 AND 10000)",
         ]),
+        new(29, "plan_scale_parameters", [
+            "ALTER TABLE runtime_parameters ADD COLUMN plan_sources INTEGER NOT NULL DEFAULT 2000 CHECK(plan_sources BETWEEN 1 AND 2000)",
+            "ALTER TABLE runtime_parameters ADD COLUMN plan_connections INTEGER NOT NULL DEFAULT 500 CHECK(plan_connections BETWEEN 1 AND 500)",
+            "ALTER TABLE runtime_parameters ADD COLUMN plan_modbus_connections INTEGER NOT NULL DEFAULT 256 CHECK(plan_modbus_connections BETWEEN 1 AND 256)",
+            "ALTER TABLE runtime_parameters ADD COLUMN plan_paths_per_source INTEGER NOT NULL DEFAULT 32 CHECK(plan_paths_per_source BETWEEN 1 AND 32)",
+            "ALTER TABLE runtime_parameters ADD COLUMN plan_total_paths INTEGER NOT NULL DEFAULT 20000 CHECK(plan_total_paths BETWEEN 1 AND 20000)",
+        ]),
     ];
 }

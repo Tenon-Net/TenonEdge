@@ -1,6 +1,7 @@
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Routes;
+using TenonEdge.Host.Features.SystemInfo;
 
 namespace TenonEdge.Host.Features.Runtime;
 
@@ -29,6 +30,7 @@ internal sealed partial class RuntimeVersionStore
             var draft = ConfigurationCheckpoint.Read(client, expectedDraftVersion);
             var effective = State(client).EffectiveRevision;
             return (Draft: draft, Effective: effective is { } revision ? RequiredSnapshot(client, revision) : null,
+                Limits: RuntimeParameterStore.ReadPlanLimits(client),
                 MqttCredentials: client.Queryable<MqttCredentialRecord>().Select(row => row.ConnectionId).ToList().ToHashSet());
         });
         token.ThrowIfCancellationRequested();
@@ -46,7 +48,7 @@ internal sealed partial class RuntimeVersionStore
         { warnings.Add("configuration.legacyComparisonUnavailable"); }
         var snapshot = new RouteCompilationSnapshot(captured.Draft.Version, captured.Draft.Routes,
             captured.Draft.Devices.ToDictionary(value => value.Id), captured.Draft.Inputs.ToDictionary(value => value.Id),
-            captured.Draft.Connections.ToDictionary(value => value.Id), captured.MqttCredentials);
+            captured.Draft.Connections.ToDictionary(value => value.Id), captured.MqttCredentials, captured.Limits);
         var issues = new List<RouteTopologyIssue>();
         RuntimePlanDocument? plan = null;
         try
