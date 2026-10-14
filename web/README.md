@@ -19,6 +19,37 @@
 - `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
   当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。
 
+### 最低版本浏览器复验
+
+默认回归仍使用锁定 Playwright 随附的 Chromium。可显式指定本机已核对来源的归档浏览器，无需修改前端依赖或替换系统浏览器：
+
+```sh
+TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 \
+TENONEDGE_TEST_BROWSER=chromium \
+TENONEDGE_TEST_EXECUTABLE=/absolute/path/to/chrome \
+npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts \
+  --grep 'real setup|failed login|1000-row paste|10000-row virtualization|canvas drag/connect|canvas keeps'
+```
+
+`TENONEDGE_TEST_BROWSER` 只接受 `chromium`、`firefox`、`webkit`；省略可执行文件时使用 Playwright 默认安装。Firefox归档须支持Playwright的驱动协议；128与当前驱动不兼容，不能通过修改驱动或浏览器隐藏错误。每次从全新临时Host/浏览器上下文开始，记录浏览器实际版本、归档来源/哈希、HTTP网卡地址、非安全上下文断言、耗时与报告；旧浏览器只用于自有隔离测试数据，不用于浏览生产站点。不能把Chromium当作已验证的Google Chrome/Edge安装包，也不能把Linux WebKit当作真实Safari。
+
+上述筛选覆盖真实首次设置/登录/改密/离线资源、登录错误不重放、点表1000行粘贴与10000行虚拟化、画布连线/属性/撤销重做；不是全部业务端到端或全部浏览器验收。实际结果统一见实施状态，不因提供命令就标为通过。
+
+Linux原版Firefox128可另用标准WebDriver用例（不新增npm依赖），先在回环地址启动已核对来源的geckodriver：
+
+```sh
+/path/to/geckodriver --host 127.0.0.1 --port 18485
+# 另一终端，web/目录；脚本自己启动并清理全新临时Host
+TENONEDGE_TEST_URL=http://<本机网卡IP>:18483 \
+TENONEDGE_WEBDRIVER_URL=http://127.0.0.1:18485 \
+TENONEDGE_TEST_EXECUTABLE=/absolute/path/to/firefox \
+TENONEDGE_EXPECT_BROWSER_MAJOR=128 \
+TENONEDGE_SMOKE_RESULTS=/absolute/path/to/results \
+node scripts/minimum-firefox-smoke.mjs
+```
+
+该用例经真实页面完成首次设置/退出/登录、深链刷新、1000/10000行点表、真实指针连线/拒绝环路及50步撤销重做。Firefox不接受构造的未信任ClipboardEvent所带文本；测试通过Gecko自动化上下文填充隔离的Linux无头浏览器剪贴板，再由WebDriver发送真实Ctrl+V，并断言paste事件受信任且收到全部文本。不直接调用应用store，不代表Windows/Excel或人工粘贴验收。报告记录原版浏览器/驱动版本、阶段耗时、采样的浏览器进程树RSS（不是JS堆或峰值），失败截图和自有Host日志；任何失败退出非零。脚本关闭自己的浏览器会话及Host，不关闭外部驱动服务；用后由启动者停止驱动。
+
 ## 类型生成
 
 用独立临时数据目录启动 Development Host（HTTP 127.0.0.1:18081，HTTPS 端口 0），执行 `npm run api:generate`。

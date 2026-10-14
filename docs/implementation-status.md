@@ -40,9 +40,9 @@
 | T2 | T2-06 输入复用与多输出 | 后端软件子集待验收 | 三协议共享链路及 Modbus Host 扇出/扇入通过；图编译与实时应用属 T3 | §2.34—§2.39、§2.96 |
 | T2 | T2-07 设备直连与 LoRa 样例 | 软件子集待验收 | 已解码样例、真实 Broker ACL/持久化/积存边界通过；无线实物未验证 | §2.67、§2.76—§2.87 |
 | T2 | T2-08 协议故障与资源回归 | 软件回归待验收，长期观察未完成 | 1754 项基线通过；连接/缓冲/线程有界和一分钟 Modbus 观测，不代表长期整机压力 | §2.62—§2.66、§2.80、§2.97—§2.98 |
-| T3 | T3-01 前端精简基础 | 部分实现，整项未完成 | 固定来源/认证/同源托管已交付；登录后的 HTTP 持续提示已补。剩余：最低浏览器、临时密码/重置及角色变更失效完整浏览器验收，与 T3-09/11 合并收尾 | §2.99—§2.100、§2.193 |
-| T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器未验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101 |
-| T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器未验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102 |
+| T3 | T3-01 前端精简基础 | 部分实现，整项未完成 | 固定来源/认证/同源托管已交付；登录后的 HTTP 持续提示已补。最低浏览器已有Chromium111/原版Firefox128子场景证据（§2.233），真实Chrome/Edge/Safari仍未验证。剩余：临时密码/重置及角色变更失效完整浏览器验收，与 T3-09/11 合并收尾 | §2.99—§2.100、§2.193 |
+| T3 | T3-02 点表交互原型 | 软件原型待验收，最低浏览器部分验证 | 1,000 行粘贴事件、逐行修正/覆盖/批改、10,000 行虚拟化与查询500编辑保护通过；不保存或采集 | §2.101、§2.233 |
+| T3 | T3-03 画布交互原型 | 软件原型待验收，最低浏览器部分验证 | 拖放/连线/环路拒绝、框选/组移动、复制删除及 50 步撤销重做通过；不保存或运行 | §2.102、§2.233 |
 | T3 | T3-04 连接设备与点位配置 | 部分实现，整项未完成 | 三协议/模拟来源草稿、凭证、复制、CSV、推断及连接测试已有代码和证据；并非仅 §2.103 的初始 CRUD。剩余：连接信任/客户端证书、列表运行态与需求字段核对、真实完整表单及跨角色验收 | §2.103—§2.122，T3-11 收口 |
 | T3 | T3-05 图编译与样本预览 | 部分实现，整项未完成 | 自有图格式、路径限制、持久画布、映射/输出表单、字段分析及手工/现场/运行缓存样本已实现；剩余：按功能 §4/5 逐项核对画布操作与无 JSON 路线验收，不用已有局部用例代替完整闭环 | §2.123—§2.148，T3-11 收口 |
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
@@ -5231,6 +5231,33 @@ dotnet build TenonEdge.sln -c Release --no-restore
 ```
 
 本轮完成的是当前后端源码的单次软件回归收口；不是远端CI、实物断电、最低浏览器或T3全部功能验收。后续新增功能仍须测试，不能沿用3468项作为未来源码的通过证明。继续T3剩余项，不进入T4/T5/G1，不推送/发版。
+
+### 2.233 T3-01—03/11 最低浏览器软件子场景（2026-10-14）
+
+新增可选 Playwright 浏览器/可执行文件参数，默认回归仍用锁定依赖附带的 Chromium；另增 `web/scripts/minimum-firefox-smoke.mjs`，通过标准 WebDriver 运行原版 Firefox，不安装新 npm 依赖、不修改驱动/浏览器或应用状态。
+
+本地 Linux x64、Node22.23.2、npm11.21.0、同源真实 Production Host，经网卡 HTTP `192.168.0.88`（断言非安全上下文），使用独立临时数据与浏览器配置：
+
+- **Chromium111.0.5563.0：6/6通过，24.65秒**。官方 snapshot `Linux_x64/1097615`，归档 SHA256 `e655cc69971058b636672a7196a979b1435904cd9445d9c34986cfc8efe928d2`。真实首次设置/登录/改密/离线资源、错误不重放、1000行粘贴/500编辑保护、10000行虚拟化、画布拖放连线/拒环与50步历史。观察粘贴1000行9.0ms、追加9000行30.6ms、10000行校验13.7ms、DOM13行；JS used heap约9.27→68.72MB，仅当次观测。
+- **原版 Firefox128.0：6/6阶段通过，55.601秒**。Mozilla官方128.0归档，buildID `20240704121409`；已与官方SHA512SUMS核对，geckodriver0.35.0来自Mozilla发布。真实首次设置/退出/登录、深链刷新、1000行真实粘贴/错误修正、10000行虚拟化末行编辑、真实指针连线/拒环、50步撤销重做。10000行粘贴22ms、校验26ms；阶段末进程树RSS样本最大约1.49GB，**不是JS堆、峰值或容量保证**。
+
+失败历史保留：当前Playwright与旧Firefox128协议不兼容（`Browser.setDefaultViewport`），没有绕过协议错误。原版Firefox第一次运行的未信任合成ClipboardEvent没有文本；改为Gecko自动化上下文填充隔离无头浏览器剪贴板，WebDriver真实Ctrl+V并断言paste受信任且文本完整。第二次点表通过、画布端口受重叠节点遮挡；第三次先用真实指针移开各节点再连线，所有原断言通过。不直接写应用store/图状态，也不使用业务API种子。自有Host/浏览器会话及外部自有driver已停止。
+
+证据 `/tmp/tenonedge-minimum-browser/`：`chromium.json`、`chromium.log`、`firefox-third/result.json`、`firefox-third.log`、阶段截图/Host日志、前两次失败报告、`launch-check.log`、`firefox-sha512-verification.txt`、归档与下载探针。官方Chrome/Edge旧deb下载返回404；**Chromium111是引擎证据，不是Google Chrome111或Edge111安装包验收，Safari16.4仍未验证**。不以Linux WebKit替代Safari。未覆盖Windows/Excel人工粘贴或完整业务闭环。
+
+复验命令（web目录，执行文件和结果路径须替换为本机实际位置）：
+
+```sh
+TENONEDGE_TEST_URL=http://192.168.0.88:18082 TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-minimum-browser/chrome-linux/chrome npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts --grep 'real setup|failed login|1000-row paste|10000-row virtualization|canvas drag/connect|canvas keeps' --output=/tmp/tenonedge-minimum-browser/chromium-artifacts --reporter=json
+# 独立终端启动回环geckodriver；完成后由启动者停止
+/tmp/tenonedge-minimum-browser/geckodriver --host 127.0.0.1 --port 18485
+TENONEDGE_TEST_URL=http://192.168.0.88:18483 TENONEDGE_WEBDRIVER_URL=http://127.0.0.1:18485 TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-minimum-browser/firefox-native/firefox/firefox TENONEDGE_EXPECT_BROWSER_MAJOR=128 TENONEDGE_SMOKE_RESULTS=/tmp/tenonedge-minimum-browser/firefox-third node scripts/minimum-firefox-smoke.mjs
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run typecheck
+npx --yes npm@11.21.0 run format:check
+```
+
+不将这些子场景认作T3全部通过；继续其余资源参数、连接信任、调试、导入与完整业务闭环，仍不进入T4/T5/G1。
 
 ## 3. 验收编号登记
 
