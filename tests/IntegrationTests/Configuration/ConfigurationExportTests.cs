@@ -88,6 +88,60 @@ public sealed class ConfigurationExportTests
     }
 
     [Fact]
+    public async Task AccountComparisonDigestIgnoresApiKeyParameterNameAndSecretRotationButNotAccountChanges()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("admin", Token);
+        var saved = factory.Services.GetRequiredService<ConnectionDraftStore>().Write(null,
+            new("0", "http", "HTTP", ConnectionKind.Http, Http: new("https://example.com/base/")), "fixture", null);
+        var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
+        var first = credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
+            Name: "X-First-Key", Secret: "fixture-first-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        async Task<string> Digest()
+        {
+            using var response = await client.GetAsync(new Uri(Endpoint, UriKind.Relative), Token);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var value = await response.ReadJsonAsync(Token);
+            return value.GetProperty("connections")[0].GetProperty("credential").GetProperty("accountIdentity").GetString()!;
+        }
+        var original = await Digest();
+        var rotated = credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
+            Name: "X-Second-Key", Secret: "fixture-rotated-secret", ExpectedVersion: first.Version,
+            ExpectedDraftVersion: saved.Version, AccountChanged: false), "fixture", null, true);
+        Assert.NotEqual(first.Version, rotated.Version);
+        Assert.Equal(original, await Digest());
+        credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
+            Name: "X-Second-Key", Secret: "fixture-other-account", ExpectedVersion: rotated.Version,
+            ExpectedDraftVersion: saved.Version, AccountChanged: true), "fixture", null, true);
+        Assert.NotEqual(original, await Digest());
+    }
+
+    [Fact]
+    public async Task MetadataProjectionReportsActualRecipientAndSecretPresenceWithoutRebindingToEditedDraft()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        var store = factory.Services.GetRequiredService<ConnectionDraftStore>();
+        var saved = store.Write(null, new("0", "http", "HTTP", ConnectionKind.Http, Http: new("https://example.com/base/")), "fixture", null);
+        var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
+        var first = credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.Bearer,
+            Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        var changed = store.Write(saved.Connection.Id, new(saved.Version, "http", "HTTP", ConnectionKind.Http,
+            Http: new("https://new.example.com/")), "fixture", null);
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        var actual = Assert.Single(database.InTransaction(ConfigurationCredentialMetadata.Read));
+        Assert.True(actual.HasSecret);
+        Assert.Equal("https://example.com/base/", actual.Recipient);
+        Assert.Equal(first.Version, actual.Version);
+        credentials.Write(saved.Connection.Id, new("https://new.example.com/", ExpectedVersion: first.Version,
+            ExpectedDraftVersion: changed.Version), "fixture", null, true);
+        var invalidated = Assert.Single(database.InTransaction(ConfigurationCredentialMetadata.Read));
+        Assert.False(invalidated.HasSecret);
+        Assert.Equal("https://new.example.com/", invalidated.Recipient);
+        Assert.NotEqual(first.Version, invalidated.Version);
+    }
+
+    [Fact]
     public async Task SharedPreviewBudgetRejectsExcessExportAndUnresolvedGraphNeverReturnsAPartialFile()
     {
         await using var factory = new TenonEdgeApplicationFactory();

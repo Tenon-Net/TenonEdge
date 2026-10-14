@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text.Json;
 using TenonEdge.Host.Storage;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
@@ -16,23 +14,10 @@ internal sealed class ConfigurationExportStore(ConfigDatabase database)
         {
             var version = expectedVersion ?? ConfigurationDraft.ReadVersion(client);
             var draft = ConfigurationCheckpoint.Read(client, version);
-            // Deliberate SQL projection: encrypted secrets, key ring, credential
-            // versions and trusted certificates are never materialized for export.
-            var credentials = client.Ado.SqlQuery<ExportCredentialRow>("""
-                SELECT c.connection_id AS ConnectionId, 'mqtt' AS Protocol, c.username AS Username,
-                       NULL AS Kind, NULL AS Name, c.account_marker AS AccountMarker
-                FROM mqtt_credential c INNER JOIN connection_draft d ON d.id = c.connection_id
-                UNION ALL
-                SELECT c.connection_id AS ConnectionId, 'http' AS Protocol, c.username AS Username,
-                       c.kind AS Kind, c.name AS Name, c.account_marker AS AccountMarker
-                FROM http_credential c INNER JOIN connection_draft d ON d.id = c.connection_id
-                """);
             var identities = new Dictionary<long, string>();
-            foreach (var credential in credentials)
+            foreach (var credential in ConfigurationCredentialMetadata.Read(client))
             {
-                var identity = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
-                { credential.Protocol, credential.Username, credential.Kind, credential.Name, credential.AccountMarker })));
-                if (!identities.TryAdd(credential.ConnectionId, identity))
+                if (!identities.TryAdd(credential.ConnectionId, credential.AccountIdentity))
                 { throw new ConfigurationTransferException("configuration.exportCredentialConflict", "$.connections.credential"); }
             }
             return (Draft: draft, Identities: identities);
@@ -41,13 +26,4 @@ internal sealed class ConfigurationExportStore(ConfigDatabase database)
         return ConfigurationExport.Serialize(ConfigurationExport.Create(captured.Draft, captured.Identities, token), token);
     }
 
-    private sealed class ExportCredentialRow
-    {
-        public long ConnectionId { get; set; }
-        public string Protocol { get; set; } = string.Empty;
-        public string? Username { get; set; }
-        public int? Kind { get; set; }
-        public string? Name { get; set; }
-        public string AccountMarker { get; set; } = string.Empty;
-    }
 }
