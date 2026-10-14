@@ -1,3 +1,4 @@
+import { businessKeyPattern } from '../../lib/business-key'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import { Link, useBlocker } from '@tanstack/react-router'
@@ -288,7 +289,7 @@ export function DevicesPage() {
                                     required
                                     maxLength={64}
                                     disabled={form.id !== undefined}
-                                    pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
+                                    pattern={businessKeyPattern}
                                     onChange={(e) =>
                                         patch({ key: e.target.value })
                                     }

@@ -1,3 +1,4 @@
+import { businessKeyPattern } from '../../lib/business-key'
 import { CredentialPanel } from './credential-panel'
 import { MqttTestPanel } from './mqtt-test-panel'
 import { ModbusTestPanel } from './modbus-test-panel'
@@ -142,11 +143,7 @@ export function ConnectionsPage() {
                     required={required}
                     maxLength={maxLength}
                     disabled={key === 'key' && form!.id !== undefined}
-                    pattern={
-                        key === 'key'
-                            ? '[A-Za-z0-9][A-Za-z0-9_.-]{0,63}'
-                            : undefined
-                    }
+                    pattern={key === 'key' ? businessKeyPattern : undefined}
                 />
             </label>
         )

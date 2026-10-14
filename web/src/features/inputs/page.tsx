@@ -1,3 +1,4 @@
+import { businessKeyPattern } from '../../lib/business-key'
 import { HttpPreviewPanel } from './http-preview-panel'
 import { ModbusPreviewPanel } from './modbus-preview-panel'
 import { PointCsvPanel } from './csv-panel'
@@ -277,7 +278,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                                     className={fieldClass}
                                     required
                                     maxLength={64}
-                                    pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
+                                    pattern={businessKeyPattern}
                                     disabled={form.id !== undefined}
                                     value={form.key}
                                     onChange={(e) =>

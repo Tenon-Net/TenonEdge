@@ -1,3 +1,4 @@
+import { businessKeyPattern } from '../../lib/business-key'
 import { createPreviewDraft } from './preview-model'
 import { useState } from 'react'
 import { createStore } from 'zustand/vanilla'
@@ -215,7 +216,7 @@ export function RoutesPage() {
                                             }
                                             pattern={
                                                 key === 'key'
-                                                    ? '[A-Za-z0-9][A-Za-z0-9_.-]{0,63}'
+                                                    ? businessKeyPattern
                                                     : undefined
                                             }
                                         />
@@ -292,7 +293,7 @@ export function RoutesPage() {
                                         className={inputClass}
                                         required
                                         maxLength={64}
-                                        pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,63}"
+                                        pattern={businessKeyPattern}
                                         value={copyKey}
                                         onChange={(event) =>
                                             setCopyKey(event.target.value)

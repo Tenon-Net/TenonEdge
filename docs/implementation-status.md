@@ -5662,6 +5662,43 @@ node scripts/verify-results.mjs /tmp/tenonedge-import-requirements/vitest.json /
 
 仍需：HTTP上传/预检/确认与角色/CSRF/限流、真实网页差异和补填闭环、连接类型边界定稿、六类扩展表单，以及§1的其他T3缺项。没有真实设备/物理断电测试，不标T3完成。
 
+### 2.246 T3-04/05 业务标识原生表单校验兼容修复（2026-10-15）
+
+基线`2b15125`。§2.244浏览器控制台发现的HTML pattern问题已复现并修复：新版浏览器以Unicode sets（`v`）解释pattern，原字符类中的未转义`-`使整个表达式无效，浏览器因此忽略这条校验。后端一直独立校验，本问题不代表服务端接受非法业务key。
+
+- `web/src/lib/business-key.ts`统一定义已转义连字符的表达式，同时适用于旧`u`和新`v`语义；连接、设备、数据来源、路线新建及路线复制的5处原生输入共同使用。字符规则和后端不变，没有扩大可用字符或增加依赖。
+- 新增26项单元测试验证两种flag、有效标识、首字符约束、长度和非法字符。
+- 新增真实浏览器用例依次打开5种实际表单，输入非法/合法标识并核对原生`patternMismatch`、`checkValidity`和maxlength；检查没有无效pattern控制台报错。测试侧通过真实API准备设备/路线夹具，不保存这些测试输入，不应用运行配置；不是无JSON业务端到端验收。
+
+| 验证 | 结果 |
+|---|---|
+| 旧产品复现 | **1项失败（预期红灯）**：连接key输入`.bad`，原生patternMismatch错误地为false；`red.json`/`red.log`/`red-trace.zip` |
+| 新产品全量Vitest | **553/553通过**，0失败/跳过（原527+26） |
+| 当前Chromium156独立复验 | **1/1通过**，9.0秒，包含5种表单 |
+| 官方Chromium111复验 | **1/1通过**，12.5秒，同5种表单；不是实际Chrome/Edge/Safari验收 |
+| 当前Chromium关联套件 | **37/37通过**，2.1分钟（auth36+新用例1），0失败/跳过/重试；不是完整浏览器套件 |
+| typecheck/lint/format/生产build | 通过；既有大chunk提示保留 |
+
+首次新产品浏览器执行在来源页超时，trace显示Simulator页面实际按钮为“新建数据来源”，测试误用了Modbus的“新建采集组”。只修测试精确定位，未延长超时、未改产品或放宽断言；失败保存在`selector-failure.*`。之后独立、最低版本、关联套件均通过。没有修改或重新执行后端测试，后端基线沿用§2.245，不新增执行计数。浏览器期间冻结源码、测试及产物，没有并行后端网络用例。
+
+证据`/tmp/tenonedge-key-pattern/`：上述红灯和定位失败、`vitest.json`/`vitest.log`、`build.log`、`typecheck-final.log`/`lint-final.log`/`format-final.log`、`green.*`/`chromium111.*`/`related.*`/`verify.log`。Trace含本批已销毁测试Host的会话流量，仅保留本地，不提交或公开。
+
+```sh
+# web目录；先用旧产物运行新用例，捕获red；修复并构建后执行以下命令
+npx --yes npm@11.21.0 run typecheck
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 exec -- vitest run --reporter=json --outputFile=/tmp/tenonedge-key-pattern/vitest.json
+npx --yes npm@11.21.0 run build
+PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/tenonedge-key-pattern/green.json npx --yes npm@11.21.0 exec -- playwright test business-keys.spec.ts --reporter=line,json
+TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-minimum-browser/chrome-linux/chrome PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/tenonedge-key-pattern/chromium111.json npx --yes npm@11.21.0 exec -- playwright test business-keys.spec.ts --reporter=line,json
+PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/tenonedge-key-pattern/related.json npx --yes npm@11.21.0 exec -- playwright test auth.spec.ts business-keys.spec.ts --reporter=line,json
+node scripts/verify-results.mjs /tmp/tenonedge-key-pattern/vitest.json /tmp/tenonedge-key-pattern/related.json
+node scripts/verify-results.mjs /tmp/tenonedge-key-pattern/vitest.json /tmp/tenonedge-key-pattern/chromium111.json
+```
+
+这是T3前端校验修复，不替代§1未完成的导入/扩展、证书、调试/测试发送及完整业务退出验收。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
