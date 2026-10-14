@@ -1765,11 +1765,33 @@ test('device CSV downloads BOM templates, imports GBK, reports row errors and at
         },
     })
     expect(tooLarge.status()).toBe(400)
-    const overBody = await page.request.post(csvUrl, {
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        data: JSON.stringify({ content: 'x'.repeat(8 * 1024 * 1024) }),
-    })
-    expect(overBody.status()).toBe(413)
+    // Use the browser's real HTTP transport. APIRequestContext may surface a socket
+    // write EPIPE while Kestrel rejects this declared length before consuming the body.
+    const overBodyStatus = await page.evaluate(
+        async ({ url, csrf }) => {
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 10_000)
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrf,
+                    },
+                    body: JSON.stringify({
+                        content: 'x'.repeat(8 * 1024 * 1024),
+                    }),
+                    signal: controller.signal,
+                })
+                await response.text()
+                return response.status
+            } finally {
+                clearTimeout(timer)
+            }
+        },
+        { url: csvUrl, csrf: session.csrfToken },
+    )
+    expect(overBodyStatus).toBe(413)
     expect((await (await page.request.get(inputUrl)).json()).version).toBe(
         current.version,
     )
