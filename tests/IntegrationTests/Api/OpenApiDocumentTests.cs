@@ -96,6 +96,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getSession",
         "getSetupStatus",
         "getSystemInfo",
+        "getTrustedProxies",
         "getUserCreatedTokens",
         "importDevicePointCsv",
         "inspectConfigurationMigrationIntent",
@@ -146,6 +147,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "writeOutputControl",
         "writeQueueParameters",
         "writeRuntimeParameters",
+        "writeTrustedProxies",
     ];
 
     [Fact]

@@ -132,7 +132,7 @@ public sealed class GatewayIdentityTests
         store.Initialize();
         // 不用雪花主键的表：单行的系统状态、迁移历史，以及以配置版本号为主键的运行快照（版本号的下限由 revision_floor 维护）。
         // mqtt_credential 的主键是种子中的 connectionId（逻辑引用），不分配新的对象 ID；正式连接实体由 T3 管理。
-        string[] bookkeepingTables = [SystemStateRecord.TableName, SchemaMigrationRecord.TableName, RuntimeSnapshotRecord.TableName, MqttCredentialRecord.TableName, HttpCredentialRecord.TableName, "output_control", "outbound_policy", "mqtt_subscription", "configuration_draft", "route_draft_reference", "configuration_edit", "delivery_migration", "delivery_migration_intent"];
+        string[] bookkeepingTables = [SystemStateRecord.TableName, SchemaMigrationRecord.TableName, RuntimeSnapshotRecord.TableName, MqttCredentialRecord.TableName, HttpCredentialRecord.TableName, "output_control", "outbound_policy", "mqtt_subscription", "configuration_draft", "route_draft_reference", "configuration_edit", "delivery_migration", "delivery_migration_intent", "runtime_parameters", "queue_parameters", "trusted_proxy_rules"];
         Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('mqtt_credential') WHERE name = 'connection_id' AND pk = 1 AND type = 'INTEGER'"));
 
         // 订阅日志按 Broker/ClientId/Filter 三个文本字段联合寻址，不分配雪花 ID。
@@ -149,6 +149,13 @@ public sealed class GatewayIdentityTests
         Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('delivery_migration') WHERE name = 'operation_id' AND pk = 1 AND type = 'TEXT'"));
 
         Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('delivery_migration_intent') WHERE name = 'intent_id' AND pk = 1 AND type = 'TEXT'"));
+
+        // 网页参数/代理规则以固定 id=1 寻址，不分配雪花 ID；迁移须约束为单行。
+        foreach (var table in new[] { "runtime_parameters", "queue_parameters", "trusted_proxy_rules" })
+        {
+            var definition = store.Database.Client.Ado.GetString("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = @table", new { table });
+            Assert.Contains("CHECK(id = 1)", definition, StringComparison.Ordinal);
+        }
 
         var tables = store.Database.Client.Ado
             .SqlQuery<string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")

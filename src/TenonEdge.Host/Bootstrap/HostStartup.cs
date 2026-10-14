@@ -49,6 +49,7 @@ internal static partial class HostStartup
             app.Services.GetRequiredService<ConfigStoreInitializer>().Initialize();
             _ = app.Services.GetRequiredService<TenonEdge.Host.Features.SystemInfo.RuntimeParameterStore>().Read();
             _ = app.Services.GetRequiredService<TenonEdge.Host.Features.SystemInfo.QueueParameterStore>().Read();
+            _ = app.Services.GetRequiredService<TenonEdge.Host.Features.SystemInfo.TrustedProxyStore>().Read();
             _ = app.Services.GetRequiredService<GatewayIdentity>();
             _ = app.Services.GetRequiredService<SnowflakeIdGenerator>();
             _ = app.Services.GetRequiredService<AuditExportManager>();

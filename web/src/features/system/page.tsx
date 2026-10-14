@@ -5,6 +5,7 @@ import { OutboundPolicyPanel } from './policy'
 import { GatewayNameEditor } from './name'
 import { RuntimeParameterPanel } from './parameters'
 import { QueueParameterPanel } from './queue-parameters'
+import { TrustedProxyPanel } from './trusted-proxies'
 export function SystemPage() {
     const { t } = useTranslation()
     const query = useSystemInfo()
@@ -114,6 +115,7 @@ export function SystemPage() {
             <OutboundPolicyPanel />
             <RuntimeParameterPanel />
             <QueueParameterPanel />
+            <TrustedProxyPanel />
         </div>
     )
 }

@@ -322,8 +322,8 @@ public sealed class QueueParameterTests
         store.Initialize(ConfigMigrations.All.Where(m => m.Version <= 23).ToArray());
         var identity = GatewayIdentity.LoadOrCreate(store.Database, out _);
         store.Database.Client.Insertable(new RuntimeParameterRecord { Version = Guid.NewGuid().ToString("N"), AuditRetentionDays = 365, PreviewGlobalLimit = 6, PreviewSessionLimit = 3 }).ExecuteCommand();
-        Assert.Equal(24, store.CreateMigrator().Migrate());
-        Assert.Equal(24, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         Assert.Equal(identity, GatewayIdentity.LoadOrCreate(store.Database, out _));
         Assert.Empty(store.Database.Client.Queryable<QueueParameterRecord>().ToList());
         Assert.Equal(365, store.Database.Client.Queryable<RuntimeParameterRecord>().InSingle(1).AuditRetentionDays);

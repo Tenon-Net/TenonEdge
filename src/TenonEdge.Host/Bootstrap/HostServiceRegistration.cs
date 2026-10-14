@@ -37,6 +37,7 @@ internal static class HostServiceRegistration
         builder.Services.AddSingleton(provider => DataRetentionSettings.Resolve(provider.GetRequiredService<IConfiguration>()));
         builder.Services.AddSingleton<RuntimeParameterStore>();
         builder.Services.AddSingleton<QueueParameterStore>();
+        builder.Services.AddSingleton<TrustedProxyStore>();
         builder.Services.AddSingleton<TenonEdge.Abstractions.Contracts.IDeliveryPolicySource>(provider => provider.GetRequiredService<QueueParameterStore>());
         builder.Services.AddSingleton<Func<TimeSpan>>(provider => () => TimeSpan.FromDays(provider.GetRequiredService<RuntimeParameterStore>().Read().Values.AuditRetentionDays));
         builder.Services.AddHostedService<DataRetentionService>();

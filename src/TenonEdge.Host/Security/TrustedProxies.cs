@@ -6,7 +6,7 @@ namespace TenonEdge.Host.Security;
 /// <summary>
 /// 受信任的反向代理（总设计 §10.3）：部署参数 <c>TenonEdge:TrustedProxies</c> 列出代理的 IP 地址或网段（CIDR），
 /// 例如环境变量 <c>TenonEdge__TrustedProxies__0=10.0.0.5</c>。首次设置之前只能用部署参数登记；
-/// 系统设置中的登记随 T3-09 实现。没有登记代理时不启用转发头中间件，忽略全部转发头。
+/// 系统设置中的登记与部署规则取并集。没有登记代理时不启用转发头中间件，忽略全部转发头。
 /// </summary>
 internal sealed class TrustedProxies
 {
@@ -29,14 +29,8 @@ internal sealed class TrustedProxies
                 continue;
             }
 
-            if (IPAddress.TryParse(value, out var address))
-            {
-                networks.Add(new System.Net.IPNetwork(address, address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128));
-            }
-            else if (System.Net.IPNetwork.TryParse(value, out var network))
-            {
-                networks.Add(network);
-            }
+            if (TryParseNetwork(value, out var network))
+            { networks.Add(network); }
             else
             {
                 throw new HostStartupException(
@@ -45,7 +39,29 @@ internal sealed class TrustedProxies
             }
         }
 
-        return new TrustedProxies(networks);
+        return new TrustedProxies(networks.AsReadOnly());
+    }
+
+    internal static TrustedProxies Parse(IEnumerable<string> values)
+    {
+        var networks = new List<System.Net.IPNetwork>();
+        foreach (var raw in values)
+        {
+            var value = raw.Trim();
+            if (TryParseNetwork(value, out var network))
+            { networks.Add(network); }
+            else
+            { throw new ArgumentException("代理信任只接受IP地址或CIDR，不接受主机名、端口或转发头。"); }
+        }
+        return new TrustedProxies(networks.AsReadOnly());
+    }
+
+    private static bool TryParseNetwork(string value, out System.Net.IPNetwork network)
+    {
+        if (!IPAddress.TryParse(value, out var address))
+        { return System.Net.IPNetwork.TryParse(value, out network); }
+        network = new System.Net.IPNetwork(address, address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128);
+        return true;
     }
 
     public bool Contains(IPAddress? address)

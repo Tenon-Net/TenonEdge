@@ -362,5 +362,15 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(25, "trusted_proxy_rules", [
+            """
+            CREATE TABLE trusted_proxy_rules (
+                id INTEGER NOT NULL PRIMARY KEY CHECK(id = 1),
+                version TEXT NOT NULL,
+                networks_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

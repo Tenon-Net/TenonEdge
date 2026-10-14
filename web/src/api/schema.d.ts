@@ -1389,6 +1389,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/system/trusted-proxies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看网页代理信任与只读部署信任；规则取并集 */
+        get: operations["getTrustedProxies"];
+        /**
+         * 管理员核对风险后版本化保存代理信任，后续请求采用新值
+         * @description 只信任明确的IP/CIDR，只处理一层来源与最后一个协议值；不能撤销部署信任。新增信任可改变Cookie协议、Token准入、限流与审计来源，不应信任整个客户端网段。
+         */
+        put: operations["writeTrustedProxies"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -3989,6 +4010,16 @@ export interface components {
         };
         /** @enum {unknown} */
         TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced" | null;
+        TrustedProxyRequest: {
+            networks: string[];
+            expectedVersion: null | string;
+            confirmed: boolean;
+        };
+        TrustedProxyState: {
+            version: null | string;
+            networks: string[];
+            deployment: string[];
+        };
         /** @enum {unknown} */
         UpstreamTimeFormat: "rfc3339" | "unixSeconds" | "unixMilliseconds" | null;
         UserCommandRequest: {
@@ -9020,6 +9051,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QueueParameterState"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getTrustedProxies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrustedProxyState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    writeTrustedProxies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedProxyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrustedProxyState"];
                 };
             };
             /** @description Bad Request */

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
+using TenonEdge.Host.Features.SystemInfo;
 
 namespace TenonEdge.Host.Security;
 
@@ -38,43 +40,55 @@ internal static partial class RequestSecurityPipeline
 
     public static WebApplication UseRequestSecurity(this WebApplication app)
     {
-        var proxies = app.Services.GetRequiredService<TrustedProxies>();
+        var rules = app.Services.GetRequiredService<TrustedProxyStore>();
         if (string.Equals(app.Configuration[ForwardedHeadersEnabledKey], "true", StringComparison.OrdinalIgnoreCase))
         {
             LogForwardedHeadersVariableIgnored(app.Logger);
         }
 
-        app.Use((context, next) =>
+        app.Use(next =>
         {
-            context.Features.Set<IRequestProtocolFeature>(new RequestProtocolFeature(IsHttps(context, proxies)));
-            context.Response.OnStarting(() =>
+            var gate = new Lock();
+            PreparedProxyPipeline? cached = null;
+            return async context =>
             {
-                if (context.Response.StatusCode == StatusCodes.Status401Unauthorized
-                    && !context.Response.Headers.ContainsKey(HeaderNames.WWWAuthenticate))
+                var snapshot = rules.Current;
+                PreparedProxyPipeline prepared;
+                lock (gate)
                 {
-                    context.Response.Headers.WWWAuthenticate = SessionChallenge;
+                    if (cached is null || !ReferenceEquals(cached.Snapshot, snapshot))
+                    { cached = Prepare(snapshot, next, app.Services.GetRequiredService<ILoggerFactory>()); }
+                    prepared = cached;
                 }
-
-                return Task.CompletedTask;
-            });
-            return next(context);
+                // Capture one policy before forwarding can replace RemoteIpAddress.
+                context.Features.Set<IRequestProtocolFeature>(new RequestProtocolFeature(IsHttps(context, snapshot.Proxies)));
+                context.Response.OnStarting(() =>
+                {
+                    if (context.Response.StatusCode == StatusCodes.Status401Unauthorized
+                        && !context.Response.Headers.ContainsKey(HeaderNames.WWWAuthenticate))
+                    { context.Response.Headers.WWWAuthenticate = SessionChallenge; }
+                    return Task.CompletedTask;
+                });
+                await prepared.Invoke(context);
+            };
         });
-
-        if (!proxies.IsEmpty)
-        {
-            var options = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor, ForwardLimit = 1 };
-            options.KnownIPNetworks.Clear();
-            options.KnownProxies.Clear();
-            foreach (var network in proxies.Networks)
-            {
-                options.KnownIPNetworks.Add(network);
-            }
-
-            app.UseForwardedHeaders(options);
-        }
 
         return app;
     }
+
+    private static PreparedProxyPipeline Prepare(TrustedProxySnapshot snapshot, RequestDelegate next, ILoggerFactory logger)
+    {
+        if (snapshot.Proxies.IsEmpty)
+        { return new(snapshot, next); }
+        var options = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor, ForwardLimit = 1 };
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+        foreach (var network in snapshot.Proxies.Networks)
+        { options.KnownIPNetworks.Add(network); }
+        var middleware = new ForwardedHeadersMiddleware(next, logger, Options.Create(options));
+        return new(snapshot, middleware.Invoke);
+    }
+    private sealed record PreparedProxyPipeline(TrustedProxySnapshot Snapshot, RequestDelegate Invoke);
 
     private static bool IsHttps(HttpContext context, TrustedProxies proxies)
     {
@@ -88,7 +102,7 @@ internal static partial class RequestSecurityPipeline
         return string.Equals(last, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "已忽略 ASPNETCORE_FORWARDEDHEADERS_ENABLED：转发头只按部署参数 TenonEdge:TrustedProxies 登记的代理处理。")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "已忽略 ASPNETCORE_FORWARDEDHEADERS_ENABLED：转发头只按部署参数 TenonEdge:TrustedProxies 与系统设置登记的代理处理。")]
     private static partial void LogForwardedHeadersVariableIgnored(ILogger logger);
 
     private sealed record RequestProtocolFeature(bool IsHttps) : IRequestProtocolFeature;
