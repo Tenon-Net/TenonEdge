@@ -112,6 +112,10 @@ public sealed class AuditQueryTests
     [Theory]
     [InlineData("limit=0")]
     [InlineData("limit=201")]
+    [InlineData("before=0")]
+    [InlineData("before=9007199254740992")]
+    [InlineData("from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z")]
+    [InlineData("from=2026-01-01T00:00:00Z&to=2026-01-01T00:00:00Z")]
     public async Task PageSizeOutsideTheAllowedRangeIsAValidationProblem(string query)
     {
         var cancellationToken = TestContext.Current.CancellationToken;

@@ -46,6 +46,14 @@ const usersRoute = createRoute({
         'UsersPage',
     ),
 })
+const auditRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/audit',
+    component: lazyRouteComponent(
+        () => import('./features/audit/page'),
+        'AuditPage',
+    ),
+})
 const tokensRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/tokens',
@@ -227,6 +235,7 @@ export const router = createRouter({
         indexRoute,
         accountRoute,
         usersRoute,
+        auditRoute,
         tokensRoute,
         configurationRoute,
         configurationMigrationRoute,

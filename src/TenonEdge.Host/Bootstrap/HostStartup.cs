@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Auth;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Runtime;
@@ -48,6 +49,7 @@ internal static partial class HostStartup
             app.Services.GetRequiredService<ConfigStoreInitializer>().Initialize();
             _ = app.Services.GetRequiredService<GatewayIdentity>();
             _ = app.Services.GetRequiredService<SnowflakeIdGenerator>();
+            _ = app.Services.GetRequiredService<AuditExportManager>();
             _ = app.Services.GetRequiredService<DeliveryExportManager>(); // 持有数据目录锁后、监听前清除上次导出残留。
             var runtimeEvents = app.Services.GetRequiredService<RuntimeEventLog>();
             RecordRuntimeStartBlockers(runtimeStartConditions, runtimeEvents);

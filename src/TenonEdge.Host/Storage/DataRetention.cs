@@ -63,12 +63,14 @@ internal sealed partial class DataRetentionService(
     DataRetentionSettings settings,
     TimeProvider time,
     IClockSyncStatus clock,
-    ILogger<DataRetentionService> logger) : BackgroundService
+    ILogger<DataRetentionService> logger,
+    AuditRetentionGate auditGate) : BackgroundService
 {
     private readonly DateTimeOffset _startedAt = time.GetUtcNow();
     private readonly long _startedTimestamp = time.GetTimestamp();
     private bool _timePurgeSuspended;
     public static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+    internal static readonly TimeSpan DeferredAuditRetryInterval = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// 保存的时间比 ID 中的逻辑时间戳早这么多以上时，视为写入时时钟落后。时钟正常时两者只差读取时钟的先后与小幅校时，远小于这个值。
@@ -94,7 +96,10 @@ internal sealed partial class DataRetentionService(
         var auditBefore = trustworthy ? Cutoff(now, settings.AuditRetention) : DateTimeOffset.MinValue;
         var eventsBefore = trustworthy ? Cutoff(now, DataRetentionSettings.RuntimeEventRetention) : DateTimeOffset.MinValue;
 
-        var audit = DeleteInBatches(
+        int audit;
+        using (var retention = auditGate.TryEnterPurge())
+        {
+            audit = retention is null ? 0 : DeleteInBatches(
             $"""
             DELETE FROM {AuditLogRecord.TableName} WHERE id IN (
                 SELECT id FROM {AuditLogRecord.TableName}
@@ -102,6 +107,7 @@ internal sealed partial class DataRetentionService(
                 LIMIT {BatchSize})
             """,
             PurgeParameters(auditBefore));
+        }
         var events = DeleteInBatches(
             $"""
             DELETE FROM {RuntimeEventRecord.TableName} WHERE id IN (
@@ -124,7 +130,6 @@ internal sealed partial class DataRetentionService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(Interval, time);
         do
         {
             try
@@ -139,8 +144,11 @@ internal sealed partial class DataRetentionService(
             {
                 LogPurgeFailed(logger, exception.Message);
             }
+
+            // 导出最多生成15分钟；碰撞后每分钟重试，且新导出让位给已延后的清理。
+            await Task.Delay(auditGate.PurgePending ? DeferredAuditRetryInterval : Interval, time, stoppingToken);
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (!stoppingToken.IsCancellationRequested);
     }
 
     /// <summary>由 ID 中的逻辑时间戳换算的 Unix 毫秒数减去容差；保存的时间不早于它，才认为写入时时钟可信。</summary>

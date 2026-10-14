@@ -61,6 +61,22 @@ public sealed class ApiTokenProcessTests
         Assert.Equal(HttpStatusCode.OK, child.StatusCode);
         var childSecret = (await child.ReadJsonAsync(Token)).GetProperty("secret").GetString()!;
 
+        using var export = await script.PostJsonAsync("/api/edge-admin/v1/audit/export", new { filter = new { action = "token.create" }, confirmed = true }, Token);
+        Assert.Equal(HttpStatusCode.Accepted, export.StatusCode);
+        var csvReady = await Audit.AuditExportApiTests.WaitAsync(script, "ready");
+        Assert.Equal("2", csvReady.GetProperty("count").GetString());
+        var csvPath = $"/api/edge-admin/v1/audit/export/{csvReady.GetProperty("id").GetGuid()}/download";
+        using var notOwner = await admin.GetAsync(csvPath, Token);
+        Assert.Equal(HttpStatusCode.NotFound, notOwner.StatusCode);
+        using var csvFile = await script.GetAsync(csvPath, Token);
+        Assert.Equal(HttpStatusCode.OK, csvFile.StatusCode);
+        Assert.Equal("text/csv", csvFile.Content.Headers.ContentType!.MediaType);
+        var csv = await csvFile.Content.ReadAsStringAsync(Token);
+        Assert.Contains("real TLS automation", csv, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, csv, StringComparison.Ordinal);
+        var exportAudit = await admin.GetJsonAsync("/api/edge-admin/v1/audit?action=audit.export", Token);
+        Assert.Equal("real TLS automation", Assert.Single(exportAudit.GetProperty("items").EnumerateArray()).GetProperty("tokenName").GetString());
+
         // A different trusted root cannot validate this Host. Default certificate name and chain validation stay enabled.
         using var key = RSA.Create(2048);
         var request = new CertificateRequest("CN=unrelated test root", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);

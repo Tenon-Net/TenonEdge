@@ -8,7 +8,7 @@ namespace TenonEdge.Host.Features.Audit;
 
 /// <summary>
 /// 审计查询（audit 分组，总设计 §10.1；仅管理员）：按时间、账号、操作、对象筛选，从新到旧键集分页。
-/// 审计记录只读，界面与 API 都不能修改或删除；CSV 导出属于 T3-09。
+/// 审计记录只读，界面与 API 都不能修改或删除；CSV 导出在同分组的受限临时资源中提供。
 /// </summary>
 internal static class AuditEndpoints
 {
@@ -38,8 +38,10 @@ internal static class AuditEndpoints
         string? action,
         string? target,
         long? before,
-        int? limit)
+        int? limit,
+        HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         var pageSize = limit ?? DefaultPageSize;
         if (pageSize is < 1 or > MaximumPageSize)
         {
@@ -49,13 +51,15 @@ internal static class AuditEndpoints
             });
         }
 
-        var query = database.Client.Queryable<AuditLogRecord>()
-            .WhereIF(from.HasValue, record => record.OccurredAt >= from!.Value.ToUnixTimeMilliseconds())
-            .WhereIF(to.HasValue, record => record.OccurredAt < to!.Value.ToUnixTimeMilliseconds())
-            .WhereIF(!string.IsNullOrEmpty(account), record => record.AccountName == account)
-            .WhereIF(!string.IsNullOrEmpty(action), record => record.Action == action)
-            .WhereIF(!string.IsNullOrEmpty(target), record => record.Target == target)
-            .WhereIF(before.HasValue, record => record.Id < before!.Value)
+        var filter = new AuditFilter(from, to, account, action, target);
+        try
+        { filter.Validate(); }
+        catch (ArgumentException)
+        { return ApiProblems.Validation(new Dictionary<string, string[]> { ["filter"] = ["请核对时间范围及筛选字段长度。"] }); }
+        if (before is < 1 or > 9007199254740991L)
+        { return ApiProblems.Validation(new Dictionary<string, string[]> { ["before"] = ["请使用上一页返回的有效游标。"] }); }
+        using var client = database.CreateIsolatedClient();
+        var query = filter.Apply(client).WhereIF(before.HasValue, record => record.Id < before!.Value)
             .OrderBy(record => record.Id, OrderByType.Desc);
 
         var records = query.Take(pageSize + 1).ToList();

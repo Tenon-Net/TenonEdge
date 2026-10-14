@@ -1,3 +1,4 @@
+import { auditStrings } from '../features/audit/strings'
 import { userStrings } from '../features/users/strings'
 import { tokenStrings } from '../features/tokens/strings'
 import { configurationMigrationStrings } from '../features/configuration/migration-strings'
@@ -26,6 +27,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                audit: auditStrings,
                 users: userStrings,
                 tokens: tokenStrings,
                 previousLogin: '上次登录：{{time}}；来源 IP：{{ip}}',

@@ -48,7 +48,7 @@
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
 | T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；无路线启用HTTP/MQTT目标已补发送接续，含旧完整快照执行视图，验证见§2.208；形式B管理员迁移准备/确认API已通过本地软件回归（§2.209），逐条核对冻结原协议/接收方，绑定登录会话、选择代次和目标身份。形式B迁移页面已通过本地软件回归（§2.210），支持分区/跨页勾选、旧新身份并排核对、同会话准备恢复和响应丢失后按编号查询。已补形式A提交前发送屏障（§2.211），配置同事务意图登记、原状态持久隔离、启动/人工重试前补隔离及受限变更检查（§2.212）；已补确认目标完整身份绑定、原协调者串行执行、拒绝及两库结果/中断恢复（§2.213）；管理员形式A应用准备/确认/意图查询API与真实应用协调已接线（§2.214），含完整配置核对、同所有者声明、配额预检及提交后隔离保护。已补持久意图元数据分页、当前身份/完整配额缺口查询，以及拒绝/旧版未确认意图的管理员重新核对和显式重试API（§2.215），新审批/尝试/审计原子提交，未知结果不重放。形式A换址应用及持久意图/重新审批重试页面已接入，含一次确认、刷新恢复与角色保护，验证边界见§2.216。FS-23已补两种迁移/HTTP及MQTT的三个持久窗口、真实SIGKILL/正常放行、原Host双重重启与审计幂等，24项及3170后端全量通过（§2.217）；仅软件故障注入，不是实物断电。HTTP对方错误摘要已补有界采集、同事务存储及正文权限页面（§2.218）；本项权限澄清尚待答复，暂不扩宽Viewer。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.218；功能 §8 |
-| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。剩余：Token跨预览/迁移的真实Bearer补充验收、审计导出、运行参数/白名单/访问策略页面与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.221；功能 §9/10.1/12.3；AT-18/32 |
+| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。剩余：Token跨预览/迁移的真实Bearer补充验收、运行参数/白名单/访问策略页面与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.222；功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
@@ -4827,6 +4827,47 @@ OpenAPI/TypeScript 从独立临时 Development Host 重新生成：HTTP `127.0.0
 失败及修正如实保留：早期CA1859/构造参数兼容/API清单排序失败已修正；HttpClient不发送空默认Authorization，改用实际请求头集合验证。早期将全局TimeProvider替换成FakeTimeProvider造成宿主挂起，两轮主动中止和30秒诊断中止均不算通过；现只控制Token存储/限流的时钟。新输入验证轮误将原API对已定义整数枚举的兼容解析当作禁止要求，37项中1失败，核对总设计仅约定字符串序列化后移除该额外假设，不为本任务改变全局API解析规则，随后41项通过。首次NSS使用CA信任而非叶证书信任导致ERR_CERT_INVALID；随后表单角色label不精确导致一次30秒超时，已补明确aria-label。首次浏览器矩阵中Node `page.request`/`route.fetch`不共享Chromium NSS而报自签错误（7通过/5失败）；改为浏览器真实fetch和带已核对CA的Node请求，不关闭校验。一次前端选择版本类型改动漏改radio导致类型检查失败，已修正。误用不存在的`.slnx`/仓库根npm命令属未执行验证，已用实际`.sln`/web目录重跑。
 
 剩余边界：真实Bearer在预览预算隔离/迁移归属与重启恢复的补充组合尚未完成；§2.220描述符审计测试不替代这些网络入口场景。“只允许HTTPS”设置与备份恢复引发的完整行为仍按原T3/T5任务验收，不把现有HTTP拒绝测试写成完整AT-32通过。最低浏览器、审计CSV、系统设置、T3-10配置导入与扩展表单和§1其他T3收口事项仍未完成；损坏有效快照专用恢复与HTTP错误摘要只读权限未另获确认。
+
+### 2.222 T3-09 审计查询与完整 CSV 导出（2026-10-14）
+
+基线 `0ccb6ac`；继续已授权 T3，覆盖功能§9.2/9.4、设计§3.3/8.4/10.3与AT-18的审计子场景。前置为原配置库/审计、Cookie/CSRF、HTTPS Token与私有导出文件机制。**本项软件交付待维护者验收，T3-09/T3整体仍未完成**；不推进T4/T5/G1，不推送或发布，无子代理。
+
+实现：
+
+- `/audit` 管理员真实只读页面：时间（from含、to不含）、账号/操作/对象精确筛选，50条键集分页；未应用筛选明确提示并禁止开始导出。全部9列（含Token名称/原详情），不执行HTML，不增加审计修改/删除API。GET列表补时间/长度/游标校验与no-store；查询和CSV共用`AuditFilter`。
+- `AuditCsvSnapshot`在原短写事务中冻结编号上界，每页200条独立短连接；没有跨磁盘/网络等待的reader或事务，不使用长读事务/整库备份。独立审计`AppendOrLog`改在取得原写锁后分配编号，原事务审计沿用调用方已开事务的契约，保证之后提交的记录不会迟到落入旧上界；独立写失败仍走原限量日志降级。
+- `AuditRetentionGate`仅延后生成期间的过期审计删除，运行事件继续清理；有清理等待时禁止新快照抢占，后台每分钟重试而非再等一小时。生成取消/失败均释放，下载前已经释放。没有第二套运行时或请求上下文捕获。
+- 管理API POST/GET `/audit/export`、POST `/{id}/cancel`、GET `/{id}/download`。明确确认开始、15分钟有效期、单网关一份任务、同会话/Token归属、仍须管理员、取消/过期/停止等待自有任务与下载租约。完整文件生成且`audit.export`成功持久化才ready；空范围仅表头，存储失败不是空结果。`audit.export.download`只记录HTTP写出结果，不声称浏览器保存。
+- 提取原已验证的文件/下载租约为`Storage/ExportFile`与`ExportDownload`，审计和故障投递分别保留固定的私有目录/文件与生命周期。沿用逐写磁盘安全余量检查、0600/0700、链接拒绝、只清理自己路径、启动清强杀残留；清理失败显式显示并禁用后续导出。没有新增依赖或schema变更（仍22）。
+- 网页确认整个已应用范围，显示后台固定范围、精确字符串条数/字节数、到期/错误状态；响应丢失仅重新读取，刷新可恢复本会话状态。下载使用原生同源附件，不做全量Blob。CSV为UTF-8 BOM/CRLF/双引号转义，危险公式前缀加单引号；不静默截断或按页导出。安全转换、生命周期和API说明见[audit-export.md](audit-export.md)。
+
+验证与证据（本地Linux x64，SDK10.0.401/.NET10.0.12、Node22.23.2/npm11.21.0；`/tmp/tenonedge-audit-csv/`）：
+
+- 快照/原审计/清理定向24项通过（`snapshot.log`/`snapshot/snapshot.trx`）。上轮新夹具将运行事件level误写为`information`导致1项失败，改为真实schema允许的`info`后本轮复跑通过，不计失败轮为通过。
+- 后端定向99项通过（`api.log`/`api/api.trx`，35.6秒），涵盖405条跨页、编号冻结和迟到独立审计、原文/公式转义、慢写不持事务、清理优先/一分钟重试、空范围、Cookie/CSRF/角色、会话/Token归属、吊销拒绝、空间/IO/审计提交失败、取消/超时/停机所有权、下载取消与私有文件/清理失败，以及共享文件机制的原故障投递回归。此前误用宽泛`FullyQualifiedName~Audit`把其他长流程审计用例一并选入，5分钟总限终止且未产完整报告（`broad-filter-timeout.log`，退出124），不计为通过；改用确切审计命名空间重跑，没有延长测试期限。
+- 已扩充原真实TLS进程用例：管理员Bearer经实际HTTPS生成/下载CSV、Cookie不能取得该Token文件、导出审计含Token名；仍验证名称/链/错误根证书，不跳过TLS校验。原故障投递真实正常停止/强杀重启用例同时覆盖审计文件残留清理和持久导出审计，不把软件SIGKILL称为实物断电。
+- `dotnet format TenonEdge.sln --verify-no-changes --no-restore`通过；Release构建0警告/错误（`backend-format.log`/`backend-build.log`）。首轮完整回归发现新增4端点尚未更新原API权限/operationId显式清单，3项失败后主动取消（`full-inventory-failure.log`），不计通过；补清单后定向8项通过（`inventory.log`）。修正后的第一次完整后端回归与浏览器并行，触及25分钟总期限：单元1434项完成，集成仅1921项完成后运行被中止（无用例失败不等于整轮通过，原TRX核对器明确判不通过；`full-concurrent-timeout.log`/`full-concurrent-timeout-verify.md`）。与上一1920项通过报告比较，多个原Host重启/认证用例耗时增加约20—35秒；不归因为功能正确性已证实。按原25分钟会话/5分钟挂起检测串行重跑后端后，最终 **3381项全部通过（1434单元＋1947集成，0失败/跳过）**，集成24分35秒（`full.log`/`full/*.trx`，`full-verify.md`原脚本核对Completed及完整计数）。没有延长期限；本机剩余时间裕量较小，不声称已验证远端CI时长。后端结束后再单独执行完整浏览器，结果见下项。
+- 真实Development Host生成OpenAPI（`openapi-host.log`/`openapi-generate.log`），同步4个导出operation与schema。前端typecheck/lint/build通过；Vitest **393/393**（`vitest.json`），包含本项17个API/精度/不重放/原生链接用例。浏览器定向1项通过（`browser-audit.log`，14.3秒）：实际Host/config.db的1205条夹具跨50条分页后导出完整文件、BOM/首末编号/字节数、原生下载（显式禁止fetch下载）、POST丢回复不重放/刷新恢复、两非管理员角色先强制改密再拒绝页面/API。首次夹具误用“当前密码”定位而真实表单为“原密码”，120秒超时失败（`browser-label-failure.log`），修正定位后通过，没有加长期限。第一轮完整浏览器为67通过/2失败/0跳过（`browser-concurrent-failure.json`）：两个既有Token场景分别在首次HTTPS导航报`ERR_NETWORK_CHANGED`、读取初始会话失败后30秒超时；同时间窗Docker bridge产生21次连接/断开事件（`browser-network-events.jsonl`，后端真实Broker仍在运行）。保留失败证据，不改产品重试或TLS校验，也不延长期限。后端结束后使用相同源码串行复跑，最终 **69/69通过，0失败/跳过/重试后通过**（`browser-full.json`/`browser-full.exit`，9分11秒），两个原失败Token用例均通过；本项格式整理后的审计浏览器用例亦在该完整轮复验。不是将前一失败轮改写为通过。
+
+主要实际命令（根目录，前端命令在`web/`；报告路径均在上述证据目录）：
+
+```sh
+dotnet format TenonEdge.sln --verify-no-changes --no-restore
+dotnet build TenonEdge.sln -c Release --no-restore
+timeout 5m dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~IntegrationTests.Audit.|FullyQualifiedName~DataRetentionTests|FullyQualifiedName~DeliveryExport|FullyQualifiedName~ApiTokenProcessTests' --logger 'trx;LogFileName=api.trx' --logger 'console;verbosity=normal' --results-directory /tmp/tenonedge-audit-csv/api --blame-hang-timeout 2m --blame-hang-dump-type none
+timeout 30m dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger trx --results-directory /tmp/tenonedge-audit-csv/full --blame-hang-timeout 5m --blame-hang-dump-type none
+npx --yes npm@11.21.0 run typecheck
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 run build
+npx --yes npm@11.21.0 test -- --reporter=json --outputFile=/tmp/tenonedge-audit-csv/vitest.json
+npx --yes npm@11.21.0 run test:e2e -- tests/audit.spec.ts --reporter=list
+TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx --yes npm@11.21.0 run test:e2e -- --reporter=json
+```
+
+补充核对：最终`backend-format-final.log`、`frontend-format-check.log`和`git diff --check`通过；724份C#、174份前端源码的完整路径集合与SHA-256均与最终验证检查点一致（`source-verification.json`）。没有依赖或schema变动。只在当前分支本地整理提交，未推送；远端CI、最低浏览器与真实设备/掉电未验证。
+
+停止点/剩余：本次完成审计查询与CSV导出软件子项；本项不实现保留期系统设置表单。Token预览/迁移真实Bearer组合、系统管理、配置导入/扩展表单、连接证书及T3-11全流程/最低浏览器仍按§1收口。损坏快照受限恢复及HTTP摘要Viewer权限仍待确认，不视为自动获批。
 
 ## 3. 验收编号登记
 

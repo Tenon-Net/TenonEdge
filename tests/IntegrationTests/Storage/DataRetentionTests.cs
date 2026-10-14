@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Storage;
@@ -16,6 +17,40 @@ public sealed class DataRetentionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public async Task DeferredPurgeHasPriorityAndBackgroundRetryDoesNotWaitAnotherHour()
+    {
+        using var store = TestConfigStore.Create();
+        store.Initialize();
+        InsertAudit(store, Now.AddDays(-200));
+        var time = new FakeTimeProvider(Now);
+        var gate = new AuditRetentionGate();
+        using var snapshot = gate.TryEnterSnapshot();
+        Assert.NotNull(snapshot);
+        using var service = new DataRetentionService(store.Database, new(TimeSpan.FromDays(180)), time,
+            new TestClockSyncStatus(), NullLogger<DataRetentionService>.Instance, gate);
+        var token = TestContext.Current.CancellationToken;
+        await service.StartAsync(token);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            while (!gate.PurgePending)
+            { await Task.Delay(10, timeout.Token); }
+            Assert.Equal(1, store.Database.Client.Queryable<AuditLogRecord>().Count());
+            snapshot.Dispose();
+            Assert.Null(gate.TryEnterSnapshot());
+            // The first delay may be registered just after pending becomes visible; drive several short retries.
+            while (gate.PurgePending)
+            { time.Advance(DataRetentionService.DeferredAuditRetryInterval); await Task.Delay(10, timeout.Token); }
+            while (store.Database.Client.Queryable<AuditLogRecord>().Any())
+            { await Task.Delay(10, timeout.Token); }
+            using var next = gate.TryEnterSnapshot();
+            Assert.NotNull(next);
+        }
+        finally { await service.StopAsync(timeout.Token); }
+    }
+
     [Theory]
     [InlineData(ClockSyncState.Unknown)]
     [InlineData(ClockSyncState.NotSynchronized)]
@@ -27,7 +62,7 @@ public sealed class DataRetentionTests
         InsertEvents(store, [(Now.AddDays(-8), Now.AddDays(-8))]);
         var clock = new TestClockSyncStatus { State = state };
         var service = new DataRetentionService(store.Database, new(TimeSpan.FromDays(180)),
-            new ManualTimeProvider(Now), clock, NullLogger<DataRetentionService>.Instance);
+            new ManualTimeProvider(Now), clock, NullLogger<DataRetentionService>.Instance, new AuditRetentionGate());
 
         Assert.Equal((0, 0), service.PurgeExpired());
         Assert.Equal(1, store.Database.Client.Queryable<AuditLogRecord>().Count());
@@ -47,7 +82,7 @@ public sealed class DataRetentionTests
         InsertEvents(store, [(Now.AddDays(-6), Now.AddDays(-6))]);
         var time = new ManualTimeProvider(Now);
         var service = new DataRetentionService(store.Database, new(TimeSpan.FromDays(180)), time,
-            new TestClockSyncStatus(), NullLogger<DataRetentionService>.Instance);
+            new TestClockSyncStatus(), NullLogger<DataRetentionService>.Instance, new AuditRetentionGate());
         time.StepWallClock(TimeSpan.FromDays(days));
         time.Advance(TimeSpan.FromDays(3));
 
@@ -69,7 +104,7 @@ public sealed class DataRetentionTests
         InsertEvents(store, [.. Enumerable.Range(0, DataRetentionSettings.MaximumRuntimeEvents + 1)
             .Select(_ => (Now.AddDays(-8), Now.AddDays(-8)))]);
         var service = new DataRetentionService(store.Database, new(TimeSpan.FromDays(180)), new ManualTimeProvider(Now),
-            new TestClockSyncStatus { State = ClockSyncState.Unknown }, NullLogger<DataRetentionService>.Instance);
+            new TestClockSyncStatus { State = ClockSyncState.Unknown }, NullLogger<DataRetentionService>.Instance, new AuditRetentionGate());
 
         Assert.Equal((0, 1), service.PurgeExpired());
         Assert.Equal(1, store.Database.Client.Queryable<AuditLogRecord>().Count());
@@ -197,7 +232,7 @@ public sealed class DataRetentionTests
             new DataRetentionSettings(TimeSpan.FromDays(DataRetentionSettings.MinimumAuditRetentionDays)),
             new ManualTimeProvider(new DateTimeOffset(1971, 1, 1, 0, 0, 0, TimeSpan.Zero)),
             new TestClockSyncStatus(),
-            NullLogger<DataRetentionService>.Instance);
+            NullLogger<DataRetentionService>.Instance, new AuditRetentionGate());
 
         // 按保存的时间，这些记录都已超过保留期；但时钟读数早于 ID 的纪元（2020 年），据此无法判断任何记录已过期。
         Assert.Equal((0, 0), service.PurgeExpired());
@@ -233,7 +268,7 @@ public sealed class DataRetentionTests
 
     private static DataRetentionService CreateService(TestConfigStore store, TimeSpan auditRetention) =>
         new(store.Database, new DataRetentionSettings(auditRetention), new ManualTimeProvider(Now),
-            new TestClockSyncStatus(), NullLogger<DataRetentionService>.Instance);
+            new TestClockSyncStatus(), NullLogger<DataRetentionService>.Instance, new AuditRetentionGate());
 
     private static void InsertAudit(TestConfigStore store, params DateTimeOffset[] occurredAt)
     {

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.Host.Features.Deliveries;
@@ -86,7 +87,7 @@ internal sealed class DeliveryExportManager : IAsyncDisposable
         }
     }
 
-    public DeliveryExportDownload OpenDownload(Guid id, string owner)
+    public ExportDownload OpenDownload(Guid id, string owner)
     {
         lock (_gate)
         {
@@ -147,7 +148,7 @@ internal sealed class DeliveryExportManager : IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (export.Cancellation.IsCancellationRequested) { }
-        catch (DeliveryExportSpaceException) { Fail(export, "delivery.exportInsufficientSpace"); }
+        catch (ExportSpaceException) { Fail(export, "delivery.exportInsufficientSpace"); }
         catch (Exception exception) when (exception is not OutOfMemoryException) { Fail(export, "delivery.exportGenerationFailed"); }
         finally
         {
@@ -306,24 +307,4 @@ internal sealed class DeliveryExportRequestException(int statusCode, string code
 {
     public int StatusCode { get; } = statusCode;
     public string Code { get; } = code;
-}
-
-/// <summary>请求范围的唯一下载租约；取消/失败同样释放文件与管理槽，不持有数据库事务。</summary>
-internal sealed class DeliveryExportDownload(FileStream file, Action<bool> finish, CancellationToken lifetime) : IDisposable
-{
-    private int _disposed;
-    private bool _success;
-    public long Length => file.Length;
-    public async Task CopyToAsync(Stream destination, CancellationToken token)
-    {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime, token);
-        await file.CopyToAsync(destination, 65536, linked.Token);
-        linked.Token.ThrowIfCancellationRequested();
-        _success = true;
-    }
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0)
-        { finish(_success); }
-    }
 }

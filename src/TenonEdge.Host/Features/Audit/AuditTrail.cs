@@ -26,11 +26,15 @@ internal sealed partial class AuditTrail(
 
     public void AppendOrLog(AuditEntry entry)
     {
-        var record = ToRecord(entry);
+        var record = ToRecord(entry, allocateId: false);
         try
         {
-            using var client = database.CreateIsolatedClient();
-            client.Insertable(record).ExecuteCommand();
+            // 编号必须在取得写锁后才分配，保证导出上界之后不会迟到插入更小的审计编号。
+            database.InTransaction(client =>
+            {
+                record.Id = ids.NextId();
+                return client.Insertable(record).ExecuteCommand();
+            });
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -52,9 +56,9 @@ internal sealed partial class AuditTrail(
         }
     }
 
-    private AuditLogRecord ToRecord(AuditEntry entry) => new()
+    private AuditLogRecord ToRecord(AuditEntry entry, bool allocateId = true) => new()
     {
-        Id = ids.NextId(),
+        Id = allocateId ? ids.NextId() : 0,
         OccurredAt = time.GetUtcNow().ToUnixTimeMilliseconds(),
         AccountName = Truncate(entry.AccountName),
         TokenName = Truncate(entry.TokenName),

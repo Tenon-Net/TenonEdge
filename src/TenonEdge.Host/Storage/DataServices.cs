@@ -23,6 +23,7 @@ internal static class DataServices
         services.AddGatewayIdentity();
         services.AddSingleton<StorageWriteFallback>();
         services.AddSingleton<AuditTrail>();
+        services.AddSingleton<AuditRetentionGate>();
         services.AddSingleton<RuntimeEventLog>();
         return services;
     }

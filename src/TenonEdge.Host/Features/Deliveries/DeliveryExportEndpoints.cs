@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Security;
+using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.Host.Features.Deliveries;
@@ -70,7 +71,7 @@ internal static class DeliveryExportEndpoints
     private static async Task<IResult> Download(Guid id, DeliveryExportManager manager, HttpContext context, CancellationToken token)
     {
         context.Response.Headers.CacheControl = "no-store";
-        DeliveryExportDownload download;
+        ExportDownload download;
         try
         { download = manager.OpenDownload(id, Actor(context).Owner); }
         catch (DeliveryExportRequestException exception) { return Problem(exception); }

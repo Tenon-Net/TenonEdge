@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Security;
+using TenonEdge.IntegrationTests.Audit;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Deliveries;
 
@@ -30,6 +32,7 @@ public sealed class DeliveryExportProcessTests
         var path = DeliveryExportApiTests.FilePath(data.Path);
         var root = DeliveryExportApiTests.Root;
         Guid oldId;
+        var auditPath = Path.Combine(data.Path, AuditExportFiles.DirectoryName, AuditExportFiles.FileName);
         await using (var process = HostProcess.Start(work.Path, "Production", data.Path))
         {
             using var client = new HttpClient { BaseAddress = await process.WaitForListeningAddressAsync(Timeout, Token) };
@@ -43,6 +46,10 @@ public sealed class DeliveryExportProcessTests
             using var confirmed = await client.PostJsonAsync($"{root}/{oldId}/confirm", new { confirmed = true }, Token);
             Assert.Equal(HttpStatusCode.Accepted, confirmed.StatusCode);
             await DeliveryExportApiTests.WaitAsync(client, "ready");
+            using var auditStart = await client.PostJsonAsync(AuditExportApiTests.Root, new { filter = new { }, confirmed = true }, Token);
+            Assert.Equal(HttpStatusCode.Accepted, auditStart.StatusCode);
+            await AuditExportApiTests.WaitAsync(client, "ready");
+            Assert.True(File.Exists(auditPath));
             Assert.True(File.Exists(path));
             if (kill)
             { await process.KillAsync(Token); }
@@ -54,11 +61,13 @@ public sealed class DeliveryExportProcessTests
         }
         // 不依赖未经验证的 DeleteOnClose 强杀语义：强杀会留下文件，持锁的下次启动明确清理。
         Assert.Equal(kill, File.Exists(path));
+        Assert.Equal(kill, File.Exists(auditPath));
         await using (var restarted = HostProcess.Start(work.Path, "Production", data.Path))
         {
             using var client = new HttpClient { BaseAddress = await restarted.WaitForListeningAddressAsync(Timeout, Token) };
             await restarted.WaitUntilReadyAsync(client, Timeout, Token);
             Assert.False(File.Exists(path));
+            Assert.False(File.Exists(auditPath));
             Assert.Equal("leave-unknown-file", await File.ReadAllTextAsync(unknown, Token));
             using var login = await client.LoginAsync("admin", ApiRequests.StrongPassword, Token);
             Assert.Equal(HttpStatusCode.OK, login.StatusCode);
@@ -73,5 +82,6 @@ public sealed class DeliveryExportProcessTests
         }
         await using var inspect = new FixedDataDirectoryApplicationFactory(data.Path);
         Assert.Equal("success", Assert.Single(TestAccounts.Audit(inspect.Services, "delivery.export")).Result);
+        Assert.Equal("success", Assert.Single(TestAccounts.Audit(inspect.Services, "audit.export")).Result);
     }
 }

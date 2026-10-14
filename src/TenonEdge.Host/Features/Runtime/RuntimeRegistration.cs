@@ -3,6 +3,7 @@ using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Adapters.Simulator;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Deliveries;
@@ -49,6 +50,8 @@ internal static class RuntimeRegistration
         services.AddSingleton<DeliveryMigrationPreparation>();
         services.AddSingleton<TenonEdge.Host.Features.Configuration.ConfigurationMigrationPreparation>();
         services.AddSingleton<TenonEdge.Host.Features.Configuration.ConfigurationMigrationIntentService>();
+        services.AddSingleton<AuditExportFiles>();
+        services.AddSingleton<AuditExportManager>();
         services.AddSingleton<DeliveryExportFiles>();
         services.AddSingleton<DeliveryExportManager>();
         services.AddSingleton<IOutputControl>(provider => provider.GetRequiredService<OutputControlStore>());
