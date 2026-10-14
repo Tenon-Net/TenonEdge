@@ -48,9 +48,9 @@
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
 | T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；无路线启用HTTP/MQTT目标已补发送接续，含旧完整快照执行视图，验证见§2.208；形式B管理员迁移准备/确认API已通过本地软件回归（§2.209），逐条核对冻结原协议/接收方，绑定登录会话、选择代次和目标身份。形式B迁移页面已通过本地软件回归（§2.210），支持分区/跨页勾选、旧新身份并排核对、同会话准备恢复和响应丢失后按编号查询。已补形式A提交前发送屏障（§2.211），配置同事务意图登记、原状态持久隔离、启动/人工重试前补隔离及受限变更检查（§2.212）；已补确认目标完整身份绑定、原协调者串行执行、拒绝及两库结果/中断恢复（§2.213）；管理员形式A应用准备/确认/意图查询API与真实应用协调已接线（§2.214），含完整配置核对、同所有者声明、配额预检及提交后隔离保护。已补持久意图元数据分页、当前身份/完整配额缺口查询，以及拒绝/旧版未确认意图的管理员重新核对和显式重试API（§2.215），新审批/尝试/审计原子提交，未知结果不重放。形式A换址应用及持久意图/重新审批重试页面已接入，含一次确认、刷新恢复与角色保护，验证边界见§2.216。FS-23已补两种迁移/HTTP及MQTT的三个持久窗口、真实SIGKILL/正常放行、原Host双重重启与审计幂等，24项及3170后端全量通过（§2.217）；仅软件故障注入，不是实物断电。HTTP对方错误摘要已补有界采集、同事务存储及正文权限页面（§2.218）；本项权限澄清尚待答复，暂不扩宽Viewer。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.218；功能 §8 |
-| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。剩余：Token跨预览/迁移的真实Bearer补充验收、运行参数/白名单/访问策略页面与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.222；功能 §9/10.1/12.3；AT-18/32 |
+| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）。剩余：Token跨预览/迁移的真实Bearer补充验收、改名/运行参数/访问策略页面、连接页公网授权入口与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.223；功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
-| T3 | T3-11 无平台端到端验收 | 未完成 | 须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
+| T3 | T3-11 无平台端到端验收 | 未完成 | 本轮完整浏览器71/72，CSV超大请求EPIPE待诊断，5次独立复跑通过不抵消该失败（§2.223）。须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
 
 ## 2. 实现内容
@@ -4869,6 +4869,52 @@ TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx
 
 停止点/剩余：本次完成审计查询与CSV导出软件子项；本项不实现保留期系统设置表单。Token预览/迁移真实Bearer组合、系统管理、配置导入/扩展表单、连接证书及T3-11全流程/最低浏览器仍按§1收口。损坏快照受限恢复及HTTP摘要Viewer权限仍待确认，不视为自动获批。
 
+### 2.223 T3-09 系统信息与出站白名单页面（2026-10-14）
+
+基线 `47ead14`；继续已授权 T3，覆盖功能§2.5/10.1、T3-09、AT-18/FE-AT-02 的信息读取与出站规则管理子场景。复用原系统信息、出站校验、版本化持久规则、审计与会话授权。**本项不代表 T3-09/T3 整体完成**；无子代理，不推进 T4/T5/G1，不推送/发布。
+
+实现：
+
+- 全角色 `/system` 页面显示真实系统版本/名称/NodeId、时钟、数据目录、磁盘字节数、HTTPS 指纹/到期、SQLite/Schema、首次设置与运行阻止原因；复用原精确 JSON 解码，大字节数不转为浮点，磁盘未知不显示为零。已有名称展示于页头/浏览器标题，仍作为普通文本，不提供改名或证书替换按钮。
+- GET `/system/outbound-policy` 保留原 version/networks/localPorts，新增只读部署投影 `deployment`；提取原部署规则解析供 API/实际运行时共用，不新增放行路径。`deployment:null` 明示无效部署规则/运行时拒绝，不能当作空白名单；持久库读取失败仍报错，不退回仅部署规则。GET/PUT 均 no-store。PUT 拒绝未知顶层字段，不能把 deployment 当成可编辑字段提交；真实 Development Host 重新生成 OpenAPI 与类型。
+- 管理员网页仅编辑持久规则：Zustand 本地表单、开始编辑时绑定版本、每类最多1000条、端口1—65535、CIDR服务器完整校验、显式确认、原事务持久化与审计。明确默认私网、受保护地址、本机管理端口和部署/网页并集；清空网页规则不会撤销部署授权。只影响之后建立的连接，不强制断开现有连接，也不生成运行配置版本。
+- 前端仅发送三个可写字段；没有依赖安全上下文 Crypto API 的行键。未保存离开保护；400保留表单供修正，409/未知结果关闭编辑并隐藏旧规则，须显式重新读取，写请求不自动重放；查询失败不将空列表或旧规则冒充当前值。只读/配置人员没有写按钮且API仍403。
+- 新增使用说明 [system-settings.md](system-settings.md)；无新依赖、无schema迁移（仍22）。
+
+验证与证据（本地Linux x64/SDK10.0.401、Node22.23.2/npm11.21.0；`/tmp/tenonedge-system-settings/`）：
+
+- 后端定向 **27项通过，0失败/跳过**（`backend.log`、`backend/system.trx`，25秒）：原持久白名单/系统信息，加部署与持久规则分开展示、清空持久不撤销部署授权、三种无效部署参数明示null且实际运行时拒绝、客户端回传只读字段400且不写入。文档公网保留地址仅用于规则判断，不宣称公网实际连通。
+- Release构建0警告/错误（`backend-build.log`）；首次format检查发现新端点try语句换行不合规范（`backend-format.log`），修正后相同 `--verify-no-changes --no-restore` 通过（`backend-format-final.log`），不忽略检查。完整单元 **1434项通过，0失败/跳过**（`backend-unit.log`、`regression/unit.trx`）。关联集成 **107项通过，0失败/跳过**（`backend-regression.log`、`regression/integration.trx`，44秒），包含Connections全部、API授权/OpenAPI/同源资源及SystemInfo；原TRX核对脚本确认合计1541项全部执行且完成（`regression-verify.log`）。本轮没有重跑全部后端集成，最近完整3381项基线为§2.222，不将其计为此提交全量通过。
+- 前端新增22项单测：版本冻结/拷贝、只提交可写字段、确认门与CSRF、端口/CIDR/数量边界、HTTP缺少Crypto的行键、400/409/500/丢回复不重放、无效部署null及系统信息大字节数解码；完整Vitest **415项通过**（`unit-all.log`及最终`vitest.json`，0失败/跳过），typecheck/lint/build通过。Vite仍提示已有>500kB主chunk，不作为性能验收通过。
+- 真实浏览器新增3项：信息与真实API对照、名称页头/标题、网页与部署分开；真实本机HTTP peer在网页授权前不收到请求、授权后收到、正常Host重启后保留、清空后新请求不外发，部署授权仍可访问，管理端口即使写入例外仍拒绝；两个非管理员经真实临时密码强制改密后读取成功、写API403；400可修正、版本冲突、真实保存后丢回复不重放、读取500隐藏旧规则；无效部署真实Host + 磁盘大数/未知的响应夹具显示（夹具不冒充物理磁盘）。首轮 **1通过/2失败**：已有textarea初始内容混入嵌套label文本，精确标签定位找不到，含一个120秒超时（`browser-target.log`、`browser-target-failed/`）；改为独立label/htmlFor/useId关联后，相同3项 **全部通过，25.6秒**（`browser-target-r2.log`、`browser-target-passed/`）。没有延长期限或增加重试。完整浏览器首轮 **70通过/2失败/0跳过**（`browser-full-contract-failure.json`、`browser-full-contract-failure/`，9分02秒）：两个原HTTP/MQTT采样场景的夹具将GET返回对象整体展开回PUT，新只读deployment字段被服务端按预期400拒绝；仅将两处夹具改为显式提交expectedVersion/networks/localPorts，不放宽产品校验、不增加重试或延长期限。两原失败场景定向复验 **2/2通过，40.1秒**（`browser-contract-r2.log`）。第二轮完整浏览器 **71通过/1失败/0跳过/0重试后通过**（`browser-full-r2.json`、`browser-full-r2.exit=1`、`browser-full-r2-artifacts/`，9分13秒），本项3场景及已修正两场景均通过；唯一失败为既有CSV场景通过Playwright APIRequestContext发送8,388,622字节请求时发生 `write EPIPE`，未取得可断言的HTTP状态，**全量不标通过**。未修改CSV产品、请求上限或放宽413断言。为复现而直接使用`--repeat-each=5`得到1通过/4失败（`browser-csv-repro.log`）：后4次共享同一Host/业务key，在创建连接时409，尚未触及上传，不能作为EPIPE复现或修复证据；改为每次重新启动测试宿主的5次独立执行，原CSV场景均通过（`browser-csv-isolated-1.log`—`5.log`），本次未稳定复现EPIPE，原因仍待排查。保留全部失败，不以独立复跑覆盖全量失败。
+
+主要实际命令（前端命令在 `web/`）：
+
+```sh
+dotnet format TenonEdge.sln --verify-no-changes --no-restore
+dotnet build TenonEdge.sln -c Release --no-restore
+timeout 5m dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~OutboundPolicyTests|FullyQualifiedName~OutboundPolicyViewTests|FullyQualifiedName~SystemInfoTests' --logger 'trx;LogFileName=system.trx' --results-directory /tmp/tenonedge-system-settings/backend --blame-hang-timeout 2m --blame-hang-dump-type none
+timeout 5m dotnet test tests/UnitTests -c Release --no-build --no-restore --logger 'trx;LogFileName=unit.trx' --results-directory /tmp/tenonedge-system-settings/regression --blame-hang-timeout 2m --blame-hang-dump-type none
+timeout 8m dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~IntegrationTests.Connections.|FullyQualifiedName~IntegrationTests.Api.|FullyQualifiedName~SystemInfoTests' --logger 'trx;LogFileName=integration.trx' --results-directory /tmp/tenonedge-system-settings/regression --blame-hang-timeout 2m --blame-hang-dump-type none
+python3 .github/scripts/verify-test-results.py /tmp/tenonedge-system-settings/regression --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
+TENONEDGE_API_URL=http://127.0.0.1:44913 npx --yes npm@11.21.0 run api:generate
+npx --yes npm@11.21.0 run typecheck
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 run build
+npx --yes npm@11.21.0 run test -- --reporter=json --outputFile=/tmp/tenonedge-system-settings/vitest.json
+npx --yes npm@11.21.0 run test:e2e -- tests/system.spec.ts
+npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts --grep 'HTTP live sample preserves|MQTT capture marks retained'
+TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx --yes npm@11.21.0 run test:e2e -- --reporter=json
+npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts --grep 'device CSV downloads' --repeat-each=5
+# 每次独立Host的诊断复跑，逐次记录退出码，不是产品自动重试：
+for run in 1 2 3 4 5; do npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts --grep 'device CSV downloads' > /tmp/tenonedge-system-settings/browser-csv-isolated-$run.log 2>&1; echo "$run $?"; done
+```
+
+最终format、typecheck、lint、build与`git diff --check`通过；899份后端/前端源码及测试的路径集合/内容哈希与最终验证检查点一致（`verified-source-final.json`）。本轮仅本地提交，无推送。
+
+停止点/剩余：只完成系统信息、已有名称展示和独立白名单页面软件子项，完整浏览器仍有上述CSV大请求EPIPE待诊断，不能标为全量通过。**连接页公网“一键加入白名单”、网关名称修改、运行参数、HTTPS-only/可信代理管理仍未实现**；Token预览/迁移Bearer补验、配置导入/扩展表单、T3-04连接信任/客户端证书、T3-11全流程/最低浏览器等继续按§1收口。管理宿主证书替换属于T5-01，不提前。无真实公网/实物/断电/最低浏览器/远端CI验证，专用损坏快照恢复与HTTP摘要Viewer权限的既有待确认项仍不视为获批。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -4939,6 +4985,8 @@ TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx
 | AT-14/18/26/28 / BE-AT-02/03/05 / T3-08 / 功能 §6.1/8.4 | 形式A管理员应用准备/API与COMMIT前后协调 | 本地软件子场景通过：会话/CSRF/一次消费、完整配置/身份/配额核对、原在途HTTP结果先落库、跨COMMIT屏障、隔离失败后运行重试及普通Apply保护；3122后端与325 Vitest回归通过 | §2.214 | 重新核对/拒绝重试、完整列表/缺口查询及页面、FS-23真实强杀与完整T3未完成；无新增浏览器/MQTT网络证据 |
 | AT-14/18/26/28 / BE-AT-02/03/05 / T3-08 / 功能 §8.4 | 意图列表/当前缺口与显式重新审批重试 | 本地软件子项通过：105条元数据分页、HTTP/MQTT重新核对、审批/尝试/审计原子提交、历史保留/未知结果不重放、真实HTTP取消等待与停机所有权、正常重启补结果；3146后端/325 Vitest回归通过 | §2.215 | 形式A应用与意图/重试页面、FS-23真实强杀、最低浏览器和完整T3未完成；无新增MQTT网络/浏览器证明 |
 | FS-23 / AT-14/26 / T3-08 / 功能 §8.4 | 迁移持久窗口真实SIGKILL及结果审计 | 本地软件故障注入通过：HTTP/MQTT、形式A/B、原UPDATE通知/queue提交前/config结果提交前三窗口的强杀与放行共24项；48次原Host重启，整批旧或整批新、收据/审计/计数幂等、A新UUID续跑与B不重放；3170后端回归通过 | §2.217 | HTTP错误摘要、实物断电与完整T3退出未完成；本轮无新增协议网络/浏览器证据 |
+| AT-18 / FE-AT-02 / 功能 §2.5、10.1 | T3-09 系统信息与出站白名单页面 | 本地软件子场景通过：全角色信息读取、管理员确认修改/审计、真实HTTP访问与撤销、重启保留、部署授权不可网页撤销、危险管理端口拒绝、冲突/丢回复不重放 | §2.223 | 连接页公网授权入口、改名/运行参数/访问策略及最低浏览器等，不标T3整项通过 |
+
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录

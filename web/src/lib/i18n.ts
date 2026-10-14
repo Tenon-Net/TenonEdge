@@ -1,3 +1,4 @@
+import { systemStrings } from '../features/system/strings'
 import { auditStrings } from '../features/audit/strings'
 import { userStrings } from '../features/users/strings'
 import { tokenStrings } from '../features/tokens/strings'
@@ -27,6 +28,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                systemSettings: systemStrings,
                 audit: auditStrings,
                 users: userStrings,
                 tokens: tokenStrings,

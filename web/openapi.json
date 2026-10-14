@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:37175/"
+      "url": "http://127.0.0.1:44913/"
     }
   ],
   "paths": {
@@ -7599,8 +7599,8 @@
         "tags": [
           "System"
         ],
-        "summary": "查看持久出站白名单与本机端口例外",
-        "description": "部署参数规则额外生效，不会被本接口删除；本机管理端口和危险地址始终禁止。",
+        "summary": "分别查看网页持久和部署出站规则与本机端口例外",
+        "description": "部署参数规则额外生效，不会被本接口删除；deployment为null表示部署规则无效、出站拒绝，不可当成空白名单。本机管理端口和危险地址始终禁止。",
         "operationId": "getOutboundPolicy",
         "responses": {
           "200": {
@@ -7608,7 +7608,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OutboundPolicyState"
+                  "$ref": "#/components/schemas/OutboundPolicyView"
                 }
               }
             }
@@ -14652,6 +14652,32 @@
         },
         "additionalProperties": false
       },
+      "OutboundDeploymentRules": {
+        "required": [
+          "networks",
+          "localPorts"
+        ],
+        "type": "object",
+        "properties": {
+          "networks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundNetworkGrant"
+            }
+          },
+          "localPorts": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        }
+      },
       "OutboundNetworkGrant": {
         "required": [
           "cidr",
@@ -14702,7 +14728,8 @@
               "string"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "OutboundPolicyState": {
         "required": [
@@ -14734,6 +14761,50 @@
               ],
               "format": "int32"
             }
+          }
+        }
+      },
+      "OutboundPolicyView": {
+        "required": [
+          "version",
+          "networks",
+          "localPorts",
+          "deployment"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundNetworkGrant"
+            }
+          },
+          "localPorts": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          "deployment": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutboundDeploymentRules"
+              }
+            ]
           }
         }
       },

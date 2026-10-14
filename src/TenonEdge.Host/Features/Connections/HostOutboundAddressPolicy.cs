@@ -35,13 +35,10 @@ internal sealed class HostOutboundAddressPolicy(IConfiguration configuration, Li
         OutboundAddressRules rules;
         try
         {
-            var networks = configuration.GetSection("TenonEdge:Outbound:Networks").GetChildren().Select(rule =>
-                new OutboundNetworkRule(IPNetwork.Parse(rule["Cidr"] ?? throw new InvalidOperationException("出站规则缺少 CIDR。")),
-                    rule.GetValue<int>("Port"))).ToArray();
-            var localPorts = configuration.GetSection("TenonEdge:Outbound:LocalPorts").Get<int[]>() ?? [];
+            var deployment = OutboundDeploymentRules.Read(configuration);
             var stored = readStored();
-            rules = new OutboundAddressRules(networks.Concat(stored.Networks.Select(rule => new OutboundNetworkRule(IPNetwork.Parse(rule.Cidr), rule.Port))),
-                localPorts.Concat(stored.LocalPorts));
+            rules = new OutboundAddressRules(deployment.Networks.Concat(stored.Networks).Select(rule => new OutboundNetworkRule(IPNetwork.Parse(rule.Cidr), rule.Port)),
+                deployment.LocalPorts.Concat(stored.LocalPorts));
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException)
         {

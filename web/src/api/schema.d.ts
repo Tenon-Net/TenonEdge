@@ -1632,8 +1632,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 查看持久出站白名单与本机端口例外
-         * @description 部署参数规则额外生效，不会被本接口删除；本机管理端口和危险地址始终禁止。
+         * 分别查看网页持久和部署出站规则与本机端口例外
+         * @description 部署参数规则额外生效，不会被本接口删除；deployment为null表示部署规则无效、出站拒绝，不可当成空白名单。本机管理端口和危险地址始终禁止。
          */
         get: operations["getOutboundPolicy"];
         /**
@@ -3099,6 +3099,10 @@ export interface components {
             processRetained: boolean;
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
         };
+        OutboundDeploymentRules: {
+            networks: components["schemas"]["OutboundNetworkGrant"][];
+            localPorts: (number | string)[];
+        };
         OutboundNetworkGrant: {
             cidr: string;
             /** Format: int32 */
@@ -3113,6 +3117,12 @@ export interface components {
             version: null | string;
             networks: components["schemas"]["OutboundNetworkGrant"][];
             localPorts: (number | string)[];
+        };
+        OutboundPolicyView: {
+            version: null | string;
+            networks: components["schemas"]["OutboundNetworkGrant"][];
+            localPorts: (number | string)[];
+            deployment: null | components["schemas"]["OutboundDeploymentRules"];
         };
         OutputCapacityEstimate: {
             /** Format: double */
@@ -9797,7 +9807,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OutboundPolicyState"];
+                    "application/json": components["schemas"]["OutboundPolicyView"];
                 };
             };
             /** @description Unauthorized */

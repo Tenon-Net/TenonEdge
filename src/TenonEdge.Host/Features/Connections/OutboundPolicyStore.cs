@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using SqlSugar;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Storage;
@@ -77,6 +78,7 @@ internal sealed class OutboundPolicyStore(ConfigDatabase database, AuditTrail au
 
 internal sealed record OutboundNetworkGrant(string Cidr, int Port);
 internal sealed record OutboundPolicyState(string? Version, OutboundNetworkGrant[] Networks, int[] LocalPorts);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record OutboundPolicyRequest(OutboundNetworkGrant[] Networks, int[] LocalPorts, string? ExpectedVersion = null);
 internal sealed class OutboundPolicyConflictException : Exception;
 

@@ -1,11 +1,29 @@
 import { ConfigurationHeader } from '../../features/configuration/header'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSystemInfo } from '../../features/diagnostics/queries'
 import { Link, Outlet } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { Main } from './main'
 import { Button } from '../ui/button'
 import { useSession } from '../../lib/session'
 import { LogoutButton } from '../../features/auth/logout-button'
+
+function GatewayName() {
+    const { t } = useTranslation()
+    const info = useSystemInfo()
+    const name = info.data?.gatewayName
+    useEffect(() => {
+        document.title = name ? `${name} · ${t('product')}` : t('product')
+        return () => {
+            document.title = t('product')
+        }
+    }, [name, t])
+    return (
+        <p className="break-words text-sm font-medium">
+            {t('systemSettings.gateway')}：{name || t('systemSettings.unnamed')}
+        </p>
+    )
+}
 
 export function Workspace() {
     const { t } = useTranslation()
@@ -57,6 +75,13 @@ export function Workspace() {
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
                         {t('deliveries.title')}
+                    </Link>
+                    <Link
+                        to="/system"
+                        className="rounded-md p-2 hover:bg-accent"
+                        activeProps={{ className: 'bg-accent font-medium' }}
+                    >
+                        {t('systemSettings.title')}
                     </Link>
                     {session?.role === 'administrator' && (
                         <Link
@@ -139,6 +164,7 @@ export function Workspace() {
                     </div>
                 )}
                 <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
+                    <GatewayName />
                     <div>
                         <p className="text-sm">
                             {t('accountDetail', {

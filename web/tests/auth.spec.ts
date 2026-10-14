@@ -2412,9 +2412,8 @@ test('HTTP live sample preserves exact numbers, requires explicit inference and 
         const allowed = await page.request.put(policyUrl, {
             headers,
             data: {
-                ...policy,
                 expectedVersion: policy.version,
-                version: undefined,
+                networks: policy.networks,
                 localPorts: [...policy.localPorts, address.port],
             },
         })
@@ -2597,9 +2596,8 @@ test('MQTT capture marks retained data, preserves exact values, adopts samples e
         const allowed = await page.request.put(policyUrl, {
             headers,
             data: {
-                ...policy,
                 expectedVersion: policy.version,
-                version: undefined,
+                networks: policy.networks,
                 localPorts: [...policy.localPorts, address.port],
             },
         })
