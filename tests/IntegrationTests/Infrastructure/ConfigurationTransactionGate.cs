@@ -91,8 +91,12 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
             { throw new InvalidOperationException("原指针写事务中缺少配置状态。"); }
             effective = writer.GetInt64(0);
             previous = writer.GetInt64(1);
-            auditAction = writer.GetString(2) == RuntimeSnapshotOrigins.Rollback
-                ? AuditActions.SnapshotRolledBack : AuditActions.SnapshotApplied;
+            auditAction = writer.GetString(2) switch
+            {
+                RuntimeSnapshotOrigins.Rollback => AuditActions.SnapshotRolledBack,
+                RuntimeSnapshotOrigins.Recovery => AuditActions.SnapshotRecovered,
+                _ => AuditActions.SnapshotApplied,
+            };
         }
         var settings = SqliteConnectionSettings.Read(connection);
         var connectionString = new SqliteConnectionStringBuilder(connection.ConnectionString)
@@ -161,8 +165,8 @@ internal sealed class ConfigurationTransactionGate(string directory, bool afterC
             ?? throw new InvalidOperationException("指针写入不在真实事务中，不能作为提交前中断证据。");
         command.CommandText = """
             SELECT effective_revision, previous_revision, pending_revision, running_revision,
-                (SELECT state FROM runtime_snapshot WHERE revision = 1),
-                (SELECT state FROM runtime_snapshot WHERE revision = 2)
+                (SELECT state FROM runtime_snapshot WHERE revision = previous_revision),
+                (SELECT state FROM runtime_snapshot WHERE revision = effective_revision)
             FROM system_state WHERE id = 1;
             """;
         object checkpoint;
