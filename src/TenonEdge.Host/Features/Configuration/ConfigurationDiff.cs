@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TenonEdge.Host.Features.Connections;
 
 namespace TenonEdge.Host.Features.Configuration;
 
@@ -15,12 +16,14 @@ internal static class ConfigurationDiff
     {
         var changes = new List<ConfigurationChange>();
         var metadata = (after.Edits ?? []).ToDictionary(edit => (edit.Kind, edit.Id));
+        var beforeRequired = (before.RequiredCredentials ?? []).ToDictionary(value => value.ConnectionId);
+        var afterRequired = (after.RequiredCredentials ?? []).ToDictionary(value => value.ConnectionId);
         // 旧路线已保存可靠的作者/时间；其他旧对象没有元数据时保持未知，不使用当前时间补造。
         foreach (var route in after.Routes)
         { metadata.TryAdd(("route", route.Id), new("route", route.Id, "", route.UpdatedBy, route.UpdatedAt > 0 ? route.UpdatedAt : null, false)); }
 
-        Compare("connection", before.Connections.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))),
-            after.Connections.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))));
+        Compare("connection", before.Connections.Select(value => (value.Id, value.Key, (long?)null, Value: ConnectionValue(value, beforeRequired.GetValueOrDefault(value.Id)))),
+            after.Connections.Select(value => (value.Id, value.Key, (long?)null, Value: ConnectionValue(value, afterRequired.GetValueOrDefault(value.Id)))));
         Compare("device", before.Devices.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))),
             after.Devices.Select(value => (value.Id, value.Key, (long?)null, Value: JsonSerializer.SerializeToElement(value, Json))));
         Compare("input", before.Inputs.Select(value => (value.Id, value.Key, (long?)value.DeviceId, Value: JsonSerializer.SerializeToElement(value, Json))),
@@ -49,6 +52,14 @@ internal static class ConfigurationDiff
     }
 
     // 与运行计划的数字原文规则一致；1 与 1.0 不能在回滚前被误判为“草稿未改动”。
+    private static JsonElement ConnectionValue(ConnectionDraft connection, ConfigurationCredentialRequirement? requirement)
+    {
+        var properties = JsonSerializer.SerializeToElement(connection, Json).EnumerateObject()
+            .ToDictionary(value => value.Name, value => value.Value, StringComparer.Ordinal);
+        properties.Add("credentialRequirement", JsonSerializer.SerializeToElement(requirement, Json));
+        return JsonSerializer.SerializeToElement(properties, Json);
+    }
+
     private static bool Same(JsonElement left, JsonElement right)
     {
         if (left.ValueKind != right.ValueKind)

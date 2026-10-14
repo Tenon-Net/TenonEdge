@@ -132,8 +132,10 @@ public sealed class GatewayIdentityTests
         store.Initialize();
         // 不用雪花主键的表：单行的系统状态、迁移历史，以及以配置版本号为主键的运行快照（版本号的下限由 revision_floor 维护）。
         // mqtt_credential 的主键是种子中的 connectionId（逻辑引用），不分配新的对象 ID；正式连接实体由 T3 管理。
-        string[] bookkeepingTables = [SystemStateRecord.TableName, SchemaMigrationRecord.TableName, RuntimeSnapshotRecord.TableName, MqttCredentialRecord.TableName, HttpCredentialRecord.TableName, "output_control", "outbound_policy", "mqtt_subscription", "configuration_draft", "route_draft_reference", "configuration_edit", "delivery_migration", "delivery_migration_intent", "runtime_parameters", "queue_parameters", "trusted_proxy_rules"];
+        string[] bookkeepingTables = [SystemStateRecord.TableName, SchemaMigrationRecord.TableName, RuntimeSnapshotRecord.TableName, MqttCredentialRecord.TableName, HttpCredentialRecord.TableName, "output_control", "outbound_policy", "mqtt_subscription", "configuration_draft", "route_draft_reference", "configuration_edit", "delivery_migration", "delivery_migration_intent", "runtime_parameters", "queue_parameters", "trusted_proxy_rules", "configuration_credential_requirement"];
         Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('mqtt_credential') WHERE name = 'connection_id' AND pk = 1 AND type = 'INTEGER'"));
+        // 待补凭证标记只引用已有连接；新建/替换标记不分配独立编号，连接删除仍推进原 id_floor。
+        Assert.Equal(1, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('configuration_credential_requirement') WHERE name = 'connection_id' AND pk = 1 AND type = 'INTEGER'"));
 
         // 订阅日志按 Broker/ClientId/Filter 三个文本字段联合寻址，不分配雪花 ID。
         Assert.Equal(3, store.Database.Client.Ado.GetInt("SELECT COUNT(*) FROM pragma_table_info('mqtt_subscription') WHERE pk > 0 AND type = 'TEXT'"));

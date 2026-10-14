@@ -114,6 +114,8 @@ export const configurationStrings = {
             '配置快照无效，不能安全读取、比较或确认回滚。',
         configuration_versionNotFound: '版本不存在或已清理，请刷新历史。',
         configuration_reviewChanged: '确认清单已变化，请重新预检。',
+        configuration_credentialsRequired:
+            '导入草稿仍有连接需要重新填写凭证。请在连接页面保存新的凭证后重新预检；保留或清除旧凭证不能解除此阻断。',
     },
     historyHelp:
         '按版本倒序，每页 20 项。回滚须先处理未应用修改；失败版本可查看，但不能作为回滚目标。',

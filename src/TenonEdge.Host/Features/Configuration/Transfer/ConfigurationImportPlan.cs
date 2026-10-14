@@ -98,7 +98,8 @@ internal static class ConfigurationImportPlanner
         }
         var candidate = new ConfigurationCheckpoint(before.Version, connections.Values.OrderBy(value => value.Id).ToArray(),
             devices.Values.OrderBy(value => value.Id).ToArray(), inputs.Values.OrderBy(value => value.Id).ToArray(),
-            routes.Values.OrderBy(value => value.Id).ToArray(), before.CredentialConnections, before.Edits);
+            routes.Values.OrderBy(value => value.Id).ToArray(), before.CredentialConnections, before.Edits,
+            before.RequiredCredentials?.Where(value => connectionsById.ContainsKey(value.ConnectionId)).ToArray());
         ValidateCombined(candidate, token);
         return new(candidate, ConfigurationDiff.Between(before, candidate));
 

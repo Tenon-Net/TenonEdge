@@ -2145,6 +2145,13 @@ export interface components {
             routes: components["schemas"]["RouteDraft"][];
             credentialConnections?: null | (number | string)[];
             edits?: null | components["schemas"]["ConfigurationEdit"][];
+            requiredCredentials?: null | components["schemas"]["ConfigurationCredentialRequirement"][];
+        };
+        ConfigurationCredentialRequirement: {
+            /** Format: int64 */
+            connectionId: number | string;
+            accountIdentity: string;
+            reason: string;
         };
         ConfigurationDiscardRequest: {
             expectedVersion: string;

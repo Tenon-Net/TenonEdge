@@ -84,6 +84,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
                 id.ToString(CultureInfo.InvariantCulture), "删除未被引用且无发送记录的连接草稿，同时清除其认证凭证。"));
         }
         client.Deleteable(row).ExecuteCommand();
+        ConfigurationCredentialRequirements.Remove(client, id);
         ConfigurationEditJournal.Record(client, "connection", id, account.Name, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("connection.draftDeleted", AuditResults.Success, account, sourceIp,

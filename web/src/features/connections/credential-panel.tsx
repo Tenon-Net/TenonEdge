@@ -7,6 +7,7 @@ import { ErrorMessage } from '../auth/error-message'
 import { Button } from '../../components/ui/button'
 import type { components } from '../../api/schema'
 import { credentialRecipient, type Connection } from './model'
+import { summaryKey } from '../configuration/queries'
 
 type Kind = NonNullable<components['schemas']['HttpCredentialKind']>
 export function CredentialPanel({
@@ -145,7 +146,15 @@ export function CredentialPanel({
                 ),
             )
             mutation.reset()
-            await queryClient.invalidateQueries({ queryKey: key })
+            // Completing an imported credential requirement also advances the
+            // draft version. Re-read it rather than reusing the old editor token.
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: key }),
+                queryClient.invalidateQueries({
+                    queryKey: ['connection-drafts'],
+                }),
+                queryClient.invalidateQueries({ queryKey: summaryKey }),
+            ])
         },
     })
     const blocked =

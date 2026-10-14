@@ -23,6 +23,8 @@ internal sealed partial class RouteDraftStore
         if (string.IsNullOrEmpty(expectedVersion) || expectedVersion.Length > 64)
         { throw new ArgumentException("须提供草稿版本。"); }
         ConfigurationDraft.CheckVersion(client, expectedVersion);
+        if (graph is null)
+        { ConfigurationCredentialRequirements.RequireComplete(client); }
         var limits = RuntimeParameterStore.ReadPlanLimits(client);
         long bytes = 0;
         RouteDraft[] routes;

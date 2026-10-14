@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:37671/"
+      "url": "http://127.0.0.1:37077/"
     }
   ],
   "paths": {
@@ -10574,6 +10574,39 @@
             "items": {
               "$ref": "#/components/schemas/ConfigurationEdit"
             }
+          },
+          "requiredCredentials": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationCredentialRequirement"
+            }
+          }
+        }
+      },
+      "ConfigurationCredentialRequirement": {
+        "required": [
+          "connectionId",
+          "accountIdentity",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "accountIdentity": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },

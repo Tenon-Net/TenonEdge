@@ -390,5 +390,14 @@ internal static class ConfigMigrations
             "ALTER TABLE runtime_parameters ADD COLUMN plan_paths_per_source INTEGER NOT NULL DEFAULT 32 CHECK(plan_paths_per_source BETWEEN 1 AND 32)",
             "ALTER TABLE runtime_parameters ADD COLUMN plan_total_paths INTEGER NOT NULL DEFAULT 20000 CHECK(plan_total_paths BETWEEN 1 AND 20000)",
         ]),
+        new(30, "import_credential_requirements", [
+            """
+            CREATE TABLE configuration_credential_requirement (
+                connection_id INTEGER NOT NULL PRIMARY KEY,
+                account_identity TEXT NOT NULL CHECK(length(account_identity) = 71),
+                reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 64)
+            )
+            """,
+        ]),
     ];
 }

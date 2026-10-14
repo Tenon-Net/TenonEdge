@@ -5,6 +5,7 @@ using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
@@ -146,6 +147,8 @@ internal sealed class MqttCredentialStore(
                 client.Insertable(record).ExecuteCommand();
             }
 
+            if (request.Password is not null)
+            { ConfigurationCredentialRequirements.CompleteWithNewSecret(client, connectionId, accountName.Name, time); }
             audit.Append(client, new AuditEntry("credential.mqtt.write", AuditResults.Success, accountName, sourceIp,
                 connectionId.ToString(CultureInfo.InvariantCulture),
                 $"recipientChanged={changedRecipient}; retained={request.RetainExisting}; accountChanged={request.AccountChanged}; invalidated={record.ProtectedPassword is null}"));

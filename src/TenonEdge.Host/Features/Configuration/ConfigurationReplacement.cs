@@ -15,6 +15,7 @@ internal sealed class ConfigurationReplacement(ConfigurationCheckpoint draft)
     { Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) } };
 
     private readonly ConfigurationEdit[]? _edits = draft.Edits;
+    private readonly ConfigurationCredentialRequirement[]? _required = draft.RequiredCredentials;
     private readonly ConnectionDraftRecord[] _connections = draft.Connections.Select(value => new ConnectionDraftRecord
     { Id = value.Id, BusinessKey = value.Key, Content = JsonSerializer.Serialize(value, Json) }).ToArray();
     private readonly DeviceDraftRecord[] _devices = draft.Devices.Select(value => new DeviceDraftRecord
@@ -59,6 +60,7 @@ internal sealed class ConfigurationReplacement(ConfigurationCheckpoint draft)
         Insert(client, _routes);
         Insert(client, _references);
         ConfigurationEditJournal.Restore(client, _edits);
+        ConfigurationCredentialRequirements.Replace(client, _required);
         ConfigurationDraft.Advance(client, time);
         return true;
     }

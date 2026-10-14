@@ -27,6 +27,7 @@ internal sealed partial class RuntimeVersionStore
         { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
         var captured = database.InTransaction(client =>
         {
+            ConfigurationCredentialRequirements.RequireComplete(client);
             var draft = ConfigurationCheckpoint.Read(client, expectedDraftVersion);
             var effective = State(client).EffectiveRevision;
             return (Draft: draft, Effective: effective is { } revision ? RequiredSnapshot(client, revision) : null,

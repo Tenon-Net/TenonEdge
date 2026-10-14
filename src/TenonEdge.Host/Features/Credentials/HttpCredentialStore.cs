@@ -5,6 +5,7 @@ using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
@@ -97,6 +98,8 @@ internal sealed class HttpCredentialStore(
             { client.Updateable(record).ExecuteCommand(); }
             else
             { client.Insertable(record).ExecuteCommand(); }
+            if (request.Secret is not null)
+            { ConfigurationCredentialRequirements.CompleteWithNewSecret(client, connectionId, accountName.Name, time); }
             audit.Append(client, new AuditEntry("credential.http.write", AuditResults.Success, accountName, sourceIp,
                 connectionId.ToString(CultureInfo.InvariantCulture),
                 $"recipientChanged={changedRecipient}; retained={request.RetainExisting}; accountChanged={request.AccountChanged}; invalidated={record.ProtectedSecret is null}"));

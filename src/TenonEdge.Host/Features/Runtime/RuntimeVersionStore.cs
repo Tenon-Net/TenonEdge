@@ -100,9 +100,17 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
         { throw new ArgumentException("须提供已确认的草稿版本。", nameof(expectedDraftVersion)); }
         if (expectation is not null && document.ContentHash != expectation.PlanHash)
         { throw new DraftWriteException("configuration.reviewChanged"); }
-        var draft = database.InTransaction(client => ConfigurationCheckpoint.Read(client, expectedDraftVersion));
+        var draft = database.InTransaction(client =>
+        {
+            ConfigurationCredentialRequirements.RequireComplete(client);
+            return ConfigurationCheckpoint.Read(client, expectedDraftVersion);
+        });
         var snapshot = RuntimeSnapshotDocument.Create(document, draft);
-        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, client => RuntimeParameterStore.ReadPlanLimits(client).Check(document), changeDescription: changeDescription, edits: draft.Edits, expectation: expectation);
+        return FreezeCore(snapshot, RuntimeSnapshotOrigins.Apply, null, createdBy, expectedDraftVersion, client =>
+        {
+            ConfigurationCredentialRequirements.RequireComplete(client);
+            RuntimeParameterStore.ReadPlanLimits(client).Check(document);
+        }, changeDescription: changeDescription, edits: draft.Edits, expectation: expectation);
     }
 
     public long FreezeRollback(RuntimeSnapshotRecord target, string createdBy)

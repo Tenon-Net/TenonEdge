@@ -20,6 +20,8 @@ internal sealed class ConfigurationExportStore(ConfigDatabase database)
                 if (!identities.TryAdd(credential.ConnectionId, credential.AccountIdentity))
                 { throw new ConfigurationTransferException("configuration.exportCredentialConflict", "$.connections.credential"); }
             }
+            foreach (var required in draft.RequiredCredentials ?? [])
+            { identities[required.ConnectionId] = required.AccountIdentity; }
             return (Draft: draft, Identities: identities);
         });
         token.ThrowIfCancellationRequested();
