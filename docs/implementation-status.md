@@ -49,7 +49,7 @@
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
 | T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；无路线启用HTTP/MQTT目标已补发送接续，含旧完整快照执行视图，验证见§2.208；形式B管理员迁移准备/确认API已通过本地软件回归（§2.209），逐条核对冻结原协议/接收方，绑定登录会话、选择代次和目标身份。形式B迁移页面已通过本地软件回归（§2.210），支持分区/跨页勾选、旧新身份并排核对、同会话准备恢复和响应丢失后按编号查询。已补形式A提交前发送屏障（§2.211），配置同事务意图登记、原状态持久隔离、启动/人工重试前补隔离及受限变更检查（§2.212）；已补确认目标完整身份绑定、原协调者串行执行、拒绝及两库结果/中断恢复（§2.213）；管理员形式A应用准备/确认/意图查询API与真实应用协调已接线（§2.214），含完整配置核对、同所有者声明、配额预检及提交后隔离保护。已补持久意图元数据分页、当前身份/完整配额缺口查询，以及拒绝/旧版未确认意图的管理员重新核对和显式重试API（§2.215），新审批/尝试/审计原子提交，未知结果不重放。形式A换址应用及持久意图/重新审批重试页面已接入，含一次确认、刷新恢复与角色保护，验证边界见§2.216。FS-23已补两种迁移/HTTP及MQTT的三个持久窗口、真实SIGKILL/正常放行、原Host双重重启与审计幂等，24项及3170后端全量通过（§2.217）；仅软件故障注入，不是实物断电。HTTP对方错误摘要已补有界采集、同事务存储及正文权限页面（§2.218）；维护者已于2026-10-14确认保持配置人员/管理员正文权限，不扩宽Viewer。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.218；功能 §8 |
 | T3 | T3-09 用户审计与系统管理 | 主体软件交付待验收；阶段闭环未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）；管理员改名/清空、同事务审计及页头/标签页更新见§2.225。三协议连接保存后的公网解析检查及管理员精确IP/端口确认授权见§2.226。预览并发与审计保留运行参数子项见§2.227；队列配额/保留期/存储阈值及原写者即时采用见§2.229。Token跨预览预算/形式B迁移资源归属的真实TLS Bearer补验见§2.230。代理信任登记/持久化与每请求统一协议/来源快照已补，见§2.231。调试缓存即时预算/页面/重启与同缓存验证见§2.234。在途字节即时预算见§2.236。输入通道即时条数见§2.237。新计划规模即时准入/页面见§2.240（不扩大既有安全上界，不追溯历史）。既有账号/令牌/审计/系统功能的关联授权与完整95项浏览器回归见§2.241；后续新增功能及完整跨角色业务闭环仍随T3-11收尾。宿主管理证书替换及HTTPS-only按 T5-01 | §2.219—§2.227；功能 §9/10.1/12.3；AT-18/32 |
-| T3 | T3-10 配置导入与扩展表单 | 部分交付，未完成 | 业务标识完整草稿导出/API/真实下载及角色验证见§2.242；导入解析、业务标识重映射及凭证比较的内部核心/单测见§2.243，尚无导入API/网页；凭证待补持久标记及应用阻断见§2.244；仍须补完整预检/确认及原子写草稿、六类扩展参数声明/同源校验/界面；API 文档页面已接入（§2.235）；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
+| T3 | T3-10 配置导入与扩展表单 | 部分交付，未完成 | 业务标识完整草稿导出/API/真实下载及角色验证见§2.242；导入解析、业务标识重映射及凭证比较的内部核心/单测见§2.243，尚无导入API/网页；凭证待补持久标记及应用阻断见§2.244，原子导入/一次确认内部服务见§2.245；仍须补上传/预检/确认API与网页、六类扩展参数声明/同源校验/界面；API 文档页面已接入（§2.235）；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 当前完整浏览器95/95通过见§2.241，不能替代尚缺功能的无JSON闭环。 §2.223的CSV超限传输竞态已最小复现并改用真实浏览器传输严格验证，完整浏览器基线73/73通过（§2.224），改名后75/75通过（§2.225）；连接页授权与历史刷新竞态修复后77/77通过（§2.226），运行参数子项后79/79通过（§2.227），队列参数后81/81通过（§2.229）；Schema27与实时API文档页面后的完整浏览器84/84通过（§2.236），不把首次中止的50通过/34跳过算作通过。§2.225/2.228后端全量超时已在§2.232以RDG和原单次完整套件收口：1446单元+2022集成全部通过，不等于本任务全部需求完成。须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
 
@@ -5610,7 +5610,8 @@ dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-build --n
 dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --filter 'FullyQualifiedName~ConfigurationCredentialRequirementTests|FullyQualifiedName~ConfigurationExportTests|FullyQualifiedName~DraftCredentialTests|FullyQualifiedName~ConfigurationDraftEndpointTests|FullyQualifiedName~ConfigurationVersionEndpointTests|FullyQualifiedName~HttpCredentialTests|FullyQualifiedName~MqttCredentialTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~Storage' --logger 'trx;LogFileName=integration.trx' --results-directory /tmp/tenonedge-import-requirements/final
 python3 .github/scripts/verify-test-results.py /tmp/tenonedge-import-requirements/final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
 # web目录
-npx --yes npm@11.21.0 run api:generate
+# 使用自有临时Development Host；脚本设置TENONEDGE_API_URL后调用api:generate
+python3 /tmp/tenonedge-import-requirements/generate-openapi.py
 npx --yes npm@11.21.0 run typecheck
 npx --yes npm@11.21.0 run lint
 npx --yes npm@11.21.0 run format:check
@@ -5623,6 +5624,43 @@ node scripts/verify-results.mjs /tmp/tenonedge-import-requirements/vitest.json /
 ```
 
 继续T3-10导入确认/原子草稿写入及页面；同key跨连接类型边界仍待维护者答复，未定稿公开导入契约。T3仍未完成。
+
+### 2.245 T3-10d 原子导入与一次确认内部服务（2026-10-15）
+
+基线`a4a633a`。**内部服务已实现并测试，尚未注册导入API、接入上传/确认网页，不能宣称网页导入已完成**。同key跨连接类型规则仍待答复，不提前定稿公开契约。
+
+- `ConfigurationImportStore`在同一短事务捕获草稿版本与非秘密凭证版本，事务外解析/规划、重映射、比较凭证并构建完整变更。确认在一个新事务里重新检查草稿、全部凭证元数据及保留身份，再写草稿、路线引用、待补标记、对象编辑日志、版本及导入审计；任一失败整体回滚。
+- 未直接调用回滚用的`ConfigurationReplacement`：导入保留未改对象原编辑stamp及既有删除日志，仅记录本次增改删；新增/修改路线写入本次作者/时间。替换模式删除草稿，但保留当前凭证，不修改运行指针、种子/历史或队列；应用时仍须走既有接收方/引用检查。
+- 新连接编号同时避开当前凭证及effective/previous/pending计划引用；新增设备/来源按既有CRUD保留key检查，避免绕过种子身份。预检后这些引用变化，确认时再次核对。发号器未变，不复用已删除编号。
+- 需要重填的候选会保留文件或旧标记的账户摘要。即使再次导入时移除凭证提示，也不能清除已有阻断；原当前秘密既不删除也不重绑定。
+- 预检检查**合并后的持久草稿**及保守编辑日志增量，而非仅检查上传文件；确认事务内再做真实SQL总字节检查。16MiB规则由原`ConfigurationCheckpoint`抽出复用，不变更限制。
+- `ConfigurationImportPreparation`全网关最多一个待确认候选，绑定调用方提供的管理会话所有者；15分钟单调过期，不依墙上时间；显式确认一次消费，失败/冲突也不能重放。取消或同会话新上传释放旧候选，错误新上传不能留下隐藏的旧确认。读取流之前先做单候选准入；最多读16MiB+1字节，超限不截断导入；上传/预检有30秒取消期限。后续HTTP端点仍须在此之前取得共享预览预算、验证真实角色/CSRF并提供正确所有者，内部字符串测试不是HTTP鉴权验收。
+
+环境见`/tmp/tenonedge-import-store/environment.log`（Linux x64、SDK10.0.401、Node22.23.2、npm11.21.0）。完整C#格式、Release构建通过，0警告/错误；未改前端产品代码/依赖或OpenAPI契约。
+
+| 验证 | 最终结果 | 范围 |
+|---|---|---|
+| 全量后端单元 | **1526/1526通过** | 无失败/跳过 |
+| 关联后端集成 | **202/202通过**，31秒 | 既有178项加新增24项；非完整集成套件 |
+| 新增导入存储 | **16项通过**（包含于202） | 两个进程内独立Host的数据往返、本机引用/精确整数/原日志保留、同账户保留、换地址待补、同磁盘Host重建、替换不删凭证、草稿/秘密轮换/新凭证并发拒绝、审计原子回滚、凭证编号及种子设备/来源冲突、合并超限、确认最终SQL超限、去提示仍阻断、取消/坏文件不写入 |
+| 新增确认生命周期 | **8项通过**（包含于202） | 所有者、显式确认、一次消费、取消、单调过期、失败新上传撤销旧确认、并发先准入再读取、上限+1、慢上传期限；不代表真实HTTP权限/响应丢失闭环 |
+| 当前Chromium关联回归 | **6/6通过**，27.4秒 | 既有导出5+标记补填1，验证公共草稿读取重构未回退；无导入网页可测试。本批没有重新运行Vitest/最低浏览器，报告门禁引用§2.244已有527项Vitest，不新增执行计数 |
+
+失败历史：首次构建测试调用`InputDraftStore.Write`参数顺序错误（2个编译错误），核对已有签名后修正；首次存储测试9通过/1失败，原因是含Dictionary的record按引用比较，改为比较实际序列化完整对象，没有改产品或放宽内容断言，之后16全过；首次确认生命周期22通过/1失败，`FakeTimeProvider.AdjustTime`连带改变timestamp，不能模拟独立墙上时间回拨，改为独立墙上偏移包装原单调时钟，未改产品过期逻辑，最终24全过。
+
+证据：`/tmp/tenonedge-import-store/`中的`verify-final.sh`（实际执行序列）、`integration-filter.txt`（精确用例类筛选）、`format-final.log`/`build-final.log`、`final/*.trx`及`verify.log`、`unit-final.log`/`integration-final.log`、`browser.*`/`browser-verify.log`。`build-first.log`/`first/`和`r4/`保留失败；r3/r5仅过程验证，不替代final。后端网络用例与浏览器串行；浏览器执行期间冻结源码/测试和构建产物。
+
+```sh
+bash /tmp/tenonedge-import-store/verify-final.sh
+# 脚本包含完整format/build、单元，以及以下关联集成；筛选完整保存在上述文件
+ dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --filter "$(cat /tmp/tenonedge-import-store/integration-filter.txt)" --logger 'trx;LogFileName=integration.trx' --results-directory /tmp/tenonedge-import-store/final
+python3 .github/scripts/verify-test-results.py /tmp/tenonedge-import-store/final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
+# web目录；引用上一批Vitest结果，不当作本批重新执行
+PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/tenonedge-import-store/browser.json npx --yes npm@11.21.0 exec -- playwright test configuration-export.spec.ts credential-requirement.spec.ts --reporter=line,json
+node scripts/verify-results.mjs /tmp/tenonedge-import-requirements/vitest.json /tmp/tenonedge-import-store/browser.json
+```
+
+仍需：HTTP上传/预检/确认与角色/CSRF/限流、真实网页差异和补填闭环、连接类型边界定稿、六类扩展表单，以及§1的其他T3缺项。没有真实设备/物理断电测试，不标T3完成。
 
 ## 3. 验收编号登记
 

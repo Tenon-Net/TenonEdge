@@ -16,6 +16,21 @@ internal sealed record ConfigurationCheckpoint(string Version, ConnectionDraft[]
     public static ConfigurationCheckpoint Read(SqlSugarClient client, string expectedVersion)
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
+        CheckSize(client);
+        var connections = client.Queryable<ConnectionDraftRecord>().OrderBy(row => row.Id).ToList().Select(ConnectionDraftStore.Decode).ToArray();
+        var connectionIds = connections.Select(connection => connection.Id).ToHashSet();
+        return new(expectedVersion,
+            connections,
+            client.Queryable<DeviceDraftRecord>().OrderBy(row => row.Id).ToList().Select(DeviceDraftStore.Decode).ToArray(),
+            client.Queryable<InputDraftRecord>().OrderBy(row => row.Id).ToList().Select(InputDraftStore.Decode).ToArray(),
+            client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(RouteDraftStore.Decode).ToArray(),
+            client.Queryable<MqttCredentialRecord>().Select(row => row.ConnectionId).ToList()
+                .Concat(client.Queryable<HttpCredentialRecord>().Select(row => row.ConnectionId).ToList()).Where(connectionIds.Contains).Distinct().Order().ToArray(),
+            ConfigurationEditJournal.Read(client), ConfigurationCredentialRequirements.Read(client));
+    }
+
+    internal static void CheckSize(SqlSugarClient client)
+    {
         var bytes = client.Ado.GetLong("""
             SELECT (SELECT COALESCE(SUM(length(CAST(content AS BLOB))), 0) FROM connection_draft)
                  + (SELECT COALESCE(SUM(length(CAST(content AS BLOB))), 0) FROM device_draft)
@@ -28,15 +43,5 @@ internal sealed record ConfigurationCheckpoint(string Version, ConnectionDraft[]
             """);
         if (bytes > RuntimePlanDocument.MaximumBytes)
         { throw new RuntimePlanDocumentException("完整配置快照超过 16 MiB。"); }
-        var connections = client.Queryable<ConnectionDraftRecord>().OrderBy(row => row.Id).ToList().Select(ConnectionDraftStore.Decode).ToArray();
-        var connectionIds = connections.Select(connection => connection.Id).ToHashSet();
-        return new(expectedVersion,
-            connections,
-            client.Queryable<DeviceDraftRecord>().OrderBy(row => row.Id).ToList().Select(DeviceDraftStore.Decode).ToArray(),
-            client.Queryable<InputDraftRecord>().OrderBy(row => row.Id).ToList().Select(InputDraftStore.Decode).ToArray(),
-            client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(RouteDraftStore.Decode).ToArray(),
-            client.Queryable<MqttCredentialRecord>().Select(row => row.ConnectionId).ToList()
-                .Concat(client.Queryable<HttpCredentialRecord>().Select(row => row.ConnectionId).ToList()).Where(connectionIds.Contains).Distinct().Order().ToArray(),
-            ConfigurationEditJournal.Read(client), ConfigurationCredentialRequirements.Read(client));
     }
 }
