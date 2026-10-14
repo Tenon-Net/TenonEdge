@@ -9,7 +9,7 @@ namespace TenonEdge.Abstractions.Plans;
 /// </summary>
 public sealed class RuntimePlan
 {
-    public RuntimePlan(long revision, IEnumerable<RuntimeUnitPlan> units)
+    public RuntimePlan(long revision, IEnumerable<RuntimeUnitPlan> units, IReadOnlyDictionary<RuntimeUnitId, RuntimeUnitId>? diagnosticObjects = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(revision, 1);
         ArgumentNullException.ThrowIfNull(units);
@@ -27,6 +27,11 @@ public sealed class RuntimePlan
             }
         }
 
+        var ids = sorted.Select(unit => unit.Id).ToHashSet();
+        DiagnosticObjects = (diagnosticObjects ?? ImmutableDictionary<RuntimeUnitId, RuntimeUnitId>.Empty).ToImmutableDictionary();
+        if (DiagnosticObjects.Any(pair => !ids.Contains(pair.Key) || !pair.Key.Kind.StartsWith("output.", StringComparison.Ordinal) ||
+            pair.Value is null || pair.Value.Kind != pair.Key.Kind))
+        { throw new ArgumentException("诊断对象映射只允许已存在的同类型输出路径。", nameof(diagnosticObjects)); }
         Revision = revision;
         Units = sorted;
     }
@@ -35,4 +40,8 @@ public sealed class RuntimePlan
     public long Revision { get; }
 
     public ImmutableArray<RuntimeUnitPlan> Units { get; }
+
+    /// <summary>纯诊断标签：多条编译路径可归属同一画布输出节点，共用单对象缓存预算；不改变运行单元身份或发送。</summary>
+    public ImmutableDictionary<RuntimeUnitId, RuntimeUnitId> DiagnosticObjects { get; }
+    public RuntimeUnitId DiagnosticObject(RuntimeUnitId unit) => DiagnosticObjects.GetValueOrDefault(unit, unit);
 }

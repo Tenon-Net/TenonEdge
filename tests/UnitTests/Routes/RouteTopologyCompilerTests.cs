@@ -20,6 +20,23 @@ public sealed class RouteTopologyCompilerTests(ITestOutputHelper output)
     private static string Path(RouteTopologyPath path) => $"{path.RouteKey}:{path.SourceId}:{string.Join('>', path.Nodes)}";
 
     [Fact]
+    public void DiagnosticRecoverySkipsOnlyFieldChecksAndStillBoundsExpansionAndIdentity()
+    {
+        var sources = Sources();
+        sources[1] = sources[1] with { Fields = [] };
+        Assert.Equal("source.fields", Assert.Throws<RouteTopologyException>(() =>
+            RouteTopologyCompiler.Compile([Straight()], sources, Token)).Issue.Code);
+        Assert.Single(RouteTopologyCompiler.RecoverDiagnosticPaths([Straight()], sources).Paths);
+        var maps = Enumerable.Range(0, 33).Select(i => Map($"m{i}")).ToArray();
+        var oversized = new RouteTopology("route", true, 1, [Input(), .. maps, Out()],
+            [.. maps.SelectMany(map => new[] { new RouteTopologyEdge("in", map.Id), new RouteTopologyEdge(map.Id, "out") })]);
+        Assert.Equal("paths.sourceLimit", Assert.Throws<RouteTopologyException>(() =>
+            RouteTopologyCompiler.RecoverDiagnosticPaths([oversized], sources)).Issue.Code);
+        Assert.Equal("source.missing", Assert.Throws<RouteTopologyException>(() =>
+            RouteTopologyCompiler.RecoverDiagnosticPaths([Straight("route", 2)], sources)).Issue.Code);
+    }
+
+    [Fact]
     public void BranchesThatRejoinTheSameOutputRemainSeparatePathsAndSourcesAreSharedAcrossRoutes()
     {
         var diamond = new RouteTopology("diamond", true, 1, [Input(), Map("a"), Map("b"), Out()],

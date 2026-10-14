@@ -34,7 +34,7 @@ internal sealed record RuntimeSnapshotDocument(int SchemaVersion, string Content
     public static (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft) ReadForExecution(RuntimeSnapshotRecord snapshot)
     {
         var (plan, draft) = Read(snapshot);
-        return (draft is null ? plan : RoutePlanCompiler.WithQueueOutputs(plan, draft), draft);
+        return (draft is null ? plan : RoutePlanCompiler.WithOutputDiagnosticObjects(RoutePlanCompiler.WithQueueOutputs(plan, draft), draft), draft);
     }
 
     public static (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft) Read(RuntimeSnapshotRecord snapshot)

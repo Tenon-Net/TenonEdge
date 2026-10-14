@@ -173,6 +173,37 @@ public sealed class OutputMessageCaptureTests
         Assert.Equal(3, runtime.Deliveries.GetStatus().CommittedRecords);
     }
 
+    [Fact]
+    public async Task MultipleCompiledPathsShareTheLogicalOutputRecordBudget()
+    {
+        using var data = TemporaryDirectory.Create();
+        await using var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory(55)], data.Path, outputs: [new Factory()]);
+        var left = Definition("route/left", 1);
+        var right = Definition("route/right", 2);
+        var output = RuntimeUnitId.Create("output.test", "route/node");
+        var objects = new Dictionary<RuntimeUnitId, RuntimeUnitId> { [left.Id] = output, [right.Id] = output };
+        await using var first = runtime.Prepare(new(1, [OutputPipelineTests.Input(), left, right], objects));
+        runtime.StartCore();
+        await runtime.ActivateAsync(first);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 110 && runtime.InFlight.Status.ReservedBytes == 0);
+        var records = runtime.Messages.Read(output, false);
+        Assert.Equal(100, records.Count);
+        Assert.Equal(50, records.Count(record => record.Details!.PathKey == left.Id.Key));
+        Assert.Equal(50, records.Count(record => record.Details!.PathKey == right.Id.Key));
+        Assert.All(records, record => Assert.Equal(RuntimeMessageOutcome.Queued, record.Details!.Outcome));
+        Assert.Empty(runtime.Messages.Read(left.Id, true));
+        Assert.Empty(runtime.Messages.Read(right.Id, true));
+        var quiet = await runtime.QuiesceInputsAsync(Token);
+        await using var next = runtime.Prepare(new(2, [OutputPipelineTests.Input(), right], new Dictionary<RuntimeUnitId, RuntimeUnitId> { [right.Id] = output }));
+        await runtime.ActivateCommittedAsync(next, quiet);
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().CommittedRecords == 165 && runtime.InFlight.Status.ReservedBytes == 0);
+        records = runtime.Messages.Read(output, false);
+        Assert.Equal(100, records.Count);
+        Assert.Equal(55, records.Count(record => record.Revision == 2));
+        Assert.Equal(45, records.Count(record => record.Revision == 1));
+        Assert.Equal(2, runtime.Messages.Status.Objects); // one source and one logical output
+    }
+
     private static async Task Dispatch(DeliveryCache deliveries, RuntimeMessageCache messages, EdgeMessage source,
         IReadOnlyList<IOutputTarget> targets, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null)
     {

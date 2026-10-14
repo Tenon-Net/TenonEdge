@@ -21,7 +21,7 @@ internal sealed class InputDispatcherUnit(
     RuntimeUnitId inputId, ChannelReader<EdgeMessage> input, IReadOnlyList<IOutputTarget> targets,
     InputDispatcherState state, long revision, DeliveryCache deliveries,
     TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null,
-    RuntimeMessageCache? messages = null) : IRuntimeUnit
+    RuntimeMessageCache? messages = null, IReadOnlyDictionary<RuntimeUnitId, RuntimeUnitId>? diagnosticObjects = null) : IRuntimeUnit
 {
     public RuntimeUnitId Id { get; } = RuntimeUnitId.Create("delivery.dispatcher", inputId.Key);
 
@@ -159,10 +159,11 @@ internal sealed class InputDispatcherUnit(
         { return; }
         try
         {
-            var sequence = messages.CaptureOutput(inputId, target.Id, revision, state.Message!, mapped, output,
-                new(inputId.Key, id, outcome, invalidFields, missingFields, failedStage));
+            var objectId = diagnosticObjects?.GetValueOrDefault(target.Id) ?? target.Id;
+            var sequence = messages.CaptureOutput(inputId, objectId, revision, state.Message!, mapped, output,
+                new(inputId.Key, id, outcome, invalidFields, missingFields, failedStage, target.Id.Key));
             if (outcome == RuntimeMessageOutcome.Generated)
-            { state.Diagnostics[id] = (target.Id, sequence); }
+            { state.Diagnostics[id] = (objectId, sequence); }
         }
         // Diagnostic allocation/encoding must never change business admission.
         catch (Exception) { deliveries.PendingCounters.Add("debugCaptureFailures"); }

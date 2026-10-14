@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
@@ -91,7 +90,7 @@ internal static partial class RoutePlanCompiler
                 token.ThrowIfCancellationRequested();
                 var chain = group.First().Nodes;
                 var output = nodes[chain[^1]];
-                var outputId = RuntimeUnitId.Create(output.Type, route.Key + "/" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(group.Key))));
+                var outputId = OutputPathId(output.Type, route.Key, chain);
                 var stages = chain.Skip(1).SkipLast(1).Select(id => nodes[id].Config.GetProperty("rules")).ToArray();
                 foreach (var path in group)
                 {
@@ -119,7 +118,10 @@ internal static partial class RoutePlanCompiler
         { document = RuntimePlanDocument.Parse(serialized); }
         catch (RuntimePlanDocumentException) { throw Error("plan.configuration", ""); }
         limits.Check(document);
-        return new(document, topology, compiled.MoveToImmutable());
+        var paths = compiled.MoveToImmutable();
+        document = document.WithDiagnosticObjects(paths.GroupBy(path => path.OutputId).ToDictionary(group => group.Key,
+            group => RuntimeUnitId.Create(group.Key.Kind, group.First().Path.RouteKey + "/" + group.First().Path.Nodes[^1])));
+        return new(document, topology, paths);
 
         void Add(RuntimeUnitPlan unit, string route, string node)
         {

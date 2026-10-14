@@ -34,9 +34,10 @@ internal sealed class RuntimePlanDocument
 
     private static readonly HashSet<string> UnitProperties = new(StringComparer.Ordinal) { "kind", "key", "configuration" };
 
-    private RuntimePlanDocument(IReadOnlyList<RuntimeUnitPlan> units, byte[] canonical)
+    private RuntimePlanDocument(IReadOnlyList<RuntimeUnitPlan> units, byte[] canonical, IReadOnlyDictionary<RuntimeUnitId, RuntimeUnitId>? diagnosticObjects = null)
     {
         Units = units;
+        _diagnosticObjects = diagnosticObjects;
         Canonical = canonical;
         ContentHash = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(canonical));
     }
@@ -51,7 +52,15 @@ internal sealed class RuntimePlanDocument
     public string ContentHash { get; }
 
     /// <summary>按版本号生成不可变的运行计划。</summary>
-    public RuntimePlan ToPlan(long revision) => new(revision, Units);
+    public RuntimePlan ToPlan(long revision) => new(revision, Units, _diagnosticObjects);
+
+    // Derived from the same frozen graph; not a persisted schema/hash change.
+    private readonly IReadOnlyDictionary<RuntimeUnitId, RuntimeUnitId>? _diagnosticObjects;
+    internal RuntimePlanDocument WithDiagnosticObjects(IReadOnlyDictionary<RuntimeUnitId, RuntimeUnitId> objects)
+    {
+        var validated = new RuntimePlan(1, Units, objects);
+        return new(Units, Canonical, validated.DiagnosticObjects);
+    }
 
     /// <summary>解析运行计划文本；内容无效时抛出 <see cref="RuntimePlanDocumentException"/>，说明面向管理员。</summary>
     public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8)

@@ -18,7 +18,7 @@ public enum RuntimeMessageOutcome
     StorageProtected, DataRejected, StorageFailed, Stopped, QueueOutcomeUnknown,
 }
 public sealed record RuntimeMessageDetails(string InputKey, Guid? DeliveryId, RuntimeMessageOutcome Outcome,
-    int InvalidFields = 0, int MissingFields = 0, int? FailedMappingStage = null);
+    int InvalidFields = 0, int MissingFields = 0, int? FailedMappingStage = null, string? PathKey = null);
 public sealed record RuntimeMessageCacheStatus(int Objects, int Records, long StoredBytes, long ChargedBytes);
 
 /// <summary>只拥有捕获时裁剪的 UTF-8 副本，不持有原始消息/协议文档。采样与 UI 刷新无关。

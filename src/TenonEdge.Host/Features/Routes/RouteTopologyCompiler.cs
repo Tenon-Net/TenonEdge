@@ -16,7 +16,17 @@ internal static class RouteTopologyCompiler
     { "input.modbus", "input.mqtt", "input.http", "input.simulator", "transform.map", "output.mqtt", "output.http", "output.tenon" };
 
     internal static RouteTopologyResult Compile(IReadOnlyList<RouteTopology> routes,
-        IReadOnlyDictionary<long, RouteTopologySource> sources, CancellationToken cancellationToken, RouteCompilationLimits? limits = null)
+        IReadOnlyDictionary<long, RouteTopologySource> sources, CancellationToken cancellationToken, RouteCompilationLimits? limits = null) =>
+        CompileCore(routes, sources, limits, checkFields: true, cancellationToken);
+
+    // Only for diagnostic labels of an already frozen execution plan. Retain every
+    // identity, graph and expansion bound, without revalidating historical fields.
+    internal static RouteTopologyResult RecoverDiagnosticPaths(IReadOnlyList<RouteTopology> routes,
+        IReadOnlyDictionary<long, RouteTopologySource> sources) =>
+        CompileCore(routes, sources, null, checkFields: false, CancellationToken.None);
+
+    private static RouteTopologyResult CompileCore(IReadOnlyList<RouteTopology> routes,
+        IReadOnlyDictionary<long, RouteTopologySource> sources, RouteCompilationLimits? limits, bool checkFields, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(routes);
         ArgumentNullException.ThrowIfNull(sources);
@@ -47,7 +57,7 @@ internal static class RouteTopologyCompiler
         var total = 0;
         foreach (var route in active)
         {
-            var graph = Validate(route, sources, schemas, identities, limits, cancellationToken);
+            var graph = Validate(route, sources, schemas, identities, limits, checkFields, cancellationToken);
             graphs.Add(graph);
             var paths = new Dictionary<string, int>(StringComparer.Ordinal);
             for (var index = graph.Order.Count - 1; index >= 0; index--)
@@ -101,7 +111,7 @@ internal static class RouteTopologyCompiler
     }
 
     private static Graph Validate(RouteTopology route, IReadOnlyDictionary<long, RouteTopologySource> sources,
-        Dictionary<long, Dictionary<string, FieldType>> schemas, Dictionary<string, long> identities, RouteCompilationLimits limits, CancellationToken token)
+        Dictionary<long, Dictionary<string, FieldType>> schemas, Dictionary<string, long> identities, RouteCompilationLimits limits, bool checkFields, CancellationToken token)
     {
         if (route.SchemaVersion != 1)
         { Reject("route.version", route.Key); }
@@ -152,10 +162,10 @@ internal static class RouteTopologyCompiler
                     { Reject("sources.totalLimit", route.Key, node.Id, id); }
                     if (!identities.TryAdd(source.UnitId.Key, id))
                     { Reject("source.identityDuplicate", route.Key, node.Id, id); }
-                    if (source.Fields.IsDefaultOrEmpty || source.Fields.Length > (source.UnitId.Kind == "input.modbus" ? 10000 : 1000))
+                    if (checkFields && (source.Fields.IsDefaultOrEmpty || source.Fields.Length > (source.UnitId.Kind == "input.modbus" ? 10000 : 1000)))
                     { Reject("source.fields", route.Key, node.Id, id); }
                     fields = new Dictionary<string, FieldType>(StringComparer.Ordinal);
-                    foreach (var field in source.Fields)
+                    foreach (var field in checkFields ? source.Fields : [])
                     {
                         if (field is null || !BusinessKeys.IsValid(field.Key) || !Enum.IsDefined(field.Type) || !fields.TryAdd(field.Key, field.Type))
                         { Reject("source.fields", route.Key, node.Id, id); }
