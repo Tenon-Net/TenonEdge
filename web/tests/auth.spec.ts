@@ -32,6 +32,9 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
     await expect(page.getByText('首次设置', { exact: true })).toBeVisible()
     await page.getByLabel('账号', { exact: true }).fill('browser-admin')
     await page.getByLabel('密码', { exact: true }).fill('Browser-fixture-4827')
+    await page
+        .getByLabel('确认密码', { exact: true })
+        .fill('Browser-fixture-4827')
     await page.getByLabel('网关名称（可选）').fill('浏览器测试网关')
     await page.getByRole('button', { name: '创建管理员并登录' }).click()
     await expect(page.getByRole('navigation')).toBeVisible()

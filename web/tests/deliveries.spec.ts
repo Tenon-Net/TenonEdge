@@ -92,6 +92,7 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
         await page.goto('/')
         await page.getByLabel('账号', { exact: true }).fill('queue-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
+        await page.getByLabel('确认密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '创建管理员并登录' }).click()
         await expect(
             page.getByRole('button', { name: '退出登录', exact: true }),

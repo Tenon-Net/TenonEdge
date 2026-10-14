@@ -66,6 +66,9 @@ test('real HTTP output diagnostics show backlog, rates, retry, suspend, durable 
         await page.goto('/')
         await page.getByLabel('账号', { exact: true }).fill('outputs-admin')
         await page.getByLabel('密码', { exact: true }).fill('Outputs-test-7419')
+        await page
+            .getByLabel('确认密码', { exact: true })
+            .fill('Outputs-test-7419')
         await page.getByRole('button', { name: '创建管理员并登录' }).click()
         await page
             .getByRole('link', { name: '输出目标诊断', exact: true })

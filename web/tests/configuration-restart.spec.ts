@@ -27,6 +27,9 @@ test('fresh browser login after a normal Host restart reads persistent draft and
             .getByLabel('密码', { exact: true })
             .fill('Restart-fixture-5917')
         await page
+            .getByLabel('确认密码', { exact: true })
+            .fill('Restart-fixture-5917')
+        await page
             .getByRole('button', { name: '创建管理员并登录', exact: true })
             .click()
         await expect(

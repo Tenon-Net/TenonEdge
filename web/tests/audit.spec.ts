@@ -34,6 +34,7 @@ test('real read-only audit paging, complete native CSV, lost response recovery a
         await page.goto('/')
         await page.getByLabel('账号', { exact: true }).fill('audit-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
+        await page.getByLabel('确认密码', { exact: true }).fill(password)
         await page
             .getByRole('button', { name: '创建管理员并登录', exact: true })
             .click()

@@ -250,6 +250,7 @@ try {
         report.userAgent = await js('return navigator.userAgent;')
         await fill(label('账号'), 'minimum-admin')
         await fill(label('密码'), 'Minimum-browser-5938!')
+        await fill(label('确认密码'), 'Minimum-browser-5938!')
         await click(button('创建管理员并登录'))
         await heading('修改密码')
         await click(button('退出登录'))

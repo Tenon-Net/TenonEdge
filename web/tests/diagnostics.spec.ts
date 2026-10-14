@@ -40,6 +40,9 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
         await page
             .getByLabel('密码', { exact: true })
             .fill('Diagnostic-test-7419')
+        await page
+            .getByLabel('确认密码', { exact: true })
+            .fill('Diagnostic-test-7419')
         await page.getByRole('button', { name: '创建管理员并登录' }).click()
         await expect(
             page.getByRole('heading', { name: '总览', exact: true }),

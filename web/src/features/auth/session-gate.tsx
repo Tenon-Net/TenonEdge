@@ -1,4 +1,5 @@
 import { LogoutButton } from './logout-button'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, restoreSession, useSession } from '../../lib/session'
@@ -16,6 +17,7 @@ import { Workspace } from '../../components/layout/workspace'
 
 export function SessionGate() {
     const { t } = useTranslation()
+    const [existingLogin, setExistingLogin] = useState(false)
     const session = useSession((state) => state.value)
     const sessionQuery = useQuery({
         queryKey: ['session'],
@@ -64,15 +66,13 @@ export function SessionGate() {
     const setup = setupQuery.data
     const mode = session?.mustChangePassword
         ? 'passwordChange'
-        : setup?.state === 'resetPending'
+        : setup?.state === 'resetPending' && !existingLogin
           ? 'reset'
           : setup?.state === 'uninitialized'
             ? 'setup'
             : 'login'
     const closed =
-        !session &&
-        setup?.state !== 'initialized' &&
-        setup?.windowOpen === false
+        (mode === 'setup' || mode === 'reset') && setup?.windowOpen === false
     const error = sessionQuery.error ?? setupQuery.error
     return (
         <main className="flex min-h-svh items-center justify-center bg-muted/40 px-4 py-12">
@@ -123,11 +123,27 @@ export function SessionGate() {
                         ) : (
                             (session || setup) && (
                                 <AuthForm
-                                    key={mode}
+                                    key={`${mode}:${setup?.resetAccountName ?? ''}`}
                                     mode={mode}
-                                    resetAccount={setup?.resetAccountName}
+                                    resetAccount={
+                                        mode === 'reset'
+                                            ? setup?.resetAccountName
+                                            : undefined
+                                    }
                                 />
                             )
+                        )}
+                        {!session && setup?.state === 'resetPending' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setExistingLogin(!existingLogin)}
+                            >
+                                {t(
+                                    existingLogin
+                                        ? 'backToReset'
+                                        : 'existingLogin',
+                                )}
+                            </Button>
                         )}
                         {!session &&
                             setup?.windowOpen &&

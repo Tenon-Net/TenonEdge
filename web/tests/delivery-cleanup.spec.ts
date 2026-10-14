@@ -157,6 +157,7 @@ test('admin cleanup: real failures, immutable filtered batch, cancel/stale/lost 
         await page.goto('/')
         await page.getByLabel('账号', { exact: true }).fill('cleanup-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
+        await page.getByLabel('确认密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '创建管理员并登录' }).click()
         await expect(
             page.getByRole('link', { name: '输出目标诊断', exact: true }),

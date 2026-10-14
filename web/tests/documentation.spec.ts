@@ -28,6 +28,9 @@ test('live documentation: roles, deep refresh, current schema, offline resources
             .getByLabel('密码', { exact: true })
             .fill('Docs-test-password-1739!')
         await page
+            .getByLabel('确认密码', { exact: true })
+            .fill('Docs-test-password-1739!')
+        await page
             .getByRole('button', { name: '创建管理员并登录', exact: true })
             .click()
         await expect(

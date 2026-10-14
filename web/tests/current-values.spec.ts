@@ -91,6 +91,9 @@ test('real HTTP point values retain exact last success on failure, recover, pagi
         await page
             .getByLabel('密码', { exact: true })
             .fill('Current-values-7419')
+        await page
+            .getByLabel('确认密码', { exact: true })
+            .fill('Current-values-7419')
         await page.getByRole('button', { name: '创建管理员并登录' }).click()
         await page
             .getByRole('link', { name: '设备运行与当前值', exact: true })

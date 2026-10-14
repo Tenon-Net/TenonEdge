@@ -118,6 +118,7 @@ test('real target controls: bound retry, pause CAS/confirmation/lost response, r
         await page.goto('/')
         await page.getByLabel('账号', { exact: true }).fill('controls-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
+        await page.getByLabel('确认密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '创建管理员并登录' }).click()
         await page
             .getByRole('link', { name: '输出目标诊断', exact: true })

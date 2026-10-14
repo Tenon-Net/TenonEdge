@@ -1,6 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import type { z } from 'zod'
+import { authFormSchema, type AuthMode } from './auth-form-schema'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, replaceSession } from '../../lib/session'
@@ -13,27 +14,17 @@ export function AuthForm({
     mode,
     resetAccount,
 }: {
-    mode: 'login' | 'setup' | 'reset' | 'passwordChange'
+    mode: AuthMode
     resetAccount?: string | null
 }) {
     const { t } = useTranslation()
-    const schema = z.object({
-        accountName:
-            mode === 'passwordChange' || mode === 'reset'
-                ? z.string()
-                : z.string().min(1, t('required')),
-        password: z.string().min(1, t('required')),
-        newPassword:
-            mode === 'passwordChange'
-                ? z.string().min(1, t('required'))
-                : z.string(),
-        gatewayName: z.string(),
-    })
+    const schema = authFormSchema(mode, t('required'), t('passwordMismatch'))
     const form = useForm({
         resolver: zodResolver(schema),
         defaultValues: {
-            accountName: resetAccount ?? '',
+            accountName: mode === 'setup' ? 'admin' : (resetAccount ?? ''),
             password: '',
+            confirmPassword: '',
             newPassword: '',
             gatewayName: '',
         },
@@ -116,6 +107,25 @@ export function AuthForm({
                     <p role="alert">{form.formState.errors.password.message}</p>
                 )}
             </div>
+            {(mode === 'setup' || mode === 'reset') && (
+                <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">
+                        {t('confirmPassword')}
+                    </Label>
+                    <Input
+                        id="confirmPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        {...form.register('confirmPassword')}
+                        aria-invalid={!!form.formState.errors.confirmPassword}
+                    />
+                    {form.formState.errors.confirmPassword && (
+                        <p role="alert">
+                            {form.formState.errors.confirmPassword.message}
+                        </p>
+                    )}
+                </div>
+            )}
             {mode === 'passwordChange' && (
                 <div className="space-y-2">
                     <Label htmlFor="newPassword">{t('newPassword')}</Label>
