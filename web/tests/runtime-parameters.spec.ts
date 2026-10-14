@@ -10,7 +10,7 @@ const endpoint = root + '/system/runtime-parameters'
 const password = 'Runtime-parameters-7831!'
 function panel(page: Page) {
     return page.getByRole('region', {
-        name: '运行参数：预览、审计与调试缓存',
+        name: '运行参数：资源保护与审计',
         exact: true,
     })
 }
@@ -85,6 +85,9 @@ test('runtime parameter confirmation changes real preview admission, persists ac
         ).json()
         await edit(view, '365', '1', '1')
         await view
+            .getByLabel('全局在途字节预算', { exact: true })
+            .fill('33554432')
+        await view
             .getByLabel('调试缓存每对象字节上限', { exact: true })
             .fill('67584')
         await view
@@ -102,6 +105,9 @@ test('runtime parameter confirmation changes real preview admission, persists ac
         await save(view)
         await saved(view)
         await expect(
+            view.locator('[data-parameter="inFlightBytes"]'),
+        ).toHaveText('33554432')
+        await expect(
             view.locator('[data-parameter="debugObjectBytes"]'),
         ).toHaveText('67584')
         await expect(
@@ -110,6 +116,10 @@ test('runtime parameter confirmation changes real preview admission, persists ac
         await expect(
             view.locator('[data-parameter="debugObjectRecords"]'),
         ).toHaveText('2')
+        const runtimeBudget = await (
+            await page.request.get(root + '/runtime/status')
+        ).json()
+        expect(runtimeBudget.inFlight.capacityBytes).toBe(33554432)
         const session = await (
             await page.request.get(root + '/auth/session')
         ).json()
@@ -323,6 +333,7 @@ test('parameter editor retains validation input, freezes version and never repla
                             debugObjectBytes: 1048576,
                             debugGlobalBytes: 33554432,
                             debugObjectRecords: 100,
+                            inFlightBytes: 67108864,
                         },
                         expectedVersion: null,
                         confirmed: true,

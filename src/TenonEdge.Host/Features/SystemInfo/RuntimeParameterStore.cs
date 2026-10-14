@@ -11,7 +11,7 @@ namespace TenonEdge.Host.Features.SystemInfo;
 
 /// <summary>系统运行参数不是草稿。提交与审计同事务，提交成功后发布不可变值；不持有请求作用域或事务。</summary>
 internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail audit, DataRetentionSettings deployment,
-    TimeProvider time, AuditRetentionGate retentionGate, RuntimeMessageCache messages)
+    TimeProvider time, AuditRetentionGate retentionGate, RuntimeMessageCache messages, InFlightBudget inFlight)
 {
     private readonly Lock _gate = new();
     private RuntimeParameterState? _current;
@@ -30,13 +30,14 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
             try
             {
                 var values = row is null ? new RuntimeParameterValues(180, 4, 2)
-                    : new(row.AuditRetentionDays, row.PreviewGlobalLimit, row.PreviewSessionLimit, row.DebugObjectBytes, row.DebugGlobalBytes, row.DebugObjectRecords);
+                    : new(row.AuditRetentionDays, row.PreviewGlobalLimit, row.PreviewSessionLimit, row.DebugObjectBytes, row.DebugGlobalBytes, row.DebugObjectRecords, row.InFlightBytes);
                 Validate(values, DataRetentionSettings.MinimumAuditRetentionDays);
                 if (row is not null && !Guid.TryParseExact(row.Version, "N", out _))
                 { throw new ArgumentException("持久版本无效。"); }
                 var minimum = (int)deployment.AuditRetention.TotalDays;
                 var state = new RuntimeParameterState(row?.Version, values with { AuditRetentionDays = Math.Max(minimum, values.AuditRetentionDays) }, minimum);
                 messages.Configure(values.DebugObjectBytes, values.DebugGlobalBytes, values.DebugObjectRecords);
+                inFlight.ConfigureCapacity(values.InFlightBytes);
                 Volatile.Write(ref _current, state);
                 return state;
             }
@@ -75,6 +76,7 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
                 row.DebugObjectBytes = request.Values.DebugObjectBytes;
                 row.DebugGlobalBytes = request.Values.DebugGlobalBytes;
                 row.DebugObjectRecords = request.Values.DebugObjectRecords;
+                row.InFlightBytes = request.Values.InFlightBytes;
                 row.UpdatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
                 if (existed)
                 { client.Updateable(row).ExecuteCommand(); }
@@ -88,6 +90,7 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
             // Keep the update lock and retention gate across COMMIT/publication so
             // concurrent writes cannot publish out of order or purge using old values.
             messages.Configure(next.Values.DebugObjectBytes, next.Values.DebugGlobalBytes, next.Values.DebugObjectRecords);
+            inFlight.ConfigureCapacity(next.Values.InFlightBytes);
             Volatile.Write(ref _current, next);
             return next;
         }
@@ -96,6 +99,8 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
     private static void Validate(RuntimeParameterValues values, int minimumAuditDays)
     {
         ArgumentNullException.ThrowIfNull(values);
+        if (values.InFlightBytes is < 16 * 1024 * 1024 or > 1024 * 1024 * 1024)
+        { throw new ArgumentException("在途预算须为16777216—1073741824字节，含固定8MiB原始缓冲分区；调高须在本机实测。"); }
         RuntimeMessageCache.ValidateLimits(values.DebugObjectBytes, values.DebugGlobalBytes, values.DebugObjectRecords);
         if (values.AuditRetentionDays < minimumAuditDays || values.AuditRetentionDays > DataRetentionSettings.MaximumAuditRetentionDays)
         { throw new ArgumentException($"审计保留期须为 {minimumAuditDays}—{DataRetentionSettings.MaximumAuditRetentionDays} 天，不得短于部署下限。"); }
@@ -108,7 +113,8 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
 internal sealed record RuntimeParameterValues(int AuditRetentionDays, int PreviewGlobalLimit, int PreviewSessionLimit,
     [property: JsonRequired] int DebugObjectBytes = RuntimeMessageCache.MaximumObjectBytes,
     [property: JsonRequired] int DebugGlobalBytes = RuntimeMessageCache.MaximumGlobalBytes,
-    [property: JsonRequired] int DebugObjectRecords = RuntimeMessageCache.MaximumObjectRecords)
+    [property: JsonRequired] int DebugObjectRecords = RuntimeMessageCache.MaximumObjectRecords,
+    [property: JsonRequired] long InFlightBytes = 64L * 1024 * 1024)
 {
     [JsonIgnore] public PreviewOperationLimits Preview => new(PreviewGlobalLimit, PreviewSessionLimit);
 }
@@ -129,5 +135,6 @@ internal sealed class RuntimeParameterRecord
     [SugarColumn(ColumnName = "debug_object_bytes")] public int DebugObjectBytes { get; set; } = RuntimeMessageCache.MaximumObjectBytes;
     [SugarColumn(ColumnName = "debug_global_bytes")] public int DebugGlobalBytes { get; set; } = RuntimeMessageCache.MaximumGlobalBytes;
     [SugarColumn(ColumnName = "debug_object_records")] public int DebugObjectRecords { get; set; } = RuntimeMessageCache.MaximumObjectRecords;
+    [SugarColumn(ColumnName = "in_flight_bytes")] public long InFlightBytes { get; set; } = 64L * 1024 * 1024;
     [SugarColumn(ColumnName = "updated_at")] public long UpdatedAt { get; set; }
 }

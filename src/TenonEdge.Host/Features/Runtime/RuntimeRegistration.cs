@@ -34,6 +34,11 @@ internal static class RuntimeRegistration
         services.AddHostedService<ClockSyncMonitor>();
         services.AddSingleton<RuntimeTrendHistory>();
         services.AddSingleton<RuntimeMessageCache>();
+        services.AddSingleton(provider =>
+        {
+            var options = provider.GetRequiredService<RuntimeOptions>();
+            return new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
+        });
         services.AddHostedService<RuntimeTrendMonitor>();
         services.AddSingleton<IInputUnitFactory, SimulatorInputFactory>();
         services.AddSingleton<IJsonInputDecoderFactory, JsonInputDecoderFactory>();

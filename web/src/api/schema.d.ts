@@ -3871,6 +3871,11 @@ export interface components {
              * @default 100
              */
             debugObjectRecords: number | string;
+            /**
+             * Format: int64
+             * @default 67108864
+             */
+            inFlightBytes: number | string;
         };
         RuntimePointValue: {
             key: string;

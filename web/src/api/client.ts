@@ -84,23 +84,51 @@ export function createGatewayClient(options: {
             }
             return request
         },
-        async onResponse({ request, response }) {
-            // A late response from an old account must never repopulate or invalidate a new session.
-            if (generations.get(request) !== options.epoch())
-                throw new Error('stale-session-response')
-            if (response.status === 401 && !request.url.endsWith('/auth/login'))
-                options.unauthorized()
-            if (!response.ok) {
-                let problem: unknown
-                try {
-                    problem = await response.clone().json()
-                } catch {
-                    problem = undefined
-                }
-                throw new ApiError(response.status, problem)
-            }
-            return response
+        onResponse({ request, response }) {
+            return checkedResponse(request, response, generations.get(request))
         },
     })
-    return client
+    async function checkedResponse(
+        request: Request,
+        response: Response,
+        generation: number | undefined,
+    ) {
+        // A late response from an old account must never repopulate or invalidate a new session.
+        if (generation !== options.epoch())
+            throw new Error('stale-session-response')
+        if (response.status === 401 && !request.url.endsWith('/auth/login'))
+            options.unauthorized()
+        if (!response.ok) {
+            let problem: unknown
+            try {
+                problem = await response.clone().json()
+            } catch {
+                problem = undefined
+            }
+            throw new ApiError(response.status, problem)
+        }
+        return response
+    }
+    return Object.assign(client, {
+        // OpenAPI intentionally omits its own document endpoint. Fetch only this fixed
+        // same-origin document, using the identical deadline/session/error boundary;
+        // do not hand-maintain a second generated API contract or execute its servers.
+        async readOpenApiDocument(signal?: AbortSignal): Promise<unknown> {
+            const generation = options.epoch()
+            const request = new Request(
+                new URL('/api/edge-admin/v1/openapi/v1.json', options.baseUrl),
+                {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                    signal,
+                },
+            )
+            const response = await checkedResponse(
+                request,
+                await fetchWithDeadline(request, options.fetcher),
+                generation,
+            )
+            return response.json()
+        },
+    })
 }

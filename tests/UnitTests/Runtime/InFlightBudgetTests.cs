@@ -8,6 +8,62 @@ namespace TenonEdge.UnitTests.Runtime;
 public sealed class InFlightBudgetTests
 {
     [Fact]
+    public async Task RaisingCapacityWakesOldWaitersWithoutReleasingOwnedBytes()
+    {
+        var budget = new InFlightBudget(100, 20);
+        using var raw = budget.TryReserveBuffer(20);
+        Assert.True(budget.TryReserve(80));
+        var waiting = budget.ReserveAsync(40, TestContext.Current.CancellationToken).AsTask();
+        Assert.False(waiting.IsCompleted);
+        budget.ConfigureCapacity(140);
+        await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(140, budget.Status.ReservedBytes);
+        budget.Release(120);
+        Assert.Equal(20, budget.Status.ReservedBytes);
+        Assert.Equal(140, budget.Status.PeakReservedBytes);
+    }
+
+    [Fact]
+    public async Task LoweringPreservesLeasesRejectsOversizeWaitersAndWakesRawOnWorkRelease()
+    {
+        var budget = new InFlightBudget(100, 20);
+        Assert.True(budget.TryReserve(80));
+        var tooLarge = budget.ReserveAsync(70, TestContext.Current.CancellationToken).AsTask();
+        budget.ConfigureCapacity(60);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => tooLarge.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.Equal(80, budget.Status.ReservedBytes);
+        Assert.Null(budget.TryReserveBuffer(1));
+        Assert.False(budget.TryReserve(1));
+        var rawWait = budget.ReserveBufferAsync(20, TestContext.Current.CancellationToken).AsTask();
+        Assert.False(rawWait.IsCompleted);
+        budget.Release(40);
+        using var raw = await rawWait.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(60, budget.Status.ReservedBytes);
+        budget.Release(40);
+        raw.Dispose();
+        Assert.Equal(0, budget.Status.ReservedBytes);
+        Assert.Throws<ArgumentOutOfRangeException>(() => budget.ConfigureCapacity(20));
+        Assert.Equal(60, budget.Capacity);
+    }
+
+    [Fact]
+    public async Task ChannelWaitingBeforeShrinkReportsSizeRejectionWithoutLeakingBudget()
+    {
+        var message = Message();
+        var budget = new InFlightBudget(message.BudgetBytes * 2);
+        Assert.True(budget.TryReserve(budget.Capacity));
+        var channel = new BudgetedInputChannel(1, budget);
+        var writing = channel.Writer.WriteAsync(message, TestContext.Current.CancellationToken).AsTask();
+        Assert.False(writing.IsCompleted);
+        budget.ConfigureCapacity(message.BudgetBytes - 1);
+        await Assert.ThrowsAsync<InputMessageSizeException>(() => writing.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.Equal(message.BudgetBytes * 2, budget.Status.ReservedBytes);
+        budget.Release(message.BudgetBytes * 2);
+        Assert.Equal(0, budget.Status.ReservedBytes);
+        Assert.False(channel.Reader.TryRead(out _));
+    }
+
+    [Fact]
     public void NonWaitingProductionReleasesBudgetOnExceptionsAndExactChargeWorks()
     {
         var message = Message();

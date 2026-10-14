@@ -25,6 +25,7 @@ const fields: (keyof ParameterValues)[] = [
     'debugObjectBytes',
     'debugGlobalBytes',
     'debugObjectRecords',
+    'inFlightBytes',
 ]
 export function RuntimeParameterPanel() {
     const { t } = useTranslation()

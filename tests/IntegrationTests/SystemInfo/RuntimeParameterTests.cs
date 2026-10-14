@@ -111,10 +111,10 @@ public sealed class RuntimeParameterTests
             Assert.Equal(365, (await Read(client)).DeploymentAuditMinimumDays);
             using var shortValue = await Write(client, new(180, 4, 2), null);
             Assert.Equal(HttpStatusCode.BadRequest, shortValue.StatusCode);
-            using var write = await Write(client, new(730, 8, 3, 67584, 135168, 2), null);
+            using var write = await Write(client, new(730, 8, 3, 67584, 135168, 2, 32 * 1024 * 1024), null);
             Assert.Equal(HttpStatusCode.OK, write.StatusCode);
             version = (await Read(client)).Version;
-            using var noOp = await Write(client, new(730, 8, 3, 67584, 135168, 2), version);
+            using var noOp = await Write(client, new(730, 8, 3, 67584, 135168, 2, 32 * 1024 * 1024), version);
             Assert.Equal(HttpStatusCode.OK, noOp.StatusCode);
             Assert.Equal(version, (await Read(client)).Version);
             Assert.Single(TestAccounts.Audit(factory.Services, Action));
@@ -127,7 +127,8 @@ public sealed class RuntimeParameterTests
         using var again = await restarted.CreateLoggedInClientAsync("admin", Token);
         var restored = await Read(again);
         Assert.Equal(version, restored.Version);
-        Assert.Equal(new RuntimeParameterValues(1000, 8, 3, 67584, 135168, 2), restored.Values);
+        Assert.Equal(new RuntimeParameterValues(1000, 8, 3, 67584, 135168, 2, 32 * 1024 * 1024), restored.Values);
+        Assert.Equal(32 * 1024 * 1024, restarted.Services.GetRequiredService<InFlightBudget>().Capacity);
         Assert.Single(TestAccounts.Audit(restarted.Services, Action));
     }
 
@@ -252,7 +253,7 @@ public sealed class RuntimeParameterTests
         database.Client.Ado.ExecuteCommand("UPDATE runtime_parameters SET version='invalid' WHERE id=1");
         var reload = new RuntimeParameterStore(database, factory.Services.GetRequiredService<AuditTrail>(),
             factory.Services.GetRequiredService<DataRetentionSettings>(), TimeProvider.System,
-            factory.Services.GetRequiredService<AuditRetentionGate>(), new RuntimeMessageCache(TimeProvider.System));
+            factory.Services.GetRequiredService<AuditRetentionGate>(), new RuntimeMessageCache(TimeProvider.System), new InFlightBudget(67108864, 8388608));
         var error = Assert.Throws<HostStartupException>(() => reload.Read());
         Assert.Equal(HostExitCodes.ConfigStoreUnavailable, error.ExitCode);
     }
@@ -333,6 +334,43 @@ public sealed class RuntimeParameterTests
         Assert.Equal(1048576, row.DebugObjectBytes);
         Assert.Equal(33554432, row.DebugGlobalBytes);
         Assert.Equal(100, row.DebugObjectRecords);
+    }
+
+    [Fact]
+    public async Task InFlightChangeUsesOriginalRuntimeBudgetAndRollbackKeepsOldAdmission()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("admin", Token);
+        var budget = factory.Services.GetRequiredService<InFlightBudget>();
+        Assert.Same(budget, factory.Services.GetRequiredService<TenonEdge.Runtime.Lifecycle.RuntimeHost>().InFlight);
+        Assert.True(budget.TryReserve(40 * 1024 * 1024));
+        var current = await Read(client);
+        var lower = current.Values with { InFlightBytes = 16 * 1024 * 1024 };
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        database.Client.Ado.ExecuteCommand($"CREATE TRIGGER reject_inflight BEFORE INSERT ON audit_log WHEN NEW.action='{Action}' BEGIN SELECT RAISE(ABORT, 'fixture'); END;");
+        using var failed = await Write(client, lower, current.Version);
+        Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+        Assert.Equal(64 * 1024 * 1024, budget.Capacity);
+        database.Client.Ado.ExecuteCommand("DROP TRIGGER reject_inflight");
+        using var changed = await Write(client, lower, current.Version);
+        Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+        Assert.Equal(lower.InFlightBytes, budget.Capacity);
+        Assert.Equal(40 * 1024 * 1024, budget.Status.ReservedBytes);
+        Assert.False(budget.TryReserve(1));
+        budget.Release(40 * 1024 * 1024);
+        Assert.True(budget.TryReserve(8 * 1024 * 1024));
+        Assert.False(budget.TryReserve(1));
+        budget.Release(8 * 1024 * 1024);
+        using var high = await Write(client, lower with { InFlightBytes = 1024 * 1024 * 1024 }, (await Read(client)).Version);
+        Assert.Equal(HttpStatusCode.OK, high.StatusCode);
+        Assert.Equal(1024 * 1024 * 1024, budget.Capacity);
+        foreach (var invalid in new[] { 16777215L, 1073741825L })
+        {
+            using var response = await Write(client, lower with { InFlightBytes = invalid }, (await Read(client)).Version);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        Assert.Equal(1024 * 1024 * 1024, budget.Capacity);
     }
 
     private static ManagementActor Actor(IServiceProvider services)

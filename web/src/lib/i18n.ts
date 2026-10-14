@@ -1,3 +1,4 @@
+import { documentationStrings } from '../features/documentation/strings'
 import { systemStrings } from '../features/system/strings'
 import { auditStrings } from '../features/audit/strings'
 import { userStrings } from '../features/users/strings'
@@ -29,6 +30,7 @@ void i18n.use(initReactI18next).init({
         'zh-CN': {
             translation: {
                 systemSettings: systemStrings,
+                documentation: documentationStrings,
                 audit: auditStrings,
                 users: userStrings,
                 tokens: tokenStrings,

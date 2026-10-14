@@ -10,11 +10,13 @@ const debug = {
     debugObjectBytes: 1048576,
     debugGlobalBytes: 33554432,
     debugObjectRecords: 100,
+    inFlightBytes: 67108864,
 }
 const debugForm = {
     debugObjectBytes: '1048576',
     debugGlobalBytes: '33554432',
     debugObjectRecords: '100',
+    inFlightBytes: '67108864',
 }
 const state: RuntimeParameters = {
     version: 'a'.repeat(32),
@@ -68,6 +70,8 @@ it.each([
     ['debugGlobalBytes', '1073741825'],
     ['debugObjectRecords', '0'],
     ['debugObjectRecords', '101'],
+    ['inFlightBytes', '16777215'],
+    ['inFlightBytes', '1073741825'],
 ] as const)('rejects %s=%s', (key, value) => {
     const form = editParameters(state)
     form.values[key] = value

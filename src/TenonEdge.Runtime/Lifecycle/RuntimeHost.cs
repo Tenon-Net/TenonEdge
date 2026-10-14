@@ -66,8 +66,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight)
     {
     }
 
@@ -82,7 +82,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         ILogger<RuntimeHost> logger,
         Func<double>? random,
         IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null)
     {
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
@@ -108,7 +108,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         _events = events;
         _time = time;
         _options = options.Validate();
-        InFlight = new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
+        InFlight = inFlight ?? new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
         Messages = messages ?? new RuntimeMessageCache(time);
         CurrentValues = new CurrentValueCache(time);
         _logger = logger;

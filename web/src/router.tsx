@@ -46,6 +46,14 @@ const usersRoute = createRoute({
         'UsersPage',
     ),
 })
+const documentationRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/api-docs',
+    component: lazyRouteComponent(
+        () => import('./features/documentation/page'),
+        'DocumentationPage',
+    ),
+})
 const systemRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/system',
@@ -244,6 +252,7 @@ export const router = createRouter({
         accountRoute,
         usersRoute,
         systemRoute,
+        documentationRoute,
         auditRoute,
         tokensRoute,
         configurationRoute,

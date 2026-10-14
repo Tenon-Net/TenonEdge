@@ -18,6 +18,7 @@ export function editParameters(state: RuntimeParameters): ParameterForm {
             debugObjectBytes: String(state.values.debugObjectBytes),
             debugGlobalBytes: String(state.values.debugGlobalBytes),
             debugObjectRecords: String(state.values.debugObjectRecords),
+            inFlightBytes: String(state.values.inFlightBytes),
         },
     }
 }
@@ -43,6 +44,11 @@ export function parameterRequest(form: ParameterForm, confirmed: boolean) {
         expectedVersion: form.expectedVersion,
         confirmed: true,
         values: {
+            inFlightBytes: integer(
+                form.values.inFlightBytes,
+                16777216,
+                1073741824,
+            ),
             debugObjectBytes: objectBytes,
             debugGlobalBytes: integer(
                 form.values.debugGlobalBytes,

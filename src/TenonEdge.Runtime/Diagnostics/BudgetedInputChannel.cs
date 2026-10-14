@@ -257,6 +257,8 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
 
             try
             { await reservation; }
+            catch (ArgumentOutOfRangeException)
+            { throw new InputMessageSizeException("运行参数降低后，本条消息超过新的在途字节预算。"); }
             catch (OperationCanceledException) when (owner._closed.Task.IsCompleted && !cancellationToken.IsCancellationRequested)
             {
                 throw new ChannelClosedException(owner._completionError);

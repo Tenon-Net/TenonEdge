@@ -18079,7 +18079,8 @@
           "previewSessionLimit",
           "debugObjectBytes",
           "debugGlobalBytes",
-          "debugObjectRecords"
+          "debugObjectRecords",
+          "inFlightBytes"
         ],
         "type": "object",
         "properties": {
@@ -18133,6 +18134,15 @@
             ],
             "format": "int32",
             "default": 100
+          },
+          "inFlightBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": 67108864
           }
         },
         "additionalProperties": false

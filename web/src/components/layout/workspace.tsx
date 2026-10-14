@@ -111,6 +111,13 @@ export function Workspace() {
                         </Link>
                     )}
                     <Link
+                        to="/api-docs"
+                        className="rounded-md p-2 hover:bg-accent"
+                        activeProps={{ className: 'bg-accent font-medium' }}
+                    >
+                        {t('documentation.title')}
+                    </Link>
+                    <Link
                         to="/account"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}

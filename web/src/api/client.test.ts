@@ -190,3 +190,60 @@ describe('single same-origin API client', () => {
         expect(fieldErrors('<html>failure</html>')).toEqual({})
     })
 })
+
+describe('live OpenAPI document shares the session transport', () => {
+    it('reads only the fixed same-origin document and never sends CSRF or a write', async () => {
+        const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+            const request = new Request(input)
+            expect(request.url).toBe(
+                'http://gateway.test/api/edge-admin/v1/openapi/v1.json',
+            )
+            expect(request.method).toBe('GET')
+            expect(request.credentials).toBe('same-origin')
+            expect(request.headers.get('Accept')).toBe('application/json')
+            expect(request.headers.get('X-CSRF-Token')).toBeNull()
+            return Response.json({ openapi: '3.1.1' })
+        })
+        expect(await fixture(fetcher).api.readOpenApiDocument()).toEqual({
+            openapi: '3.1.1',
+        })
+        expect(fetcher).toHaveBeenCalledOnce()
+    })
+    it('401 logs out once without retry; stale session cannot return content or invalidate the new session', async () => {
+        const fetcher = vi.fn(async () => Response.json({}, { status: 401 }))
+        const denied = fixture(fetcher)
+        await expect(denied.api.readOpenApiDocument()).rejects.toBeInstanceOf(
+            ApiError,
+        )
+        expect(denied.unauthorized).toHaveBeenCalledOnce()
+        expect(fetcher).toHaveBeenCalledOnce()
+        let release!: (response: Response) => void
+        const stale = fixture(
+            () =>
+                new Promise((resolve) => {
+                    release = resolve
+                }),
+        )
+        const pending = stale.api.readOpenApiDocument()
+        stale.advance()
+        release(Response.json({}, { status: 401 }))
+        await expect(pending).rejects.toThrow('stale-session-response')
+        expect(stale.unauthorized).not.toHaveBeenCalled()
+    })
+    it('propagates document cancellation', async () => {
+        const controller = new AbortController()
+        const client = fixture(
+            (input) =>
+                new Promise((_resolve, reject) => {
+                    new Request(input).signal.addEventListener(
+                        'abort',
+                        () => reject(new Error('cancelled')),
+                        { once: true },
+                    )
+                }),
+        )
+        const pending = client.api.readOpenApiDocument(controller.signal)
+        controller.abort()
+        await expect(pending).rejects.toThrow('cancelled')
+    })
+})
