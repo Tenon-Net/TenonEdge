@@ -22,6 +22,9 @@ const fields: (keyof ParameterValues)[] = [
     'auditRetentionDays',
     'previewGlobalLimit',
     'previewSessionLimit',
+    'debugObjectBytes',
+    'debugGlobalBytes',
+    'debugObjectRecords',
 ]
 export function RuntimeParameterPanel() {
     const { t } = useTranslation()

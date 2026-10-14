@@ -111,10 +111,10 @@ public sealed class RuntimeParameterTests
             Assert.Equal(365, (await Read(client)).DeploymentAuditMinimumDays);
             using var shortValue = await Write(client, new(180, 4, 2), null);
             Assert.Equal(HttpStatusCode.BadRequest, shortValue.StatusCode);
-            using var write = await Write(client, new(730, 8, 3), null);
+            using var write = await Write(client, new(730, 8, 3, 67584, 135168, 2), null);
             Assert.Equal(HttpStatusCode.OK, write.StatusCode);
             version = (await Read(client)).Version;
-            using var noOp = await Write(client, new(730, 8, 3), version);
+            using var noOp = await Write(client, new(730, 8, 3, 67584, 135168, 2), version);
             Assert.Equal(HttpStatusCode.OK, noOp.StatusCode);
             Assert.Equal(version, (await Read(client)).Version);
             Assert.Single(TestAccounts.Audit(factory.Services, Action));
@@ -127,7 +127,7 @@ public sealed class RuntimeParameterTests
         using var again = await restarted.CreateLoggedInClientAsync("admin", Token);
         var restored = await Read(again);
         Assert.Equal(version, restored.Version);
-        Assert.Equal(new RuntimeParameterValues(1000, 8, 3), restored.Values);
+        Assert.Equal(new RuntimeParameterValues(1000, 8, 3, 67584, 135168, 2), restored.Values);
         Assert.Single(TestAccounts.Audit(restarted.Services, Action));
     }
 
@@ -216,7 +216,7 @@ public sealed class RuntimeParameterTests
                 var parameters = factory.Services.GetRequiredService<RuntimeParameterStore>();
                 var current = parameters.Read();
                 // Regression: read the cutoff only while the purge gate excludes writes.
-                Assert.Throws<RuntimeParameterBusyException>(() => parameters.Write(new(new(400, 4, 2), current.Version, true), "admin", null));
+                Assert.Throws<RuntimeParameterBusyException>(() => parameters.Write(new(new(400, 4, 2), current.Version, true), Actor(factory.Services)));
                 return factory.Services.GetRequiredService<Func<TimeSpan>>()();
             });
         using var longer = await Write(client, new(365, 4, 2), null);
@@ -246,14 +246,99 @@ public sealed class RuntimeParameterTests
     {
         await using var factory = new TenonEdgeApplicationFactory();
         var parameters = factory.Services.GetRequiredService<RuntimeParameterStore>();
-        parameters.Write(new(new(365, 4, 2), null, true), "admin", null);
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        parameters.Write(new(new(365, 4, 2), null, true), Actor(factory.Services));
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
         database.Client.Ado.ExecuteCommand("UPDATE runtime_parameters SET version='invalid' WHERE id=1");
         var reload = new RuntimeParameterStore(database, factory.Services.GetRequiredService<AuditTrail>(),
             factory.Services.GetRequiredService<DataRetentionSettings>(), TimeProvider.System,
-            factory.Services.GetRequiredService<AuditRetentionGate>());
+            factory.Services.GetRequiredService<AuditRetentionGate>(), new RuntimeMessageCache(TimeProvider.System));
         var error = Assert.Throws<HostStartupException>(() => reload.Read());
         Assert.Equal(HostExitCodes.ConfigStoreUnavailable, error.ExitCode);
+    }
+
+    [Fact]
+    public async Task DebugLimitsApplyToOriginalCacheAndAuditFailureCannotEvictOrPublish()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("admin", Token);
+        var cache = factory.Services.GetRequiredService<RuntimeMessageCache>();
+        Assert.Same(cache, factory.Services.GetRequiredService<TenonEdge.Runtime.Lifecycle.RuntimeHost>().Messages);
+        var id = TenonEdge.Abstractions.Plans.RuntimeUnitId.Create("input.http", "device/source");
+        for (var i = 0; i < 10; i++)
+        { cache.Capture(id, 1, Guid.NewGuid(), "fixture"u8); }
+        var before = cache.Read(id, true);
+        var current = await Read(client);
+        var low = current.Values with { DebugObjectRecords = 2, DebugObjectBytes = 67584, DebugGlobalBytes = 67584 };
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        database.Client.Ado.ExecuteCommand($"CREATE TRIGGER reject_debug BEFORE INSERT ON audit_log WHEN NEW.action='{Action}' BEGIN SELECT RAISE(ABORT, 'fixture'); END;");
+        using var failed = await Write(client, low, current.Version);
+        Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+        Assert.Equal(before, cache.Read(id, true));
+        Assert.Equal(current, await Read(client));
+        database.Client.Ado.ExecuteCommand("DROP TRIGGER reject_debug");
+        using var saved = await Write(client, low, current.Version);
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Equal(before.Take(2), cache.Read(id, true));
+        for (var i = 0; i < 10; i++)
+        { cache.Capture(id, 1, Guid.NewGuid(), "new fixture"u8); }
+        Assert.Equal(2, cache.Read(id, true).Count);
+        Assert.Single(TestAccounts.Audit(factory.Services, Action));
+    }
+
+    [Theory]
+    [InlineData(67583, 33554432, 100)]
+    [InlineData(67108865, 33554432, 100)]
+    [InlineData(1048576, 1048575, 100)]
+    [InlineData(1048576, 1073741825, 100)]
+    [InlineData(1048576, 33554432, 0)]
+    [InlineData(1048576, 33554432, 101)]
+    public async Task InvalidDebugLimitsAreRejected(int perObject, int global, int count)
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("admin", Token);
+        using var invalid = await Write(client, new(180, 4, 2, perObject, global, count), null);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Null((await Read(client)).Version);
+        Assert.Empty(TestAccounts.Audit(factory.Services, Action));
+    }
+
+    [Fact]
+    public async Task ChangedAdministratorCannotCommitEvenAfterRequestAuthorization()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        var actor = Actor(factory.Services);
+        TestAccounts.Update(factory.Services, "admin", user => user.Role = "Viewer");
+        var store = factory.Services.GetRequiredService<RuntimeParameterStore>();
+        Assert.Throws<TenonEdge.Host.Features.Tokens.ApiTokenException>(() => store.Write(new(new(365, 4, 2), null, true), actor));
+        Assert.Null(store.Read().Version);
+        Assert.Empty(TestAccounts.Audit(factory.Services, Action));
+    }
+
+    [Fact]
+    public void MigrationFrom25PreservesExistingPolicyAndAddsDefaultDebugLimits()
+    {
+        using var store = TestConfigStore.Create();
+        store.Initialize(ConfigMigrations.All.Where(m => m.Version <= 25).ToArray());
+        store.Database.Client.Ado.ExecuteCommand("INSERT INTO runtime_parameters(id,version,audit_retention_days,preview_global_limit,preview_session_limit,updated_at) VALUES(1,'11111111111111111111111111111111',365,8,3,1)");
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
+        var row = store.Database.Client.Queryable<RuntimeParameterRecord>().InSingle(1);
+        Assert.Equal(365, row.AuditRetentionDays);
+        Assert.Equal(8, row.PreviewGlobalLimit);
+        Assert.Equal(3, row.PreviewSessionLimit);
+        Assert.Equal(1048576, row.DebugObjectBytes);
+        Assert.Equal(33554432, row.DebugGlobalBytes);
+        Assert.Equal(100, row.DebugObjectRecords);
+    }
+
+    private static ManagementActor Actor(IServiceProvider services)
+    {
+        var user = TestAccounts.Find(services, "admin")!;
+        return new(user.Id, user.SecurityStamp, null);
     }
 
     private static Task<HttpResponseMessage> Write(HttpClient client, RuntimeParameterValues values, string? version) =>

@@ -66,8 +66,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages)
     {
     }
 
@@ -82,7 +82,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         ILogger<RuntimeHost> logger,
         Func<double>? random,
         IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null)
     {
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
@@ -109,7 +109,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         _time = time;
         _options = options.Validate();
         InFlight = new InFlightBudget(options.InFlightBytes, options.InputBufferBytes);
-        Messages = new RuntimeMessageCache(time);
+        Messages = messages ?? new RuntimeMessageCache(time);
         CurrentValues = new CurrentValueCache(time);
         _logger = logger;
         _supervisor = new UnitSupervisor(_options, time, events, logger, random);

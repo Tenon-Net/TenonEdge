@@ -26,9 +26,9 @@ public sealed class RuntimeMessageCache
 
     private readonly TimeProvider _time;
     private readonly int _recordLimit;
-    private readonly int _objectLimit;
-    private readonly int _globalLimit;
-    private readonly int _countLimit;
+    private int _objectLimit;
+    private int _globalLimit;
+    private int _countLimit;
     private readonly Lock _lock = new();
     private readonly Dictionary<RuntimeUnitId, Bucket> _objects = [];
     private readonly LinkedList<Entry> _ordered = [];
@@ -50,6 +50,38 @@ public sealed class RuntimeMessageCache
         _objectLimit = objectBytes;
         _globalLimit = globalBytes;
         _countLimit = recordsPerObject;
+    }
+
+    /// <summary>原缓存内即时更新；只淘汰诊断副本，不改变业务通道或投递。
+    /// 同一对象和全局都按捕获顺序移除；调大不恢复已淘汰数据。</summary>
+    public void Configure(int objectBytes, int globalBytes, int recordsPerObject)
+    {
+        ValidateLimits(objectBytes, globalBytes, recordsPerObject);
+        lock (_lock)
+        {
+            _objectLimit = objectBytes;
+            _globalLimit = globalBytes;
+            _countLimit = recordsPerObject;
+            // 遍历全局链表，不复制所有对象/记录；移除的总次数不超过现存条数。
+            var node = _ordered.First;
+            while (node is not null)
+            {
+                var next = node.Next;
+                var bucket = _objects[node.Value.ObjectId];
+                if (bucket.Records.Count > _countLimit || bucket.Charged > _objectLimit)
+                { Remove(node.Value); }
+                node = next;
+            }
+            while (_charged > _globalLimit)
+            { Remove(_ordered.First!.Value); }
+        }
+    }
+
+    public static void ValidateLimits(int objectBytes, int globalBytes, int recordsPerObject)
+    {
+        if (objectBytes < MaximumRecordBytes + MetadataCharge || objectBytes > 64 * 1024 * 1024 ||
+            globalBytes < objectBytes || globalBytes > 1024 * 1024 * 1024 || recordsPerObject is < 1 or > MaximumObjectRecords)
+        { throw new ArgumentException("调试缓存每对象须为67584—67108864字节，全局须为每对象上限—1073741824字节，每对象须为1—100条；调高须在本机实测。"); }
     }
 
     internal long Capture(RuntimeUnitId objectId, long revision, Guid sourceMessageId, ReadOnlySpan<byte> body)

@@ -6,10 +6,21 @@ import {
     parameterRequest,
     type RuntimeParameters,
 } from './parameters-api'
+const debug = {
+    debugObjectBytes: 1048576,
+    debugGlobalBytes: 33554432,
+    debugObjectRecords: 100,
+}
+const debugForm = {
+    debugObjectBytes: '1048576',
+    debugGlobalBytes: '33554432',
+    debugObjectRecords: '100',
+}
 const state: RuntimeParameters = {
     version: 'a'.repeat(32),
     deploymentAuditMinimumDays: 365,
     values: {
+        ...debug,
         auditRetentionDays: 730,
         previewGlobalLimit: 8,
         previewSessionLimit: 3,
@@ -32,6 +43,7 @@ it('freezes values and version without mutating the server read', () => {
         expectedVersion: state.version,
         confirmed: true,
         values: {
+            ...debug,
             auditRetentionDays: 1000,
             previewGlobalLimit: 8,
             previewSessionLimit: 3,
@@ -50,6 +62,12 @@ it.each([
     ['previewGlobalLimit', '1.5'],
     ['previewSessionLimit', '0'],
     ['previewSessionLimit', '9'],
+    ['debugObjectBytes', '67583'],
+    ['debugObjectBytes', '67108865'],
+    ['debugGlobalBytes', '1048575'],
+    ['debugGlobalBytes', '1073741825'],
+    ['debugObjectRecords', '0'],
+    ['debugObjectRecords', '101'],
 ] as const)('rejects %s=%s', (key, value) => {
     const form = editParameters(state)
     form.values[key] = value
@@ -62,16 +80,19 @@ it('accepts edges, including a first write, but refuses malformed version', () =
         deploymentAuditMinimumDays: 180,
     })
     form.values = {
+        ...debugForm,
         auditRetentionDays: '180',
         previewGlobalLimit: '1',
         previewSessionLimit: '1',
     }
     expect(parameterRequest(form, true).values).toEqual({
+        ...debug,
         auditRetentionDays: 180,
         previewGlobalLimit: 1,
         previewSessionLimit: 1,
     })
     form.values = {
+        ...debugForm,
         auditRetentionDays: '36500',
         previewGlobalLimit: '64',
         previewSessionLimit: '64',

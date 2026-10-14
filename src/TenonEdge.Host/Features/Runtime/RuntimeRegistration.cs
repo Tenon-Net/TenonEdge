@@ -33,6 +33,7 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IRuntimeEventSink>(), ClockSyncStatus.ReadKernel));
         services.AddHostedService<ClockSyncMonitor>();
         services.AddSingleton<RuntimeTrendHistory>();
+        services.AddSingleton<RuntimeMessageCache>();
         services.AddHostedService<RuntimeTrendMonitor>();
         services.AddSingleton<IInputUnitFactory, SimulatorInputFactory>();
         services.AddSingleton<IJsonInputDecoderFactory, JsonInputDecoderFactory>();

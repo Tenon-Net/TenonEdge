@@ -372,5 +372,10 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(26, "debug_cache_parameters", [
+            "ALTER TABLE runtime_parameters ADD COLUMN debug_object_bytes INTEGER NOT NULL DEFAULT 1048576 CHECK(debug_object_bytes BETWEEN 67584 AND 67108864)",
+            "ALTER TABLE runtime_parameters ADD COLUMN debug_global_bytes INTEGER NOT NULL DEFAULT 33554432 CHECK(debug_global_bytes BETWEEN debug_object_bytes AND 1073741824)",
+            "ALTER TABLE runtime_parameters ADD COLUMN debug_object_records INTEGER NOT NULL DEFAULT 100 CHECK(debug_object_records BETWEEN 1 AND 100)",
+        ]),
     ];
 }

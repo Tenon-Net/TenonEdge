@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using SqlSugar;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Diagnostics;
 
@@ -10,7 +11,7 @@ namespace TenonEdge.Host.Features.SystemInfo;
 
 /// <summary>系统运行参数不是草稿。提交与审计同事务，提交成功后发布不可变值；不持有请求作用域或事务。</summary>
 internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail audit, DataRetentionSettings deployment,
-    TimeProvider time, AuditRetentionGate retentionGate)
+    TimeProvider time, AuditRetentionGate retentionGate, RuntimeMessageCache messages)
 {
     private readonly Lock _gate = new();
     private RuntimeParameterState? _current;
@@ -29,12 +30,13 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
             try
             {
                 var values = row is null ? new RuntimeParameterValues(180, 4, 2)
-                    : new(row.AuditRetentionDays, row.PreviewGlobalLimit, row.PreviewSessionLimit);
+                    : new(row.AuditRetentionDays, row.PreviewGlobalLimit, row.PreviewSessionLimit, row.DebugObjectBytes, row.DebugGlobalBytes, row.DebugObjectRecords);
                 Validate(values, DataRetentionSettings.MinimumAuditRetentionDays);
                 if (row is not null && !Guid.TryParseExact(row.Version, "N", out _))
                 { throw new ArgumentException("持久版本无效。"); }
                 var minimum = (int)deployment.AuditRetention.TotalDays;
                 var state = new RuntimeParameterState(row?.Version, values with { AuditRetentionDays = Math.Max(minimum, values.AuditRetentionDays) }, minimum);
+                messages.Configure(values.DebugObjectBytes, values.DebugGlobalBytes, values.DebugObjectRecords);
                 Volatile.Write(ref _current, state);
                 return state;
             }
@@ -43,7 +45,7 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
         }
     }
 
-    public RuntimeParameterState Write(RuntimeParameterRequest request, AuditAccount account, string? sourceIp)
+    public RuntimeParameterState Write(RuntimeParameterRequest request, ManagementActor actor)
     {
         if (!request.Confirmed)
         { throw new ArgumentException("须明确确认运行参数变更。"); }
@@ -58,6 +60,7 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
             using var retention = retentionGate.TryEnterPolicyChange() ?? throw new RuntimeParameterBusyException();
             var next = database.InTransaction(client =>
             {
+                var account = actor.RequireAdministrator(client, time.GetUtcNow().ToUnixTimeMilliseconds()).Audit;
                 var row = client.Queryable<RuntimeParameterRecord>().InSingle(1);
                 if (row?.Version != current.Version)
                 { throw new RuntimeParameterConflictException(); }
@@ -69,18 +72,22 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
                 row.AuditRetentionDays = request.Values.AuditRetentionDays;
                 row.PreviewGlobalLimit = request.Values.PreviewGlobalLimit;
                 row.PreviewSessionLimit = request.Values.PreviewSessionLimit;
+                row.DebugObjectBytes = request.Values.DebugObjectBytes;
+                row.DebugGlobalBytes = request.Values.DebugGlobalBytes;
+                row.DebugObjectRecords = request.Values.DebugObjectRecords;
                 row.UpdatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();
                 if (existed)
                 { client.Updateable(row).ExecuteCommand(); }
                 else
                 { client.Insertable(row).ExecuteCommand(); }
                 var result = new RuntimeParameterState(row.Version, request.Values, current.DeploymentAuditMinimumDays);
-                audit.Append(client, new AuditEntry("system.runtimeParametersChanged", AuditResults.Success, account, sourceIp,
+                audit.Append(client, new AuditEntry("system.runtimeParametersChanged", AuditResults.Success, account, actor.SourceIp,
                     "runtimeParameters", JsonSerializer.Serialize(new { previous = current, current = result })));
                 return result;
             });
             // Keep the update lock and retention gate across COMMIT/publication so
             // concurrent writes cannot publish out of order or purge using old values.
+            messages.Configure(next.Values.DebugObjectBytes, next.Values.DebugGlobalBytes, next.Values.DebugObjectRecords);
             Volatile.Write(ref _current, next);
             return next;
         }
@@ -89,6 +96,7 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
     private static void Validate(RuntimeParameterValues values, int minimumAuditDays)
     {
         ArgumentNullException.ThrowIfNull(values);
+        RuntimeMessageCache.ValidateLimits(values.DebugObjectBytes, values.DebugGlobalBytes, values.DebugObjectRecords);
         if (values.AuditRetentionDays < minimumAuditDays || values.AuditRetentionDays > DataRetentionSettings.MaximumAuditRetentionDays)
         { throw new ArgumentException($"审计保留期须为 {minimumAuditDays}—{DataRetentionSettings.MaximumAuditRetentionDays} 天，不得短于部署下限。"); }
         if (values.PreviewGlobalLimit is < 1 or > MaximumPreviewGlobal || values.PreviewSessionLimit < 1 || values.PreviewSessionLimit > values.PreviewGlobalLimit)
@@ -97,7 +105,10 @@ internal sealed class RuntimeParameterStore(ConfigDatabase database, AuditTrail 
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record RuntimeParameterValues(int AuditRetentionDays, int PreviewGlobalLimit, int PreviewSessionLimit)
+internal sealed record RuntimeParameterValues(int AuditRetentionDays, int PreviewGlobalLimit, int PreviewSessionLimit,
+    [property: JsonRequired] int DebugObjectBytes = RuntimeMessageCache.MaximumObjectBytes,
+    [property: JsonRequired] int DebugGlobalBytes = RuntimeMessageCache.MaximumGlobalBytes,
+    [property: JsonRequired] int DebugObjectRecords = RuntimeMessageCache.MaximumObjectRecords)
 {
     [JsonIgnore] public PreviewOperationLimits Preview => new(PreviewGlobalLimit, PreviewSessionLimit);
 }
@@ -115,5 +126,8 @@ internal sealed class RuntimeParameterRecord
     [SugarColumn(ColumnName = "audit_retention_days")] public int AuditRetentionDays { get; set; }
     [SugarColumn(ColumnName = "preview_global_limit")] public int PreviewGlobalLimit { get; set; }
     [SugarColumn(ColumnName = "preview_session_limit")] public int PreviewSessionLimit { get; set; }
+    [SugarColumn(ColumnName = "debug_object_bytes")] public int DebugObjectBytes { get; set; } = RuntimeMessageCache.MaximumObjectBytes;
+    [SugarColumn(ColumnName = "debug_global_bytes")] public int DebugGlobalBytes { get; set; } = RuntimeMessageCache.MaximumGlobalBytes;
+    [SugarColumn(ColumnName = "debug_object_records")] public int DebugObjectRecords { get; set; } = RuntimeMessageCache.MaximumObjectRecords;
     [SugarColumn(ColumnName = "updated_at")] public long UpdatedAt { get; set; }
 }

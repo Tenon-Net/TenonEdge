@@ -13,6 +13,50 @@ public sealed class RuntimeMessageCacheTests
     private static long Put(RuntimeMessageCache cache, RuntimeUnitId id, string text, long revision = 1) =>
         cache.Capture(id, revision, Guid.NewGuid(), Encoding.UTF8.GetBytes(text));
 
+    [Fact]
+    public void LoweringBudgetsEvictsOldestImmediatelyAndRaisingDoesNotResurrect()
+    {
+        var cache = new RuntimeMessageCache(TimeProvider.System);
+        var payload = new string('x', 64000);
+        Put(cache, A, payload);
+        Put(cache, B, payload);
+        var a2 = Put(cache, A, payload);
+        var b2 = Put(cache, B, payload);
+        cache.Configure(67584, 67584, 1);
+        Assert.Empty(cache.Read(A, true));
+        Assert.Equal(b2, Assert.Single(cache.Read(B, true)).Sequence);
+        Assert.InRange(cache.Status.ChargedBytes, 1, 67584);
+        cache.Configure(64 * 1024 * 1024, 1024 * 1024 * 1024, 100);
+        Assert.Empty(cache.Read(A, true));
+        Assert.Equal(b2, Assert.Single(cache.Read(B, true)).Sequence);
+        Assert.False(cache.TryReadComplete(A, a2, 1, Guid.NewGuid(), out _));
+        for (var i = 0; i < 30; i++)
+        { Put(cache, A, payload); }
+        Assert.Equal(30, cache.Read(A, true).Count); // Raised object budget, no old 1 MiB cap.
+        Assert.True(cache.Status.ChargedBytes > RuntimeMessageCache.MaximumObjectBytes);
+        cache.Configure(128000, 256000, 100);
+        Assert.Single(cache.Read(A, true));
+    }
+
+    [Fact]
+    public async Task ConcurrentCaptureAndReconfigurationShareOneEvictionBoundary()
+    {
+        var cache = new RuntimeMessageCache(TimeProvider.System);
+        var capture = Task.Run(() =>
+        {
+            for (var i = 0; i < 5000; i++)
+            { Put(cache, i % 2 == 0 ? A : B, "fixture"); }
+        }, TestContext.Current.CancellationToken);
+        for (var i = 0; i < 500; i++)
+        { cache.Configure(67584, 135168, i % 10 + 1); }
+        await capture;
+        cache.Configure(67584, 67584, 2);
+        Assert.InRange(cache.Read(A, true).Count, 0, 2);
+        Assert.InRange(cache.Read(B, true).Count, 0, 2);
+        Assert.InRange(cache.Status.ChargedBytes, 0, 67584);
+        Assert.All(cache.Read(A, true), r => Assert.Equal("fixture", r.Body));
+    }
+
     [Theory]
     [InlineData(DiagnosticSampleAccess.Unknown, false)]
     [InlineData(DiagnosticSampleAccess.Redacted, false)]

@@ -1354,11 +1354,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 读取当前有效的审计保留期与共享预览并发参数 */
+        /** 读取当前有效的审计保留期、共享预览并发和调试缓存预算 */
         get: operations["getRuntimeParameters"];
         /**
          * 管理员确认后持久化运行参数并立即供后续准入及清理采用
-         * @description 版本条件、确认和审计同事务。降低并发不取消已有租约；审计不得短于180天或部署下限。清理/导出正在执行时立即拒绝，不排队。无草稿/运行版本变化。
+         * @description 版本条件、确认和审计同事务。降低并发不取消已有租约；审计不得短于180天或部署下限。清理/导出正在执行时立即拒绝，不排队。调试缓存降低预算即时按捕获顺序淘汰诊断副本，单条64KiB不变。无草稿/运行版本变化。
          */
         put: operations["writeRuntimeParameters"];
         post?: never;
@@ -3856,6 +3856,21 @@ export interface components {
             previewGlobalLimit: number | string;
             /** Format: int32 */
             previewSessionLimit: number | string;
+            /**
+             * Format: int32
+             * @default 1048576
+             */
+            debugObjectBytes: number | string;
+            /**
+             * Format: int32
+             * @default 33554432
+             */
+            debugGlobalBytes: number | string;
+            /**
+             * Format: int32
+             * @default 100
+             */
+            debugObjectRecords: number | string;
         };
         RuntimePointValue: {
             key: string;

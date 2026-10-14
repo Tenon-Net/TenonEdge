@@ -15,6 +15,9 @@ export function editParameters(state: RuntimeParameters): ParameterForm {
             auditRetentionDays: String(state.values.auditRetentionDays),
             previewGlobalLimit: String(state.values.previewGlobalLimit),
             previewSessionLimit: String(state.values.previewSessionLimit),
+            debugObjectBytes: String(state.values.debugObjectBytes),
+            debugGlobalBytes: String(state.values.debugGlobalBytes),
+            debugObjectRecords: String(state.values.debugObjectRecords),
         },
     }
 }
@@ -35,10 +38,18 @@ export function parameterRequest(form: ParameterForm, confirmed: boolean) {
         !/^[0-9a-f]{32}$/.test(form.expectedVersion)
     )
         throw new Error('parameters-version')
+    const objectBytes = integer(form.values.debugObjectBytes, 67584, 67108864)
     return {
         expectedVersion: form.expectedVersion,
         confirmed: true,
         values: {
+            debugObjectBytes: objectBytes,
+            debugGlobalBytes: integer(
+                form.values.debugGlobalBytes,
+                objectBytes,
+                1073741824,
+            ),
+            debugObjectRecords: integer(form.values.debugObjectRecords, 1, 100),
             auditRetentionDays: integer(
                 form.values.auditRetentionDays,
                 Math.max(180, form.minimumAuditDays),

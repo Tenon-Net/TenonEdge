@@ -10,7 +10,7 @@ const endpoint = root + '/system/runtime-parameters'
 const password = 'Runtime-parameters-7831!'
 function panel(page: Page) {
     return page.getByRole('region', {
-        name: '运行参数：预览并发与审计保留',
+        name: '运行参数：预览、审计与调试缓存',
         exact: true,
     })
 }
@@ -84,6 +84,15 @@ test('runtime parameter confirmation changes real preview admission, persists ac
             await page.request.get(root + '/devices')
         ).json()
         await edit(view, '365', '1', '1')
+        await view
+            .getByLabel('调试缓存每对象字节上限', { exact: true })
+            .fill('67584')
+        await view
+            .getByLabel('调试缓存全局字节上限', { exact: true })
+            .fill('135168')
+        await view
+            .getByLabel('调试缓存每对象条数上限', { exact: true })
+            .fill('2')
         await expect(
             view.getByRole('button', { name: '确认保存运行参数', exact: true }),
         ).toBeDisabled()
@@ -92,6 +101,15 @@ test('runtime parameter confirmation changes real preview admission, persists ac
         ).toBeVisible()
         await save(view)
         await saved(view)
+        await expect(
+            view.locator('[data-parameter="debugObjectBytes"]'),
+        ).toHaveText('67584')
+        await expect(
+            view.locator('[data-parameter="debugGlobalBytes"]'),
+        ).toHaveText('135168')
+        await expect(
+            view.locator('[data-parameter="debugObjectRecords"]'),
+        ).toHaveText('2')
         const session = await (
             await page.request.get(root + '/auth/session')
         ).json()
@@ -302,6 +320,9 @@ test('parameter editor retains validation input, freezes version and never repla
                             auditRetentionDays: 730,
                             previewGlobalLimit: 4,
                             previewSessionLimit: 2,
+                            debugObjectBytes: 1048576,
+                            debugGlobalBytes: 33554432,
+                            debugObjectRecords: 100,
                         },
                         expectedVersion: null,
                         confirmed: true,

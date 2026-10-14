@@ -321,7 +321,7 @@ public sealed class QueueParameterTests
         using var store = TestConfigStore.Create();
         store.Initialize(ConfigMigrations.All.Where(m => m.Version <= 23).ToArray());
         var identity = GatewayIdentity.LoadOrCreate(store.Database, out _);
-        store.Database.Client.Insertable(new RuntimeParameterRecord { Version = Guid.NewGuid().ToString("N"), AuditRetentionDays = 365, PreviewGlobalLimit = 6, PreviewSessionLimit = 3 }).ExecuteCommand();
+        store.Database.Client.Ado.ExecuteCommand("INSERT INTO runtime_parameters(id,version,audit_retention_days,preview_global_limit,preview_session_limit,updated_at) VALUES(1,'11111111111111111111111111111111',365,6,3,1)");
         Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         Assert.Equal(identity, GatewayIdentity.LoadOrCreate(store.Database, out _));

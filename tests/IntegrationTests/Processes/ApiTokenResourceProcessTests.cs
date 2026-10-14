@@ -48,8 +48,8 @@ public sealed partial class ApiTokenProcessTests
         await using (var seed = new FixedDataDirectoryApplicationFactory(data.Path))
         {
             publicCertificate = seed.Services.GetRequiredService<HttpsCertificateStore>().Certificate.Export(X509ContentType.Cert);
-            TestAccounts.Create(seed.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
-            seed.Services.GetRequiredService<RuntimeParameterStore>().Write(new(new(180, 3, 1), null, true), "fixture", null);
+            var adminUser = TestAccounts.Create(seed.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+            seed.Services.GetRequiredService<RuntimeParameterStore>().Write(new(new(180, 3, 1), null, true), new(adminUser.Id, adminUser.SecurityStamp, null));
         }
         using var certificate = X509CertificateLoader.LoadCertificate(publicCertificate);
         await using var host = HostProcess.Start(working.Path, "Production", data.Path,
