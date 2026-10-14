@@ -123,6 +123,7 @@ internal static class AuditActions
     public const string SnapshotApplied = "runtime.apply";
 
     public const string SnapshotRolledBack = "runtime.rollback";
+    public const string SnapshotRecovered = "runtime.snapshotRecovered";
 
     public const string RuntimeRetried = "runtime.retry";
 

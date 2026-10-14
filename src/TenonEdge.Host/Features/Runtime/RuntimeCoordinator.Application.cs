@@ -78,6 +78,8 @@ internal sealed partial class RuntimeCoordinator
             { throw new RuntimeApplicationBusyException(_applications[^1]); }
             if (_deliveryWrite is not null)
             { throw new RuntimeApplicationUnavailableException(); }
+            if (kind == "recovery" && (_state != RuntimeCoordinatorState.RunFailed || runtime.ActiveRevision is not null))
+            { throw new RuntimeApplicationUnavailableException(); }
             if (kind == "retry" && _state != RuntimeCoordinatorState.RunFailed)
             { throw new RuntimeApplicationUnavailableException(); }
             if (_applications.Any(application => application.Id == operationId))
@@ -96,11 +98,17 @@ internal sealed partial class RuntimeCoordinator
         return new(initial, task);
     }
 
-    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, AuditAccount account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation, DeliveryMigrationIntentDraft[] intents)
+    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, AuditAccount account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation, DeliveryMigrationIntentDraft[] intents, RuntimeRecoveryAuthorization? recovery = null)
     {
         RuntimePlanDocument document;
         long revision;
-        if (targetRevision is { } target)
+        if (recovery is not null)
+        {
+            var restored = versions.FreezeRecovery(recovery, account.Name!, changeDescription);
+            document = restored.Document;
+            revision = restored.Revision;
+        }
+        else if (targetRevision is { } target)
         {
             var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account.Name!, changeDescription, expectation);
             document = rollback.Document;
@@ -124,7 +132,8 @@ internal sealed partial class RuntimeCoordinator
             if (prepared.Failures.Count != 0)
             { throw new ApplicationRejectedException(code); }
             code = "runtime.targetChangeBlocked";
-            if (versions.TargetChangeProblem(document, intents) is not null)
+            if (recovery is null ? versions.TargetChangeProblem(document, intents) is not null
+                : versions.CheckRecoveryQueue(recovery, CancellationToken.None).BlockedCount != 0)
             { throw new ApplicationRejectedException(code); }
             code = "configuration.migrationReviewChanged";
             ValidateApplicationMigrations(prepared, intents, expectation?.EffectiveRevision);
@@ -135,17 +144,19 @@ internal sealed partial class RuntimeCoordinator
             if (!quiet.Succeeded || quiet.Revision is not null && !runtime.IsCurrentQuiescence(quiet))
             { throw new ApplicationRejectedException(code); }
             code = "runtime.targetChangeBlocked";
-            if (versions.TargetChangeProblem(document, intents) is not null)
+            if (recovery is null ? versions.TargetChangeProblem(document, intents) is not null
+                : versions.CheckRecoveryQueue(recovery, CancellationToken.None).BlockedCount != 0)
             { throw new ApplicationRejectedException(code); }
             code = "configuration.migrationReviewChanged";
             ValidateApplicationMigrations(prepared, intents, expectation?.EffectiveRevision, quiet);
             code = "runtime.commitFailed";
             AdvanceApplication(operationId, RuntimeApplicationStage.Committing, revision, committed: null);
-            var replaced = versions.Commit(revision, new AuditEntry(targetRevision is null ? AuditActions.SnapshotApplied : AuditActions.SnapshotRolledBack,
-                AuditResults.Success, account, sourceIp, Target(revision), targetRevision is null
+            var replaced = versions.Commit(revision, new AuditEntry(recovery is not null ? AuditActions.SnapshotRecovered : targetRevision is null ? AuditActions.SnapshotApplied : AuditActions.SnapshotRolledBack,
+                AuditResults.Success, account, sourceIp, Target(revision), recovery is not null
+                    ? $"管理员确认从损坏有效版本 r{recovery.Checkpoint.EffectiveRevision} 恢复完整历史 r{targetRevision}；生成新版本，保留所有草稿与冻结队列。" : targetRevision is null
                     ? $"应用已确认的草稿版本 {expectedDraftVersion}。" : $"回滚到版本 r{targetRevision}，生成新版本；已发送数据不撤回。"),
-                markRunning: true, replaceDraftVersion: targetRevision is null ? null : expectedDraftVersion, migrationIntents: intents);
-            draftReplaced = targetRevision is null ? null : replaced;
+                markRunning: true, replaceDraftVersion: targetRevision is null || recovery is not null ? null : expectedDraftVersion, migrationIntents: intents, recovery: recovery);
+            draftReplaced = recovery is not null ? false : targetRevision is null ? null : replaced;
             committed = true;
             lock (_lock)
             {
@@ -167,7 +178,7 @@ internal sealed partial class RuntimeCoordinator
                 _reason = null;
                 ResetStabilityClock();
             }
-            return new(revision, true, true, targetRevision is null ? "runtime.applied" : "runtime.rolledBack", DraftReplaced: draftReplaced);
+            return new(revision, true, true, recovery is not null ? "runtime.recovered" : targetRevision is null ? "runtime.applied" : "runtime.rolledBack", DraftReplaced: draftReplaced);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -205,17 +216,17 @@ internal sealed partial class RuntimeCoordinator
                 runtimeEvents.Record(RuntimeEventLevel.Error, RuntimeEventTypes.VersionNotEffective, Target(revision),
                     "放弃版本未能写入配置库，保留 pending 供重启恢复；未提交新有效版本。");
             }
-            RuntimeInputRecoveryResult? recovery = null;
+            RuntimeInputRecoveryResult? inputRecovery = null;
             if (quiesced)
             {
                 AdvanceApplication(operationId, RuntimeApplicationStage.Restoring, revision);
-                recovery = await runtime.RestoreInputsAsync();
+                inputRecovery = await runtime.RestoreInputsAsync();
                 lock (_lock)
                 { ResetStabilityClock(); }
             }
             runtimeEvents.Record(RuntimeEventLevel.Warning, RuntimeEventTypes.VersionNotEffective, Target(revision),
                 "本次应用未提交，原有效版本保持不变；输入恢复状态按运行单元显示。");
-            return new(revision, false, false, code, recovery is { Succeeded: false });
+            return new(revision, false, false, code, inputRecovery is { Succeeded: false });
         }
         finally
         {

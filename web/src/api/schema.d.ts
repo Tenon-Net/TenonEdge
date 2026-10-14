@@ -1347,6 +1347,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/configuration/versions/{revision}/recovery-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 管理员预检损坏有效快照恢复；完整历史、当前凭证和冻结目标核对，不清空或替换草稿 */
+        post: operations["reviewCorruptSnapshotRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/configuration/versions/{revision}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 管理员明确确认后生成新有效版本，保留草稿；202仅接管，按操作ID查询且禁止自动重试 */
+        post: operations["recoverCorruptSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/system/runtime-parameters": {
         parameters: {
             query?: never;
@@ -2231,6 +2265,30 @@ export interface components {
             /** Format: int32 */
             removed: number | string;
         };
+        ConfigurationRecoveryRequest: {
+            expectedVersion: string;
+            confirmationHash: string;
+            confirmed: boolean;
+            preserveDraftConfirmed: boolean;
+            changeDescription?: null | string;
+        };
+        ConfigurationRecoveryReview: {
+            /** Format: int64 */
+            effectiveRevision: number | string;
+            /** Format: int64 */
+            targetRevision: number | string;
+            draftVersion: string;
+            confirmationHash: string;
+            targetContentHash: string;
+            targets: components["schemas"]["RuntimeRecoveryTarget"][];
+            queue: components["schemas"]["DeliveryRecoveryCheck"];
+            preparationProblems: string[];
+            preservesDraft?: boolean;
+            canConfirm?: boolean;
+        };
+        ConfigurationRecoveryReviewRequest: {
+            expectedVersion: null | string;
+        };
         ConfigurationRetryRequest: {
             /** Format: int64 */
             expectedEffectiveRevision: number | string;
@@ -2643,6 +2701,14 @@ export interface components {
             configStoreChangedCount: number | string;
             /** Format: int64 */
             unknownQuarantineCount: number | string;
+        };
+        DeliveryRecoveryCheck: {
+            /** Format: int64 */
+            checkedCount: number | string;
+            /** Format: int64 */
+            blockedCount: number | string;
+            blockedConnections: (number | string)[];
+            moreConnections: boolean;
         };
         DeliveryRetryItem: {
             /** Format: int64 */
@@ -3324,6 +3390,11 @@ export interface components {
         };
         /** @enum {unknown} */
         OutputSendStatus: "ack" | "retry" | "rejectMessage" | "suspendTarget" | null;
+        OutputTargetIdentity: {
+            fingerprint: string;
+            recipient: components["schemas"]["OutputRecipientIdentity"];
+            summary?: null | string;
+        };
         OutputTrafficPoint: {
             /** Format: date-time */
             at: string;
@@ -3888,6 +3959,11 @@ export interface components {
             unit: null | string;
             enabled: boolean;
             value: components["schemas"]["CurrentFieldValue"];
+        };
+        RuntimeRecoveryTarget: {
+            /** Format: int64 */
+            connectionId: number | string;
+            identity: components["schemas"]["OutputTargetIdentity"];
         };
         RuntimeStartBlocker: {
             code: string;
@@ -8920,6 +8996,166 @@ export interface operations {
             };
             /** @description Payload Too Large */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reviewCorruptSnapshotRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationRecoveryReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationRecoveryReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    recoverCorruptSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeApplicationStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

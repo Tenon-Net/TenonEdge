@@ -88,6 +88,8 @@ internal static class RuntimeSnapshotOrigins
 
     public const string Rollback = "rollback";
 
+    public const string Recovery = "recovery";
+
     /// <summary>启动时从种子快照文件导入（T1）。</summary>
     public const string Seed = "seed";
 

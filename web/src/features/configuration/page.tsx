@@ -406,6 +406,21 @@ export function ConfigurationPage() {
                 </section>
             )}
             <ConfigurationHistory
+                recoveryDisabled={
+                    waiting ||
+                    operations.isPending ||
+                    operations.isError ||
+                    !!busy
+                }
+                onRecoveryBusy={setRetryPending}
+                onRecoveryAccepted={(value) => {
+                    store.setState({
+                        operationId: value.id,
+                        review: null,
+                        confirmed: false,
+                        uncertain: false,
+                    })
+                }}
                 summary={
                     summary.isError || summary.isFetching
                         ? undefined

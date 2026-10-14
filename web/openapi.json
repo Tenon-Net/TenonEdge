@@ -6148,6 +6148,212 @@
         }
       }
     },
+    "/api/edge-admin/v1/configuration/versions/{revision}/recovery-review": {
+      "post": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "管理员预检损坏有效快照恢复；完整历史、当前凭证和冻结目标核对，不清空或替换草稿",
+        "operationId": "reviewCorruptSnapshotRecovery",
+        "parameters": [
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationRecoveryReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationRecoveryReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/configuration/versions/{revision}/recover": {
+      "post": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "管理员明确确认后生成新有效版本，保留草稿；202仅接管，按操作ID查询且禁止自动重试",
+        "operationId": "recoverCorruptSnapshot",
+        "parameters": [
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeApplicationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/system/runtime-parameters": {
       "get": {
         "tags": [
@@ -10930,6 +11136,112 @@
           }
         }
       },
+      "ConfigurationRecoveryRequest": {
+        "required": [
+          "expectedVersion",
+          "confirmationHash",
+          "confirmed",
+          "preserveDraftConfirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "confirmationHash": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "preserveDraftConfirmed": {
+            "type": "boolean"
+          },
+          "changeDescription": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigurationRecoveryReview": {
+        "required": [
+          "effectiveRevision",
+          "targetRevision",
+          "draftVersion",
+          "confirmationHash",
+          "targetContentHash",
+          "targets",
+          "queue",
+          "preparationProblems"
+        ],
+        "type": "object",
+        "properties": {
+          "effectiveRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "targetRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "draftVersion": {
+            "type": "string"
+          },
+          "confirmationHash": {
+            "type": "string"
+          },
+          "targetContentHash": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeRecoveryTarget"
+            }
+          },
+          "queue": {
+            "$ref": "#/components/schemas/DeliveryRecoveryCheck"
+          },
+          "preparationProblems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preservesDraft": {
+            "type": "boolean"
+          },
+          "canConfirm": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ConfigurationRecoveryReviewRequest": {
+        "required": [
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigurationRetryRequest": {
         "required": [
           "expectedEffectiveRevision",
@@ -12778,6 +13090,47 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "DeliveryRecoveryCheck": {
+        "required": [
+          "checkedCount",
+          "blockedCount",
+          "blockedConnections",
+          "moreConnections"
+        ],
+        "type": "object",
+        "properties": {
+          "checkedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "blockedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "blockedConnections": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          "moreConnections": {
+            "type": "boolean"
           }
         }
       },
@@ -15735,6 +16088,27 @@
           null
         ]
       },
+      "OutputTargetIdentity": {
+        "required": [
+          "fingerprint",
+          "recipient"
+        ],
+        "type": "object",
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/OutputRecipientIdentity"
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "OutputTrafficPoint": {
         "required": [
           "at",
@@ -18187,6 +18561,26 @@
           },
           "value": {
             "$ref": "#/components/schemas/CurrentFieldValue"
+          }
+        }
+      },
+      "RuntimeRecoveryTarget": {
+        "required": [
+          "connectionId",
+          "identity"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/OutputTargetIdentity"
           }
         }
       },

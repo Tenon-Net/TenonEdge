@@ -7,6 +7,7 @@ type Schema = components['schemas']
 export type DraftSummary = Schema['ConfigurationDraftSummary']
 export type Operation = Schema['RuntimeApplicationStatus']
 export type RuntimeState = Schema['ConfigurationRuntimeState']
+export type RecoveryReview = Schema['ConfigurationRecoveryReview']
 export type Review = Omit<Schema['ConfigurationReview'], 'changes'> & {
     changes: (Omit<Schema['ConfigurationChange'], 'before' | 'after'> & {
         beforeText: string
@@ -231,6 +232,66 @@ export function createConfigurationApi(
     api: ReturnType<typeof createGatewayClient>,
 ) {
     return {
+        async reviewRecovery(
+            revision: number | string,
+            version: string | null,
+        ) {
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/configuration/versions/{revision}/recovery-review',
+                {
+                    params: { path: { revision: revisionPath(revision) } },
+                    body: { expectedVersion: version },
+                    parseAs: 'text',
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            const review = metadata(
+                routeObject(readRouteJson(data, maximumResponseBytes, 64)),
+            ) as RecoveryReview
+            if (
+                revisionId(review.targetRevision) !== revisionId(revision) ||
+                typeof review.draftVersion !== 'string' ||
+                review.preservesDraft !== true ||
+                typeof review.canConfirm !== 'boolean' ||
+                !/^sha256:[a-f0-9]{64}$/.test(review.confirmationHash) ||
+                !Array.isArray(review.targets) ||
+                !Array.isArray(review.preparationProblems) ||
+                !review.queue
+            )
+                throw new Error('configuration-response')
+            revisionId(review.effectiveRevision)
+            return review
+        },
+        async recover(
+            review: RecoveryReview,
+            confirmed: boolean,
+            preserve: boolean,
+        ) {
+            if (
+                !confirmed ||
+                !preserve ||
+                !review.canConfirm ||
+                !review.preservesDraft
+            )
+                throw new Error('configuration-confirmation')
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/configuration/versions/{revision}/recover',
+                {
+                    params: {
+                        path: { revision: revisionPath(review.targetRevision) },
+                    },
+                    body: {
+                        expectedVersion: review.draftVersion,
+                        confirmationHash: review.confirmationHash,
+                        confirmed: true,
+                        preserveDraftConfirmed: true,
+                    },
+                    parseAs: 'text',
+                },
+            )
+            if (!data) throw new Error('configuration-response')
+            return decodeOperation(data)
+        },
         async runtime(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/configuration/runtime',

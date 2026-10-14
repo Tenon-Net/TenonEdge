@@ -681,3 +681,85 @@ describe('persistent history and confirmed rollback', () => {
         )
     })
 })
+
+describe('corrupt snapshot recovery boundary', () => {
+    const recovery = {
+        effectiveRevision: '9223372036854775807',
+        targetRevision: '1',
+        draftVersion: 'draft-1',
+        confirmationHash: hash,
+        targetContentHash: hash,
+        targets: [],
+        queue: {
+            checkedCount: 0,
+            blockedCount: 0,
+            blockedConnections: [],
+            moreConnections: false,
+        },
+        preparationProblems: [],
+        preservesDraft: true,
+        canConfirm: true,
+    }
+    it('keeps exact revisions and asks the server to capture the draft when ordinary comparison is unavailable', async () => {
+        const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+            const request = input as Request
+            expect(request.url).toContain('/versions/1/recovery-review')
+            expect(request.headers.get('X-CSRF-Token')).toBe('fixture-csrf')
+            expect(await request.json()).toEqual({ expectedVersion: null })
+            return new Response(
+                JSON.stringify(recovery).replace(
+                    '"9223372036854775807"',
+                    '9223372036854775807',
+                ),
+            )
+        })
+        const { api } = fixture(fetcher)
+        expect((await api.reviewRecovery('1', null)).effectiveRevision).toBe(
+            '9223372036854775807',
+        )
+        expect(fetcher).toHaveBeenCalledTimes(1)
+    })
+    it('requires both confirmations and sends only captured review identity, never a plan or account', async () => {
+        const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+            const request = input as Request
+            expect(request.url).toContain('/versions/1/recover')
+            expect(await request.json()).toEqual({
+                expectedVersion: 'draft-1',
+                confirmationHash: hash,
+                confirmed: true,
+                preserveDraftConfirmed: true,
+            })
+            return Response.json({
+                ...operation,
+                kind: 'recovery',
+                targetRevision: 1,
+            })
+        })
+        const { api } = fixture(fetcher)
+        await expect(api.recover(recovery, false, true)).rejects.toThrow(
+            'configuration-confirmation',
+        )
+        await expect(api.recover(recovery, true, false)).rejects.toThrow(
+            'configuration-confirmation',
+        )
+        await expect(
+            api.recover({ ...recovery, canConfirm: false }, true, true),
+        ).rejects.toThrow('configuration-confirmation')
+        expect(fetcher).not.toHaveBeenCalled()
+        expect((await api.recover(recovery, true, true)).kind).toBe('recovery')
+        expect(fetcher).toHaveBeenCalledTimes(1)
+    })
+    it.each([409, 500, 'lost'] as const)(
+        'does not replay recovery after %s',
+        async (failure) => {
+            const fetcher = vi.fn(async () => {
+                if (failure === 'lost') throw new TypeError('lost')
+                return Response.json({ status: failure }, { status: failure })
+            })
+            await expect(
+                fixture(fetcher).api.recover(recovery, true, true),
+            ).rejects.toThrow()
+            expect(fetcher).toHaveBeenCalledTimes(1)
+        },
+    )
+})

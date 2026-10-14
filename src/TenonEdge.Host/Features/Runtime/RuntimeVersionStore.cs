@@ -210,7 +210,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
     /// </summary>
     /// <returns>是否替换了草稿，不表示提交成败；普通应用或保留并发草稿时为 false，提交失败抛异常。</returns>
     public bool Commit(long revision, AuditEntry? auditEntry, string? seedHash = null, bool markRunning = false, string? replaceDraftVersion = null,
-        IReadOnlyList<DeliveryMigrationIntentDraft>? migrationIntents = null)
+        IReadOnlyList<DeliveryMigrationIntentDraft>? migrationIntents = null, RuntimeRecoveryAuthorization? recovery = null)
     {
         var intents = migrationIntents?.ToArray() ?? [];
         var frozen = replaceDraftVersion is null ? null : Load(revision) ?? throw new KeyNotFoundException("配置版本不存在。");
@@ -222,6 +222,16 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
                 ?? throw new InvalidOperationException($"版本 r{revision} 不存在。");
             if (state.PendingRevision != revision || snapshot.State != RuntimeSnapshotStates.Pending)
             { throw new RuntimeVersionConflictException("runtime.pendingMismatch", revision); }
+            if ((snapshot.Origin == RuntimeSnapshotOrigins.Recovery) != (recovery is not null))
+            { throw new InvalidOperationException("损坏快照恢复须有独立管理员确认。"); }
+            if (recovery is not null)
+            {
+                ValidateRecovery(client, recovery, requireDraftVersion: false);
+                if (replaceDraftVersion is not null || intents.Length != 0 || !markRunning ||
+                    auditEntry?.Action != AuditActions.SnapshotRecovered || snapshot.ContentHash != recovery.Checkpoint.Target.ContentHash ||
+                    snapshot.Content != recovery.Checkpoint.Target.Content || CheckRecoveryQueue(recovery, CancellationToken.None).BlockedCount != 0)
+                { throw new DraftWriteException("configuration.recoveryTargetBlocked"); }
+            }
             if ((snapshot.Origin == RuntimeSnapshotOrigins.Rollback) != (replacement is not null) ||
                 frozen is not null && frozen.ContentHash != snapshot.ContentHash)
             { throw new InvalidOperationException("人工回滚须使用对应的完整草稿检查点提交。"); }
@@ -238,7 +248,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
 
             var checkpoint = RuntimeSnapshotDocument.ReadForExecution(snapshot);
             var document = checkpoint.Plan;
-            var previous = state.EffectiveRevision is { } prior ? RuntimeSnapshotDocument.ReadExecutionPlan(RequiredSnapshot(client, prior)) : null;
+            var previous = recovery is null && state.EffectiveRevision is { } prior ? RuntimeSnapshotDocument.ReadExecutionPlan(RequiredSnapshot(client, prior)) : null;
             var allowed = ValidateMigrationIntents(previous, document, intents, state.ConfigStoreId);
             if (intents.Length > 0 && (snapshot.Origin != RuntimeSnapshotOrigins.Apply || !markRunning ||
                 auditEntry?.Action != AuditActions.SnapshotApplied || auditEntry.Result != AuditResults.Success ||
@@ -274,7 +284,8 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             }
 
             var replaced = replacement?.Apply(client, replaceDraftVersion!, time) ?? false;
-            ConfigurationEditJournal.PruneCommitted(client, checkpoint.Draft?.Edits);
+            if (recovery is null)
+            { ConfigurationEditJournal.PruneCommitted(client, checkpoint.Draft?.Edits); }
             PruneHistory(client);
             return replaced;
         });

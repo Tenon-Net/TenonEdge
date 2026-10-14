@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
-import type { DraftSummary } from './api'
+import type { DraftSummary, Operation } from './api'
+import { ConfigurationRecovery } from './recovery'
 import { configuration } from './queries'
 import { ChangeDetails, ConfigurationError } from './view'
 
@@ -11,11 +12,17 @@ export function ConfigurationHistory({
     canEdit,
     rollbackDisabled,
     onReview,
+    recoveryDisabled,
+    onRecoveryBusy,
+    onRecoveryAccepted,
 }: {
     summary?: DraftSummary
     canEdit: boolean
     rollbackDisabled: boolean
     onReview: (revision: string) => void
+    recoveryDisabled: boolean
+    onRecoveryBusy: (busy: boolean) => void
+    onRecoveryAccepted: (operation: Operation) => void
 }) {
     const { t } = useTranslation()
     const [cursors, setCursors] = useState<string[]>([])
@@ -182,6 +189,15 @@ export function ConfigurationHistory({
                                     text={detail.data![key]}
                                 />
                             ))}
+                            <ConfigurationRecovery
+                                key={selected}
+                                detail={detail.data}
+                                unavailable={
+                                    recoveryDisabled || detail.isFetching
+                                }
+                                onBusy={onRecoveryBusy}
+                                onAccepted={onRecoveryAccepted}
+                            />
                             {canEdit && (
                                 <Button
                                     disabled={

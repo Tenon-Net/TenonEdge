@@ -133,6 +133,9 @@ public sealed class DeliveryCache
     public DeliveryQueueReport GetQueueReport(IReadOnlyCollection<long> activeConnections, long after = 0, int limit = 100) =>
         Store.ReadQueueReport(activeConnections, after, limit);
 
+    public DeliveryRecoveryCheck CheckRecoveryTargets(Func<long, string, string, string?, bool> allows, CancellationToken token) =>
+        Store.CheckRecoveryTargets(allows, token);
+
     public DeliveryInspectionPage Inspect(DeliveryInspectionQuery query) => Store.Inspect(query);
 
     /// <summary>管理员迁移选择专用，允许查看待发元数据；不改变普通故障列表的只读边界。</summary>
