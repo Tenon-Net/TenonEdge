@@ -57,6 +57,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "downloadAuditExport",
         "downloadDeliveryExport",
         "endUserSessions",
+        "exportConfigurationDraft",
         "exportDevicePointCsv",
         "getAuditExport",
         "getConfigurationDraftSummary",

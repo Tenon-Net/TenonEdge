@@ -307,6 +307,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/configuration/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 导出当前已保存草稿：业务标识与非秘密配置，不含内部编号、凭证或运行状态
+         * @description JSON文件格式版本1，最多16MiB；可选expectedVersion固定所见草稿。账户仅有不可认证的比较摘要和需重新填写标记。不会应用配置或改变草稿。
+         */
+        get: operations["exportConfigurationDraft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/system/info": {
         parameters: {
             query?: never;
@@ -3441,6 +3461,64 @@ export interface components {
         };
         /** @enum {unknown} */
         PointCsvMode: "overwrite" | "incremental" | null;
+        PortableConfiguration: {
+            /** Format: int32 */
+            formatVersion: number | string;
+            connections: components["schemas"]["PortableConnection"][];
+            devices: components["schemas"]["PortableDevice"][];
+            inputs: components["schemas"]["PortableInput"][];
+            routes: components["schemas"]["PortableRoute"][];
+        };
+        PortableConnection: {
+            connectionKey: string;
+            name: string;
+            kind: components["schemas"]["ConnectionKind"];
+            enabled: boolean;
+            modbus: null | components["schemas"]["ModbusConnectionDraft"];
+            mqtt: null | components["schemas"]["MqttConnectionDraft"];
+            http: null | components["schemas"]["HttpConnectionDraft"];
+            credential: null | components["schemas"]["PortableCredentialRequirement"];
+        };
+        PortableCredentialRequirement: {
+            status: string;
+            accountIdentity: string;
+        };
+        PortableDevice: {
+            deviceKey: string;
+            name: string;
+            kind: components["schemas"]["DeviceKind"];
+            group: null | string;
+            connectionKey: null | string;
+            /** Format: int32 */
+            unitId: null | number | string;
+            addressNotation: components["schemas"]["ModbusAddressNotation"];
+            enabled: boolean;
+        };
+        PortableGraph: {
+            /** Format: int32 */
+            schemaVersion: number | string;
+            nodes: components["schemas"]["RouteGraphNode"][];
+            edges: components["schemas"]["RouteGraphEdge"][];
+            layout: components["schemas"]["RouteGraphLayout"];
+        };
+        PortableInput: {
+            deviceKey: string;
+            inputKey: string;
+            name: string;
+            kind: components["schemas"]["DeviceKind"];
+            enabled: boolean;
+            modbus: null | components["schemas"]["ModbusSourceDraft"];
+            mqtt: null | components["schemas"]["MqttSourceDraft"];
+            http: null | components["schemas"]["HttpSourceDraft"];
+            simulator: null | components["schemas"]["SimulatorSourceDraft"];
+        };
+        PortableRoute: {
+            routeKey: string;
+            name: string;
+            description: null | string;
+            enabled: boolean;
+            graph: components["schemas"]["PortableGraph"];
+        };
         ProblemDetails: {
             type?: null | string;
             title?: null | string;
@@ -4836,6 +4914,82 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    exportConfigurationDraft: {
+        parameters: {
+            query?: {
+                expectedVersion?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortableConfiguration"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

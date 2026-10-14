@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { ConfigurationExportPanel } from '../configuration/export-panel'
 import { useSystemInfo } from '../diagnostics/queries'
 import { DiagnosticPanel, Fact, dateText } from '../diagnostics/view'
 import { OutboundPolicyPanel } from './policy'
@@ -111,6 +112,7 @@ export function SystemPage() {
                     </>
                 )}
             </DiagnosticPanel>
+            <ConfigurationExportPanel />
             <GatewayNameEditor />
             <OutboundPolicyPanel />
             <RuntimeParameterPanel />

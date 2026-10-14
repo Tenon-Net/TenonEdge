@@ -49,7 +49,7 @@
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
 | T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；无路线启用HTTP/MQTT目标已补发送接续，含旧完整快照执行视图，验证见§2.208；形式B管理员迁移准备/确认API已通过本地软件回归（§2.209），逐条核对冻结原协议/接收方，绑定登录会话、选择代次和目标身份。形式B迁移页面已通过本地软件回归（§2.210），支持分区/跨页勾选、旧新身份并排核对、同会话准备恢复和响应丢失后按编号查询。已补形式A提交前发送屏障（§2.211），配置同事务意图登记、原状态持久隔离、启动/人工重试前补隔离及受限变更检查（§2.212）；已补确认目标完整身份绑定、原协调者串行执行、拒绝及两库结果/中断恢复（§2.213）；管理员形式A应用准备/确认/意图查询API与真实应用协调已接线（§2.214），含完整配置核对、同所有者声明、配额预检及提交后隔离保护。已补持久意图元数据分页、当前身份/完整配额缺口查询，以及拒绝/旧版未确认意图的管理员重新核对和显式重试API（§2.215），新审批/尝试/审计原子提交，未知结果不重放。形式A换址应用及持久意图/重新审批重试页面已接入，含一次确认、刷新恢复与角色保护，验证边界见§2.216。FS-23已补两种迁移/HTTP及MQTT的三个持久窗口、真实SIGKILL/正常放行、原Host双重重启与审计幂等，24项及3170后端全量通过（§2.217）；仅软件故障注入，不是实物断电。HTTP对方错误摘要已补有界采集、同事务存储及正文权限页面（§2.218）；维护者已于2026-10-14确认保持配置人员/管理员正文权限，不扩宽Viewer。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.218；功能 §8 |
 | T3 | T3-09 用户审计与系统管理 | 主体软件交付待验收；阶段闭环未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）；管理员改名/清空、同事务审计及页头/标签页更新见§2.225。三协议连接保存后的公网解析检查及管理员精确IP/端口确认授权见§2.226。预览并发与审计保留运行参数子项见§2.227；队列配额/保留期/存储阈值及原写者即时采用见§2.229。Token跨预览预算/形式B迁移资源归属的真实TLS Bearer补验见§2.230。代理信任登记/持久化与每请求统一协议/来源快照已补，见§2.231。调试缓存即时预算/页面/重启与同缓存验证见§2.234。在途字节即时预算见§2.236。输入通道即时条数见§2.237。新计划规模即时准入/页面见§2.240（不扩大既有安全上界，不追溯历史）。既有账号/令牌/审计/系统功能的关联授权与完整95项浏览器回归见§2.241；后续新增功能及完整跨角色业务闭环仍随T3-11收尾。宿主管理证书替换及HTTPS-only按 T5-01 | §2.219—§2.227；功能 §9/10.1/12.3；AT-18/32 |
-| T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面；API 文档页面已接入（§2.235）；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
+| T3 | T3-10 配置导入与扩展表单 | 部分交付，未完成 | 业务标识完整草稿导出/API/真实下载及角色验证见§2.242；仍须补跨网关重映射、合并/替换预检及原子写草稿、凭证重填阻断、六类扩展参数声明/同源校验/界面；API 文档页面已接入（§2.235）；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
 | T3 | T3-11 无平台端到端验收 | 未完成 | 当前完整浏览器95/95通过见§2.241，不能替代尚缺功能的无JSON闭环。 §2.223的CSV超限传输竞态已最小复现并改用真实浏览器传输严格验证，完整浏览器基线73/73通过（§2.224），改名后75/75通过（§2.225）；连接页授权与历史刷新竞态修复后77/77通过（§2.226），运行参数子项后79/79通过（§2.227），队列参数后81/81通过（§2.229）；Schema27与实时API文档页面后的完整浏览器84/84通过（§2.236），不把首次中止的50通过/34跳过算作通过。§2.225/2.228后端全量超时已在§2.232以RDG和原单次完整套件收口：1446单元+2022集成全部通过，不等于本任务全部需求完成。须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
 
@@ -5501,6 +5501,50 @@ TENONEDGE_TEST_URL=http://192.168.0.88:18483 TENONEDGE_WEBDRIVER_URL=http://127.
 ```
 
 30分钟窗口关闭的后端判定由原可控时钟集成测试验证，两个浏览器关闭窗口用例只验证响应投影，不冒充真实等待30分钟；未实际等待两小时空闲。Safari16.4、真实Chrome/Edge最低版本、实物、物理断电、远端CI和T3-11无JSON完整链路仍未验证。T3-04/05/07/10等缺项继续，不标整个T3完成。
+
+### 2.242 T3-10a 业务标识草稿导出（2026-10-14）
+
+基线`ea93428`；本子项覆盖GW-16、AT-17、功能§10.2及总设计§10.5的**导出**部分，不将其视为导入、无JSON闭环或T3整体完成。使用与文件边界见[配置JSON交换](configuration-transfer.md)。
+
+- 新增`GET /configuration/export`及系统页下载区域，只允许配置人员/管理员；匿名401、只读403由原后端授权执行。原共享预览预算的租约覆盖整个响应写出/中断，拒绝后释放；成功响应不缓存。
+- 同一短事务读取完整已保存草稿和非秘密凭证元数据，事务外规范化与序列化。格式版本1；连接/设备/来源/路线以业务key对应，图引用改为`sourceKeys`及`connectionKey`，路线局部节点ID、布局、点表/字段、停用和未完成对象保留。文件不带数据库资源编号、凭证秘密/密文/用户名/版本/账户marker、受信任证书或宿主状态。凭证只标记需重填及不可认证的比较摘要，未读取/解密秘密。
+- 完整文件最多16MiB，写出时有界，不生成截断文件。缺失引用/元数据冲突/格式错误整体拒绝。共用现有三协议连接和四类来源校验，包括秘密旁路拒绝；保留原数字字面量和模拟样本文本。
+- 浏览器直接下载Blob，不解析并重写JSON；不自动重试，离页取消、会话代次检查，响应迟到不下载。已知导出错误显示静态明确提示，不回显任意服务端内容。
+- 新增9个后端单元、5个集成、8个前端单元及5个浏览器场景。API创建对象是**导出测试夹具**，不是T3-11的无JSON配置验收；三协议/四来源参数保真为软件单元验证，未连接实物。
+
+本地Linux7.0.0-31-generic x64、SDK10.0.401、Node22.23.2/npm11.21.0。Release构建0警告/错误，完整C#格式门禁通过；前端typecheck/lint/格式/生产构建通过，保留原大chunk提示。
+
+| 验证 | 结果 | 范围 |
+|---|---|---|
+| 全量后端单元 | **1481/1481通过**，0失败/跳过 | 含新增9项导出测试 |
+| 关联后端集成 | **59/59通过**，0失败/跳过，13秒 | 新增5项、两环境授权清单、OpenAPI及连接/设备/来源/路线草稿；不是全量集成 |
+| 全量Vitest | **527/527通过**，0失败/跳过 | 含8项已知/未知错误安全提示 |
+| 当前Chromium | **8/8通过**，0失败/跳过/重试，39.341秒 | 新增导出5项+既有系统页3项，不是本轮完整100项浏览器套件 |
+| 官方Chromium111.0.5563.0 | **导出5/5通过**，0失败/跳过/重试，22.2秒 | 同一真实下载/角色/失败/迟到响应测试；不等同Google Chrome111、Edge111或Firefox/Safari验证 |
+
+失败记录保留：新单元夹具最初用了不存在的字段枚举成员，构建失败、未执行用例；改为已有`Number/Integer`后，第一次全量单元1480通过/1失败（保留消息夹具漏填必需的上游时间），补正夹具后1481全通过，未放宽产品校验。初次C#格式门禁发现新文件多语句行及using顺序，格式化后完整门禁通过。第一次浏览器5通过/3失败：新测试的API请求baseURL误指共享Host，正确被401拒绝；修为自有Host的baseURL后当前8项与旧Chromium5项全部通过，不改产品认证。TRX核对命令第一次多程序集参数写法错误，改为重复`--require`后通过；前端汇总命令曾因本机`tail -8`语法退出1，其前置检查/构建均已完成，后续按日志及报告独立核对，不将此命令宣称退出0。
+
+证据`/tmp/tenonedge-config-export/`：`environment.log`、`build-final.log`、`format-csharp-final.log`、`unit-final.log`/`integration-final.log`及`final/*.trx`/`verify.log`、`vitest.json`/`vitest.log`、`typecheck-after-fixture.log`/`lint-final.log`/`format-check-final.log`/`web-build.log`、`browser-final.*`/`chromium111.*`/`web-verified.log`。首轮`first/`7+13通过仅为初始范围；`build-enum-error.log`、`unit-invalid-fixture.log`/`invalid-fixture/`、`format-csharp-before-fix.log`、`browser-first.*`为失败历史，不混入通过报告。后端网络测试与浏览器串行；每次浏览器运行期间均冻结源码/测试和构建产物。
+
+```sh
+dotnet format TenonEdge.sln --no-restore --verify-no-changes
+dotnet build TenonEdge.sln -c Release --no-restore
+dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --logger 'trx;LogFileName=unit.trx' --results-directory /tmp/tenonedge-config-export/final
+dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --settings tests/tenonedge.runsettings --filter 'FullyQualifiedName~ConfigurationExportTests|FullyQualifiedName~ManagementApiAccessTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~ConnectionDraftTests|FullyQualifiedName~DeviceDraftTests|FullyQualifiedName~InputDraftTests|FullyQualifiedName~RouteDraftTests' --logger 'trx;LogFileName=integration.trx' --results-directory /tmp/tenonedge-config-export/final
+python3 .github/scripts/verify-test-results.py /tmp/tenonedge-config-export/final --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
+# web目录
+npx --yes npm@11.21.0 run typecheck
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=/tmp/tenonedge-config-export/vitest.json
+npx --yes npm@11.21.0 run build
+PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/tenonedge-config-export/browser-final.json npx --yes npm@11.21.0 exec -- playwright test configuration-export.spec.ts system.spec.ts --reporter=line,json
+TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-minimum-browser/chrome-linux/chrome PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/tenonedge-config-export/chromium111.json npx --yes npm@11.21.0 exec -- playwright test configuration-export.spec.ts --reporter=line,json
+node scripts/verify-results.mjs /tmp/tenonedge-config-export/vitest.json /tmp/tenonedge-config-export/browser-final.json
+node scripts/verify-results.mjs /tmp/tenonedge-config-export/vitest.json /tmp/tenonedge-config-export/chromium111.json
+```
+
+**继续项**：导入预检/变更确认、跨网关ID分配、合并/替换原子写草稿、凭证重填阻断及扩展表单尚未交付；现有导出账户摘要不是凭证迁移功能。慢连接大文件下载压力、完整浏览器套件、T3-11业务闭环及此前实物/最低浏览器缺项未由本次补齐。
 
 ## 3. 验收编号登记
 

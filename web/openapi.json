@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:46701/"
+      "url": "http://127.0.0.1:37671/"
     }
   ],
   "paths": {
@@ -920,6 +920,97 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/configuration/export": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "导出当前已保存草稿：业务标识与非秘密配置，不含内部编号、凭证或运行状态",
+        "description": "JSON文件格式版本1，最多16MiB；可选expectedVersion固定所见草稿。账户仅有不可认证的比较摘要和需重新填写标记。不会应用配置或改变草稿。",
+        "operationId": "exportConfigurationDraft",
+        "parameters": [
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortableConfiguration"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16317,6 +16408,325 @@
           null
         ]
       },
+      "PortableConfiguration": {
+        "required": [
+          "formatVersion",
+          "connections",
+          "devices",
+          "inputs",
+          "routes"
+        ],
+        "type": "object",
+        "properties": {
+          "formatVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortableConnection"
+            }
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortableDevice"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortableInput"
+            }
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortableRoute"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableConnection": {
+        "required": [
+          "connectionKey",
+          "name",
+          "kind",
+          "enabled",
+          "modbus",
+          "mqtt",
+          "http",
+          "credential"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionKey": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionKind"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "modbus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModbusConnectionDraft"
+              }
+            ]
+          },
+          "mqtt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MqttConnectionDraft"
+              }
+            ]
+          },
+          "http": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpConnectionDraft"
+              }
+            ]
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PortableCredentialRequirement"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableCredentialRequirement": {
+        "required": [
+          "status",
+          "accountIdentity"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "accountIdentity": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableDevice": {
+        "required": [
+          "deviceKey",
+          "name",
+          "kind",
+          "group",
+          "connectionKey",
+          "unitId",
+          "addressNotation",
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceKey": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind"
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "connectionKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unitId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "addressNotation": {
+            "$ref": "#/components/schemas/ModbusAddressNotation"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableGraph": {
+        "required": [
+          "schemaVersion",
+          "nodes",
+          "edges",
+          "layout"
+        ],
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteGraphNode"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteGraphEdge"
+            }
+          },
+          "layout": {
+            "$ref": "#/components/schemas/RouteGraphLayout"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableInput": {
+        "required": [
+          "deviceKey",
+          "inputKey",
+          "name",
+          "kind",
+          "enabled",
+          "modbus",
+          "mqtt",
+          "http",
+          "simulator"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceKey": {
+            "type": "string"
+          },
+          "inputKey": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DeviceKind"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "modbus": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModbusSourceDraft"
+              }
+            ]
+          },
+          "mqtt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MqttSourceDraft"
+              }
+            ]
+          },
+          "http": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HttpSourceDraft"
+              }
+            ]
+          },
+          "simulator": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SimulatorSourceDraft"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableRoute": {
+        "required": [
+          "routeKey",
+          "name",
+          "description",
+          "enabled",
+          "graph"
+        ],
+        "type": "object",
+        "properties": {
+          "routeKey": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/PortableGraph"
+          }
+        },
+        "additionalProperties": false
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -19603,6 +20013,9 @@
       "name": "Runtime"
     },
     {
+      "name": "Configuration"
+    },
+    {
       "name": "System"
     },
     {
@@ -19619,9 +20032,6 @@
     },
     {
       "name": "Tokens"
-    },
-    {
-      "name": "Configuration"
     },
     {
       "name": "Credentials"
