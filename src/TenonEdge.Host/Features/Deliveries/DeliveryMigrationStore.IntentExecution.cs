@@ -1,5 +1,6 @@
 using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Deliveries;
 
@@ -27,10 +28,17 @@ internal sealed partial class DeliveryMigrationStore
         ArgumentNullException.ThrowIfNull(command);
         var hold = command.Hold ?? throw new ArgumentException("须提供意图限定的迁移命令。", nameof(command));
         var intent = ReadIntent(hold.IntentId) ?? throw new InvalidOperationException("迁移意图不存在。");
-        // 显式重试之后的进程中断续跑，沿用最近一次已确认尝试的操作者，不倒退为首次登记人。
+        var actor = ReadIntentActor(intent);
+        BeginCore(command, revision, intent.SourceSummary, true, actor.Account, actor.SourceIp, intent);
+    }
+
+    // 显式重试之后的进程中断续跑，沿用最近一次已确认尝试的完整身份，不倒退为首次登记人。
+    // 尤其不能用 previous.TokenName ?? intent.TokenName：Cookie 管理员接替令牌审批时 null 是真实身份。
+    internal (AuditAccount Account, string? SourceIp) ReadIntentActor(DeliveryMigrationIntentRecord intent)
+    {
         var previous = intent.LastOperationId is { } id ? Read(Guid.Parse(id)) : null;
-        BeginCore(command, revision, intent.SourceSummary, true, previous?.AccountName ?? intent.AccountName,
-            previous is null ? intent.SourceIp : previous.SourceIp, intent);
+        return previous is null ? (new(intent.AccountName, intent.TokenName), intent.SourceIp)
+            : (new(previous.AccountName, previous.TokenName), previous.SourceIp);
     }
 
     private static void BindIntentAttempt(SqlSugarClient client, DeliveryMigrationIntentRecord expected,
@@ -40,7 +48,7 @@ internal sealed partial class DeliveryMigrationStore
             ?? throw new InvalidOperationException("迁移意图不存在。");
         if ((!retry && intent.Status != "waiting") || revision < intent.Revision || intent.ToHold().RequestHash != command.Hold?.RequestHash ||
             (!retry && (command.Fingerprint != intent.TargetFingerprint || command.Summary != intent.TargetSummary)) ||
-            intent.SourceSummary != expected.SourceSummary || intent.AccountName != expected.AccountName || intent.SourceIp != expected.SourceIp ||
+            intent.SourceSummary != expected.SourceSummary || intent.AccountName != expected.AccountName || intent.TokenName != expected.TokenName || intent.SourceIp != expected.SourceIp ||
             client.Queryable<DeliveryMigrationIntentRecord>().Any(row => row.ConfigStoreId == intent.ConfigStoreId &&
                 row.ConnectionId == intent.ConnectionId && row.Status == "waiting" && row.Revision < intent.Revision))
         { throw new InvalidOperationException("意图已变化或同连接仍有更早的等待意图。"); }

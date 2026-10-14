@@ -21,10 +21,10 @@ internal sealed partial class RuntimeCoordinator
 
     /// <summary>拥有完整在线应用操作；只接收确认过的草稿版本及已解析的操作人，不接收 HttpContext 或任意运行计划。
     /// 取消只结束调用方等待。冻结之后，即使请求断开也完成提交或放弃/恢复；停机先等本操作结束。</summary>
-    public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null) =>
+    public Task<RuntimeApplicationResult> ApplyDraftAsync(string expectedDraftVersion, AuditAccount account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null) =>
         AwaitApplicationAsync(StartApplication(null, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription).Completion, cancellationToken);
 
-    public Task<RuntimeApplicationResult> RollbackAsync(long targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null)
+    public Task<RuntimeApplicationResult> RollbackAsync(long targetRevision, string expectedDraftVersion, AuditAccount account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
         return AwaitApplicationAsync(StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, cancellationToken, changeDescription).Completion, cancellationToken);
@@ -32,12 +32,12 @@ internal sealed partial class RuntimeCoordinator
 
     // 返回在准入锁内创建的不可变操作标识，不通过“读取最近操作”猜测本请求的 ID。
     public RuntimeApplicationStatus BeginApplyDraft(string expectedDraftVersion, RuntimeApplicationExpectation expectation,
-        string account, string? sourceIp, string? changeDescription, CancellationToken token) =>
+        AuditAccount account, string? sourceIp, string? changeDescription, CancellationToken token) =>
         StartApplication(null, expectedDraftVersion, account, sourceIp, token, changeDescription, expectation).Status;
 
     // 只接受管理员准备服务持有的服务器侧确认资料；不从普通 Apply/回滚请求接受意图或指纹。
     public RuntimeApplicationStatus BeginApplyWithMigrations(Guid operationId, string version, RuntimeApplicationExpectation expectation,
-        IReadOnlyList<DeliveryMigrationIntentDraft> intents, string account, string? sourceIp, string? description, CancellationToken token)
+        IReadOnlyList<DeliveryMigrationIntentDraft> intents, AuditAccount account, string? sourceIp, string? description, CancellationToken token)
     {
         if (operationId == Guid.Empty || intents.Count is < 1 or > 500 || expectation.EffectiveRevision is null)
         { throw new ArgumentException("须提供已确认的迁移应用清单。"); }
@@ -45,16 +45,16 @@ internal sealed partial class RuntimeCoordinator
     }
 
     public RuntimeApplicationStatus BeginRollback(long targetRevision, string expectedDraftVersion, RuntimeApplicationExpectation expectation,
-        string account, string? sourceIp, string? changeDescription, CancellationToken token)
+        AuditAccount account, string? sourceIp, string? changeDescription, CancellationToken token)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetRevision);
         return StartApplication(targetRevision, expectedDraftVersion, account, sourceIp, token, changeDescription, expectation).Status;
     }
 
-    private ApplicationStart StartApplication(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null, RuntimeApplicationExpectation? expectation = null, DeliveryMigrationIntentDraft[]? intents = null, Guid? operationId = null)
+    private ApplicationStart StartApplication(long? targetRevision, string expectedDraftVersion, AuditAccount account, string? sourceIp, CancellationToken cancellationToken, string? changeDescription = null, RuntimeApplicationExpectation? expectation = null, DeliveryMigrationIntentDraft[]? intents = null, Guid? operationId = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         if (string.IsNullOrWhiteSpace(expectedDraftVersion) || expectedDraftVersion.Length > 64)
         { throw new ArgumentException("须提供有效草稿版本。", nameof(expectedDraftVersion)); }
         changeDescription = ConfigurationChangeDescription.Normalize(changeDescription);
@@ -63,7 +63,7 @@ internal sealed partial class RuntimeCoordinator
     }
 
     // 应用、回滚与人工重试共享唯一准入/停机所有权；后台任务不捕获请求上下文。
-    private ApplicationStart StartOperation(string kind, string draftVersion, long? targetRevision, string account,
+    private ApplicationStart StartOperation(string kind, string draftVersion, long? targetRevision, AuditAccount account,
         Func<Guid, Task<RuntimeApplicationResult>> execute, CancellationToken token, Guid? requestedId = null)
     {
         token.ThrowIfCancellationRequested();
@@ -83,7 +83,7 @@ internal sealed partial class RuntimeCoordinator
             if (_applications.Any(application => application.Id == operationId))
             { throw new RuntimeApplicationUnavailableException(); }
             operation = NewSignal();
-            initial = new(operationId, kind, account, draftVersion, targetRevision,
+            initial = new(operationId, kind, account.Name!, draftVersion, targetRevision,
                 null, RuntimeApplicationStage.Validating, time.GetUtcNow(), null, false, null, null);
             _applications.Add(initial);
             if (_applications.Count > MaximumRecentApplications)
@@ -96,13 +96,13 @@ internal sealed partial class RuntimeCoordinator
         return new(initial, task);
     }
 
-    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, string account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation, DeliveryMigrationIntentDraft[] intents)
+    private async Task<RuntimeApplicationResult> ExecuteApplicationAsync(long? targetRevision, string expectedDraftVersion, AuditAccount account, string? sourceIp, Guid operationId, string? changeDescription, RuntimeApplicationExpectation? expectation, DeliveryMigrationIntentDraft[] intents)
     {
         RuntimePlanDocument document;
         long revision;
         if (targetRevision is { } target)
         {
-            var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account, changeDescription, expectation);
+            var rollback = versions.FreezeManualRollback(target, expectedDraftVersion, account.Name!, changeDescription, expectation);
             document = rollback.Document;
             revision = rollback.Revision;
         }
@@ -110,7 +110,7 @@ internal sealed partial class RuntimeCoordinator
         {
             var snapshot = drafts.ReadCompilation(expectedDraftVersion, CancellationToken.None);
             document = RoutePlanCompiler.Compile(snapshot, CancellationToken.None).Document;
-            revision = versions.FreezeDraft(document, expectedDraftVersion, account, changeDescription, expectation);
+            revision = versions.FreezeDraft(document, expectedDraftVersion, account.Name!, changeDescription, expectation);
         }
         AdvanceApplication(operationId, RuntimeApplicationStage.Preparing, revision);
         PreparedPlan? prepared = null;

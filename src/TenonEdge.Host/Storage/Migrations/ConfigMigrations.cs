@@ -318,5 +318,9 @@ internal static class ConfigMigrations
             "ALTER TABLE delivery_migration_intent ADD COLUMN target_summary TEXT",
             "CREATE INDEX ix_delivery_migration_intent_order ON delivery_migration_intent(config_store_id, connection_id, revision) WHERE status = 'waiting'",
         ]),
+        new(21, "delivery_migration_audit_token", [
+            "ALTER TABLE delivery_migration ADD COLUMN token_name TEXT",
+            "ALTER TABLE delivery_migration_intent ADD COLUMN token_name TEXT",
+        ]),
     ];
 }

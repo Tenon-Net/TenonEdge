@@ -22,7 +22,7 @@ internal sealed class OutputControlStore(ConfigDatabase database, AuditTrail aud
             .ToDictionary(row => row.ConnectionId, row => new OutputControlState(row.ManuallyPaused, row.Version));
     }
 
-    public OutputControlState Write(long connectionId, OutputControlRequest request, string? account, string? sourceIp)
+    public OutputControlState Write(long connectionId, OutputControlRequest request, AuditAccount account, string? sourceIp)
     {
         if (connectionId is < 1 or > 9007199254740991L || !request.Confirmed)
         {

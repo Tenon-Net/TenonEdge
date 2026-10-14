@@ -1,17 +1,18 @@
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.Host.Features.Runtime;
 
 internal sealed partial class RuntimeCoordinator
 {
-    public RuntimeApplicationStatus BeginRetry(long revision, string planHash, string account, string? sourceIp, CancellationToken token)
+    public RuntimeApplicationStatus BeginRetry(long revision, string planHash, AuditAccount account, string? sourceIp, CancellationToken token)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(revision);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         return StartOperation("retry", "", revision, account, id => RetryAsync(revision, planHash, account, sourceIp, id), token).Status;
     }
 
-    private async Task<RuntimeApplicationResult> RetryAsync(long revision, string planHash, string account, string? sourceIp, Guid operationId)
+    private async Task<RuntimeApplicationResult> RetryAsync(long revision, string planHash, AuditAccount account, string? sourceIp, Guid operationId)
     {
         var checkpoint = versions.ReadRetryCheckpoint(revision, planHash);
         PreparedPlan? prepared = null;

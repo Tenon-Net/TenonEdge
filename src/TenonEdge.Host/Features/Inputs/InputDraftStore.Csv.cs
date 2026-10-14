@@ -21,7 +21,7 @@ internal sealed partial class InputDraftStore
             : inputs.SelectMany(input => input.Modbus!.Points.Select(point => (input.Key, point))), device.AddressNotation);
     });
 
-    public PointCsvImportResult ImportPoints(long deviceId, PointCsvImportRequest request, string? account, string? sourceIp)
+    public PointCsvImportResult ImportPoints(long deviceId, PointCsvImportRequest request, AuditAccount account, string? sourceIp)
     {
         if (request.Mode is null || !Enum.IsDefined(request.Mode.Value) || request.Encoding is null ||
             string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 64)
@@ -74,7 +74,7 @@ internal sealed partial class InputDraftStore
                     BusinessKey = input.Key,
                     Content = JsonSerializer.Serialize(input, Json),
                 }).ExecuteCommand();
-                ConfigurationEditJournal.Record(client, "input", input.Id, account, time);
+                ConfigurationEditJournal.Record(client, "input", input.Id, account.Name, time);
             }
             // Even a wholly skipped import is an audited, version-fenced user operation.
             var version = ConfigurationDraft.Advance(client, time);

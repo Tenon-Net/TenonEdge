@@ -15,10 +15,10 @@ internal sealed partial class RuntimeCoordinator
     /// <summary>一次最多1000条、同时最多一个队列管理写入；与应用/回滚/运行重试及停机互斥。
     /// 只保留复制后的非秘密参数，断开HTTP请求仅取消等待，宿主仍拥有原写者提交及审计的生命周期。</summary>
     public Task<DeliveryWriteResult> RetryFailedDeliveriesAsync(long revision, IReadOnlyList<DeliveryRetryItem> items,
-        string account, string? sourceIp, CancellationToken token)
+        AuditAccount account, string? sourceIp, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         ArgumentNullException.ThrowIfNull(items);
         if (revision < 1 || items.Count is < 1 or > 1000 || items.Any(item => item is null || item.Sequence < 1 || item.DeliveryId == Guid.Empty) ||
             items.Select(item => item.Sequence).Distinct().Count() != items.Count || items.Select(item => item.DeliveryId).Distinct().Count() != items.Count)
@@ -45,11 +45,11 @@ internal sealed partial class RuntimeCoordinator
 
     /// <summary>清理可处理无有效输出/运行失败时遗留的失败和隔离数据，但写者须可用；不把“没有配置”当作空队列。</summary>
     public Task<DeliveryWriteResult> CleanupDeliveriesAsync(DeliveryCleanupSelection selection,
-        string account, string? sourceIp, CancellationToken token)
+        AuditAccount account, string? sourceIp, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(selection);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         TaskCompletionSource operation;
         lock (_lock)
         {
@@ -68,10 +68,10 @@ internal sealed partial class RuntimeCoordinator
     }
 
     public Task<DeliveryWriteResult> ClearPendingDeliveriesAsync(long connectionId, long revision,
-        string account, string? sourceIp, CancellationToken token)
+        AuditAccount account, string? sourceIp, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         if (connectionId is < 1 or > 9007199254740991L || revision < 1)
         { throw new ArgumentException("清空目标或有效版本无效。"); }
         TaskCompletionSource operation;

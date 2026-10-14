@@ -1,5 +1,6 @@
 using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Runtime.Deliveries;
 
@@ -14,7 +15,7 @@ internal sealed record DeliveryMigrationReview(Guid Id, long Revision, long Sour
 {
     public bool CanConfirm => Count > 0 && !Quota.Exceeded;
 }
-internal sealed record DeliveryMigrationActor(string Owner, string Account, string? SourceIp);
+internal sealed record DeliveryMigrationActor(string Owner, AuditAccount Account, string? SourceIp);
 internal sealed class DeliveryMigrationRequestException(int status, string code) : InvalidOperationException(code)
 {
     public int StatusCode { get; } = status;

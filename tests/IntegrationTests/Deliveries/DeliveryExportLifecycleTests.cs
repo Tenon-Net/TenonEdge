@@ -53,11 +53,15 @@ public sealed class DeliveryExportLifecycleTests
     }
 
     [Theory]
-    [InlineData("cancel")]
-    [InlineData("expire")]
-    [InlineData("stop")]
-    public async Task GenerationOwnsSlotAndStopWaitsUntilCancelledIoAndAuditFinish(string action)
+    [InlineData("cancel", null)]
+    [InlineData("expire", null)]
+    [InlineData("stop", null)]
+    [InlineData("cancel", "MES export")]
+    [InlineData("expire", "MES export")]
+    [InlineData("stop", "MES export")]
+    public async Task GenerationOwnsSlotAndStopWaitsUntilCancelledIoAndAuditFinish(string action, string? tokenName)
     {
+        var actor = new DeliveryExportActor("fixture-session", new AuditAccount("admin", tokenName), "127.0.0.1");
         using var data = TemporaryDirectory.Create();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
@@ -76,23 +80,23 @@ public sealed class DeliveryExportLifecycleTests
         await using var factory = Factory(data.Path, Space, time);
         await DeliveryExportApiTests.SeedAsync(factory.Services.GetRequiredService<DeliveryCache>(), DeliveryState.Failed);
         var manager = factory.Services.GetRequiredService<DeliveryExportManager>();
-        var prepared = manager.Prepare(Actor, new(DeliveryState.Failed));
+        var prepared = manager.Prepare(actor, new(DeliveryState.Failed));
         await WaitAsync(manager, DeliveryExportState.AwaitingConfirmation);
-        manager.Confirm(prepared.Id, Actor.Owner);
+        manager.Confirm(prepared.Id, actor.Owner);
         try
         {
             Assert.True(entered.Wait(TimeSpan.FromSeconds(10), Token));
             Assert.True(File.Exists(DeliveryExportApiTests.FilePath(data.Path)));
             Task? stop = null;
             if (action == "cancel")
-            { manager.Cancel(prepared.Id, Actor.Owner); }
+            { manager.Cancel(prepared.Id, actor.Owner); }
             else if (action == "expire")
             { time.Advance(DeliveryExportManager.Lifetime); }
             else
             { stop = manager.DisposeAsync().AsTask(); Assert.False(stop.IsCompleted); }
             var expected = action == "expire" ? DeliveryExportState.Expired : DeliveryExportState.Cancelled;
-            Assert.Equal(expected, manager.GetCurrent(Actor.Owner)!.State);
-            var denied = Assert.Throws<DeliveryExportRequestException>(() => manager.Prepare(Actor, new(DeliveryState.Failed)));
+            Assert.Equal(expected, manager.GetCurrent(actor.Owner)!.State);
+            var denied = Assert.Throws<DeliveryExportRequestException>(() => manager.Prepare(actor, new(DeliveryState.Failed)));
             Assert.Equal(action == "stop" ? 503 : 409, denied.StatusCode);
             release.Set();
             if (stop is not null)
@@ -100,6 +104,7 @@ public sealed class DeliveryExportLifecycleTests
             await DeliveryExportApiTests.WaitUntilAsync(() => TestAccounts.Audit(factory.Services, "delivery.export").Count == 1);
             Assert.False(File.Exists(DeliveryExportApiTests.FilePath(data.Path)));
             Assert.Equal("failure", Assert.Single(TestAccounts.Audit(factory.Services, "delivery.export")).Result);
+            Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.export")).TokenName);
         }
         finally { release.Set(); }
     }

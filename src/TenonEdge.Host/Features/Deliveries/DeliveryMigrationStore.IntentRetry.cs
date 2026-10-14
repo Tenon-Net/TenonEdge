@@ -1,3 +1,4 @@
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.Host.Features.Deliveries;
@@ -32,7 +33,7 @@ internal sealed partial class DeliveryMigrationStore
 
     // 由原协调者持有唯一队列操作准入时调用；审批、开始、指针和审计同一事务，不先置waiting再让轮询抢跑。
     public void BeginIntentRetry(DeliveryMigrationCommand command, long revision, DeliveryMigrationIntentRecord expected,
-        string account, string? sourceIp)
+        AuditAccount account, string? sourceIp)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(expected);
@@ -48,5 +49,5 @@ internal sealed partial class DeliveryMigrationStore
         current.Status == expected.Status && current.LastOperationId == expected.LastOperationId &&
         current.SourceSummary == expected.SourceSummary && current.TargetRecipient == expected.TargetRecipient &&
         current.TargetFingerprint == expected.TargetFingerprint && current.TargetSummary == expected.TargetSummary &&
-        current.AccountName == expected.AccountName && current.SourceIp == expected.SourceIp;
+        current.AccountName == expected.AccountName && current.TokenName == expected.TokenName && current.SourceIp == expected.SourceIp;
 }

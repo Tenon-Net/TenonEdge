@@ -18,7 +18,7 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
 
     public RouteDraftResult Read(long id) => database.InTransaction(client => new RouteDraftResult(ConfigurationDraft.ReadVersion(client), ReadRoute(client, id)));
 
-    public RouteDraftResult Write(long? existingId, RouteDraftRequest request, string? account, string? sourceIp)
+    public RouteDraftResult Write(long? existingId, RouteDraftRequest request, AuditAccount account, string? sourceIp)
     {
         Validate(request.ExpectedVersion, request.Key, request.Name, request.Description);
         var graph = RouteGraphFormat.Normalize(request.Graph);
@@ -29,13 +29,13 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
             if (existingId is not null && ReadRoute(client, id).Key != request.Key)
             { throw new DraftWriteException("route.immutableKey"); }
             Unique(client, request.Key, id);
-            var route = new RouteDraft(id, request.Key, request.Name.Trim(), request.Description?.Trim(), request.Enabled, graph, account, time.GetUtcNow().ToUnixTimeMilliseconds());
+            var route = new RouteDraft(id, request.Key, request.Name.Trim(), request.Description?.Trim(), request.Enabled, graph, account.Name, time.GetUtcNow().ToUnixTimeMilliseconds());
             Save(client, route, existingId is not null);
             return Finish(client, route, existingId is null ? "route.draftCreated" : "route.draftUpdated", request.ExpectedVersion, account, sourceIp);
         });
     }
 
-    public RouteDraftResult Copy(long sourceId, RouteDraftCopyRequest request, string? account, string? sourceIp)
+    public RouteDraftResult Copy(long sourceId, RouteDraftCopyRequest request, AuditAccount account, string? sourceIp)
     {
         Validate(request.ExpectedVersion, request.Key, request.Name, null);
         var id = ids.NextId();
@@ -44,19 +44,19 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
             ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
             var source = ReadRoute(client, sourceId);
             Unique(client, request.Key, id);
-            var copy = source with { Id = id, Key = request.Key, Name = request.Name.Trim(), Enabled = false, UpdatedBy = account, UpdatedAt = time.GetUtcNow().ToUnixTimeMilliseconds() };
+            var copy = source with { Id = id, Key = request.Key, Name = request.Name.Trim(), Enabled = false, UpdatedBy = account.Name, UpdatedAt = time.GetUtcNow().ToUnixTimeMilliseconds() };
             Save(client, copy, false);
             return Finish(client, copy, "route.draftCopied", request.ExpectedVersion, account, sourceIp, sourceId);
         });
     }
 
-    public DraftVersion Delete(long id, string expectedVersion, string? account, string? sourceIp) => database.InTransaction(client =>
+    public DraftVersion Delete(long id, string expectedVersion, AuditAccount account, string? sourceIp) => database.InTransaction(client =>
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         _ = ReadRoute(client, id);
         // 索引外键随图草稿删除；保留运行版本不改，现存投递不撤回。
         client.Deleteable<RouteDraftRecord>().In(id).ExecuteCommand();
-        ConfigurationEditJournal.Record(client, "route", id, account, time, deleted: true);
+        ConfigurationEditJournal.Record(client, "route", id, account.Name, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("route.draftDeleted", AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
             JsonSerializer.Serialize(new { previousVersion = expectedVersion, version })));
@@ -70,9 +70,9 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
         "SELECT COUNT(*) FROM route_draft_reference r JOIN input_draft i ON r.target_id = i.id WHERE r.kind = 'input' AND i.device_id = @id",
         new SugarParameter("@id", deviceId)) > 0;
 
-    private RouteDraftResult Finish(SqlSugarClient client, RouteDraft route, string action, string previousVersion, string? account, string? sourceIp, long? copiedFrom = null)
+    private RouteDraftResult Finish(SqlSugarClient client, RouteDraft route, string action, string previousVersion, AuditAccount account, string? sourceIp, long? copiedFrom = null)
     {
-        ConfigurationEditJournal.Record(client, "route", route.Id, account, time);
+        ConfigurationEditJournal.Record(client, "route", route.Id, account.Name, time);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry(action, AuditResults.Success, account, sourceIp, route.Id.ToString(CultureInfo.InvariantCulture),
             JsonSerializer.Serialize(new { key = route.Key, previousVersion, version, copiedFrom })));

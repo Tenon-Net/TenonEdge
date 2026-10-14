@@ -182,8 +182,10 @@ public sealed class ConfigurationRuntimeRetryTests
         Assert.Single(versions.ReadHistory());
     }
 
-    [Fact]
-    public async Task RetrySharesApplicationOwnershipAndShutdownWaitsForOwnedPreparation()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("MES recovery")]
+    public async Task RetrySharesApplicationOwnershipAndShutdownWaitsForOwnedPreparation(string? tokenName)
     {
         using var data = TemporaryDirectory.Create();
         await InitializeAsync(data.Path);
@@ -193,7 +195,7 @@ public sealed class ConfigurationRuntimeRetryTests
         var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
         var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
         var hash = RuntimeSnapshotDocument.ReadPlan(versions.Load(1)!).ContentHash;
-        var operation = coordinator.BeginRetry(1, hash, "operator", null, Token);
+        var operation = coordinator.BeginRetry(1, hash, new AuditAccount("operator", tokenName), null, Token);
         try
         {
             await probe.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
@@ -212,6 +214,7 @@ public sealed class ConfigurationRuntimeRetryTests
             await stopping.WaitAsync(TimeSpan.FromSeconds(10), Token);
             Assert.Equal(RuntimeCoordinatorState.Stopped, coordinator.Status.State);
             Assert.Null(versions.ReadPointers().RunningRevision);
+            Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(factory.Services, "runtime.retry")).TokenName);
             Assert.Single(coordinator.ReadApplications());
             Assert.Single(versions.ReadHistory());
         }

@@ -26,7 +26,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
         ConfigurationDraft.ReadVersion(client),
         client.Queryable<DeviceDraftRecord>().OrderBy(row => row.Id).ToList().Select(Decode).ToArray()));
 
-    public DeviceDraftResult Write(long? existingId, DeviceDraftRequest request, string? account, string? sourceIp)
+    public DeviceDraftResult Write(long? existingId, DeviceDraftRequest request, AuditAccount account, string? sourceIp)
     {
         var id = existingId ?? ids.NextId();
         return database.InTransaction(client =>
@@ -54,7 +54,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
             { client.Insertable(row).ExecuteCommand(); }
             else
             { client.Updateable(row).ExecuteCommand(); }
-            ConfigurationEditJournal.Record(client, "device", id, account, time);
+            ConfigurationEditJournal.Record(client, "device", id, account.Name, time);
             var version = ConfigurationDraft.Advance(client, time);
             audit.Append(client, new AuditEntry(existing is null ? "device.draftCreated" : "device.draftUpdated",
                 AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
@@ -63,7 +63,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
         });
     }
 
-    public DeviceDraftCopyResult Copy(long sourceId, DeviceDraftCopyRequest request, string? account, string? sourceIp)
+    public DeviceDraftCopyResult Copy(long sourceId, DeviceDraftCopyRequest request, AuditAccount account, string? sourceIp)
     {
         if (request.Count is < 1 or > 20 || string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 64)
         { throw new ArgumentException("复制数量须为 1—20，且须提供草稿版本。"); }
@@ -92,7 +92,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
                     ConnectionId = copy.ConnectionId,
                     Content = JsonSerializer.Serialize(copy, Json),
                 }).ExecuteCommand();
-                ConfigurationEditJournal.Record(client, "device", id, account, time);
+                ConfigurationEditJournal.Record(client, "device", id, account.Name, time);
                 InputDraftStore.CopyToDevice(client, inputs, id, ids, account, time);
                 copies.Add(copy);
             }
@@ -110,7 +110,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
         return sourceKey[..Math.Min(sourceKey.Length, 64 - suffix.Length)] + suffix;
     }
 
-    public DraftVersion Delete(long id, string expectedVersion, string? account, string? sourceIp) => database.InTransaction(client =>
+    public DraftVersion Delete(long id, string expectedVersion, AuditAccount account, string? sourceIp) => database.InTransaction(client =>
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var row = client.Queryable<DeviceDraftRecord>().InSingle(id) ?? throw new DraftWriteException("device.notFound");
@@ -120,10 +120,10 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
         if (HasRetainedReference(client, row.BusinessKey))
         { throw new DraftWriteException("device.referenced"); }
         foreach (var inputId in client.Queryable<InputDraftRecord>().Where(input => input.DeviceId == id).Select(input => input.Id).ToList())
-        { ConfigurationEditJournal.Record(client, "input", inputId, account, time, deleted: true); }
+        { ConfigurationEditJournal.Record(client, "input", inputId, account.Name, time, deleted: true); }
         client.Deleteable<InputDraftRecord>().Where(input => input.DeviceId == id).ExecuteCommand();
         client.Deleteable(row).ExecuteCommand();
-        ConfigurationEditJournal.Record(client, "device", id, account, time, deleted: true);
+        ConfigurationEditJournal.Record(client, "device", id, account.Name, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("device.draftDeleted", AuditResults.Success, account, sourceIp,
             id.ToString(CultureInfo.InvariantCulture), JsonSerializer.Serialize(new { previousVersion = expectedVersion, version })));

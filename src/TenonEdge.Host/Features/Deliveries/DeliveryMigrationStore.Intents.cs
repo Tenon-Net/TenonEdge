@@ -52,12 +52,13 @@ internal sealed partial class DeliveryMigrationStore
                 TargetFingerprint = intent.Target.Fingerprint,
                 TargetSummary = intent.Target.Summary,
                 AccountName = application.AccountName!,
+                TokenName = application.TokenName,
                 SourceIp = application.SourceIp,
                 RegisteredAt = now,
                 Status = "waiting",
             };
             client.Insertable(row).ExecuteCommand();
-            trail.Append(client, new("delivery.migrationIntentRegistered", AuditResults.Success, row.AccountName,
+            trail.Append(client, new("delivery.migrationIntentRegistered", AuditResults.Success, new AuditAccount(row.AccountName, row.TokenName),
                 row.SourceIp, row.IntentId, JsonSerializer.Serialize(new
                 {
                     row.Revision,
@@ -86,6 +87,7 @@ internal sealed class DeliveryMigrationIntentRecord
     [SugarColumn(ColumnName = "source_summary")] public string SourceSummary { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "target_recipient")] public string TargetRecipient { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "account_name")] public string AccountName { get; set; } = string.Empty;
+    [SugarColumn(ColumnName = "token_name")] public string? TokenName { get; set; }
     [SugarColumn(ColumnName = "source_ip")] public string? SourceIp { get; set; }
     [SugarColumn(ColumnName = "registered_at")] public long RegisteredAt { get; set; }
     [SugarColumn(ColumnName = "status")] public string Status { get; set; } = string.Empty;

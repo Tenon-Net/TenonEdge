@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
@@ -21,10 +22,13 @@ public sealed class DeliveryMigrationCoordinatorTests
     private static readonly string[] Inputs = ["meter/sample"];
 
     [Theory]
-    [InlineData("normal")]
-    [InlineData("cancel")]
-    [InlineData("auditFailure")]
-    public async Task TwoRealHttpSendsPrecedeOwnedMigrationAndDurableResultAudit(string scenario)
+    [InlineData("normal", null)]
+    [InlineData("normal", "MES migrate")]
+    [InlineData("cancel", null)]
+    [InlineData("cancel", "MES migrate")]
+    [InlineData("auditFailure", null)]
+    [InlineData("auditFailure", "MES migrate")]
+    public async Task TwoRealHttpSendsPrecedeOwnedMigrationAndDurableResultAudit(string scenario, string? tokenName)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -80,9 +84,9 @@ public sealed class DeliveryMigrationCoordinatorTests
                     if (scenario == "auditFailure")
                     { database.Client.Ado.ExecuteCommand("CREATE TRIGGER fail_migration_finish BEFORE INSERT ON audit_log WHEN NEW.action='delivery.migrationFinished' BEGIN SELECT abs(-9223372036854775808); END;"); }
                     using var caller = CancellationTokenSource.CreateLinkedTokenSource(Token);
-                    var moving = coordinator.MigrateSelectedDeliveriesAsync(command, 1, records[0].FingerprintSummary, true, "admin", "192.0.2.10", caller.Token);
+                    var moving = coordinator.MigrateSelectedDeliveriesAsync(command, 1, records[0].FingerprintSummary, true, new AuditAccount("admin", tokenName), "192.0.2.10", caller.Token);
                     await OutputPipelineTests.UntilAsync(() => migrations.Read(operation)?.Status == "started");
-                    Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationStarted"));
+                    Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationStarted")).TokenName);
                     Assert.Empty(TestAccounts.Audit(factory.Services, "delivery.migrationFinished"));
                     Assert.False(moving.IsCompleted);
                     await Assert.ThrowsAsync<DeliveryMigrationUnavailableException>(() => coordinator.MigrateSelectedDeliveriesAsync(command, 1, "old", true, "admin", null, Token));
@@ -120,7 +124,7 @@ public sealed class DeliveryMigrationCoordinatorTests
                     {
                         Assert.Equal("started", migrations.Read(operation)!.Status);
                         Assert.Empty(TestAccounts.Audit(factory.Services, "delivery.migrationFinished"));
-                        Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationSyncFailed"));
+                        Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationSyncFailed")).TokenName);
                         database.Client.Ado.ExecuteCommand("DROP TRIGGER fail_migration_finish");
                     }
                     else
@@ -151,8 +155,8 @@ public sealed class DeliveryMigrationCoordinatorTests
             var final = restarted.Services.GetRequiredService<DeliveryMigrationStore>().Read(operation)!;
             Assert.Equal("completed", final.Status);
             Assert.Equal(actual, final.AffectedRecords);
-            Assert.Single(TestAccounts.Audit(restarted.Services, "delivery.migrationStarted"));
-            Assert.Single(TestAccounts.Audit(restarted.Services, "delivery.migrationFinished"));
+            Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(restarted.Services, "delivery.migrationStarted")).TokenName);
+            Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(restarted.Services, "delivery.migrationFinished")).TokenName);
             Assert.Equal(actual, restarted.Services.GetRequiredService<DeliveryCache>().GetPersistentCounters()["manuallyMigratedRecords"]);
         }
         finally { releaseOld.TrySetResult(); releaseNew.TrySetResult(); await peer.StopAsync(CancellationToken.None); }

@@ -11,12 +11,12 @@ internal sealed partial class RuntimeCoordinator
     /// <summary>仅供已经管理员授权、准备并确认的选择调用。HTTP 生命周期不拥有执行；
     /// 与应用/回滚/其他队列写入互斥，开始记录先持久化，最终结果以队列收据同步，停机等待两库同步尝试结束。</summary>
     public Task<DeliveryWriteResult> MigrateSelectedDeliveriesAsync(DeliveryMigrationCommand command, long revision,
-        string sourceSummary, bool sameOwnerConfirmed, string account, string? sourceIp, CancellationToken token)
+        string sourceSummary, bool sameOwnerConfirmed, AuditAccount account, string? sourceIp, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(command);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceSummary);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         if (revision < 1 || !sameOwnerConfirmed || command.Items is null)
         { throw new ArgumentException("须提供已确认同一所有者的明确迁移选择。"); }
         TaskCompletionSource operation;
@@ -35,12 +35,12 @@ internal sealed partial class RuntimeCoordinator
     }
 
     public Task<DeliveryWriteResult> RetryMigrationIntentAsync(DeliveryMigrationCommand command, long revision,
-        DeliveryMigrationIntentRecord expected, string account, string? sourceIp, CancellationToken token)
+        DeliveryMigrationIntentRecord expected, AuditAccount account, string? sourceIp, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(expected);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         if (command.Hold?.RequestHash != expected.ToHold().RequestHash || revision < expected.Revision)
         { throw new ArgumentException("须提供已核对的原意图范围。"); }
         TaskCompletionSource operation;
@@ -59,12 +59,14 @@ internal sealed partial class RuntimeCoordinator
     }
 
     private async Task<DeliveryWriteResult> RunMigrationOwnedAsync(DeliveryMigrationCommand command, long revision,
-        string sourceSummary, string account, string? sourceIp, TaskCompletionSource completion,
+        string sourceSummary, AuditAccount account, string? sourceIp, TaskCompletionSource completion,
         DeliveryMigrationIntentRecord? intent = null, string? validationError = null, bool retryIntent = false)
     {
         var started = false;
         try
         {
+            if (intent is not null && !retryIntent)
+            { (account, sourceIp) = migrations.ReadIntentActor(intent); }
             if (intent is null)
             { migrations.Begin(command, revision, sourceSummary, true, account, sourceIp); }
             else if (retryIntent)

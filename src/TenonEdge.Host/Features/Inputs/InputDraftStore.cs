@@ -27,7 +27,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         return new InputDraftList(ConfigurationDraft.ReadVersion(client), ReadForDevice(client, deviceId));
     });
 
-    public InputDraftResult Write(long deviceId, long? existingId, InputDraftRequest request, string? account, string? sourceIp)
+    public InputDraftResult Write(long deviceId, long? existingId, InputDraftRequest request, AuditAccount account, string? sourceIp)
     {
         var id = existingId ?? ids.NextId();
         return database.InTransaction(client =>
@@ -54,7 +54,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
             { client.Insertable(row).ExecuteCommand(); }
             else
             { client.Updateable(row).ExecuteCommand(); }
-            ConfigurationEditJournal.Record(client, "input", id, account, time);
+            ConfigurationEditJournal.Record(client, "input", id, account.Name, time);
             var version = ConfigurationDraft.Advance(client, time);
             audit.Append(client, new AuditEntry(existing is null ? "input.draftCreated" : "input.draftUpdated",
                 AuditResults.Success, account, sourceIp, id.ToString(CultureInfo.InvariantCulture),
@@ -63,7 +63,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         });
     }
 
-    public DraftVersion Delete(long deviceId, long id, string expectedVersion, string? account, string? sourceIp) => database.InTransaction(client =>
+    public DraftVersion Delete(long deviceId, long id, string expectedVersion, AuditAccount account, string? sourceIp) => database.InTransaction(client =>
     {
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var device = DeviceDraftStore.Read(client, deviceId) ?? throw new DraftWriteException("device.notFound");
@@ -75,7 +75,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         if (RouteDraftStore.HasReference(client, "input", id))
         { throw new DraftWriteException("input.routeReferenced"); }
         client.Deleteable(row).ExecuteCommand();
-        ConfigurationEditJournal.Record(client, "input", id, account, time, deleted: true);
+        ConfigurationEditJournal.Record(client, "input", id, account.Name, time, deleted: true);
         var version = ConfigurationDraft.Advance(client, time);
         audit.Append(client, new AuditEntry("input.draftDeleted", AuditResults.Success, account, sourceIp,
             id.ToString(CultureInfo.InvariantCulture), JsonSerializer.Serialize(new { deviceId, previousVersion = expectedVersion, version })));
@@ -86,7 +86,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
         client.Queryable<InputDraftRecord>().Where(row => row.DeviceId == deviceId).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
 
     // Caller owns the device-copy transaction, version and single batch audit.
-    internal static void CopyToDevice(SqlSugarClient client, InputDraft[] sources, long deviceId, SnowflakeIdGenerator ids, string? account, TimeProvider time)
+    internal static void CopyToDevice(SqlSugarClient client, InputDraft[] sources, long deviceId, SnowflakeIdGenerator ids, AuditAccount account, TimeProvider time)
     {
         foreach (var source in sources)
         {
@@ -98,7 +98,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
                 BusinessKey = input.Key,
                 Content = JsonSerializer.Serialize(input, Json),
             }).ExecuteCommand();
-            ConfigurationEditJournal.Record(client, "input", input.Id, account, time);
+            ConfigurationEditJournal.Record(client, "input", input.Id, account.Name, time);
         }
     }
 

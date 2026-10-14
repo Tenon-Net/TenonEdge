@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
@@ -108,8 +109,10 @@ public sealed class FailedDeliveryRetryApiTests
         finally { await peer.StopAsync(CancellationToken.None); }
     }
 
-    [Fact]
-    public async Task OwnedRetrySurvivesCanceledWaitBlocksApplyAndShutdownWaitsForItsWriter()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("MES recovery")]
+    public async Task OwnedRetrySurvivesCanceledWaitBlocksApplyAndShutdownWaitsForItsWriter(string? tokenName)
     {
         using var data = TemporaryDirectory.Create();
         // Seed creates an effective target; this scenario holds SQLite's real writer lock, not an API fault switch.
@@ -132,7 +135,7 @@ public sealed class FailedDeliveryRetryApiTests
         connection.Open();
         using var transaction = connection.BeginTransaction();
         using var wait = CancellationTokenSource.CreateLinkedTokenSource(Token);
-        var pending = coordinator.RetryFailedDeliveriesAsync(1, [new(seq, draft.DeliveryId)], "admin", null, wait.Token);
+        var pending = coordinator.RetryFailedDeliveriesAsync(1, [new(seq, draft.DeliveryId)], new AuditAccount("admin", tokenName), null, wait.Token);
         Assert.True(coordinator.Status.QueueOperationInProgress);
         await Assert.ThrowsAsync<DeliveryCleanupUnavailableException>(() => coordinator.CleanupDeliveriesAsync(
             new(DeliveryState.Failed, [new(seq, draft.DeliveryId, 11, null)]), "admin", null, Token));
@@ -151,5 +154,6 @@ public sealed class FailedDeliveryRetryApiTests
         Assert.Equal(draft.DeliveryId, moved.DeliveryId);
         Assert.True(moved.Seq > seq);
         Assert.Single(TestAccounts.Audit(factory.Services, "delivery.retryFailed"));
+        Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.retryFailed")).TokenName);
     }
 }

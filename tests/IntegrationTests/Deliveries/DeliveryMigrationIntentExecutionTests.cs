@@ -17,13 +17,15 @@ public sealed class DeliveryMigrationIntentExecutionTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task BeginAndFinishBindIntentAtomicallyAndStartupOnlyRetriesKnownNonCommit(bool committed)
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, "MES apply")]
+    [InlineData(true, "MES apply")]
+    public async Task BeginAndFinishBindIntentAtomicallyAndStartupOnlyRetriesKnownNonCommit(bool committed, string? tokenName)
     {
         await using var factory = new TenonEdgeApplicationFactory();
         var services = factory.Services;
-        var intent = await MigrationIntentFixture.RegisterAsync(services);
+        var intent = await MigrationIntentFixture.RegisterAsync(services, tokenName: tokenName);
         var coordinator = services.GetRequiredService<RuntimeCoordinator>();
         Assert.True((await coordinator.Runtime.HoldMigrationAsync(intent.Hold, null, Token)).Committed);
         var store = services.GetRequiredService<DeliveryMigrationStore>();
@@ -56,6 +58,12 @@ public sealed class DeliveryMigrationIntentExecutionTests
         Assert.All(records, record => Assert.Equal(intent.Target.Fingerprint, record.Fingerprint));
         Assert.Equal(2, coordinator.Runtime.Deliveries.GetPersistentCounters()["manuallyMigratedRecords"]);
         Assert.Equal(committed ? 1 : 2, TestAccounts.Audit(services, "delivery.migrationFinished").Count);
+        foreach (var action in new[] { AuditActions.SnapshotApplied, "delivery.migrationIntentRegistered", "delivery.migrationStarted", "delivery.migrationFinished" })
+        {
+            var audits = TestAccounts.Audit(services, action);
+            Assert.NotEmpty(audits);
+            Assert.All(audits, audit => Assert.Equal(tokenName, audit.TokenName));
+        }
     }
 
     [Theory]
@@ -179,14 +187,14 @@ public sealed class DeliveryMigrationIntentExecutionTests
                 protocol, old_fingerprint, source_summary, target_recipient, account_name, registered_at, status)
             VALUES (@id, @store, 2, 1, 1, 'http', 'old', 'old-summary', 'http://new.test/', 'admin', 1, 'waiting')
             """, new { id, store = identity.ConfigStoreId });
-        Assert.Equal(20, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         var intent = store.Database.Client.Queryable<DeliveryMigrationIntentRecord>().InSingle(id);
         Assert.Equal(("waiting", "old", "http://new.test/", "admin"), (intent.Status, intent.OldFingerprint, intent.TargetRecipient, intent.AccountName));
         Assert.Null(intent.TargetFingerprint);
         Assert.Null(intent.TargetSummary);
         Assert.Null(intent.LastOperationId);
         Assert.Equal(identity, GatewayIdentity.LoadOrCreate(store.Database, out _));
-        Assert.Equal(20, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         Assert.Single(store.Database.Client.Queryable<DeliveryMigrationIntentRecord>().ToList());
     }
 
@@ -237,7 +245,7 @@ internal static class MigrationIntentFixture
         new(services.GetRequiredService<GatewayIdentity>().ConfigStoreId, Guid.NewGuid(), connection, Identity(oldAddress, connection).Fingerprint),
         Identity(oldAddress, connection).Recipient, address, true, Identity(address, connection));
     internal static DeliveryMigrationCommand Command(DeliveryMigrationIntentDraft intent) => DeliveryMigrationCommand.ForIntent(intent.Hold, Guid.NewGuid(), intent.Target.Fingerprint, intent.Target.Summary);
-    internal static async Task<DeliveryMigrationIntentDraft> RegisterAsync(IServiceProvider services, string address = "http://new.test/base/", int count = 2)
+    internal static async Task<DeliveryMigrationIntentDraft> RegisterAsync(IServiceProvider services, string address = "http://new.test/base/", int count = 2, string? tokenName = null)
     {
         const string old = "http://old.test/base/";
         var versions = services.GetRequiredService<RuntimeVersionStore>();
@@ -256,7 +264,7 @@ internal static class MigrationIntentFixture
             }).ToArray();
             Assert.Equal(count, (await cache.EnqueueAsync(records, TestContext.Current.CancellationToken)).Seqs.Count);
         }
-        versions.Commit(versions.FreezeDraft(Plan(address), "0", "admin"), Application, markRunning: true, migrationIntents: [intent]);
+        versions.Commit(versions.FreezeDraft(Plan(address), "0", "admin"), Application with { TokenName = tokenName }, markRunning: true, migrationIntents: [intent]);
         versions.ClearRunningMarker(2); // Preparation fixture never activated this plan; not crash evidence.
         return intent;
     }

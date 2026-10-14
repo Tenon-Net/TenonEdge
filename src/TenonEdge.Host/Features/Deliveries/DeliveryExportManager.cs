@@ -264,7 +264,7 @@ internal sealed class DeliveryExportManager : IAsyncDisposable
     }
 
     private void WriteAudit(Export export, string action, string result, string stage, long? bytes) =>
-        _audit.AppendOrLog(new(action, result, export.Actor.AccountName, export.Actor.SourceIp, export.Id.ToString("D"),
+        _audit.AppendOrLog(new(action, result, export.Actor.Account, export.Actor.SourceIp, export.Id.ToString("D"),
             JsonSerializer.Serialize(new { stage, state = export.Filter.State.ToString(), export.Filter.ConnectionId, export.Filter.From, export.Filter.To, count = export.Review?.Count, bytes, cleanupFailed = export.Error == "delivery.exportCleanupFailed" })));
 
     private Export Owned(Guid id, string owner) => _current is { } export && export.Id == id && export.Actor.Owner == owner
@@ -297,7 +297,7 @@ internal sealed class DeliveryExportManager : IAsyncDisposable
 }
 
 internal enum DeliveryExportState { Preparing, AwaitingConfirmation, Generating, Ready, Downloading, ResponseWritten, Failed, Cancelled, Expired }
-internal sealed record DeliveryExportActor(string Owner, string AccountName, string? SourceIp);
+internal sealed record DeliveryExportActor(string Owner, AuditAccount Account, string? SourceIp);
 internal sealed record DeliveryExportSummary(DeliveryExportFilter Filter, string Count, string PayloadBytes, string MaximumFileBytes,
     DateTimeOffset? FirstCreatedAt, DateTimeOffset? LastCreatedAt);
 internal sealed record DeliveryExportStatus(Guid Id, DeliveryExportState State, bool Busy, DateTimeOffset ExpiresAt,

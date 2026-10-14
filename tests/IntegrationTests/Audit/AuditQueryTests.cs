@@ -21,6 +21,59 @@ public sealed class AuditQueryTests
 {
     private const string AuditPath = "/api/edge-admin/v1/audit";
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitTokenAuditIdentityIsQueryableAfterRestart(bool transactional)
+    {
+        var token = TestContext.Current.CancellationToken;
+        using var data = TemporaryDirectory.Create();
+        await using (var first = new FixedDataDirectoryApplicationFactory(data.Path))
+        {
+            using var client = first.CreateClient();
+            using var setup = await client.CompleteSetupAsync(token);
+            Assert.Equal(HttpStatusCode.OK, setup.StatusCode);
+            var audit = first.Services.GetRequiredService<AuditTrail>();
+            var entry = new AuditEntry("test.tokenWrite", AuditResults.Success, new AuditAccount("admin", "MES 夜班"),
+                "192.0.2.11", "test-object", "non-secret operation");
+            if (transactional)
+            {
+                first.Services.GetRequiredService<ConfigDatabase>().InTransaction(database =>
+                { audit.Append(database, entry); return true; });
+            }
+            else
+            { audit.AppendOrLog(entry); }
+        }
+        await using var second = new FixedDataDirectoryApplicationFactory(data.Path);
+        using var reader = second.CreateClient();
+        using var login = await reader.LoginAsync("admin", ApiRequests.StrongPassword, token);
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var page = await reader.GetJsonAsync($"{AuditPath}?action=test.tokenWrite", token);
+        var record = Assert.Single(page.GetProperty("items").EnumerateArray());
+        Assert.Equal("admin", record.GetProperty("accountName").GetString());
+        Assert.Equal("MES 夜班", record.GetProperty("tokenName").GetString());
+        Assert.Equal("192.0.2.11", record.GetProperty("sourceIp").GetString());
+        Assert.Equal("test-object", record.GetProperty("target").GetString());
+    }
+
+    [Fact]
+    public void TokenAuditFallbackKeepsTheSameNonSecretIdentity()
+    {
+        var capture = new LogCapture();
+        using var baseFactory = new TenonEdgeApplicationFactory();
+        using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureLogging(logging => logging.AddProvider(capture)));
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        var audit = factory.Services.GetRequiredService<AuditTrail>();
+        database.Client.Ado.ExecuteCommand($"ALTER TABLE {AuditLogRecord.TableName} RENAME TO audit_log_unavailable");
+        try
+        { audit.AppendOrLog(new("test.tokenWrite", AuditResults.Success, new AuditAccount("admin", "MES 夜班"), "192.0.2.11")); }
+        finally
+        { database.Client.Ado.ExecuteCommand($"ALTER TABLE audit_log_unavailable RENAME TO {AuditLogRecord.TableName}"); }
+        var fallback = Assert.Single(capture.Matching(typeof(AuditTrail).FullName!, "审计记录写入配置库失败，改写到日志"));
+        Assert.Contains("令牌 MES 夜班", fallback.Message, StringComparison.Ordinal);
+        Assert.Contains("账号 admin，来源 192.0.2.11", fallback.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task AdministratorsCanFilterAndPageThroughAuditRecordsNewestFirst()
     {

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
@@ -75,8 +76,10 @@ public sealed class DeliveryCleanupApiTests
         Assert.All(audit, item => Assert.DoesNotContain("private-cleanup-payload", item.Detail ?? "", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task CancelledWaitCannotWithdrawCleanupAndStopWaitsForTheOwnedWriteAndAudit()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("MES recovery")]
+    public async Task CancelledWaitCannotWithdrawCleanupAndStopWaitsForTheOwnedWriteAndAudit(string? tokenName)
     {
         using var data = TemporaryDirectory.Create();
         await using var factory = new FixedDataDirectoryApplicationFactory(data.Path);
@@ -88,7 +91,7 @@ public sealed class DeliveryCleanupApiTests
         connection.Open();
         using var transaction = connection.BeginTransaction();
         using var caller = CancellationTokenSource.CreateLinkedTokenSource(Token);
-        var write = coordinator.CleanupDeliveriesAsync(selection, "admin", null, caller.Token);
+        var write = coordinator.CleanupDeliveriesAsync(selection, new AuditAccount("admin", tokenName), null, caller.Token);
         Assert.True(coordinator.Status.QueueOperationInProgress);
         await Assert.ThrowsAsync<DeliveryCleanupUnavailableException>(() => coordinator.CleanupDeliveriesAsync(selection, "admin", null, Token));
         var version = factory.Services.GetRequiredService<RouteDraftStore>().Read().Version;
@@ -103,6 +106,7 @@ public sealed class DeliveryCleanupApiTests
         Assert.False(coordinator.Status.QueueOperationInProgress);
         Assert.Equal(RuntimeCoordinatorState.Stopped, coordinator.Status.State);
         Assert.Equal("success", Assert.Single(TestAccounts.Audit(factory.Services, "delivery.cleanup")).Result);
+        Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.cleanup")).TokenName);
         await Assert.ThrowsAsync<DeliveryCleanupUnavailableException>(() => coordinator.CleanupDeliveriesAsync(selection, "admin", null, Token));
     }
 

@@ -42,7 +42,7 @@ internal sealed class HttpCredentialStore(
         return record is null ? null : Metadata(record);
     }
 
-    public HttpCredentialMetadata Write(long connectionId, HttpCredentialRequest request, string? accountName, string? sourceIp, bool administrator)
+    public HttpCredentialMetadata Write(long connectionId, HttpCredentialRequest request, AuditAccount accountName, string? sourceIp, bool administrator)
     {
         if (connectionId is < 1 or > 9007199254740991L)
         { throw new ArgumentException("连接 ID 超出安全整数范围。"); }
@@ -123,7 +123,7 @@ internal sealed class HttpCredentialStore(
     }
 
     /// <summary>明确清除与接收方变化导致的“作废”不同：只有未被保留运行版本引用的草稿可清除。</summary>
-    public void Clear(long connectionId, string expectedDraftVersion, string expectedVersion, string? account, string? sourceIp) =>
+    public void Clear(long connectionId, string expectedDraftVersion, string expectedVersion, AuditAccount account, string? sourceIp) =>
         database.InTransaction(client =>
         {
             CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Http, null, expectedDraftVersion, requireDraft: true);

@@ -16,9 +16,11 @@ public sealed class DeliveryMigrationStoreTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task StartupReconcilesActualQueueCommitOrInterruptionAndNeverReplays(bool committed)
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, "MES archive")]
+    [InlineData(true, "MES archive")]
+    public async Task StartupReconcilesActualQueueCommitOrInterruptionAndNeverReplays(bool committed, string? tokenName)
     {
         using var data = TemporaryDirectory.Create();
         Guid operation;
@@ -35,7 +37,7 @@ public sealed class DeliveryMigrationStoreTests
             var command = Command(identity, records);
             operation = command.OperationId;
             var migrations = Create(store, identity, cache);
-            migrations.Begin(command, 1, "old address; account=owner", true, "admin", "192.0.2.10");
+            migrations.Begin(command, 1, "old address; account=owner", true, new AuditAccount("admin", tokenName), "192.0.2.10");
             Assert.Equal("started", migrations.Read(operation)!.Status);
             if (committed)
             {
@@ -55,6 +57,7 @@ public sealed class DeliveryMigrationStoreTests
             var audit = Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationFinished"));
             Assert.Equal(committed ? "success" : "failure", audit.Result);
             Assert.Equal("admin", audit.AccountName);
+            Assert.Equal(tokenName, audit.TokenName);
             Assert.Equal("192.0.2.10", audit.SourceIp);
             Assert.DoesNotContain("private-payload", audit.Detail ?? "", StringComparison.Ordinal);
             var cache = factory.Services.GetRequiredService<DeliveryCache>();
@@ -64,8 +67,8 @@ public sealed class DeliveryMigrationStoreTests
         }
         await using var reopened = new FixedDataDirectoryApplicationFactory(data.Path);
         using var second = reopened.CreateClient();
-        Assert.Single(TestAccounts.Audit(reopened.Services, "delivery.migrationStarted"));
-        Assert.Single(TestAccounts.Audit(reopened.Services, "delivery.migrationFinished"));
+        Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(reopened.Services, "delivery.migrationStarted")).TokenName);
+        Assert.Equal(tokenName, Assert.Single(TestAccounts.Audit(reopened.Services, "delivery.migrationFinished")).TokenName);
     }
 
     [Fact]
@@ -219,7 +222,7 @@ public sealed class DeliveryMigrationStoreTests
         using var store = TestConfigStore.Create();
         store.Initialize(ConfigMigrations.All.Where(migration => migration.Version <= 17).ToArray());
         var identity = GatewayIdentity.LoadOrCreate(store.Database, out _);
-        Assert.Equal(20, store.CreateMigrator().Migrate());
+        Assert.Equal(ConfigMigrations.All[^1].Version, store.CreateMigrator().Migrate());
         Assert.Empty(store.Database.Client.Queryable<DeliveryMigrationRecord>().ToList());
         Assert.Empty(store.Database.Client.Queryable<DeliveryMigrationIntentRecord>().ToList());
         Assert.Equal(identity, GatewayIdentity.LoadOrCreate(store.Database, out var created));

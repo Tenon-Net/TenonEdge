@@ -36,11 +36,11 @@ internal sealed partial class RuntimeVersionStore
     /// <summary>只替换非秘密草稿，不应用运行计划。事务外准备行，事务内复核确认版本、替换、推进草稿版本及记审计。
     /// pending 冻结后拒绝放弃；尚未冻结的已准入应用会因本次推进草稿版本而安全失败。</summary>
     public ConfigurationDiscardResult DiscardDraft(string expectedVersion, long? expectedEffectiveRevision,
-        string account, string? sourceIp, CancellationToken token)
+        AuditAccount account, string? sourceIp, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(expectedVersion) || expectedVersion.Length > 64 || expectedEffectiveRevision is <= 0)
         { throw new ArgumentException("须提供已确认的草稿与有效版本。"); }
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         token.ThrowIfCancellationRequested();
         var captured = database.InTransaction(client =>
         {

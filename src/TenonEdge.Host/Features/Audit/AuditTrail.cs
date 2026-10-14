@@ -46,6 +46,7 @@ internal sealed partial class AuditTrail(
                 record.AccountName,
                 record.SourceIp,
                 record.Target,
+                record.TokenName,
                 DateTimeOffset.FromUnixTimeMilliseconds(record.OccurredAt),
                 exception.Message);
         }
@@ -56,6 +57,7 @@ internal sealed partial class AuditTrail(
         Id = ids.NextId(),
         OccurredAt = time.GetUtcNow().ToUnixTimeMilliseconds(),
         AccountName = Truncate(entry.AccountName),
+        TokenName = Truncate(entry.TokenName),
         SourceIp = entry.SourceIp,
         Action = entry.Action,
         Target = Truncate(entry.Target),
@@ -68,7 +70,7 @@ internal sealed partial class AuditTrail(
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "审计记录写入配置库失败，改写到日志：操作 {Action}，结果 {Result}，账号 {AccountName}，来源 {SourceIp}，对象 {Target}，时间 {OccurredAt:O}；原因：{Reason}")]
+        Message = "审计记录写入配置库失败，改写到日志：操作 {Action}，结果 {Result}，账号 {AccountName}，来源 {SourceIp}，对象 {Target}，令牌 {TokenName}，时间 {OccurredAt:O}；原因：{Reason}")]
     private static partial void LogAuditFallback(
         ILogger logger,
         string action,
@@ -76,6 +78,7 @@ internal sealed partial class AuditTrail(
         string? accountName,
         string? sourceIp,
         string? target,
+        string? tokenName,
         DateTimeOffset occurredAt,
         string reason);
 }
@@ -87,7 +90,12 @@ internal sealed record AuditEntry(
     string? AccountName,
     string? SourceIp,
     string? Target = null,
-    string? Detail = null);
+    string? Detail = null,
+    string? TokenName = null)
+{
+    public AuditEntry(string Action, string Result, AuditAccount Account, string? SourceIp, string? Target = null, string? Detail = null)
+        : this(Action, Result, Account.Name, SourceIp, Target, Detail, Account.TokenName) { }
+}
 
 /// <summary>审计操作代码。发布后不得修改已有的值：审计查询与导出按它筛选。</summary>
 internal static class AuditActions

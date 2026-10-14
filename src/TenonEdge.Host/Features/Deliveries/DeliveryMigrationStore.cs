@@ -10,7 +10,7 @@ namespace TenonEdge.Host.Features.Deliveries;
 /// 不执行迁移、不负责权限/选择准备；形式 A 的等待意图仍须随配置事务另外登记。</summary>
 internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, GatewayIdentity identity, DeliveryCache queue, AuditTrail audit, TimeProvider time)
 {
-    public void Begin(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed, string account, string? sourceIp)
+    public void Begin(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed, AuditAccount account, string? sourceIp)
     {
         ArgumentNullException.ThrowIfNull(command);
         if (command.Hold is not null)
@@ -19,12 +19,12 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
     }
 
     private void BeginCore(DeliveryMigrationCommand command, long revision, string sourceSummary, bool sameOwnerConfirmed,
-        string account, string? sourceIp, DeliveryMigrationIntentRecord? intent, bool retry = false)
+        AuditAccount account, string? sourceIp, DeliveryMigrationIntentRecord? intent, bool retry = false)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentOutOfRangeException.ThrowIfLessThan(revision, 1);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceSummary);
-        ArgumentException.ThrowIfNullOrWhiteSpace(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(account.Name);
         if (!sameOwnerConfirmed || command.ConfigStoreId != identity.ConfigStoreId)
         { throw new ArgumentException("迁移必须声明同一数据所有者，并属于当前配置库。"); }
         var row = new DeliveryMigrationRecord
@@ -40,7 +40,8 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
             SourceSummary = sourceSummary,
             TargetSummary = command.Summary,
             RequestedRecords = command.Items?.Count,
-            AccountName = account,
+            AccountName = account.Name!,
+            TokenName = account.TokenName,
             SourceIp = sourceIp,
             StartedAt = time.GetUtcNow().ToUnixTimeMilliseconds(),
             Status = "started",
@@ -138,7 +139,7 @@ internal sealed partial class DeliveryMigrationStore(ConfigDatabase database, Ga
     };
 
     private static AuditEntry Entry(DeliveryMigrationRecord row, string action, string result, string message) =>
-        new(action, result, row.AccountName, row.SourceIp, row.OperationId, JsonSerializer.Serialize(new
+        new(action, result, new AuditAccount(row.AccountName, row.TokenName), row.SourceIp, row.OperationId, JsonSerializer.Serialize(new
         {
             message,
             row.Mode,
@@ -171,6 +172,7 @@ internal sealed class DeliveryMigrationRecord
     [SugarColumn(ColumnName = "target_summary")] public string TargetSummary { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "requested_records")] public int? RequestedRecords { get; set; }
     [SugarColumn(ColumnName = "account_name")] public string AccountName { get; set; } = string.Empty;
+    [SugarColumn(ColumnName = "token_name")] public string? TokenName { get; set; }
     [SugarColumn(ColumnName = "source_ip")] public string? SourceIp { get; set; }
     [SugarColumn(ColumnName = "started_at")] public long StartedAt { get; set; }
     [SugarColumn(ColumnName = "status")] public string Status { get; set; } = string.Empty;

@@ -27,7 +27,7 @@ internal sealed partial class RuntimeVersionStore
     }
 
     // 清零与激活尝试审计、运行中标记同事务；先落盘再构建，构建过程中再次崩溃仍计入启动保护。
-    public void MarkRetry(RuntimeRetryCheckpoint checkpoint, string account, string? sourceIp) => database.InTransaction(client =>
+    public void MarkRetry(RuntimeRetryCheckpoint checkpoint, AuditAccount account, string? sourceIp) => database.InTransaction(client =>
     {
         var snapshot = checkpoint.Snapshot;
         var state = State(client);

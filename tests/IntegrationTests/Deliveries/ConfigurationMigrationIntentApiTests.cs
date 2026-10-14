@@ -13,6 +13,7 @@ using SqlSugar;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Deliveries;
@@ -371,11 +372,15 @@ public sealed class ConfigurationMigrationIntentApiTests
         Assert.Equal(finishedCount, TestAccounts.Audit(factory.Services, "delivery.migrationFinished").Count);
     }
 
-    [Fact]
-    public async Task StaleApprovalCannotReplaceStartedAttemptAndInterruptedContinuationKeepsRetryActor()
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(null, "MES retry")]
+    [InlineData("MES apply", null)]
+    [InlineData("MES apply", "MES retry")]
+    public async Task StaleApprovalCannotReplaceStartedAttemptAndInterruptedContinuationKeepsRetryActor(string? originalToken, string? retryToken)
     {
         using var data = TemporaryDirectory.Create();
-        var intent = await Seed(data.Path);
+        var intent = await Seed(data.Path, tokenName: originalToken);
         await using var factory = Running(data.Path, out var clock);
         using var admin = await factory.CreateLoggedInClientAsync("operator", Token);
         await clock.PollAsync();
@@ -385,7 +390,7 @@ public sealed class ConfigurationMigrationIntentApiTests
         var target = runtime.CaptureMigrationTarget(1, 3)!;
         DeliveryMigrationCommand Command() => DeliveryMigrationCommand.ForIntent(intent.Hold, Guid.NewGuid(), target.Fingerprint, target.Summary);
         var first = Command();
-        store.BeginIntentRetry(first, 3, expected, "operator", "192.0.2.22");
+        store.BeginIntentRetry(first, 3, expected, new AuditAccount("operator", retryToken), "192.0.2.22");
         Assert.Throws<InvalidOperationException>(() => store.BeginIntentRetry(Command(), 3, expected, "admin", null));
         store.RecoverInterrupted(); // Store-only recovery boundary; no execution has ever owned this fixture attempt.
         Assert.Equal("interrupted", store.Read(first.OperationId)!.Status);
@@ -395,7 +400,20 @@ public sealed class ConfigurationMigrationIntentApiTests
         Assert.Throws<InvalidOperationException>(() => store.BeginIntentRetry(Command(), 3, expected, "admin", null));
         store.Finish(resumed.OperationId, await runtime.Deliveries.MigrateAsync(resumed));
         Assert.Equal("completed", store.ReadIntent(intent.Hold.IntentId)!.Status);
-        Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationIntentRetried"));
+        Assert.Equal(retryToken, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationIntentRetried")).TokenName);
+        Assert.Equal(originalToken, Assert.Single(TestAccounts.Audit(factory.Services, "delivery.migrationIntentRegistered")).TokenName);
+        Assert.Equal(originalToken, store.ReadIntent(intent.Hold.IntentId)!.TokenName);
+        foreach (var operation in new[] { first.OperationId, resumed.OperationId })
+        {
+            Assert.Equal(retryToken, store.Read(operation)!.TokenName);
+            foreach (var action in new[] { "delivery.migrationStarted", "delivery.migrationFinished" })
+            {
+                var audit = Assert.Single(TestAccounts.Audit(factory.Services, action), row => row.Target == operation.ToString("D"));
+                Assert.Equal("operator", audit.AccountName);
+                Assert.Equal(retryToken, audit.TokenName);
+                Assert.Equal("192.0.2.22", audit.SourceIp);
+            }
+        }
     }
 
     [Fact]
@@ -601,10 +619,10 @@ public sealed class ConfigurationMigrationIntentApiTests
         var captured = clock = new MigrationPollClock();
         return new(path, settings, configureServices: services => { services.AddSingleton(provider => ActivatorUtilities.CreateInstance<RuntimeCoordinator>(provider, captured)); configure?.Invoke(services); });
     }
-    private static async Task<DeliveryMigrationIntentDraft> Seed(string path, bool legacy = false, string currentAddress = CurrentAddress, bool failedRecord = false, bool mqtt = false)
+    private static async Task<DeliveryMigrationIntentDraft> Seed(string path, bool legacy = false, string currentAddress = CurrentAddress, bool failedRecord = false, bool mqtt = false, string? tokenName = null)
     {
         await using var setup = new FixedDataDirectoryApplicationFactory(path);
-        var intent = mqtt ? await RegisterMqtt(setup.Services) : await MigrationIntentFixture.RegisterAsync(setup.Services);
+        var intent = mqtt ? await RegisterMqtt(setup.Services) : await MigrationIntentFixture.RegisterAsync(setup.Services, tokenName: tokenName);
         var runtime = setup.Services.GetRequiredService<RuntimeCoordinator>().Runtime;
         if (failedRecord)
         { await runtime.Deliveries.RecordFailureAsync(new(runtime.Deliveries.ReadPending(1, 0, 10)[0].Seq, 4, "original failed record", true, false), Token); }

@@ -29,7 +29,7 @@ internal sealed class OutboundPolicyStore(ConfigDatabase database, AuditTrail au
         }
     }
 
-    public OutboundPolicyState Write(OutboundPolicyRequest request, string? account, string? sourceIp)
+    public OutboundPolicyState Write(OutboundPolicyRequest request, AuditAccount account, string? sourceIp)
     {
         var (networks, localPorts) = Normalize(request);
         return database.InTransaction(client =>
