@@ -1,4 +1,5 @@
 import { userStrings } from '../features/users/strings'
+import { tokenStrings } from '../features/tokens/strings'
 import { configurationMigrationStrings } from '../features/configuration/migration-strings'
 import { migrationStrings } from '../features/deliveries/migration-strings'
 import { outputControlStrings } from '../features/deliveries/control-strings'
@@ -26,6 +27,7 @@ void i18n.use(initReactI18next).init({
         'zh-CN': {
             translation: {
                 users: userStrings,
+                tokens: tokenStrings,
                 previousLogin: '上次登录：{{time}}；来源 IP：{{ip}}',
                 noPreviousLogin: '上次登录：无记录',
                 migration: migrationStrings,

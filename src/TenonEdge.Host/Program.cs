@@ -11,6 +11,7 @@ using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Features.SystemInfo;
+using TenonEdge.Host.Features.Tokens;
 using TenonEdge.Host.Features.Users;
 
 // 只负责启动装配；服务注册、启动检查、请求管道和各功能端点分别在 Bootstrap 与 Features 中实现。
@@ -39,6 +40,7 @@ app.MapManagementApi()
     .MapSetupEndpoints()
     .MapAuthEndpoints()
     .MapUserEndpoints()
+    .MapApiTokenEndpoints()
     .MapAuditEndpoints()
     .MapRuntimeEventEndpoints()
     .MapRuntimeStatusEndpoints()

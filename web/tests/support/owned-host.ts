@@ -116,7 +116,14 @@ export async function startOwnedHost(
         await expect
             .poll(async () => (await fetch(url + '/healthz')).status)
             .toBe(200)
-        return { url, stop }
+        // Public trust material comes from this owned process's console, not a network response.
+        const httpsUrl = output.match(
+            /Now listening on:\s*(https:\/\/127\.0\.0\.1:\d+)/,
+        )?.[1]
+        const certificateFingerprint = output.match(
+            /SHA-256 指纹 ([0-9A-F]{64})/,
+        )?.[1]
+        return { url, httpsUrl, certificateFingerprint, stop }
     } catch (error) {
         await stop()
         throw error

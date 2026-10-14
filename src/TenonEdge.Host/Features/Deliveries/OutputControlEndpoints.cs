@@ -39,7 +39,7 @@ internal static class OutputControlEndpoints
         { return ApiProblems.Problem(400, "delivery.invalidRetry", "请提供有效目标、运行版本及当前退避窗口。"); }
         if (!coordinator.Runtime.RequestOutputRetry(connectionId, request.Revision, request.BackoffVersion!))
         { return ApiProblems.Problem(409, "delivery.retryUnavailable", "目标不处于该退避窗口或已暂停/切换版本，请重新查询；暂停须由管理员恢复。"); }
-        audit.AppendOrLog(new("delivery.retryNow", AuditResults.Success, context.User.FindFirstValue(SessionClaims.AccountName),
+        audit.AppendOrLog(new("delivery.retryNow", AuditResults.Success, ManagementIdentity.Audit(context.User),
             SourceAddress.Of(context), connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "已接受跳过当前退避的内存信号，不代表报文发送成功；不解除手动或自动暂停。"));
         return TypedResults.Accepted((string?)null);
@@ -51,7 +51,7 @@ internal static class OutputControlEndpoints
         context.Response.Headers.CacheControl = "no-store";
         try
         {
-            return TypedResults.Ok(store.Write(connectionId, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context)));
+            return TypedResults.Ok(store.Write(connectionId, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context)));
         }
         catch (ArgumentException exception)
         {

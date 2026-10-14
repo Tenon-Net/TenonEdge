@@ -10,15 +10,14 @@ internal sealed record UserCreateRequest(string? AccountName, string? DisplayNam
 {
     public override string ToString() => "User creation (password omitted)";
 }
-internal sealed record UserUpdateRequest(string? ExpectedVersion, string? DisplayName, UserRole? Role, bool IsEnabled, bool Confirmed);
-internal sealed record UserCommandRequest(string? ExpectedVersion, bool Confirmed);
+internal sealed record UserUpdateRequest(string? ExpectedVersion, string? DisplayName, UserRole? Role, bool IsEnabled, bool Confirmed, string? ExpectedTokenVersion = null, bool? RevokeTokens = null);
+internal sealed record UserCommandRequest(string? ExpectedVersion, bool Confirmed, string? ExpectedTokenVersion = null, bool? RevokeTokens = null);
 internal sealed record UserPasswordResetRequest(string? ExpectedVersion, bool Confirmed, string? TemporaryPassword)
 {
     public override string ToString() => "User password reset (password omitted)";
 }
 internal sealed record UserPage(UserSummary[] Items, long? NextCursor);
 internal sealed record UserMutationResult(UserSummary? User);
-internal sealed record UserActor(long Id, string SecurityStamp, string? SourceIp);
 internal enum UserOperation { Update, ResetPassword, Unlock, EndSessions, Delete }
 
 /// <summary>管理元数据，永不返回密码/哈希/安全戳。Version是字段快照的不可逆摘要，不是会话凭据或可重放操作票据。</summary>

@@ -15,7 +15,7 @@ internal static class IdGeneration
     public const string BuildTimestampFloorMetadataKey = "TenonEdge.BuildTimestampFloor";
 
     /// <summary>以雪花 ID 作为主键（列名 id）的表。</summary>
-    public static IReadOnlyList<string> SnowflakeKeyedTables { get; } = ["audit_log", "runtime_event", "user_account", "connection_draft", "device_draft", "input_draft", "route_draft"];
+    public static IReadOnlyList<string> SnowflakeKeyedTables { get; } = ["audit_log", "runtime_event", "user_account", "connection_draft", "device_draft", "input_draft", "route_draft", "api_token"];
 
     /// <summary>本程序集记录的构建时间下限。</summary>
     public static DateTimeOffset BuildTimestampFloor { get; } = ReadBuildTimestampFloor();

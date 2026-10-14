@@ -272,6 +272,20 @@ for (const role of ['viewer', 'configurator']) {
                         )
                     ).status(),
                 ).toBe(403)
+                await expect(
+                    other.getByRole('link', { name: 'API 令牌', exact: true }),
+                ).toHaveCount(0)
+                await other.goto(userHost + '/tokens')
+                await expect(
+                    other.getByText('仅管理员可以管理 API 令牌。'),
+                ).toBeVisible()
+                expect(
+                    (
+                        await other.request.get(
+                            userHost + '/api/edge-admin/v1/tokens',
+                        )
+                    ).status(),
+                ).toBe(403)
             } finally {
                 await context.close()
             }

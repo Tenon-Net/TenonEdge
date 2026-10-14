@@ -32,7 +32,7 @@ internal static class DeviceDraftEndpoints
         DeviceDraftRequest request, DeviceDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Write(id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Write(id, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["device"] = ["设备参数无效，请检查标识、名称、连接类型、UnitId 及地址写法。"] }); }
         catch (FormatException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["device"] = ["设备参数格式无效。"] }); }
         catch (DraftWriteException exception) { return Failure(exception); }
@@ -42,7 +42,7 @@ internal static class DeviceDraftEndpoints
         DeviceDraftCopyRequest request, DeviceDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Copy(deviceId, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Copy(deviceId, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["copy"] = ["复制数量须为 1—20，且须提供草稿版本。"] }); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }
@@ -51,7 +51,7 @@ internal static class DeviceDraftEndpoints
         DeviceDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Delete(deviceId, expectedVersion, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Delete(deviceId, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }
 

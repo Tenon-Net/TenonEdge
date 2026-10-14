@@ -25,7 +25,7 @@ internal static class OutboundPolicyEndpoints
     {
         try
         {
-            return TypedResults.Ok(store.Write(request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context)));
+            return TypedResults.Ok(store.Write(request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context)));
         }
         catch (ArgumentException exception)
         {

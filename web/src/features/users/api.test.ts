@@ -142,3 +142,31 @@ it('new editors never inherit a password and reject invalid ID/version before ac
     ).rejects.toThrow('user-version')
     expect(fetcher).not.toHaveBeenCalled()
 })
+it.each(['delete', 'update'] as const)(
+    'passes the reviewed creator-token version and explicit choice for %s',
+    async (action) => {
+        const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+            const request = input as Request
+            if (action === 'delete') {
+                const query = new URL(request.url).searchParams
+                expect(query.get('expectedTokenVersion')).toBe(
+                    'reviewed-tokens',
+                )
+                expect(query.get('revokeTokens')).toBe('false')
+            } else {
+                expect(await request.json()).toMatchObject({
+                    expectedTokenVersion: 'reviewed-tokens',
+                    revokeTokens: false,
+                    isEnabled: false,
+                })
+            }
+            return Response.json({ user: action === 'delete' ? null : user })
+        })
+        await client(fetcher).write(
+            { ...userForm(action, user), isEnabled: false },
+            true,
+            { expectedTokenVersion: 'reviewed-tokens', revokeTokens: false },
+        )
+        expect(fetcher).toHaveBeenCalledTimes(1)
+    },
+)

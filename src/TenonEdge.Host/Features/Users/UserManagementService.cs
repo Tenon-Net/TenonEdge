@@ -1,6 +1,7 @@
 using SqlSugar;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Auth;
+using TenonEdge.Host.Features.Tokens;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -10,7 +11,7 @@ namespace TenonEdge.Host.Features.Users;
 /// <summary>复用本地账号、哈希、按账号串行和安全戳。每次写入在同一个BEGIN IMMEDIATE事务内核对操作者、
 /// 目标版本和最后管理员，再写账号与审计。事务不跨密码哈希、网络或await；单例不保存请求作用域对象。</summary>
 internal sealed class UserManagementService(ConfigDatabase database, PasswordHashing hashing, LoginLockout lockout,
-    SessionSecurityState sessions, AccountService accounts, AuditTrail audit, SnowflakeIdGenerator ids, TimeProvider time)
+    SessionSecurityState sessions, AccountService accounts, AuditTrail audit, ApiTokenStore tokens, SnowflakeIdGenerator ids, TimeProvider time)
 {
     public UserPage Read(long after, int limit)
     {
@@ -20,7 +21,7 @@ internal sealed class UserManagementService(ConfigDatabase database, PasswordHas
         return new(users.Take(limit).Select(user => UserSummary.From(user, time.GetUtcNow())).ToArray(), users.Count > limit ? users[limit - 1].Id : null);
     }
 
-    public async Task<UserMutationResult> CreateAsync(UserCreateRequest request, UserActor actor, CancellationToken token)
+    public async Task<UserMutationResult> CreateAsync(UserCreateRequest request, ManagementActor actor, CancellationToken token)
     {
         if (!AccountNames.IsValid(request.AccountName))
         { throw new UserManagementException("user.invalidAccountName", 400); }
@@ -59,7 +60,7 @@ internal sealed class UserManagementService(ConfigDatabase database, PasswordHas
     }
 
     public async Task<UserMutationResult> ChangeAsync(long id, UserOperation operation, string? expectedVersion, bool confirmed,
-        UserActor actor, UserUpdateRequest? update, string? password, CancellationToken token)
+        ManagementActor actor, UserUpdateRequest? update, string? password, CancellationToken token, string? expectedTokenVersion = null, bool? revokeTokens = null)
     {
         if (id is < 1 or > 9007199254740991 || expectedVersion is not { Length: 64 } || !confirmed)
         { throw new UserManagementException("user.invalidConfirmation", 400); }
@@ -80,12 +81,15 @@ internal sealed class UserManagementService(ConfigDatabase database, PasswordHas
             var user = client.Queryable<UserAccountRecord>().InSingle(id) ?? throw new UserManagementException("user.notFound", 404);
             if (!string.Equals(expectedVersion, UserSummary.VersionOf(user), StringComparison.Ordinal))
             { throw new UserManagementException("user.changed"); }
-            if (operation == UserOperation.Delete && actor.Id == id)
+            if (operation == UserOperation.Delete && actor.UserId == id)
             { throw new UserManagementException("user.cannotDeleteSelf"); }
             var losesAdministrator = operation == UserOperation.Delete || update is not null && (!update.IsEnabled || newRole != UserRole.Administrator);
             if (user.IsEnabled && user.Role == nameof(UserRole.Administrator) && losesAdministrator &&
                 client.Queryable<UserAccountRecord>().Count(record => record.IsEnabled && record.Role == nameof(UserRole.Administrator)) <= 1)
             { throw new UserManagementException("user.lastAdministrator"); }
+
+            if (operation == UserOperation.Delete || update is { IsEnabled: false } && user.IsEnabled)
+            { tokens.ApplyCreatorChoice(client, id, update?.ExpectedTokenVersion ?? expectedTokenVersion, update?.RevokeTokens ?? revokeTokens, administrator, actor.SourceIp); }
 
             switch (operation)
             {
@@ -146,15 +150,14 @@ internal sealed class UserManagementService(ConfigDatabase database, PasswordHas
         return new(changed is null ? null : UserSummary.From(changed, time.GetUtcNow()));
     }
 
-    private static UserAccountRecord RequireActor(SqlSugarClient client, UserActor actor)
+    private AuditAccount RequireActor(SqlSugarClient client, ManagementActor actor)
     {
-        var user = client.Queryable<UserAccountRecord>().InSingle(actor.Id);
-        if (user is null || !user.IsEnabled || user.MustChangePassword || user.Role != nameof(UserRole.Administrator) || user.SecurityStamp != actor.SecurityStamp)
-        { throw new UserManagementException("user.actorChanged", 401); }
-        return user;
+        try
+        { return actor.RequireAdministrator(client, time.GetUtcNow().ToUnixTimeMilliseconds()).Audit; }
+        catch (ApiTokenException) { throw new UserManagementException("user.actorChanged", 401); }
     }
-    private void WriteAudit(ISqlSugarClient client, UserAccountRecord administrator, string? sourceIp, UserAccountRecord user, string action) =>
-        audit.Append(client, new AuditEntry(action, AuditResults.Success, administrator.AccountName, sourceIp, user.AccountName));
+    private void WriteAudit(ISqlSugarClient client, AuditAccount administrator, string? sourceIp, UserAccountRecord user, string action) =>
+        audit.Append(client, new AuditEntry(action, AuditResults.Success, administrator, sourceIp, user.AccountName));
     private static UserRole Role(UserRole? role) => role is { } value && Enum.IsDefined(value) ? value : throw new UserManagementException("user.invalidRole", 400);
     private static string? DisplayName(string? display)
     {

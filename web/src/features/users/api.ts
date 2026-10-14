@@ -36,7 +36,11 @@ export function createUsersApi(api: ReturnType<typeof createGatewayClient>) {
             if (!data) throw new Error('missing-users')
             return data
         },
-        async write(form: UserForm, confirmed: boolean) {
+        async write(
+            form: UserForm,
+            confirmed: boolean,
+            tokens?: { expectedTokenVersion: string; revokeTokens: boolean },
+        ) {
             if (!confirmed) throw new Error('user-confirmation')
             if (form.action === 'create') {
                 const { data } = await api.POST('/api/edge-admin/v1/users', {
@@ -62,6 +66,7 @@ export function createUsersApi(api: ReturnType<typeof createGatewayClient>) {
             const body = {
                 expectedVersion: form.user!.version,
                 confirmed: true,
+                ...tokens,
             }
             let result
             switch (form.action) {

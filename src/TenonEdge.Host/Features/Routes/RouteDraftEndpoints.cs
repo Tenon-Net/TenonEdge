@@ -37,21 +37,21 @@ internal static class RouteDraftEndpoints
     private static Results<Ok<RouteDraftResult>, ValidationProblem, ProblemHttpResult> Write(long? id, RouteDraftRequest request, RouteDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Write(id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Write(id, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (Exception error) when (error is ArgumentException or JsonException) { return Invalid(); }
         catch (DraftWriteException error) { return Failure(error); }
     }
     private static Results<Ok<RouteDraftResult>, ValidationProblem, ProblemHttpResult> Copy(long routeId, RouteDraftCopyRequest request, RouteDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Copy(routeId, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Copy(routeId, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (ArgumentException) { return Invalid(); }
         catch (DraftWriteException error) { return Failure(error); }
     }
     private static Results<Ok<DraftVersion>, ProblemHttpResult> Delete(long routeId, string expectedVersion, RouteDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Delete(routeId, expectedVersion, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Delete(routeId, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (DraftWriteException error) { return Failure(error); }
     }
     private static ValidationProblem Invalid() => ApiProblems.Validation(new Dictionary<string, string[]> { ["route"] = ["路线参数或图格式无效；检查版本、标识、资源限制与非秘密配置。"] });

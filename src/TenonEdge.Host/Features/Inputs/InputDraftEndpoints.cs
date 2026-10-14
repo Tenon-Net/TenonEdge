@@ -37,7 +37,7 @@ internal static class InputDraftEndpoints
         InputDraftRequest request, InputDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Write(deviceId, id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Write(deviceId, id, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["input"] = ["来源配置无效，请检查 key、协议参数、点位或字段类型、上游时间及模拟数据。"] }); }
         catch (JsonException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["input"] = ["JSON 来源配置无效。"] }); }
         catch (DraftWriteException exception) { return Failure(exception); }
@@ -47,7 +47,7 @@ internal static class InputDraftEndpoints
         InputDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Delete(deviceId, inputId, expectedVersion, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Delete(deviceId, inputId, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }
 

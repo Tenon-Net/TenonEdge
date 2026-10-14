@@ -56,7 +56,7 @@ internal static class ConfigurationApplicationEndpoints
             if (review.EffectiveRevision != request.ExpectedEffectiveRevision || review.PlanHash != hash)
             { return ApiProblems.Problem(409, "configuration.reviewChanged", "确认清单的有效版本或运行计划已变化；未开始操作，请刷新清单。"); }
             var expectation = new RuntimeApplicationExpectation(review.EffectiveRevision, hash);
-            var account = context.User.FindFirstValue(SessionClaims.AccountName)!;
+            var account = ManagementIdentity.Audit(context.User);
             var operation = revision is { } value
                 ? coordinator.BeginRollback(value, request.ExpectedVersion, expectation, account, SourceAddress.Of(context), description, context.RequestAborted)
                 : coordinator.BeginApplyDraft(request.ExpectedVersion, expectation, account, SourceAddress.Of(context), description, context.RequestAborted);

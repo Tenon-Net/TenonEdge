@@ -60,6 +60,15 @@ export function Workspace() {
                     </Link>
                     {session?.role === 'administrator' && (
                         <Link
+                            to="/tokens"
+                            className="rounded-md p-2 hover:bg-accent"
+                            activeProps={{ className: 'bg-accent font-medium' }}
+                        >
+                            {t('tokens.title')}
+                        </Link>
+                    )}
+                    {session?.role === 'administrator' && (
+                        <Link
                             to="/users"
                             className="rounded-md p-2 hover:bg-accent"
                             activeProps={{ className: 'bg-accent font-medium' }}

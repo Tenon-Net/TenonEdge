@@ -29,7 +29,7 @@ internal static class DeliveryCleanupEndpoints
         {
             var selection = new DeliveryCleanupSelection(request.State, request.Items);
             var result = await coordinator.CleanupDeliveriesAsync(selection,
-                context.User.FindFirstValue(SessionClaims.AccountName)!, SourceAddress.Of(context), token);
+                ManagementIdentity.Audit(context.User), SourceAddress.Of(context), token);
             if (result.Committed)
             { return TypedResults.Ok(new DeliveryCleanupResponse(result.AffectedRecords)); }
             return ApiProblems.Problem(result.Status == DeliveryWriteStatus.Rejected ? 409 : 503,

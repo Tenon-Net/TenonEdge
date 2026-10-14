@@ -26,7 +26,7 @@ internal static class MqttCredentialEndpoints
     {
         try
         {
-            store.Clear(connectionId, expectedDraftVersion, expectedVersion, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context));
+            store.Clear(connectionId, expectedDraftVersion, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context));
             return TypedResults.NoContent();
         }
         catch (CredentialWriteException exception)
@@ -41,7 +41,7 @@ internal static class MqttCredentialEndpoints
     {
         try
         {
-            return TypedResults.Ok(store.Write(connectionId, request, context.User.FindFirstValue(SessionClaims.AccountName),
+            return TypedResults.Ok(store.Write(connectionId, request, ManagementIdentity.Audit(context.User),
                 SourceAddress.Of(context), context.User.IsInRole(nameof(UserRole.Administrator))));
         }
         catch (ArgumentException exception)

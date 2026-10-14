@@ -37,7 +37,7 @@ internal static class ConfigurationDraftEndpoints
             if (!request.Confirmed)
             { throw new ArgumentException("须明确确认放弃全部草稿修改。"); }
             return versions.DiscardDraft(request.ExpectedVersion, request.ExpectedEffectiveRevision,
-                context.User.FindFirstValue(SessionClaims.AccountName)!, SourceAddress.Of(context), context.RequestAborted);
+                ManagementIdentity.Audit(context.User), SourceAddress.Of(context), context.RequestAborted);
         }, budget, context);
 
     private static Results<Ok<T>, ValidationProblem, ProblemHttpResult> Execute<T>(Func<T> operation, PreviewOperationBudget budget, HttpContext context)

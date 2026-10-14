@@ -22,6 +22,7 @@ internal static class RequestPipeline
         app.UseRequestSecurity();
 
         app.UseRouting();
+        app.UseApiTokenRequests();
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();

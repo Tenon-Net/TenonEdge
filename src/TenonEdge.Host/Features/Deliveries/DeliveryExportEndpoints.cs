@@ -92,13 +92,10 @@ internal static class DeliveryExportEndpoints
 
     private static DeliveryExportActor Actor(HttpContext context)
     {
-        var csrf = context.User.FindFirstValue(SessionClaims.CsrfToken);
-        var userId = context.User.FindFirstValue(SessionClaims.UserId);
-        var account = context.User.FindFirstValue(SessionClaims.AccountName);
-        if (csrf is null || userId is null || account is null)
+        var owner = ManagementIdentity.OwnerKey(context.User);
+        var account = ManagementIdentity.Audit(context.User);
+        if (owner is null || account.Name is null)
         { throw new DeliveryExportRequestException(403, "delivery.exportSessionRequired"); }
-        // 会话滑动续期保持此值；同账号另一次登录不同。每次下载仍经过真实认证和管理员授权。
-        var owner = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + ":" + csrf)));
         return new(owner, account, SourceAddress.Of(context));
     }
 

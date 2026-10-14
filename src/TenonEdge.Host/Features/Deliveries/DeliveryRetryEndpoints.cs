@@ -28,7 +28,7 @@ internal static class DeliveryRetryEndpoints
         try
         {
             var result = await coordinator.RetryFailedDeliveriesAsync(request.Revision, request.Items,
-                context.User.FindFirstValue(SessionClaims.AccountName)!, SourceAddress.Of(context), token);
+                ManagementIdentity.Audit(context.User), SourceAddress.Of(context), token);
             if (result.Committed)
             { return TypedResults.Ok(new DeliveryRetryResponse(result.AffectedRecords)); }
             var status = result.Status == DeliveryWriteStatus.Rejected ? 409 : 503;

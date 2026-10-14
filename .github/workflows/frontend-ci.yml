@@ -40,11 +40,13 @@ jobs:
       - name: Unit tests
         working-directory: web
         run: npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json
-      - name: Browser on ordinary HTTP against actual host
+      - name: Browser on HTTP and trusted TLS against actual host
         working-directory: web
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: reports/browser.json
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools openssl
           npx playwright install --with-deps chromium
           export TENONEDGE_TEST_URL="http://$(hostname -I | awk '{print $1}'):18082"
           npx --yes npm@11.21.0 run test:e2e -- --reporter=list,json

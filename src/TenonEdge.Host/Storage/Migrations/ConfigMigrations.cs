@@ -322,5 +322,23 @@ internal static class ConfigMigrations
             "ALTER TABLE delivery_migration ADD COLUMN token_name TEXT",
             "ALTER TABLE delivery_migration_intent ADD COLUMN token_name TEXT",
         ]),
+        new(22, "api_token", [
+            """
+            CREATE TABLE api_token (
+                id INTEGER NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                role TEXT NOT NULL CHECK(role IN ('Administrator', 'Configurator', 'Viewer')),
+                secret_hash BLOB NOT NULL CHECK(length(secret_hash) = 32),
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER,
+                revoked_at INTEGER,
+                last_used_at INTEGER,
+                creator_user_id INTEGER NOT NULL,
+                creator_account_name TEXT NOT NULL,
+                created_by_token_name TEXT
+            )
+            """,
+            "CREATE INDEX ix_api_token_creator ON api_token(creator_user_id, id) WHERE revoked_at IS NULL",
+        ]),
     ];
 }

@@ -32,7 +32,7 @@ internal static class PointCsvEndpoints
         PointCsvImportRequest request, InputDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.ImportPoints(deviceId, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.ImportPoints(deviceId, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (PointCsvException exception) { return Invalid(exception); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }

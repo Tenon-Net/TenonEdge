@@ -72,7 +72,7 @@ internal static class ConfigurationRuntimeEndpoints
             { throw new ArgumentException("须明确确认当前有效版本及其计划哈希。", nameof(request)); }
             _ = versions.ReadRetryCheckpoint(request.ExpectedEffectiveRevision, hash);
             var operation = coordinator.BeginRetry(request.ExpectedEffectiveRevision, hash,
-                context.User.FindFirstValue(SessionClaims.AccountName)!, SourceAddress.Of(context), context.RequestAborted);
+                ManagementIdentity.Audit(context.User), SourceAddress.Of(context), context.RequestAborted);
             return TypedResults.Accepted($"{ManagementApi.RoutePrefix}/configuration/operations/{operation.Id}", operation);
         }
         catch (RuntimeApplicationBusyException error)

@@ -9,6 +9,7 @@ internal static class AuthRegistration
     public static IServiceCollection AddAuthFeature(this IServiceCollection services)
     {
         services.AddSessionAuthentication();
+        services.AddApiTokens();
         services.AddSingleton<SessionSecurityState>();
         services.AddAuthorizationPolicies();
         services.AddLoginRateLimiting();

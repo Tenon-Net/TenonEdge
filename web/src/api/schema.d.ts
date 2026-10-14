@@ -145,6 +145,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/users/{userId}/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 停用/删除前核对该来源账号尚未吊销的令牌，显式选择保留或吊销
+         * @description 包括管理员令牌代建且沿用该来源账号的令牌；不是动态权限继承。Version仅绑定不可变清单，不受lastUsed变化影响。过期项仍显示；与用户修改事务内重核，清单变化须重新确认。
+         */
+        get: operations["getUserCreatedTokens"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/audit": {
         parameters: {
             query?: never;
@@ -745,6 +765,47 @@ export interface paths {
         put?: never;
         /** 结束该用户全部已签发会话，不停用账号 */
         post: operations["endUserSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 管理员分页查看令牌元数据，永不返回原文或哈希 */
+        get: operations["listApiTokens"];
+        put?: never;
+        /**
+         * 仅HTTPS创建固定角色令牌，原文只返回一次
+         * @description 名称1—64字符且不可复用；角色和有效期不可修改，最多1000个尚未吊销令牌（含过期项）。HTTPS Cookie仍须CSRF。响应丢失不得自动重放：核对列表，吊销后换名创建。管理员令牌创建的令牌沿用原来源账号归属，创建动作另记操作者令牌；不继承创建者后续角色/启停状态。
+         */
+        post: operations["createApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/tokens/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 明确确认后吊销令牌，下一请求立即拒绝
+         * @description 不撤销已接管的后台操作，不删除历史元数据或审计；不可取消吊销，重复确认409而不再次记成功。
+         */
+        post: operations["revokeApiToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1730,6 +1791,42 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ApiTokenCreated: {
+            token: components["schemas"]["ApiTokenSummary"];
+            secret: string;
+        };
+        ApiTokenCreateRequest: {
+            name: null | string;
+            role: null | components["schemas"]["UserRole"];
+            /** Format: date-time */
+            expiresAt?: null | string;
+        };
+        ApiTokenPage: {
+            items: components["schemas"]["ApiTokenSummary"][];
+            /** Format: int64 */
+            nextCursor: null | number | string;
+        };
+        ApiTokenRevokeRequest: {
+            confirmed: boolean;
+        };
+        ApiTokenSummary: {
+            /** Format: int64 */
+            id: number | string;
+            name: string;
+            role: components["schemas"]["UserRole"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: null | string;
+            /** Format: date-time */
+            revokedAt: null | string;
+            /** Format: date-time */
+            lastUsedAt: null | string;
+            /** Format: int64 */
+            creatorUserId: number | string;
+            creatorAccountName: string;
+            createdByTokenName: null | string;
+        };
         AuditPage: {
             items: components["schemas"]["AuditRecord"][];
             /** Format: int64 */
@@ -2037,6 +2134,10 @@ export interface components {
             elapsedMs?: null | number | string;
             code?: null | string;
             timingGroup?: null | string;
+        };
+        CreatorTokenReview: {
+            version: string;
+            items: components["schemas"]["ApiTokenSummary"][];
         };
         CurrentFieldValue: {
             key: string;
@@ -3636,6 +3737,8 @@ export interface components {
         UserCommandRequest: {
             expectedVersion: null | string;
             confirmed: boolean;
+            expectedTokenVersion?: null | string;
+            revokeTokens?: null | boolean;
         };
         UserCreateRequest: {
             accountName: null | string;
@@ -3681,6 +3784,8 @@ export interface components {
             role: null | components["schemas"]["UserRole"];
             isEnabled: boolean;
             confirmed: boolean;
+            expectedTokenVersion?: null | string;
+            revokeTokens?: null | boolean;
         };
     };
     responses: never;
@@ -3969,6 +4074,64 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getUserCreatedTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorTokenReview"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5967,6 +6130,8 @@ export interface operations {
             query: {
                 expectedVersion?: string;
                 confirmed: boolean;
+                expectedTokenVersion?: string;
+                revokeTokens?: boolean;
             };
             header?: never;
             path: {
@@ -6197,6 +6362,212 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserMutationResult"];
                 };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    listApiTokens: {
+        parameters: {
+            query?: {
+                after?: number | string;
+                limit?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    createApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenCreated"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    revokeApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Bad Request */
             400: {

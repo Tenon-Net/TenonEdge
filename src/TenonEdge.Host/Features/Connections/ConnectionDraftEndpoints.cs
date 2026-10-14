@@ -29,7 +29,7 @@ internal static class ConnectionDraftEndpoints
         ConnectionDraftRequest request, ConnectionDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Write(id, request, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Write(id, request, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["connection"] = ["连接参数无效，请检查标识、名称、协议字段、地址、超时及非秘密请求头。"] }); }
         catch (FormatException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["connection"] = ["连接参数格式无效。"] }); }
         catch (DraftWriteException exception) { return Failure(exception); }
@@ -39,7 +39,7 @@ internal static class ConnectionDraftEndpoints
         ConnectionDraftStore store, HttpContext context)
     {
         try
-        { return TypedResults.Ok(store.Delete(connectionId, expectedVersion, context.User.FindFirstValue(SessionClaims.AccountName), SourceAddress.Of(context))); }
+        { return TypedResults.Ok(store.Delete(connectionId, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (DraftWriteException exception) { return Failure(exception); }
     }
 

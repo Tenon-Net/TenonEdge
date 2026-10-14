@@ -336,6 +336,80 @@
         }
       }
     },
+    "/api/edge-admin/v1/users/{userId}/tokens": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "停用/删除前核对该来源账号尚未吊销的令牌，显式选择保留或吊销",
+        "description": "包括管理员令牌代建且沿用该来源账号的令牌；不是动态权限继承。Version仅绑定不可变清单，不受lastUsed变化影响。过期项仍显示；与用户修改事务内重核，清单变化须重新确认。",
+        "operationId": "getUserCreatedTokens",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorTokenReview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/audit": {
       "get": {
         "tags": [
@@ -2967,6 +3041,20 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "expectedTokenVersion",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revokeTokens",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -3258,6 +3346,270 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/tokens": {
+      "get": {
+        "tags": [
+          "Tokens"
+        ],
+        "summary": "管理员分页查看令牌元数据，永不返回原文或哈希",
+        "operationId": "listApiTokens",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tokens"
+        ],
+        "summary": "仅HTTPS创建固定角色令牌，原文只返回一次",
+        "description": "名称1—64字符且不可复用；角色和有效期不可修改，最多1000个尚未吊销令牌（含过期项）。HTTPS Cookie仍须CSRF。响应丢失不得自动重放：核对列表，吊销后换名创建。管理员令牌创建的令牌沿用原来源账号归属，创建动作另记操作者令牌；不继承创建者后续角色/启停状态。",
+        "operationId": "createApiToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/tokens/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Tokens"
+        ],
+        "summary": "明确确认后吊销令牌，下一请求立即拒绝",
+        "description": "不撤销已接管的后台操作，不删除历史元数据或审计；不可取消吊销，重复确认409而不再次记成功。",
+        "operationId": "revokeApiToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
           },
           "400": {
             "description": "Bad Request",
@@ -8536,6 +8888,163 @@
   },
   "components": {
     "schemas": {
+      "ApiTokenCreated": {
+        "required": [
+          "token",
+          "secret"
+        ],
+        "type": "object",
+        "properties": {
+          "token": {
+            "$ref": "#/components/schemas/ApiTokenSummary"
+          },
+          "secret": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiTokenCreateRequest": {
+        "required": [
+          "name",
+          "role"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "role": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserRole"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiTokenPage": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiTokenSummary"
+            }
+          },
+          "nextCursor": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "ApiTokenRevokeRequest": {
+        "required": [
+          "confirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiTokenSummary": {
+        "required": [
+          "id",
+          "name",
+          "role",
+          "createdAt",
+          "expiresAt",
+          "revokedAt",
+          "lastUsedAt",
+          "creatorUserId",
+          "creatorAccountName",
+          "createdByTokenName"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "creatorUserId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "creatorAccountName": {
+            "type": "string"
+          },
+          "createdByTokenName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "AuditPage": {
         "required": [
           "items",
@@ -10019,6 +10528,24 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "CreatorTokenReview": {
+        "required": [
+          "version",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiTokenSummary"
+            }
           }
         }
       },
@@ -16978,6 +17505,18 @@
           },
           "confirmed": {
             "type": "boolean"
+          },
+          "expectedTokenVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revokeTokens": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -17201,6 +17740,18 @@
           },
           "confirmed": {
             "type": "boolean"
+          },
+          "expectedTokenVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revokeTokens": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       }
@@ -17215,6 +17766,9 @@
     },
     {
       "name": "Auth"
+    },
+    {
+      "name": "Users"
     },
     {
       "name": "Audit"
@@ -17238,7 +17792,7 @@
       "name": "Inputs"
     },
     {
-      "name": "Users"
+      "name": "Tokens"
     },
     {
       "name": "Configuration"

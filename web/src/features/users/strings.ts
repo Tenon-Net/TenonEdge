@@ -44,6 +44,10 @@ export const userStrings = {
     checkAfterFailure:
         '未确认操作成功；请先重新读取并核对用户状态，再明确发起新操作。不会自动重放，临时密码已清除。',
     errors: {
+        'token.creatorChoiceRequired':
+            '须核对该账号创建的令牌，并明确选择保留或吊销。',
+        'token.creatorListChanged':
+            '令牌清单已变化，请重新读取用户并重新核对令牌。',
         'user.lastAdministrator': '必须保留至少一个启用中的管理员。',
         'user.cannotDeleteSelf': '管理员不能删除自己的账号。',
         'user.changed': '用户状态已变化，请重新读取并核对。',

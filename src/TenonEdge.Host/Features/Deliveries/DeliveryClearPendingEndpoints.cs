@@ -28,7 +28,7 @@ internal static class DeliveryClearPendingEndpoints
         try
         {
             var result = await coordinator.ClearPendingDeliveriesAsync(connectionId, request.Revision,
-                context.User.FindFirstValue(SessionClaims.AccountName)!, SourceAddress.Of(context), token);
+                ManagementIdentity.Audit(context.User), SourceAddress.Of(context), token);
             if (result.Committed)
             { return TypedResults.Ok(new DeliveryCleanupResponse(result.AffectedRecords)); }
             return ApiProblems.Problem(result.Status == DeliveryWriteStatus.Rejected ? 409 : 503,

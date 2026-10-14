@@ -8,6 +8,8 @@ import { api, useSession } from '../../lib/session'
 import { ApiError } from '../../api/errors'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'
+import { createTokensApi } from '../tokens/api'
+import { TokenTable } from '../tokens/table'
 import {
     createUsersApi,
     userForm,
@@ -17,6 +19,7 @@ import {
 } from './api'
 
 const usersApi = createUsersApi(api)
+const tokensApi = createTokensApi(api)
 const fieldClass = 'mt-1 w-full rounded-md border bg-background p-2'
 export function UsersPage() {
     const { t } = useTranslation()
@@ -29,6 +32,10 @@ export function UsersPage() {
     const form = useStore(editor, (state) => state.form)
     const [review, setReview] = useState(false)
     const [confirmed, setConfirmed] = useState(false)
+    const [revokeTokens, setRevokeTokens] = useState<{
+        version: string
+        revoke: boolean
+    } | null>(null)
     const [needsRead, setNeedsRead] = useState(false)
     const [notice, setNotice] = useState('')
     const sending = useRef(false)
@@ -37,6 +44,26 @@ export function UsersPage() {
         enabled: canManage,
         queryFn: ({ signal }) => usersApi.list(after, signal),
     })
+    const needsTokenChoice =
+        !!form?.user &&
+        (form.action === 'delete' ||
+            (form.action === 'update' &&
+                form.user.isEnabled &&
+                !form.isEnabled))
+    const tokenReview = useQuery({
+        queryKey: ['creator-tokens', form?.user?.id, form?.user?.version],
+        enabled: canManage && review && needsTokenChoice,
+        refetchOnReconnect: false,
+        queryFn: ({ signal }) =>
+            tokensApi.creator(Number(form!.user!.id), signal),
+    })
+    const tokenChoiceReady =
+        !needsTokenChoice ||
+        (!tokenReview.isFetching &&
+            !tokenReview.error &&
+            !!tokenReview.data &&
+            (tokenReview.data.items.length === 0 ||
+                revokeTokens?.version === tokenReview.data.version))
     useBlocker({
         disabled: form === null,
         enableBeforeUnload: form !== null,
@@ -47,10 +74,18 @@ export function UsersPage() {
         gcTime: 0,
         mutationFn: async () => {
             const current = editor.getState().form
+            if (!tokenChoiceReady) throw new Error('missing-token-choice')
+            const choice =
+                needsTokenChoice && tokenReview.data
+                    ? {
+                          expectedTokenVersion: tokenReview.data.version,
+                          revokeTokens: revokeTokens?.revoke ?? false,
+                      }
+                    : undefined
             editor.setState({ form: null })
             setReview(false)
             if (!current) throw new Error('missing-user-command')
-            await usersApi.write(current, confirmed)
+            await usersApi.write(current, confirmed, choice)
         },
         onSuccess: async () => {
             setNotice(t('users.saved'))
@@ -65,6 +100,7 @@ export function UsersPage() {
         editor.setState({ form: userForm(action, user) })
         setReview(false)
         setConfirmed(false)
+        setRevokeTokens(null)
         setNotice('')
         mutation.reset()
     }
@@ -289,6 +325,91 @@ export function UsersPage() {
                                     })}
                                 </p>
                             )}
+                            {needsTokenChoice && (
+                                <section
+                                    className="space-y-3"
+                                    aria-label={t('tokens.creatorTitle')}
+                                >
+                                    <h3 className="font-semibold">
+                                        {t('tokens.creatorTitle')}
+                                    </h3>
+                                    <p>{t('tokens.creatorWarning')}</p>
+                                    <ErrorMessage error={tokenReview.error} />
+                                    {tokenReview.isFetching && (
+                                        <p>{t('loading')}</p>
+                                    )}
+                                    {tokenReview.data && (
+                                        <TokenTable
+                                            items={tokenReview.data.items}
+                                        />
+                                    )}
+                                    {tokenReview.data &&
+                                        tokenReview.data.items.length > 0 && (
+                                            <fieldset className="space-y-2">
+                                                <label className="flex items-start gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="creator-tokens-choice"
+                                                        checked={
+                                                            revokeTokens?.revoke ===
+                                                                false &&
+                                                            revokeTokens.version ===
+                                                                tokenReview.data
+                                                                    ?.version
+                                                        }
+                                                        onChange={() => {
+                                                            setRevokeTokens({
+                                                                version:
+                                                                    tokenReview
+                                                                        .data!
+                                                                        .version,
+                                                                revoke: false,
+                                                            })
+                                                            setConfirmed(false)
+                                                        }}
+                                                    />
+                                                    {t('tokens.keep')}
+                                                </label>
+                                                <label className="flex items-start gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="creator-tokens-choice"
+                                                        checked={
+                                                            revokeTokens?.revoke ===
+                                                                true &&
+                                                            revokeTokens.version ===
+                                                                tokenReview.data
+                                                                    ?.version
+                                                        }
+                                                        onChange={() => {
+                                                            setRevokeTokens({
+                                                                version:
+                                                                    tokenReview
+                                                                        .data!
+                                                                        .version,
+                                                                revoke: true,
+                                                            })
+                                                            setConfirmed(false)
+                                                        }}
+                                                    />
+                                                    {t('tokens.allRevoke')}
+                                                </label>
+                                            </fieldset>
+                                        )}
+                                    {tokenReview.error && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setRevokeTokens(null)
+                                                setConfirmed(false)
+                                                void tokenReview.refetch()
+                                            }}
+                                        >
+                                            {t('tokens.refresh')}
+                                        </Button>
+                                    )}
+                                </section>
+                            )}
                             <label className="flex items-start gap-2">
                                 <input
                                     type="checkbox"
@@ -300,7 +421,11 @@ export function UsersPage() {
                                 {t('users.confirmation')}
                             </label>
                             <Button
-                                disabled={!confirmed || mutation.isPending}
+                                disabled={
+                                    !confirmed ||
+                                    mutation.isPending ||
+                                    !tokenChoiceReady
+                                }
                                 onClick={() => {
                                     if (sending.current) return
                                     sending.current = true

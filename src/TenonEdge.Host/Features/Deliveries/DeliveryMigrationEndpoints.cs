@@ -105,12 +105,11 @@ internal static class DeliveryMigrationEndpoints
 
     internal static DeliveryMigrationActor Actor(HttpContext context)
     {
-        var csrf = context.User.FindFirstValue(SessionClaims.CsrfToken);
-        var user = context.User.FindFirstValue(SessionClaims.UserId);
-        var account = context.User.FindFirstValue(SessionClaims.AccountName);
-        if (csrf is null || user is null || account is null)
+        var owner = ManagementIdentity.OwnerKey(context.User);
+        var account = ManagementIdentity.Audit(context.User);
+        if (owner is null || account.Name is null)
         { throw new DeliveryMigrationRequestException(403, "delivery.migrationSessionRequired"); }
-        return new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user + ":" + csrf))), account, SourceAddress.Of(context));
+        return new(owner, account, SourceAddress.Of(context));
     }
 
     private static bool Handled(Exception error) => error is ArgumentException or DeliveryMigrationRequestException or DeliveryMigrationSelectionException or
