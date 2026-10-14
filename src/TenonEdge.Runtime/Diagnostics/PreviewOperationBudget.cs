@@ -9,17 +9,13 @@ public sealed class PreviewOperationBudget
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<string, int> _sessions = new(StringComparer.Ordinal);
-    private readonly int _globalLimit;
-    private readonly int _sessionLimit;
+    private readonly Func<PreviewOperationLimits> _readLimits;
     private int _active;
 
-    public PreviewOperationBudget(int globalLimit = 4, int sessionLimit = 2)
+    public PreviewOperationBudget(int globalLimit = 4, int sessionLimit = 2, Func<PreviewOperationLimits>? readLimits = null)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(globalLimit);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sessionLimit);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(sessionLimit, globalLimit);
-        _globalLimit = globalLimit;
-        _sessionLimit = sessionLimit;
+        var initial = new PreviewOperationLimits(globalLimit, sessionLimit).Validate();
+        _readLimits = readLimits ?? (() => initial);
     }
 
     public IDisposable? TryAcquire(string authenticatedSessionId)
@@ -27,8 +23,11 @@ public sealed class PreviewOperationBudget
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticatedSessionId);
         lock (_lock)
         {
+            // Capture both limits together. A decrease does not cancel existing
+            // leases or release their capacity before actual cleanup completes.
+            var limits = _readLimits().Validate();
             _sessions.TryGetValue(authenticatedSessionId, out var count);
-            if (_active >= _globalLimit || count >= _sessionLimit)
+            if (_active >= limits.Global || count >= limits.Session)
             { return null; }
             var lease = new Lease(this, authenticatedSessionId);
             _sessions[authenticatedSessionId] = count + 1;
@@ -54,5 +53,16 @@ public sealed class PreviewOperationBudget
     {
         private PreviewOperationBudget? _owner = owner;
         public void Dispose() => Interlocked.Exchange(ref _owner, null)?.Release(sessionId);
+    }
+}
+
+public sealed record PreviewOperationLimits(int Global, int Session)
+{
+    public PreviewOperationLimits Validate()
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Global);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(Session);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(Session, Global);
+        return this;
     }
 }

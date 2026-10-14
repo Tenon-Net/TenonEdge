@@ -75,6 +75,7 @@ public sealed class ManagementApiAccessTests(
                 "GET /api/edge-admin/v1/setup (anonymous)",
                 "GET /api/edge-admin/v1/system/info (protected)",
                 "GET /api/edge-admin/v1/system/outbound-policy (protected)",
+                "GET /api/edge-admin/v1/system/runtime-parameters/ (protected)",
                 "GET /api/edge-admin/v1/tokens/ (protected: role:administrator)",
                 "GET /api/edge-admin/v1/users/ (protected: role:administrator)",
                 "GET /api/edge-admin/v1/users/{userId:long}/tokens (protected: role:administrator)",
@@ -142,6 +143,7 @@ public sealed class ManagementApiAccessTests(
                 "PUT /api/edge-admin/v1/routes/{routeId:long} (protected: role:configurator)",
                 "PUT /api/edge-admin/v1/system/name (protected: role:administrator)",
                 "PUT /api/edge-admin/v1/system/outbound-policy (protected: role:administrator)",
+                "PUT /api/edge-admin/v1/system/runtime-parameters/ (protected: role:administrator)",
                 "PUT /api/edge-admin/v1/users/{userId:long} (protected: role:administrator)",
             ],
             EndpointInventory.Describe(production.Services));
@@ -207,6 +209,7 @@ public sealed class ManagementApiAccessTests(
                 "GET /api/edge-admin/v1/setup (anonymous)",
                 "GET /api/edge-admin/v1/system/info (protected)",
                 "GET /api/edge-admin/v1/system/outbound-policy (protected)",
+                "GET /api/edge-admin/v1/system/runtime-parameters/ (protected)",
                 "GET /api/edge-admin/v1/tokens/ (protected: role:administrator)",
                 "GET /api/edge-admin/v1/users/ (protected: role:administrator)",
                 "GET /api/edge-admin/v1/users/{userId:long}/tokens (protected: role:administrator)",
@@ -274,6 +277,7 @@ public sealed class ManagementApiAccessTests(
                 "PUT /api/edge-admin/v1/routes/{routeId:long} (protected: role:configurator)",
                 "PUT /api/edge-admin/v1/system/name (protected: role:administrator)",
                 "PUT /api/edge-admin/v1/system/outbound-policy (protected: role:administrator)",
+                "PUT /api/edge-admin/v1/system/runtime-parameters/ (protected: role:administrator)",
                 "PUT /api/edge-admin/v1/users/{userId:long} (protected: role:administrator)",
             ],
             EndpointInventory.Describe(development.Services));

@@ -47,6 +47,7 @@ internal static partial class HostStartup
             ContainerDataVolume.Check(dataDirectory, runtimeStartConditions, logger);
 
             app.Services.GetRequiredService<ConfigStoreInitializer>().Initialize();
+            _ = app.Services.GetRequiredService<TenonEdge.Host.Features.SystemInfo.RuntimeParameterStore>().Read();
             _ = app.Services.GetRequiredService<GatewayIdentity>();
             _ = app.Services.GetRequiredService<SnowflakeIdGenerator>();
             _ = app.Services.GetRequiredService<AuditExportManager>();

@@ -340,5 +340,17 @@ internal static class ConfigMigrations
             """,
             "CREATE INDEX ix_api_token_creator ON api_token(creator_user_id, id) WHERE revoked_at IS NULL",
         ]),
+        new(23, "runtime_parameters", [
+            """
+            CREATE TABLE runtime_parameters (
+                id INTEGER NOT NULL PRIMARY KEY CHECK(id = 1),
+                version TEXT NOT NULL,
+                audit_retention_days INTEGER NOT NULL CHECK(audit_retention_days BETWEEN 180 AND 36500),
+                preview_global_limit INTEGER NOT NULL CHECK(preview_global_limit BETWEEN 1 AND 64),
+                preview_session_limit INTEGER NOT NULL CHECK(preview_session_limit BETWEEN 1 AND preview_global_limit),
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

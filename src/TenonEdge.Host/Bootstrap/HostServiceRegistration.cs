@@ -35,6 +35,8 @@ internal static class HostServiceRegistration
 
         // 审计与运行事件按保留期清理（T0-09）；保留期参数在启动检查中校验。
         builder.Services.AddSingleton(provider => DataRetentionSettings.Resolve(provider.GetRequiredService<IConfiguration>()));
+        builder.Services.AddSingleton<RuntimeParameterStore>();
+        builder.Services.AddSingleton<Func<TimeSpan>>(provider => () => TimeSpan.FromDays(provider.GetRequiredService<RuntimeParameterStore>().Read().Values.AuditRetentionDays));
         builder.Services.AddHostedService<DataRetentionService>();
 
         builder.Services.AddAuthFeature();

@@ -1347,6 +1347,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/system/runtime-parameters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前有效的审计保留期与共享预览并发参数 */
+        get: operations["getRuntimeParameters"];
+        /**
+         * 管理员确认后持久化运行参数并立即供后续准入及清理采用
+         * @description 版本条件、确认和审计同事务。降低并发不取消已有租约；审计不得短于180天或部署下限。清理/导出正在执行时立即拒绝，不排队。无草稿/运行版本变化。
+         */
+        put: operations["writeRuntimeParameters"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/mqtt-credential": {
         parameters: {
             query?: never;
@@ -3745,6 +3766,25 @@ export interface components {
             items: components["schemas"]["RuntimeOutputInfo"][];
             /** Format: int64 */
             nextConnectionId: null | number | string;
+        };
+        RuntimeParameterRequest: {
+            values: components["schemas"]["RuntimeParameterValues"];
+            expectedVersion: null | string;
+            confirmed: boolean;
+        };
+        RuntimeParameterState: {
+            version: null | string;
+            values: components["schemas"]["RuntimeParameterValues"];
+            /** Format: int32 */
+            deploymentAuditMinimumDays: number | string;
+        };
+        RuntimeParameterValues: {
+            /** Format: int32 */
+            auditRetentionDays: number | string;
+            /** Format: int32 */
+            previewGlobalLimit: number | string;
+            /** Format: int32 */
+            previewSessionLimit: number | string;
         };
         RuntimePointValue: {
             key: string;
@@ -8783,6 +8823,95 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeParameters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeParameterState"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    writeRuntimeParameters: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuntimeParameterRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeParameterState"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

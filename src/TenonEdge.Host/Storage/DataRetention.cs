@@ -9,7 +9,7 @@ namespace TenonEdge.Host.Storage;
 /// 审计记录与运行事件的保留期（总设计 §3.3、§8.4）：
 /// <list type="bullet">
 /// <item>审计默认保留 180 天，可调长（满足网络日志留存不少于六个月的要求），不能调短，最长 <see cref="MaximumAuditRetentionDays"/> 天。
-/// 部署参数 <c>TenonEdge:Audit:RetentionDays</c>；系统设置中的调整随 T3-09 实现。</item>
+/// 部署参数 <c>TenonEdge:Audit:RetentionDays</c> 为网页参数的最低保留期。</item>
 /// <item>运行事件按最近一次发生保留 7 天，最多 1 万条，超出时先删最旧的。</item>
 /// </list>
 /// 清理由 <see cref="DataRetentionService"/> 在启动后与之后每小时执行，分批删除，每批一个短事务。
@@ -64,7 +64,7 @@ internal sealed partial class DataRetentionService(
     TimeProvider time,
     IClockSyncStatus clock,
     ILogger<DataRetentionService> logger,
-    AuditRetentionGate auditGate) : BackgroundService
+    AuditRetentionGate auditGate, Func<TimeSpan>? readAuditRetention = null) : BackgroundService
 {
     private readonly DateTimeOffset _startedAt = time.GetUtcNow();
     private readonly long _startedTimestamp = time.GetTimestamp();
@@ -93,12 +93,15 @@ internal sealed partial class DataRetentionService(
             LogTimeProtection(logger, _timePurgeSuspended);
         }
 
-        var auditBefore = trustworthy ? Cutoff(now, settings.AuditRetention) : DateTimeOffset.MinValue;
         var eventsBefore = trustworthy ? Cutoff(now, DataRetentionSettings.RuntimeEventRetention) : DateTimeOffset.MinValue;
 
         int audit;
         using (var retention = auditGate.TryEnterPurge())
         {
+            // Capture only after acquiring the gate, which excludes parameter
+            // writes throughout all batches using this cutoff.
+            var auditBefore = trustworthy && retention is not null
+                ? Cutoff(now, readAuditRetention?.Invoke() ?? settings.AuditRetention) : DateTimeOffset.MinValue;
             audit = retention is null ? 0 : DeleteInBatches(
             $"""
             DELETE FROM {AuditLogRecord.TableName} WHERE id IN (

@@ -67,7 +67,7 @@ internal static class RuntimeRegistration
         services.AddScoped<OutboundPolicyInspector>();
         services.AddSingleton<IOutboundConnector, OutboundConnector>();
         services.AddSingleton<ISharedConnections, SharedConnections>();
-        services.AddSingleton<PreviewOperationBudget>();
+        services.AddSingleton(provider => new PreviewOperationBudget(readLimits: () => provider.GetRequiredService<RuntimeParameterStore>().Read().Values.Preview));
         services.AddSingleton<MqttConnectionTest>();
         services.AddSingleton<HttpConnectionTest>();
         services.AddSingleton<ModbusConnectionTest>();

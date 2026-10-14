@@ -89,6 +89,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getRuntimeDevices",
         "getRuntimeOutput",
         "getRuntimeOutputs",
+        "getRuntimeParameters",
         "getRuntimeStatus",
         "getRuntimeTrends",
         "getSession",
@@ -142,6 +143,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "writeMqttCredential",
         "writeOutboundPolicy",
         "writeOutputControl",
+        "writeRuntimeParameters",
     ];
 
     [Fact]

@@ -83,6 +83,28 @@ public sealed class PreviewOperationBudgetTests
     }
 
     [Fact]
+    public void LiveLimitsPreserveExistingLeasesAndInvalidProvidersNeverAdmit()
+    {
+        var limits = new PreviewOperationLimits(4, 2);
+        var budget = new PreviewOperationBudget(readLimits: () => limits);
+        using var one = budget.TryAcquire("a");
+        using var two = budget.TryAcquire("a");
+        Assert.NotNull(one);
+        Assert.NotNull(two);
+        limits = new(1, 1);
+        Assert.Null(budget.TryAcquire("b"));
+        one.Dispose();
+        one.Dispose();
+        Assert.Null(budget.TryAcquire("b"));
+        limits = new(0, 1);
+        Assert.Throws<ArgumentOutOfRangeException>(() => budget.TryAcquire("b"));
+        limits = new(4, 2);
+        using var additional = budget.TryAcquire("a");
+        Assert.NotNull(additional);
+        Assert.Null(budget.TryAcquire("a"));
+    }
+
+    [Fact]
     public void InvalidLimitsAndSessionIdsAreRejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new PreviewOperationBudget(0));
