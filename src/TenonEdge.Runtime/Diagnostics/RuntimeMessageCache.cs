@@ -186,11 +186,25 @@ public sealed class RuntimeMessageCache
         {
             if (!_objects.TryGetValue(objectId, out var bucket))
             { return []; }
-            return bucket.Records.Reverse().Select(entry => new RuntimeMessageRecord(entry.Sequence, entry.ObjectId,
-                entry.Revision, entry.SourceMessageId, entry.At, entry.OriginalBytes, entry.Payload.Length,
-                entry.Truncated, includeBody && !entry.PrivacyBlocked ? Encoding.UTF8.GetString(entry.Payload) : null, entry.PrivacyBlocked, entry.Details)).ToArray();
+            return bucket.Records.Reverse().Select(entry => Snapshot(entry, includeBody)).ToArray();
         }
     }
+
+    /// <summary>显式单条查询，身份不符不解码。只返回捕获时保存的前缀；隐私阻断时仍无正文。
+    /// 由管理入口核对角色与当前对象，旧 revision 的保留记录不冒充当前版本。</summary>
+    public RuntimeMessageRecord? ReadRecord(RuntimeUnitId objectId, long sequence, long revision, Guid sourceMessageId)
+    {
+        lock (_lock)
+        {
+            var entry = _objects.GetValueOrDefault(objectId)?.Records.FirstOrDefault(item => item.Sequence == sequence);
+            return entry is not null && entry.Revision == revision && entry.SourceMessageId == sourceMessageId
+                ? Snapshot(entry, includeBody: true) : null;
+        }
+    }
+
+    private static RuntimeMessageRecord Snapshot(Entry entry, bool includeBody) => new(entry.Sequence, entry.ObjectId,
+        entry.Revision, entry.SourceMessageId, entry.At, entry.OriginalBytes, entry.Payload.Length,
+        entry.Truncated, includeBody && !entry.PrivacyBlocked ? Encoding.UTF8.GetString(entry.Payload) : null, entry.PrivacyBlocked, entry.Details);
 
     /// <summary>淘汰/截断/对象或版本不符均拒绝；不得退回更旧的“完整”记录假冒选中的样本。</summary>
     internal bool TryReadComplete(RuntimeUnitId objectId, long sequence, long revision, Guid sourceMessageId, [NotNullWhen(true)] out byte[]? body)

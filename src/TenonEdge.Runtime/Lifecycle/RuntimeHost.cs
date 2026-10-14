@@ -302,7 +302,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             prepared.HandOver();
             _activeRevision = prepared.Revision;
             CurrentValues.Activate(prepared.Revision, prepared.Definition.Units.Where(unit => unit.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)).Select(unit => unit.Id));
-            Messages.RetainObjects(prepared.Definition.Units.Select(unit => prepared.Definition.DiagnosticObject(unit.Id)).ToHashSet());
+            ActivateMessageDiagnostics(prepared.Definition);
             _deliveries.OutputTraffic.RetainTargets(prepared.Outputs.Select(output => output.Target.ConnectionId));
             _activeOutputs = prepared.Outputs;
             _activeDefinition = prepared.Definition;
@@ -330,7 +330,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     }
 
                     lock (_lock)
-                    { _activeRevision = null; _activeOutputs = []; _activeDefinition = null; _activeInputs.Clear(); _outputRecoveryGroups.Clear(); }
+                    { _activeRevision = null; _activeOutputs = []; _activeDefinition = null; _messageCatalog = new(null, []); _activeInputs.Clear(); _outputRecoveryGroups.Clear(); }
                     throw new DeliveryStoreException("启动目标隔离未提交，运行计划没有启动；修复存储后重启以重新核对。");
                 }
             }

@@ -307,6 +307,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/runtime/messages/objects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查看当前运行输入及逻辑输出节点；不触发采集或发送 */
+        get: operations["getRuntimeMessageObjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/runtime/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看单对象至多 100 条诊断元数据，所有角色均不在此接口取得正文 */
+        get: operations["getRuntimeMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/runtime/messages/{sequence}/body": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 显式读取所选诊断记录的至多 64 KiB 正文前缀；不重放，不替换已淘汰记录 */
+        get: operations["getRuntimeMessageBody"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/configuration/export": {
         parameters: {
             query?: never;
@@ -3958,6 +4009,61 @@ export interface components {
             /** Format: int64 */
             nextCursor: null | number | string;
         };
+        RuntimeMessageBody: {
+            record: components["schemas"]["RuntimeMessageInfo"];
+            body: string;
+        };
+        RuntimeMessageDetails: {
+            inputKey: string;
+            /** Format: uuid */
+            deliveryId: null | string;
+            outcome: components["schemas"]["RuntimeMessageOutcome"];
+            /**
+             * Format: int32
+             * @default 0
+             */
+            invalidFields: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            missingFields: number | string;
+            /** Format: int32 */
+            failedMappingStage?: null | number | string;
+            pathKey?: null | string;
+        };
+        RuntimeMessageInfo: {
+            sequence: string;
+            revision: string;
+            /** Format: uuid */
+            sourceMessageId: string;
+            /** Format: date-time */
+            capturedAt: string;
+            /** Format: int32 */
+            originalBytes: number | string;
+            /** Format: int32 */
+            storedBytes: number | string;
+            truncated: boolean;
+            privacyBlocked: boolean;
+            details: null | components["schemas"]["RuntimeMessageDetails"];
+        };
+        RuntimeMessageObject: {
+            kind: string;
+            key: string;
+            unresolved: boolean;
+        };
+        RuntimeMessageObjectPage: {
+            revision: null | string;
+            items: components["schemas"]["RuntimeMessageObject"][];
+            nextCursor: null | string;
+        };
+        /** @enum {unknown} */
+        RuntimeMessageOutcome: "received" | "generated" | "queued" | "mappingRejected" | "formattingRejected" | "quotaRejected" | "storageProtected" | "dataRejected" | "storageFailed" | "stopped" | "queueOutcomeUnknown";
+        RuntimeMessagePage: {
+            revision: string;
+            object: components["schemas"]["RuntimeMessageObject"];
+            items: components["schemas"]["RuntimeMessageInfo"][];
+        };
         RuntimeOutputInfo: {
             /** Format: int64 */
             connectionId: number | string;
@@ -4921,6 +5027,118 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeMessageObjects: {
+        parameters: {
+            query?: {
+                after?: string;
+                revision?: string;
+                limit?: number | string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeMessageObjectPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeMessages: {
+        parameters: {
+            query: {
+                kind: string;
+                key: string;
+                revision: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeMessagePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeMessageBody: {
+        parameters: {
+            query: {
+                kind: string;
+                key: string;
+                revision: string;
+                recordRevision: string;
+                sourceMessageId: string;
+            };
+            header?: never;
+            path: {
+                sequence: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeMessageBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

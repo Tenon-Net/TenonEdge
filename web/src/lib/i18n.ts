@@ -1,3 +1,4 @@
+import { messageStrings } from '../features/diagnostics/message-strings'
 import { documentationStrings } from '../features/documentation/strings'
 import { systemStrings } from '../features/system/strings'
 import { auditStrings } from '../features/audit/strings'
@@ -56,6 +57,7 @@ void i18n.use(initReactI18next).init({
                         '草稿格式或版本参数无效，未生成文件。请核对配置后重新导出。',
                 },
                 diagnostics: diagnosticsStrings,
+                messages: messageStrings,
                 currentValues: currentValueStrings,
                 outputs: outputStrings,
                 deliveries: deliveryStrings,

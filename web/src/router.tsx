@@ -184,6 +184,14 @@ const diagnosticsRoute = createRoute({
         'DiagnosticsPage',
     ),
 })
+const runtimeMessagesRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/runtime/messages',
+    component: lazyRouteComponent(
+        () => import('./features/diagnostics/messages'),
+        'RuntimeMessagesPage',
+    ),
+})
 const runtimeDevicesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/runtime/devices',
@@ -260,6 +268,7 @@ export const router = createRouter({
         configurationMigrationIntentsRoute,
         diagnosticsRoute,
         runtimeDevicesRoute,
+        runtimeMessagesRoute,
         runtimeOutputsRoute,
         deliveryRecordsRoute,
         deliveryMigrationRoute,

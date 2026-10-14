@@ -202,6 +202,12 @@ public sealed class OutputMessageCaptureTests
         Assert.Equal(55, records.Count(record => record.Revision == 2));
         Assert.Equal(45, records.Count(record => record.Revision == 1));
         Assert.Equal(2, runtime.Messages.Status.Objects); // one source and one logical output
+        var catalog = runtime.GetMessageCatalog();
+        Assert.Equal(2, catalog.Revision);
+        Assert.Equal(2, catalog.Objects.Length);
+        Assert.Contains(output, catalog.Objects);
+        Assert.DoesNotContain(left.Id, catalog.Objects);
+        Assert.DoesNotContain(right.Id, catalog.Objects);
     }
 
     private static async Task Dispatch(DeliveryCache deliveries, RuntimeMessageCache messages, EdgeMessage source,

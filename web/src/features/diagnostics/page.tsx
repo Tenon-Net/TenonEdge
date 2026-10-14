@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { OutputSummary } from './outputs'
 import { DeviceSummary } from './current-values'
 import { useTranslation } from 'react-i18next'
@@ -13,6 +14,9 @@ export function DiagnosticsPage() {
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold">{t('diagnostics.title')}</h1>
+            <Link className="underline" to="/runtime/messages">
+                {t('messages.title')}
+            </Link>
             <DeviceSummary />
             <OutputSummary />
             <DiagnosticPanel title={t('diagnostics.units')} query={query}>

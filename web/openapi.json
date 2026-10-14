@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:37077/"
+      "url": "http://127.0.0.1:43379/"
     }
   ],
   "paths": {
@@ -920,6 +920,214 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/messages/objects": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "分页查看当前运行输入及逻辑输出节点；不触发采集或发送",
+        "operationId": "getRuntimeMessageObjects",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeMessageObjectPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/messages": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "查看单对象至多 100 条诊断元数据，所有角色均不在此接口取得正文",
+        "operationId": "getRuntimeMessages",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeMessagePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/runtime/messages/{sequence}/body": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "显式读取所选诊断记录的至多 64 KiB 正文前缀；不重放，不替换已淘汰记录",
+        "operationId": "getRuntimeMessageBody",
+        "parameters": [
+          {
+            "name": "sequence",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "recordRevision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceMessageId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeMessageBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18655,6 +18863,223 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "RuntimeMessageBody": {
+        "required": [
+          "record",
+          "body"
+        ],
+        "type": "object",
+        "properties": {
+          "record": {
+            "$ref": "#/components/schemas/RuntimeMessageInfo"
+          },
+          "body": {
+            "type": "string"
+          }
+        }
+      },
+      "RuntimeMessageDetails": {
+        "required": [
+          "inputKey",
+          "deliveryId",
+          "outcome"
+        ],
+        "type": "object",
+        "properties": {
+          "inputKey": {
+            "type": "string"
+          },
+          "deliveryId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/RuntimeMessageOutcome"
+          },
+          "invalidFields": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 0
+          },
+          "missingFields": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 0
+          },
+          "failedMappingStage": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pathKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RuntimeMessageInfo": {
+        "required": [
+          "sequence",
+          "revision",
+          "sourceMessageId",
+          "capturedAt",
+          "originalBytes",
+          "storedBytes",
+          "truncated",
+          "privacyBlocked",
+          "details"
+        ],
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "sourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "originalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "storedBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "privacyBlocked": {
+            "type": "boolean"
+          },
+          "details": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RuntimeMessageDetails"
+              }
+            ]
+          }
+        }
+      },
+      "RuntimeMessageObject": {
+        "required": [
+          "kind",
+          "key",
+          "unresolved"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "unresolved": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RuntimeMessageObjectPage": {
+        "required": [
+          "revision",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeMessageObject"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RuntimeMessageOutcome": {
+        "enum": [
+          "received",
+          "generated",
+          "queued",
+          "mappingRejected",
+          "formattingRejected",
+          "quotaRejected",
+          "storageProtected",
+          "dataRejected",
+          "storageFailed",
+          "stopped",
+          "queueOutcomeUnknown"
+        ]
+      },
+      "RuntimeMessagePage": {
+        "required": [
+          "revision",
+          "object",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "string"
+          },
+          "object": {
+            "$ref": "#/components/schemas/RuntimeMessageObject"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeMessageInfo"
+            }
           }
         }
       },
