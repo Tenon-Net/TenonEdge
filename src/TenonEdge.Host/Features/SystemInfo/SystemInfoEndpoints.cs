@@ -34,8 +34,9 @@ internal static class SystemInfoEndpoints
         ConfigStoreInitializer configStore,
         ConfigDatabase database,
         RuntimeStartConditions runtimeStartConditions,
-        IClockSyncStatus clock)
+        IClockSyncStatus clock, HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         var state = database.Client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
         var certificate = certificates.Certificate;
         var sqlite = configStore.SqliteRuntime;

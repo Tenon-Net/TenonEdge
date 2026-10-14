@@ -1,5 +1,6 @@
 using SqlSugar;
 using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Features.SystemInfo;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
@@ -25,7 +26,7 @@ internal sealed class SetupService(
     SessionSecurityState sessions,
     TimeProvider time)
 {
-    public const int GatewayNameMaximumLength = 64;
+    public const int GatewayNameMaximumLength = GatewayNameRules.MaximumLength;
 
     private const string CompleteSql = """
         UPDATE system_state
@@ -161,11 +162,12 @@ internal sealed class SetupService(
             errors["password"] = [reason];
         }
 
-        normalizedGatewayName = string.IsNullOrWhiteSpace(gatewayName) ? null : gatewayName.Trim();
-        if (normalizedGatewayName is not null
-            && (normalizedGatewayName.Length > GatewayNameMaximumLength || normalizedGatewayName.Any(char.IsControl)))
+        try
+        { normalizedGatewayName = GatewayNameRules.Normalize(gatewayName); }
+        catch (ArgumentException exception)
         {
-            errors["gatewayName"] = [$"网关名称为 1—{GatewayNameMaximumLength} 个字符，不能包含控制字符。"];
+            normalizedGatewayName = null;
+            errors["gatewayName"] = [exception.Message];
         }
 
         return errors;

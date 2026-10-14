@@ -48,9 +48,9 @@
 | T3 | T3-06 应用、历史回滚与运行失败重试 | 部分实现，整项未完成 | 确认应用、持久历史/正常回滚、正常重启、人工重试及十二项在线应用、一项应用完成后的启动故障/积存窗口、三项人工回滚草稿写入后/持久 COMMIT 后（含冻结后并发草稿保留分支）的强杀软件验证（准备/部分停止〔含两路输入及 MQTT 输出共用客户端、HTTP 双目标〕/提交后输入未启动/部分采样由测试侧工厂或原事件包装、事务写入后/持久 COMMIT 后上层返回前由原 SQL/连接回调控制）；回滚生成 r3；COMMIT 前强杀撤销事务内草稿/审计并恢复 r2，COMMIT 后恢复 r3、保留后续 dirty 草稿，两者旧冻结投递不变；冻结后提交前另存的 dirty 草稿亦保留，正常完成 draftReplaced=false；另有共享 MQTT 停止超时同进程恢复、部分激活共享启动屏障与单输入启动异常原监督者重建、连续三次启动异常恢复（含故障期间三条积存及原产品宿主强杀恢复）及单条/三条 QoS 1 未确认积存与双目标 FIFO（测试包装注入，真实 Broker/双目标）；专用损坏恢复与完整中断矩阵未验收 | §2.165—§2.192 |
 | T3 | T3-07 调试与运行诊断 | 部分实现，整项未完成 | 三协议真实读取/样本预览及运行总览、单元/读取状态、趋势、事件及设备分类/逐点当前值/过期已有实现。输出目标状态/占用/趋势/分类与配额上界已通过本地软件回归。剩余：磁盘k实测与完整容量、通用测试发送、完整运行调试面板及压力/权限验收 | §2.117—§2.122、§2.141—§2.148、§2.193—§2.195 |
 | T3 | T3-08 队列操作与迁移 | 部分实现，整项未完成 | 已补真实失败/隔离列表、筛选分页和独立正文授权，以及目标立即重试和二次确认暂停／恢复页面。失败记录原样回队尾的 API、单条/按筛选有界批量重试及二次确认页面已接入，支持旧代次拒绝与响应丢失不重放；管理员失败/隔离记录清理、独立计数及确认页面也已接入；完整JSON Lines暂存导出底层、管理员确认/API、审计及会话归属下载已接入；导出页面、原生大文件下载和清理失败提示已补，软件验证见§2.203；目标全部待发清空的发送者协调/API/确认页面已通过本地软件回归，见§2.204；原子迁移存储/配额缺口/持久收据及已有输出的双发送者协调、开始/结果审计和启动核对已补，见§2.205—§2.206。新增冻结协议/接收方摘要、同次凭证描述捕获和旧摘要保守解析，见§2.207；无路线启用HTTP/MQTT目标已补发送接续，含旧完整快照执行视图，验证见§2.208；形式B管理员迁移准备/确认API已通过本地软件回归（§2.209），逐条核对冻结原协议/接收方，绑定登录会话、选择代次和目标身份。形式B迁移页面已通过本地软件回归（§2.210），支持分区/跨页勾选、旧新身份并排核对、同会话准备恢复和响应丢失后按编号查询。已补形式A提交前发送屏障（§2.211），配置同事务意图登记、原状态持久隔离、启动/人工重试前补隔离及受限变更检查（§2.212）；已补确认目标完整身份绑定、原协调者串行执行、拒绝及两库结果/中断恢复（§2.213）；管理员形式A应用准备/确认/意图查询API与真实应用协调已接线（§2.214），含完整配置核对、同所有者声明、配额预检及提交后隔离保护。已补持久意图元数据分页、当前身份/完整配额缺口查询，以及拒绝/旧版未确认意图的管理员重新核对和显式重试API（§2.215），新审批/尝试/审计原子提交，未知结果不重放。形式A换址应用及持久意图/重新审批重试页面已接入，含一次确认、刷新恢复与角色保护，验证边界见§2.216。FS-23已补两种迁移/HTTP及MQTT的三个持久窗口、真实SIGKILL/正常放行、原Host双重重启与审计幂等，24项及3170后端全量通过（§2.217）；仅软件故障注入，不是实物断电。HTTP对方错误摘要已补有界采集、同事务存储及正文权限页面（§2.218）；本项权限澄清尚待答复，暂不扩宽Viewer。平台身份分支不提前到 T3 | §2.18—§2.19、§2.196—§2.218；功能 §8 |
-| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）。剩余：Token跨预览/迁移的真实Bearer补充验收、改名/运行参数/访问策略页面、连接页公网授权入口与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.223；功能 §9/10.1/12.3；AT-18/32 |
+| T3 | T3-09 用户审计与系统管理 | 部分实现，整项未完成 | 本地用户管理及上次登录信息见§2.219；Token显式审计基础见§2.220。HTTPS Token认证/创建/吊销、独立限流、来源用户停用/删除确认及真实页面已实现，验证进展见§2.221。审计查询与完整CSV导出页面/API已接入，证据见§2.222。系统信息、已有名称显示及白名单页面已接入（§2.223）；管理员改名/清空、同事务审计及页头/标签页更新见§2.225。剩余：Token跨预览/迁移的真实Bearer补充验收、运行参数/访问策略页面、连接页公网授权入口与完整授权验收。宿主管理证书替换按 T5-01 | §2.219—§2.225；功能 §9/10.1/12.3；AT-18/32 |
 | T3 | T3-10 配置导入与扩展表单 | 未完成 | 须补业务标识导出/跨网关重映射、合并/替换预检及原子写草稿、秘密处理、六类扩展参数声明/同源校验/界面、API 文档入口；不能用点表 CSV 或手写内置表单替代 | GW-16、AT-17、FS-27；功能 §10.2/12.2 |
-| T3 | T3-11 无平台端到端验收 | 未完成 | §2.223的CSV超限传输竞态已最小复现并改用真实浏览器传输严格验证，最终完整浏览器73/73通过（§2.224）；不等于本任务全部需求完成。须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
+| T3 | T3-11 无平台端到端验收 | 未完成 | §2.223的CSV超限传输竞态已最小复现并改用真实浏览器传输严格验证，完整浏览器基线73/73通过（§2.224），改名后75/75通过（§2.225）；本轮后端全量25分钟超时，剩余11项已独立补验，仍须收口单次完整回归，不等于本任务全部需求完成。须使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启；汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
 
 ## 2. 实现内容
@@ -4954,6 +4954,51 @@ TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx
 
 停止点/剩余：本项收口§2.223的上传传输失败，已通过完整本地浏览器回归，但不能据此标T3-04/11完整通过。系统改名/运行参数/访问策略、连接页公网授权、证书、导入/扩展表单、Token补验及完整无代码/最低浏览器流程仍按§1推进。无远端CI、实物或断电验收；不推送、发布或进入T4/T5/G1，无子代理。
 
+### 2.225 T3-09 网关显示名称修改与事务审计（2026-10-14）
+
+基线 `6b2dc3f`；继续已授权 T3，覆盖功能§10.1、AT-18、BE-AT-02/03/05、FE-AT-02/04的名称管理子场景。前置为已有系统信息、首次设置名称字段、配置库短事务与审计、Cookie/CSRF及共享系统信息查询。**不代表 T3-09/T3 整体完成**；无子代理、不推送/发布，不进入T4/T5/G1。
+
+实现与边界：
+
+- 新增管理员 `PUT /api/edge-admin/v1/system/name`（operationId `writeGatewayName`）。`name`、`expectedName`都必须出现，允许null，额外顶层字段拒绝；首次设置与改名共用原有64个UTF-16单位、Trim/空白清null、无控制字符规则。
+- `expectedName`与数据库原名称按ordinal精确比较；它只是单个显示字段的原值条件，不是其他设置/草稿/运行配置的版本令牌。A→B→A最终原值仍为A可接受，不为显示字段另建无必要版本列。409要求重新读取；规范化名称未变化返回`changed:false`，不重复写入或记变更审计。
+- 原值核对、仅更新`system_state.gateway_name`和`system.gatewayNameChanged`审计在同一`ConfigDatabase.InTransaction`完成；审计保存`previousName`/`name`并沿用管理身份。无Schema迁移（仍22），无新后台服务、运行时实例或请求外事务；不改变NodeId、首次设置记录、草稿、运行版本或连接身份。
+- `/system`提供管理员确认编辑/清空、Zustand本地输入与离开保护。后台信息刷新不覆盖本地输入或原名称条件。400保留修正，409/其他失败关闭编辑并要求显式读取，不自动重放；读失败禁止开始/提交修改。成功后刷新共享`system-info`，页头与浏览器title更新；其他会话在下一次刷新时更新。名称按文本渲染，不执行HTML；非秘密信息会进入审计，页面有提示。
+- 信息GET与名称PUT使用`Cache-Control: no-store`。OpenAPI与TS类型由独立Development Host实际导出，无手写接口和依赖变更。使用说明见`docs/system-settings.md`。
+
+验证环境：Linux x64、.NET SDK 10.0.401、Node 22.23.2、npm 11.21.0；证据目录`/tmp/tenonedge-gateway-name/`。后端Docker/Broker全量与浏览器串行，HTTPS场景只信任自有Host核对过的证书，不禁用TLS验证。
+
+- 首轮编译失败（`backend.log`）：测试引用了不存在的账号常量、并发名称数组触发CA1861；修正真实默认账号和静态常量后，**44项关联集成全部通过、0失败/跳过**（`backend-r2.log`、`backend/name.trx`），覆盖名称、首次设置、系统信息、权限清单与OpenAPI。名称用例含匿名/CSRF/三角色、必填/未知字段、64/65边界/控制字符、无变化不审计、并发仅一成功、正常重启保留和清空、身份/首次设置/草稿不变，以及注入审计失败时名称原子回滚。
+- 新14项前端单测通过（`frontend-unit-target.log`），覆盖归一化、原值冻结、UTF-16边界/控制字符、确认/CSRF/只发送可写字段及失败不重放。最初lint对显式控制字符范围报提示（`frontend-lint.log`）；改用等价Unicode `Cc`类别，与服务端`char.IsControl`一致，不屏蔽规则。
+- 定向真实浏览器**5/5通过**（`browser-target.log`）：2项新名称场景与原系统设置3项。真实首次设置→改名→标题/页头按文本显示→关闭浏览器/Host→重启登录保留→三角色权限→同名no-op/清空；另覆盖原值冲突、本地编辑保护及真实提交后丢回复不重放。400与系统信息500为明确的受控响应夹具，只证明UI行为；真实服务端校验另由集成测试覆盖。
+- 后端format verify与Release构建通过（`backend-format-verify.log`、`backend-build.log`，0警告/错误）；**完整后端运行触发25分钟总时限，退出1，不能标通过**（`backend-full.log`、`backend-full/full.trx`）。单元1434/1434完成（在集成覆盖同名文件前另存`backend-full/unit.trx`）；集成已完成1953项、0断言失败/跳过，但会话被中止。发现清单共1964项，统一emoji表示后尚有11项未完成（旧Modbus迟到响应比较10项和一分钟资源观察1项），不是零用例当通过。
+- 最小对照显示此前§2.222的完整集成已用**24分41秒**（1947项）；同一个首次设置重启用例此前87.190秒、本轮87.046秒，没有显示该用例因改名变慢。独立补验覆盖剩余两类、名称和该重启用例；不扩长产品/单用例截止时间，不将分段证据冒充一次全量通过。补验**26/26通过、0失败/跳过**（`backend-remaining.log`、`backend-remaining/remaining.trx`，1分36秒），含全部11项未完成用例，首次设置重启单独运行5秒。按发现清单核对，两轮并集覆盖全部1964个集成用例（`coverage.json`、`coverage.log`），但原全量会话仍是失败状态；完整单次执行的时限收口留T3-11，不修改公共测试/CI期限冒充通过。
+- 前端typecheck/lint/format:check/build通过（`frontend-*-r2.log`，lint无警告；大chunk提示仍存在，不作性能验收）；Vitest **429/429、0失败/跳过/todo**（`vitest-r2.json`）。
+- 后端结束后串行完整浏览器 **75/75通过，0失败/跳过/flaky**（`browser-full.json`、`browser-full.exit=0`，9分47秒）。剥离npm前缀另存`browser-full-parsed.json`，与Vitest报告经原`verify-results.mjs`核对非零、完整、零失败/跳过（`verify.log`）；原始结果未改写。922份源码/测试哈希在最终回归后保持一致（`source-checkpoint.json`），`git diff --check`通过。自有OpenAPI Host已正常终止；未停止本机原有服务/旧测试进程。
+
+实际命令（均在本仓；前端命令于`web/`）：
+
+```sh
+dotnet test tests/IntegrationTests -c Release --no-restore --filter 'FullyQualifiedName~GatewayNameTests|FullyQualifiedName~SystemInfoTests|FullyQualifiedName~SetupTests|FullyQualifiedName~OpenApiDocumentTests|FullyQualifiedName~ManagementApiAccessTests' --logger 'trx;LogFileName=name.trx' --results-directory /tmp/tenonedge-gateway-name/backend --blame-hang-timeout 2m --blame-hang-dump-type none
+dotnet format TenonEdge.sln --no-restore --verify-no-changes
+dotnet build TenonEdge.sln -c Release --no-restore
+dotnet test TenonEdge.sln -c Release --no-build --no-restore --logger 'trx;LogFileName=full.trx' --results-directory /tmp/tenonedge-gateway-name/backend-full --blame-hang-timeout 5m --blame-hang-dump-type none
+TENONEDGE_API_URL=http://127.0.0.1:36565 npx --yes npm@11.21.0 run api:generate
+npx --yes npm@11.21.0 run typecheck
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 run build
+npx --yes npm@11.21.0 run test -- --reporter=json --outputFile=/tmp/tenonedge-gateway-name/vitest-r2.json
+npx --yes npm@11.21.0 run test:e2e -- tests/gateway-name.spec.ts tests/system.spec.ts
+# 后端全量超时后，先发现用例并独立补验；结束后才启动完整浏览器。
+dotnet test tests/IntegrationTests -c Release --no-build --no-restore --list-tests
+dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~ModbusStaleResponseComparisonTests|FullyQualifiedName~ModbusResourceTests|FullyQualifiedName~GatewayNameTests|FullyQualifiedName~SetupTests.RestartReopensTheWindowOnlyWhileTheGatewayIsNotInitialized' --logger 'trx;LogFileName=remaining.trx' --logger 'console;verbosity=normal' --results-directory /tmp/tenonedge-gateway-name/backend-remaining --blame-hang-timeout 2m --blame-hang-dump-type none
+TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx --yes npm@11.21.0 run test:e2e -- --reporter=json
+node web/scripts/verify-results.mjs /tmp/tenonedge-gateway-name/vitest-r2.json /tmp/tenonedge-gateway-name/browser-full-parsed.json
+```
+
+停止点/剩余：本项只收口网关显示名称；运行参数、HTTPS-only/可信代理、连接页公网授权、连接信任/客户端证书、导入/扩展表单、Token预览/迁移Bearer补验及完整无代码/最低浏览器验收继续按§1推进。损坏快照受限恢复与HTTP摘要Viewer权限仍待本项答复，不因“继续”擅自视为批准。无实物、断电或远端CI验证。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
@@ -5027,6 +5072,7 @@ TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil npx
 | AT-18 / FE-AT-02 / 功能 §2.5、10.1 | T3-09 系统信息与出站白名单页面 | 本地软件子场景通过：全角色信息读取、管理员确认修改/审计、真实HTTP访问与撤销、重启保留、部署授权不可网页撤销、危险管理端口拒绝、冲突/丢回复不重放 | §2.223 | 连接页公网授权入口、改名/运行参数/访问策略及最低浏览器等，不标T3整项通过 |
 
 | FE-AT-04 / T3-04/11 / 功能 §3.3 | CSV超限真实浏览器传输与草稿保护 | 本地软件通过：实际8MiB边界、+1/+14字节严格完整400/413/413、15请求无自动重试、草稿不变；完整73项浏览器通过；仓库外最小复现仅作诊断证据 | §2.224 | 最低浏览器、完整无代码流程及其他T3缺项仍按§1 |
+| AT-18 / BE-AT-02/03/05 / FE-AT-02/04 / 功能 §10.1 | T3-09 网关显示名称 | 本地软件子场景通过：管理员确认/清空、单字段原值冲突、事务审计及回滚、重启保留、三角色与页头/title更新、丢回复不重放；75项完整浏览器通过。后端全量超时与26项独立补验分别记录，不冒充单次通过 | §2.225 | 运行参数/访问策略、完整授权和T3退出验收仍未完成 |
 | 其余 V、FS、AT、GW | — | 未执行 | — | 随所属任务登记 |
 
 ## 4. 验证记录

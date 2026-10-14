@@ -54,8 +54,32 @@ export function policyRequest(form: PolicyForm): PolicyWrite {
         localPorts: locals.map(port),
     }
 }
+export function gatewayNameRequest(
+    name: string,
+    expectedName: string | null,
+): components['schemas']['GatewayNameRequest'] {
+    const normalized = name.trim()
+    // Unicode Cc matches the server's char.IsControl rule (both C0 and C1).
+    if (normalized.length > 64 || /\p{Cc}/u.test(normalized))
+        throw new Error('gateway-name')
+    return { name: normalized || null, expectedName }
+}
 export function createSystemApi(api: ReturnType<typeof createGatewayClient>) {
     return {
+        async writeName(
+            request: components['schemas']['GatewayNameRequest'],
+            confirmed: boolean,
+        ) {
+            if (!confirmed) throw new Error('name-confirmation')
+            const { data } = await api.PUT('/api/edge-admin/v1/system/name', {
+                body: {
+                    name: request.name,
+                    expectedName: request.expectedName,
+                },
+            })
+            if (!data) throw new Error('missing-name')
+            return data
+        },
         async policy(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/system/outbound-policy',

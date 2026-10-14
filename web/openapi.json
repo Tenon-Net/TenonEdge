@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:44913/"
+      "url": "http://127.0.0.1:36565/"
     }
   ],
   "paths": {
@@ -952,6 +952,68 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/system/name": {
+      "put": {
+        "tags": [
+          "System"
+        ],
+        "summary": "管理员修改网关显示名称并记录审计",
+        "description": "expectedName必须等于读取的gatewayName（含null）；只比较此名称字段，不代表其他设置版本。名称去首尾空白，空名称清为未命名；不改变NodeId、草稿或运行版本。相同规范化名称不重复写审计。",
+        "operationId": "writeGatewayName",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayNameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayNameResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12756,6 +12818,46 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "GatewayNameRequest": {
+        "required": [
+          "name",
+          "expectedName"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "GatewayNameResult": {
+        "required": [
+          "name",
+          "changed"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "changed": {
+            "type": "boolean"
           }
         }
       },

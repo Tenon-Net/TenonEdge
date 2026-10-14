@@ -327,6 +327,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/system/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 管理员修改网关显示名称并记录审计
+         * @description expectedName必须等于读取的gatewayName（含null）；只比较此名称字段，不代表其他设置版本。名称去首尾空白，空名称清为未命名；不改变NodeId、草稿或运行版本。相同规范化名称不重复写审计。
+         */
+        put: operations["writeGatewayName"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/deliveries/retry": {
         parameters: {
             query?: never;
@@ -2647,6 +2667,14 @@ export interface components {
             completedAt: string;
             sourceIp: null | string;
         };
+        GatewayNameRequest: {
+            name: null | string;
+            expectedName: null | string;
+        };
+        GatewayNameResult: {
+            name: null | string;
+            changed: boolean;
+        };
         HttpConnectionDraft: {
             baseAddress: string;
             /**
@@ -4551,6 +4579,57 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    writeGatewayName: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayNameRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayNameResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

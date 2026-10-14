@@ -136,6 +136,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "updateInputDraft",
         "updateRouteDraft",
         "updateUser",
+        "writeGatewayName",
         "writeHttpCredential",
         "writeMqttCredential",
         "writeOutboundPolicy",

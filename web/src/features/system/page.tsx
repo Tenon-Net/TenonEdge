@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { useSystemInfo } from '../diagnostics/queries'
 import { DiagnosticPanel, Fact, dateText } from '../diagnostics/view'
 import { OutboundPolicyPanel } from './policy'
+import { GatewayNameEditor } from './name'
 export function SystemPage() {
     const { t } = useTranslation()
     const query = useSystemInfo()
@@ -107,6 +108,7 @@ export function SystemPage() {
                     </>
                 )}
             </DiagnosticPanel>
+            <GatewayNameEditor />
             <OutboundPolicyPanel />
         </div>
     )

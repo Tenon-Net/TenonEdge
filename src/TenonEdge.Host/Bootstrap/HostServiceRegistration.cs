@@ -8,6 +8,7 @@ using TenonEdge.Host.Features.Health;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Features.SystemInfo;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 
@@ -37,6 +38,7 @@ internal static class HostServiceRegistration
         builder.Services.AddHostedService<DataRetentionService>();
 
         builder.Services.AddAuthFeature();
+        builder.Services.AddScoped<GatewayNameStore>();
         builder.Services.AddSingleton<ConnectionDraftStore>();
         builder.Services.AddSingleton<DeviceDraftStore>();
         builder.Services.AddSingleton<InputDraftStore>();
