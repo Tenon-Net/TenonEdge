@@ -6,20 +6,20 @@ using TenonEdge.Abstractions.Plans;
 
 namespace TenonEdge.Adapters.Http;
 
-public sealed class HttpOutputFactory(IHttpCredentialResolver credentials, TimeProvider time, IOutboundConnector connector, ISharedConnections connections) : IOutputAdapterFactory
+public sealed class HttpOutputFactory(IHttpCredentialResolver credentials, TimeProvider time, IOutboundConnector connector, ISharedConnections connections, ITlsTrustResolver? trust = null) : IOutputAdapterFactory
 {
     public string Kind => "output.http";
     public IOutputTarget Build(RuntimeUnitPlan plan)
     {
         try
-        { return new HttpOutputTarget(plan.Id, HttpOutputSettings.Parse(plan.Configuration), credentials, time, connector, connections); }
+        { return new HttpOutputTarget(plan.Id, HttpOutputSettings.Parse(plan.Configuration), credentials, time, connector, connections, trust); }
         catch (Exception exception) when (exception is ArgumentException or JsonException or FormatException or InvalidOperationException)
         { throw new RuntimeUnitBuildException(plan.Id, "HTTP 输出配置无效，请检查固定地址、请求头和成功约定。", exception); }
     }
 }
 
 internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings settings, IHttpCredentialResolver credentials,
-    TimeProvider time, IOutboundConnector connector, ISharedConnections connections) : IOutputTarget
+    TimeProvider time, IOutboundConnector connector, ISharedConnections connections, ITlsTrustResolver? trust = null) : IOutputTarget
 {
     private readonly string _frozenRequest = HttpFrozenRequest.Freeze(settings);
     private readonly OutputPayloadFormat _payload = OutputPayloadFormat.Parse(settings.Payload);
@@ -29,7 +29,8 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
     public IReadOnlyList<string> Inputs => settings.Inputs;
     public string? ClientId => null;
     public string Recipient => settings.BaseAddress;
-    public string CredentialVersion => credentials.DescribeHttp(ConnectionId)?.Version ?? "anonymous";
+    public string CredentialVersion => (credentials.DescribeHttp(ConnectionId)?.Version ?? "anonymous") +
+        (settings.BaseUri.Scheme == "https" && trust?.ResolveTlsTrust(ConnectionId, settings.BaseAddress) is { } value ? ":tls:" + value.Version : "");
     // 16 KiB 静态头、字典节点、幂等编号和摘要UTF-16结果逐路径保留；摘要编码暂存串行复用。
     public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024 +
         2L * OutputMessage.MaximumProtocolMetadataBytes + 2L * OutputRecipientIdentity.MaximumSummaryBytes;
@@ -60,7 +61,7 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
     {
         // 会话只按连接参数共享；路径、静态头和业务成功规则属于每次请求，秘密与轮换版本也不创建第二个客户端。
         var key = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
-        var lease = connections.Acquire(ConnectionId, "http", key, () => new HttpConnectionSession(connector, settings.TimeoutMs));
+        var lease = connections.Acquire(ConnectionId, "http", key, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust));
         return new HttpOutputAdapter(lease, settings, credentials, time);
     }
 }

@@ -67,6 +67,8 @@ internal static class RuntimeRegistration
         services.AddSingleton<MqttCredentialStore>();
         services.AddSingleton<IMqttSubscriptionStore, MqttSubscriptionStore>();
         services.AddSingleton<HttpCredentialStore>();
+        services.AddSingleton<ConnectionTrustStore>();
+        services.AddSingleton<ITlsTrustResolver>(provider => provider.GetRequiredService<ConnectionTrustStore>());
         services.AddSingleton<IHttpCredentialResolver>(provider => provider.GetRequiredService<HttpCredentialStore>());
         services.AddSingleton<OutboundPolicyStore>();
         services.AddSingleton(provider => new HostOutboundAddressPolicy(
@@ -89,7 +91,7 @@ internal static class RuntimeRegistration
         services.AddSingleton(provider => new MqttReadPreview(
             provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<IOutboundConnector>(),
             provider.GetRequiredService<ICredentialResolver>(), provider.GetRequiredService<IJsonInputDecoderFactory>(),
-            provider.GetRequiredService<RuntimeHost>().InFlight, provider.GetRequiredService<TimeProvider>()));
+            provider.GetRequiredService<RuntimeHost>().InFlight, provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<ITlsTrustResolver>()));
         services.AddSingleton<IRuntimePlanAdapterProvider, ModbusPlanAdapterProvider>();
         services.AddSingleton<ICredentialResolver>(provider => provider.GetRequiredService<MqttCredentialStore>());
         services.AddSingleton<IRuntimePlanAdapterProvider>(provider =>
@@ -109,13 +111,13 @@ internal static class RuntimeRegistration
                             connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                             "MQTT 会话丢失，断线期间的消息可能已丢失；需要重新订阅。");
                     }
-                }, provider.GetRequiredService<IMqttSubscriptionStore>());
+                }, provider.GetRequiredService<IMqttSubscriptionStore>(), provider.GetRequiredService<ITlsTrustResolver>());
         });
         services.AddSingleton<IOutputAdapterFactory>(provider => new HttpOutputFactory(
             provider.GetRequiredService<IHttpCredentialResolver>(),
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<IOutboundConnector>(),
-            provider.GetRequiredService<ISharedConnections>()));
+            provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<ITlsTrustResolver>()));
         services.AddSingleton<RuntimeHost>();
         services.AddSingleton<RuntimeVersionStore>();
         services.AddSingleton<RuntimeCoordinator>();

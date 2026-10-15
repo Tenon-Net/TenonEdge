@@ -120,7 +120,8 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
     private static Reserved ReservedIdentities(SqlSugarClient client)
     {
         var reserved = new Reserved(client.Queryable<HttpCredentialRecord>().Select(value => value.ConnectionId).ToList()
-            .Concat(client.Queryable<MqttCredentialRecord>().Select(value => value.ConnectionId).ToList()).ToHashSet(),
+            .Concat(client.Queryable<MqttCredentialRecord>().Select(value => value.ConnectionId).ToList())
+            .Concat(client.Queryable<ConnectionTrustRecord>().Select(value => value.ConnectionId).ToList()).ToHashSet(),
             new(StringComparer.Ordinal), new(StringComparer.Ordinal));
         var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
         foreach (var revision in new[] { state.EffectiveRevision, state.PreviousRevision, state.PendingRevision }.OfType<long>().Distinct())

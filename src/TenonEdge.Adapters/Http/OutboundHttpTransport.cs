@@ -1,4 +1,5 @@
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Http;
 
@@ -8,11 +9,17 @@ namespace TenonEdge.Adapters.Http;
 /// </summary>
 public static class OutboundHttpTransport
 {
-    public static HttpClient CreateClient(IOutboundConnector connector, TimeSpan timeout)
+    public static HttpClient CreateClient(IOutboundConnector connector, TimeSpan timeout, TlsTrustSnapshot? trust = null)
     {
         ArgumentNullException.ThrowIfNull(connector);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
         var handler = CreateHandler(connector);
+        if (trust is not null)
+        {
+            handler.SslOptions.CertificateChainPolicy = ServerCertificateTrust.OfflineChainPolicy();
+            handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
+            ServerCertificateTrust.Evaluate(certificate, chain, errors, trust) is null;
+        }
         try
         { return new HttpClient(handler, disposeHandler: true) { Timeout = timeout }; }
         catch { handler.Dispose(); throw; }

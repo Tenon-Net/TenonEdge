@@ -399,5 +399,17 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(31, "connection_tls_trust", [
+            """
+            CREATE TABLE connection_trust (
+                connection_id INTEGER NOT NULL PRIMARY KEY,
+                recipient TEXT NOT NULL,
+                mode INTEGER NOT NULL CHECK(mode IN (0, 1)),
+                protected_certificate TEXT NOT NULL,
+                version TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

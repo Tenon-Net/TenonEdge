@@ -9,7 +9,7 @@ namespace TenonEdge.Adapters.Http;
 
 /// <summary>一次真实 GET，与正式 HTTP 采集/输出串行；不写调试缓存或发送队列。</summary>
 public sealed class HttpReadPreview(ISharedConnections connections, IOutboundConnector connector,
-    IHttpCredentialResolver credentials, IJsonInputDecoderFactory decoders, TimeProvider time)
+    IHttpCredentialResolver credentials, IJsonInputDecoderFactory decoders, TimeProvider time, ITlsTrustResolver? trust = null)
 {
     public Task<JsonReadPreviewResult> RunAsync(HttpInputSettings settings, ClockSyncState clockState, CancellationToken cancellationToken,
         int? timeoutMs = null, int maximumDisplayBytes = JsonReadPreview.MaximumDisplayBytes)
@@ -50,7 +50,7 @@ public sealed class HttpReadPreview(ISharedConnections connections, IOutboundCon
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs)); }
+        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         try
@@ -96,7 +96,7 @@ public sealed class HttpReadPreview(ISharedConnections connections, IOutboundCon
         var identity = JsonSerializer.Serialize(new { basis.BaseAddress, basis.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(basis.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, basis.TimeoutMs)); }
+        { lease = connections.Acquire(basis.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, basis.TimeoutMs, trust)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         var results = new List<HttpSourcePreviewResult>();

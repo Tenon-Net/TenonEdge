@@ -16,7 +16,7 @@ public sealed record HttpTestSendResult(string Code, int? StatusCode, HttpRespon
 
 /// <summary>一次显式 POST 的传输原语：借用原 HTTP 串行会话，不入队、不重试、不跟随重定向。
 /// Host 须先完成权限、二次确认、凭证接收方绑定和共享预览准入；本类不提供管理入口。</summary>
-public sealed class HttpTestMessageSender(ISharedConnections connections, IOutboundConnector connector, TimeProvider time)
+public sealed class HttpTestMessageSender(ISharedConnections connections, IOutboundConnector connector, TimeProvider time, ITlsTrustResolver? trust = null)
 {
     public async Task<HttpTestSendResult> SendAsync(HttpOutputSettings settings, HttpCredential? credential,
         OutputMessage message, CancellationToken cancellationToken)
@@ -46,7 +46,7 @@ public sealed class HttpTestMessageSender(ISharedConnections connections, IOutbo
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs)); }
+        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         var entered = false;
@@ -56,7 +56,7 @@ public sealed class HttpTestMessageSender(ISharedConnections connections, IOutbo
             {
                 token.ThrowIfCancellationRequested();
                 entered = true;
-                return session.SendTestOutputAsync(request, credential, token);
+                return session.SendTestOutputAsync(settings, request, credential, token);
             }, operation.Token);
             cancellationToken.ThrowIfCancellationRequested();
             return result with { ElapsedMs = time.GetElapsedTime(started).TotalMilliseconds };

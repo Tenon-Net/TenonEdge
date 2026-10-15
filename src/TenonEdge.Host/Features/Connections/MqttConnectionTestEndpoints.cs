@@ -5,13 +5,14 @@ using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Security;
+using TenonEdge.Host.Storage.Ids;
 using TenonEdge.Runtime.Diagnostics;
 
 namespace TenonEdge.Host.Features.Connections;
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record MqttConnectionTestRequest(MqttConnectionDraft Connection, ConnectionTestAuthentication Authentication = ConnectionTestAuthentication.None,
-    long? CredentialConnectionId = null, string? Username = null, string? Password = null)
+    long? CredentialConnectionId = null, string? Username = null, string? Password = null, long? ConnectionId = null)
 {
     public override string ToString() => "MQTT connection test request (secret omitted)";
 }
@@ -31,8 +32,9 @@ internal static class MqttConnectionTestEndpoints
 
     private static async Task<Results<Ok<MqttConnectionTestResult>, ValidationProblem, ProblemHttpResult>> Test(
         MqttConnectionTestRequest request, MqttConnectionTest probe, MqttCredentialStore credentials,
-        PreviewOperationBudget budget, HttpContext context)
+        PreviewOperationBudget budget, ConnectionDraftStore drafts, SnowflakeIdGenerator ids, HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         using var lease = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
         { return failure; }
@@ -40,6 +42,7 @@ internal static class MqttConnectionTestEndpoints
         {
             var value = request.Connection ?? throw new ArgumentException("缺少连接参数。");
             if (!Enum.IsDefined(request.Authentication) || value.Host != value.Host?.Trim() ||
+                request.ConnectionId is not null && request.CredentialConnectionId is not null && request.ConnectionId != request.CredentialConnectionId ||
                 request.Authentication == ConnectionTestAuthentication.Stored &&
                     (request.CredentialConnectionId is null || request.Username is not null || request.Password is not null) ||
                 request.Authentication != ConnectionTestAuthentication.Stored && request.CredentialConnectionId is not null ||
@@ -48,7 +51,7 @@ internal static class MqttConnectionTestEndpoints
             { throw new ArgumentException("认证参数无效。"); }
             var settings = new MqttConnectionSettings
             {
-                ConnectionId = request.CredentialConnectionId ?? 1,
+                ConnectionId = request.ConnectionId ?? request.CredentialConnectionId ?? ids.NextId(),
                 Host = value.Host!,
                 Port = value.Port,
                 Tls = value.Tls,
@@ -57,6 +60,8 @@ internal static class MqttConnectionTestEndpoints
                 PingIntervalMs = value.PingIntervalMs,
                 UsePassword = request.Authentication != ConnectionTestAuthentication.None,
             }.ValidateConnection();
+            if (request.ConnectionId is not null && !drafts.Read().Connections.Any(item => item.Id == settings.ConnectionId && item.Kind == ConnectionKind.Mqtt))
+            { return ApiProblems.Problem(409, "connection.notFound", "请选择已有 MQTT 连接或创建新的测试表单。"); }
             // 只取一次接收方绑定的凭证快照；解析器在返回前关闭数据库客户端，不跨网络等待持有事务。
             var credential = request.Authentication switch
             {

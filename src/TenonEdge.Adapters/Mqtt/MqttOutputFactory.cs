@@ -4,7 +4,7 @@ using TenonEdge.Abstractions.Plans;
 
 namespace TenonEdge.Adapters.Mqtt;
 
-public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector, ISharedConnections connections, string? gatewayNodeId = null) : IOutputAdapterFactory
+public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector, ISharedConnections connections, string? gatewayNodeId = null, ITlsTrustResolver? trust = null) : IOutputAdapterFactory
 {
     // Host 传持久 NodeId，使不同网关不会用相同默认 ClientId 相互踢下线。
     // 独立装配没有网关身份时使用工厂实例内固定的随机前缀；输出采用 CleanSession，不依赖跨进程会话。
@@ -31,7 +31,7 @@ public sealed class MqttOutputFactory(ICredentialResolver credentials, TimeProvi
 
             var inputGroup = InputGroups?.Invoke(settings);
             inputGroup?.ValidateMember(settings, settings.ClientId ?? $"{_defaultClientPrefix}-{settings.ConnectionId}");
-            return new MqttOutputTarget(plan.Id, settings, credentials, time, _defaultClientPrefix, connector, connections, inputGroup);
+            return new MqttOutputTarget(plan.Id, settings, credentials, time, _defaultClientPrefix, connector, connections, inputGroup, trust);
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)
         {

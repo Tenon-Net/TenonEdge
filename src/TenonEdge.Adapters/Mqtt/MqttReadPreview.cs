@@ -28,7 +28,7 @@ public sealed record MqttReadSampleResult(string Code, bool Retained, bool Dupli
 /// <summary>管理器拥有的独立随机 ClientId/CleanSession 诊断订阅，不改变正式订阅或确认状态。
 /// 只等待一条匹配消息；原始报文在分配前预约共享预算，返回前关闭连接并等回调退出。</summary>
 public sealed class MqttReadPreview(ISharedConnections connections, IOutboundConnector connector,
-    ICredentialResolver credentials, IJsonInputDecoderFactory decoders, IInputBufferBudget bufferBudget, TimeProvider time)
+    ICredentialResolver credentials, IJsonInputDecoderFactory decoders, IInputBufferBudget bufferBudget, TimeProvider time, ITlsTrustResolver? trust = null)
 {
     public async Task<MqttReadPreviewResult> RunAsync(MqttInputSettings settings, ClockSyncState clockState,
         CancellationToken cancellationToken, int timeoutMs = 30000)
@@ -89,6 +89,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
         {
             return await lease.ExecuteAsync(async (capture, token) =>
             {
+                var snapshot = settings.Tls ? trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) : null;
                 var received = new TaskCompletionSource<CaptureResult<T>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 var claimed = 0;
                 string? wireFailure = null;
@@ -98,7 +99,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                     { received.TrySetResult(Failure("buffer.unavailable")); }
                 }, time);
                 capture.Client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => { Volatile.Write(ref wireFailure, "payload.tooLarge"); }, receiveBuffer: capture.Buffer));
+                    () => { Volatile.Write(ref wireFailure, "payload.tooLarge"); }, receiveBuffer: capture.Buffer, offlineTrust: settings.Tls && snapshot is not null));
                 var client = capture.Client;
                 client.DisconnectedAsync += _ =>
                 {
@@ -113,7 +114,10 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                 if (credential is not null)
                 { options.WithCredentials(credential.Username, credential.Password); }
                 if (settings.Tls)
-                { options.WithTlsOptions(tls => tls.UseTls()); }
+                {
+                    options.WithTlsOptions(tls => tls.UseTls().WithCertificateValidationHandler(args =>
+                    ServerCertificateTrust.Evaluate(args.Certificate, args.Chain, args.SslPolicyErrors, snapshot) is null));
+                }
                 using (var setupDeadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.TimeoutMs), time))
                 using (var setup = CancellationTokenSource.CreateLinkedTokenSource(token, setupDeadline.Token))
                 {
@@ -131,9 +135,9 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                 token.ThrowIfCancellationRequested();
                 return CredentialUnchanged() ? result : Failure("credential.changed");
 
-                bool CredentialUnchanged() => settings.UsePassword
-                    ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient)?.Version == credential!.Version
-                    : credentials.DescribeMqtt(settings.ConnectionId) is null;
+                bool CredentialUnchanged() => (!settings.Tls || trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) == snapshot) &&
+                    (settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient)?.Version == credential!.Version
+                        : credentials.DescribeMqtt(settings.ConnectionId) is null);
 
                 async Task Receive(MqttApplicationMessageReceivedEventArgs args, CancellationToken lifetime)
                 {

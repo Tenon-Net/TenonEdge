@@ -97,6 +97,7 @@ internal static partial class SecretProtection
     {
         public const string StartupCheck = "TenonEdge.KeyRing.StartupCheck.v1";
 
+        public const string ConnectionTrust = "TenonEdge.ConnectionTrust.v1";
         public const string HttpCredential = "TenonEdge.HttpCredential.v1";
         public const string MqttCredential = "TenonEdge.MqttCredential.v1";
 

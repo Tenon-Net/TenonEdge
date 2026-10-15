@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text.Json;
@@ -8,10 +7,10 @@ using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Http;
 
-public sealed record HttpConnectionTestResult(bool Success, string Code, int? StatusCode, double ElapsedMs, ConnectionTestStep[] Steps);
+public sealed record HttpConnectionTestResult(bool Success, string Code, int? StatusCode, double ElapsedMs, ConnectionTestStep[] Steps, ServerCertificateInfo? Certificate = null);
 
 /// <summary>通过运行时共享连接的串行租约测试基础地址；重建空闲客户端后只做一次 GET，不跟随重定向或读取响应正文。</summary>
-public sealed class HttpConnectionTest(ISharedConnections connections, IOutboundConnector connector, TimeProvider time)
+public sealed class HttpConnectionTest(ISharedConnections connections, IOutboundConnector connector, TimeProvider time, ITlsTrustResolver? trust = null)
 {
     public async Task<HttpConnectionTestResult> RunAsync(HttpRequestSettings settings, HttpCredential? credential, CancellationToken cancellationToken)
     {
@@ -32,7 +31,7 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs)); }
+        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         try
@@ -50,22 +49,27 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
     }
 
     internal static async Task<HttpConnectionTestResult> ExecuteAsync(HttpRequestSettings settings, HttpRequestMessage request,
-        bool credentialUsed, IOutboundConnector connector, TimeProvider time, CancellationToken token)
+        bool credentialUsed, IOutboundConnector connector, TimeProvider time, CancellationToken token, TlsTrustSnapshot? trust = null)
     {
         var started = time.GetTimestamp();
         var trace = new ConnectionTestTrace(time, settings.BaseUri.Scheme == "https");
         string? certificateFailure = null;
+        ServerCertificateInfo? serverCertificate = null;
         using var handler = OutboundHttpTransport.CreateHandler(new ObservedTestConnector(connector, trace));
         handler.MaxResponseHeadersLength = 64;
+        if (trust is not null)
+        { handler.SslOptions.CertificateChainPolicy = ServerCertificateTrust.OfflineChainPolicy(); }
         handler.PlaintextStreamFilter = (context, _) =>
         {
             trace.Begin("protocol");
             return ValueTask.FromResult(context.PlaintextStream);
         };
-        handler.SslOptions.RemoteCertificateValidationCallback = (_, _, chain, errors) =>
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
         {
-            Volatile.Write(ref certificateFailure, CertificateFailure.Classify(errors, chain, DateTime.UtcNow));
-            return errors == SslPolicyErrors.None;
+            Volatile.Write(ref serverCertificate, ServerCertificateTrust.Describe(certificate));
+            var failure = ServerCertificateTrust.Evaluate(certificate, chain, errors, trust);
+            Volatile.Write(ref certificateFailure, failure);
+            return failure is null;
         };
         using var client = new HttpClient(handler, disposeHandler: false) { Timeout = Timeout.InfiniteTimeSpan };
         try
@@ -82,7 +86,7 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
         }
 
         HttpConnectionTestResult Result(string code, int? status, bool success) =>
-            new(success, code, status, time.GetElapsedTime(started).TotalMilliseconds, trace.FinishHttp(code, status, credentialUsed));
+            new(success, code, status, time.GetElapsedTime(started).TotalMilliseconds, trace.FinishHttp(code, status, credentialUsed), Volatile.Read(ref serverCertificate));
     }
 
     private static string Classify(Exception exception)

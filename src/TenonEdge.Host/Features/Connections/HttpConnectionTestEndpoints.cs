@@ -41,6 +41,7 @@ internal static class HttpConnectionTestEndpoints
         HttpConnectionTestRequest request, HttpConnectionTest probe, HttpCredentialStore credentials, ConnectionDraftStore drafts,
         SnowflakeIdGenerator ids, PreviewOperationBudget budget, HttpContext context)
     {
+        context.Response.Headers.CacheControl = "no-store";
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
         { return failure; }

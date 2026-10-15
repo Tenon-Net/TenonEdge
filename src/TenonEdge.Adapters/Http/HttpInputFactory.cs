@@ -6,7 +6,7 @@ using TenonEdge.Abstractions.Plans;
 namespace TenonEdge.Adapters.Http;
 
 public sealed class HttpInputFactory(IHttpCredentialResolver credentials, IOutboundConnector connector,
-    ISharedConnections connections, IJsonInputDecoderFactory decoders) : IInputUnitFactory
+    ISharedConnections connections, IJsonInputDecoderFactory decoders, ITlsTrustResolver? trust = null) : IInputUnitFactory
 {
     public string Kind => "input.http";
     public IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context)
@@ -14,7 +14,7 @@ public sealed class HttpInputFactory(IHttpCredentialResolver credentials, IOutbo
         try
         {
             var settings = HttpInputSettings.Parse(unit.Configuration);
-            return new HttpInputUnit(unit.Id, settings, context, decoders.Build(settings.Fields, settings.UpstreamTime), credentials, connector, connections);
+            return new HttpInputUnit(unit.Id, settings, context, decoders.Build(settings.Fields, settings.UpstreamTime), credentials, connector, connections, trust);
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException or InvalidOperationException or FormatException)
         { throw new RuntimeUnitBuildException(unit.Id, "HTTP 输入配置无效，请核对连接、周期和字段定义。", exception); }
@@ -22,7 +22,7 @@ public sealed class HttpInputFactory(IHttpCredentialResolver credentials, IOutbo
 }
 
 internal sealed class HttpInputUnit(RuntimeUnitId id, HttpInputSettings settings, InputUnitContext context, IJsonInputDecoder decoder,
-    IHttpCredentialResolver credentials, IOutboundConnector connector, ISharedConnections connections) : IRuntimeUnit
+    IHttpCredentialResolver credentials, IOutboundConnector connector, ISharedConnections connections, ITlsTrustResolver? trust = null) : IRuntimeUnit
 {
     // 覆盖 1 MiB 字节、JSON 元数据池扩容、4 MiB 字段结果及构造临时值；先预约再读取，不另建队列。
     internal const long ReservationBytes = 48L * 1024 * 1024;
@@ -33,7 +33,7 @@ internal sealed class HttpInputUnit(RuntimeUnitId id, HttpInputSettings settings
         if (stoppingToken.IsCancellationRequested)
         { return; }
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
-        await using var lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs));
+        await using var lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust));
         var period = TimeSpan.FromMilliseconds(settings.PeriodMs);
         var started = context.Time.GetTimestamp();
         long cycle = 0;

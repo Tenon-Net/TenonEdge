@@ -4,17 +4,19 @@ using MQTTnet.Exceptions;
 using MQTTnet.Formatter;
 using MQTTnet.Protocol;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Mqtt;
 
 /// <summary>由运行时共享连接管理拥有客户端，经借用的串行执行器调用，无回调重连。所有外部 I/O 有显式期限；异常文本不向运行事件泄露秘密。</summary>
 internal sealed class MqttSession(MqttConnectionSettings settings, string clientId, ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector, MqttInputReceiver? input = null,
-    Func<CancellationToken, Task>? waitForActivation = null) : IOutputAdapter
+    Func<CancellationToken, Task>? waitForActivation = null, ITlsTrustResolver? trust = null) : IOutputAdapter
 {
     private IMqttClient? _client;
     private MqttReceiveBuffer? _receiveBuffer;
     private readonly CancellationTokenSource _outboundStop = new();
     private string? _connectedVersion;
+    private TlsTrustSnapshot? _connectedTrust;
     private long _lastPing;
     private CancellationTokenSource? _receiveCancellation;
     private int _inputFailed;
@@ -59,7 +61,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
         try
         {
             var version = credential?.Version ?? "anonymous";
-            if (_connectedVersion != version)
+            var snapshot = ResolveTrust();
+            if (_connectedVersion != version || _connectedTrust != snapshot)
             {
                 Reset();
             }
@@ -95,7 +98,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     { _receiveBuffer = new MqttReceiveBuffer(input.BufferBudget, 100, receive, input.ReportBuffer, time); }
                 }
                 client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer));
+                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer, offlineTrust: settings.Tls && snapshot is not null));
                 _client = client;
                 if (_receiveBuffer is null && receive is not null)
                 { client.ApplicationMessageReceivedAsync += args => receive(args, CancellationToken.None); }
@@ -114,7 +117,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
 
                 if (settings.Tls)
                 {
-                    builder.WithTlsOptions(tls => tls.UseTls());
+                    builder.WithTlsOptions(tls => tls.UseTls().WithCertificateValidationHandler(args =>
+                        ServerCertificateTrust.Evaluate(args.Certificate, args.Chain, args.SslPolicyErrors, snapshot) is null));
                 }
 
                 var connected = await _client.ConnectAsync(builder.Build(), cancellationToken);
@@ -127,6 +131,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 if (input is not null)
                 { await input.SubscribeAsync(_client, connected.IsSessionPresent, cancellationToken); }
                 _connectedVersion = version;
+                _connectedTrust = snapshot;
                 _lastPing = time.GetTimestamp();
             }
 
@@ -137,10 +142,10 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 _lastPing = time.GetTimestamp();
             }
 
-            if ((Credential()?.Version ?? "anonymous") != version)
+            if ((Credential()?.Version ?? "anonymous") != version || ResolveTrust() != snapshot)
             {
                 Reset();
-                return new(OutputSendStatus.Retry, "凭证已变化，使用当前凭证重新连接后发送。");
+                return new(OutputSendStatus.Retry, "凭证或服务器信任已变化，重新连接后发送。");
             }
 
             if (message is null)
@@ -185,6 +190,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
         return true;
     }
 
+    private TlsTrustSnapshot? ResolveTrust() => settings.Tls ? trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) : null;
+
     private MqttCredential? Credential() => settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) : null;
 
     private static bool HasAccessDenial(Exception exception) =>
@@ -218,6 +225,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
         _receiveBuffer?.Dispose();
         _receiveBuffer = null;
         _connectedVersion = null;
+        _connectedTrust = null;
     }
 
     public ValueTask DisposeAsync()

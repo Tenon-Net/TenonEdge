@@ -36,7 +36,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         {
             ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
             if (existingId is null && (client.Queryable<MqttCredentialRecord>().InSingle(id) is not null ||
-                client.Queryable<HttpCredentialRecord>().InSingle(id) is not null || HasRetainedReference(client, id)))
+                client.Queryable<HttpCredentialRecord>().InSingle(id) is not null || client.Queryable<ConnectionTrustRecord>().InSingle(id) is not null || HasRetainedReference(client, id)))
             { throw new DraftWriteException("connection.reservedIdentity"); }
             var existing = existingId is null ? null : client.Queryable<ConnectionDraftRecord>().InSingle(id)
                 ?? throw new DraftWriteException("connection.notFound");
@@ -78,10 +78,11 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         { throw new DraftWriteException("connection.hasDeliveries"); }
         var mqttCleared = client.Deleteable<MqttCredentialRecord>().Where(record => record.ConnectionId == id).ExecuteCommand();
         var httpCleared = client.Deleteable<HttpCredentialRecord>().Where(record => record.ConnectionId == id).ExecuteCommand();
-        if (mqttCleared != 0 || httpCleared != 0)
+        var trustCleared = client.Deleteable<ConnectionTrustRecord>().Where(record => record.ConnectionId == id).ExecuteCommand();
+        if (mqttCleared != 0 || httpCleared != 0 || trustCleared != 0)
         {
             audit.Append(client, new AuditEntry("credential.connectionDeleted", AuditResults.Success, account, sourceIp,
-                id.ToString(CultureInfo.InvariantCulture), "删除未被引用且无发送记录的连接草稿，同时清除其认证凭证。"));
+                id.ToString(CultureInfo.InvariantCulture), "删除未被引用且无发送记录的连接草稿，同时清除其认证凭证与连接信任。"));
         }
         client.Deleteable(row).ExecuteCommand();
         ConfigurationCredentialRequirements.Remove(client, id);

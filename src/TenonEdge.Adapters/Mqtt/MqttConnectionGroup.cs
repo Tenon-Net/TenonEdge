@@ -10,6 +10,7 @@ internal sealed class MqttConnectionGroup
     private readonly string _clientId;
     private readonly ISharedConnections _connections;
     private readonly ICredentialResolver _credentials;
+    private readonly ITlsTrustResolver? _trust;
     private readonly TimeProvider _time;
     private readonly IOutboundConnector _connector;
     private readonly MqttInputReceiver _receiver;
@@ -21,7 +22,7 @@ internal sealed class MqttConnectionGroup
 
     public MqttConnectionGroup(MqttConnectionSettings settings, string clientId, IEnumerable<MqttInputBinding> bindings,
         ISharedConnections connections, ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector,
-        Func<CancellationToken, Task> waitForActivation, Action<string> report, IMqttSubscriptionStore? subscriptions = null, IInputBufferBudget? bufferBudget = null)
+        Func<CancellationToken, Task> waitForActivation, Action<string> report, IMqttSubscriptionStore? subscriptions = null, IInputBufferBudget? bufferBudget = null, ITlsTrustResolver? trust = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
         ArgumentNullException.ThrowIfNull(waitForActivation);
@@ -31,6 +32,7 @@ internal sealed class MqttConnectionGroup
         _ = (_settings with { ClientId = clientId }).ValidateConnection();
         _connections = connections;
         _credentials = credentials;
+        _trust = trust;
         _time = time;
         _connector = connector;
         _waitForActivation = waitForActivation;
@@ -43,7 +45,7 @@ internal sealed class MqttConnectionGroup
     internal IConnectionLease<MqttSession> Acquire() => _connections.Acquire(_settings.ConnectionId, "mqtt", _configurationIdentity,
         () =>
         {
-            var session = new MqttSession(_settings, _clientId, _credentials, _time, _connector, _receiver, _waitForActivation);
+            var session = new MqttSession(_settings, _clientId, _credentials, _time, _connector, _receiver, _waitForActivation, _trust);
             Volatile.Write(ref _session, session);
             return session;
         });

@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:43297/"
+      "url": "http://127.0.0.1:39441/"
     }
   ],
   "paths": {
@@ -7923,6 +7923,180 @@
         }
       }
     },
+    "/api/edge-admin/v1/connections/{connectionId}/tls-trust": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "读取连接级服务器信任的元数据，不返回证书内容或任何私钥",
+        "operationId": "getConnectionTlsTrust",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionTrustMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "管理员核对指纹后保存连接级固定服务器证书或 CA 信任",
+        "description": "立即影响后续连接操作，不应用草稿；保留名称/时间/用途校验，自定义信任离线建链，不提供忽略错误。信任版本变化后重建连接；不撤销已经在途的请求。",
+        "operationId": "writeConnectionTlsTrust",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionTrustRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionTrustMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/{connectionId}/tls-trust/clear": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "确认清除未被保留运行版本引用的连接信任，恢复系统信任",
+        "operationId": "clearConnectionTlsTrust",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionTrustClearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/delivery-control": {
       "get": {
         "tags": [
@@ -12720,6 +12894,142 @@
           }
         }
       },
+      "ConnectionTrustClearRequest": {
+        "required": [
+          "expectedDraftVersion",
+          "recipient",
+          "expectedVersion",
+          "confirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConnectionTrustMetadata": {
+        "required": [
+          "connectionId",
+          "recipient",
+          "mode",
+          "version",
+          "available",
+          "subject",
+          "issuer",
+          "notBefore",
+          "notAfter",
+          "sha256Fingerprint",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TlsTrustMode"
+          },
+          "version": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "subject": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "issuer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "notBefore": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "notAfter": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "sha256Fingerprint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConnectionTrustRequest": {
+        "required": [
+          "expectedDraftVersion",
+          "recipient",
+          "mode",
+          "certificateDerBase64",
+          "confirmedFingerprint",
+          "confirmed"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/TlsTrustMode"
+          },
+          "certificateDerBase64": {
+            "type": "string"
+          },
+          "confirmedFingerprint": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "CreatorTokenReview": {
         "required": [
           "version",
@@ -14732,6 +15042,16 @@
             "items": {
               "$ref": "#/components/schemas/ConnectionTestStep"
             }
+          },
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServerCertificateInfo"
+              }
+            ]
           }
         }
       },
@@ -16320,6 +16640,15 @@
               "null",
               "string"
             ]
+          },
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         },
         "additionalProperties": false
@@ -16362,6 +16691,16 @@
             "items": {
               "$ref": "#/components/schemas/ConnectionTestStep"
             }
+          },
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServerCertificateInfo"
+              }
+            ]
           }
         }
       },
@@ -20778,6 +21117,39 @@
           }
         }
       },
+      "ServerCertificateInfo": {
+        "required": [
+          "subject",
+          "issuer",
+          "notBefore",
+          "notAfter",
+          "sha256Fingerprint",
+          "certificateDerBase64"
+        ],
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sha256Fingerprint": {
+            "type": "string"
+          },
+          "certificateDerBase64": {
+            "type": "string"
+          }
+        }
+      },
       "SessionResponse": {
         "required": [
           "accountName",
@@ -21062,6 +21434,12 @@
           "gateway",
           "gateway-unsynced",
           null
+        ]
+      },
+      "TlsTrustMode": {
+        "enum": [
+          "pinnedCertificate",
+          "certificateAuthority"
         ]
       },
       "TrustedProxyRequest": {

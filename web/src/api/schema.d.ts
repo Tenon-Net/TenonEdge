@@ -1673,6 +1673,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/tls-trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取连接级服务器信任的元数据，不返回证书内容或任何私钥 */
+        get: operations["getConnectionTlsTrust"];
+        /**
+         * 管理员核对指纹后保存连接级固定服务器证书或 CA 信任
+         * @description 立即影响后续连接操作，不应用草稿；保留名称/时间/用途校验，自定义信任离线建链，不提供忽略错误。信任版本变化后重建连接；不撤销已经在途的请求。
+         */
+        put: operations["writeConnectionTlsTrust"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/connections/{connectionId}/tls-trust/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 确认清除未被保留运行版本引用的连接信任，恢复系统信任 */
+        post: operations["clearConnectionTlsTrust"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/delivery-control": {
         parameters: {
             query?: never;
@@ -2605,6 +2643,38 @@ export interface components {
             code?: null | string;
             timingGroup?: null | string;
         };
+        ConnectionTrustClearRequest: {
+            expectedDraftVersion: string;
+            recipient: string;
+            expectedVersion: string;
+            confirmed: boolean;
+        };
+        ConnectionTrustMetadata: {
+            /** Format: int64 */
+            connectionId: number | string;
+            recipient: string;
+            mode: components["schemas"]["TlsTrustMode"];
+            version: string;
+            available: boolean;
+            subject: null | string;
+            issuer: null | string;
+            /** Format: date-time */
+            notBefore: null | string;
+            /** Format: date-time */
+            notAfter: null | string;
+            sha256Fingerprint: null | string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ConnectionTrustRequest: {
+            expectedDraftVersion: string;
+            recipient: string;
+            mode: components["schemas"]["TlsTrustMode"];
+            certificateDerBase64: string;
+            confirmedFingerprint: string;
+            confirmed: boolean;
+            expectedVersion?: null | string;
+        };
         CreatorTokenReview: {
             version: string;
             items: components["schemas"]["ApiTokenSummary"][];
@@ -3069,6 +3139,7 @@ export interface components {
             /** Format: double */
             elapsedMs: number | string;
             steps: components["schemas"]["ConnectionTestStep"][];
+            certificate?: null | components["schemas"]["ServerCertificateInfo"];
         };
         /** @enum {unknown} */
         HttpCredentialKind: "basic" | "bearer" | "apiKeyHeader" | "apiKeyQuery";
@@ -3446,6 +3517,8 @@ export interface components {
             credentialConnectionId?: null | number | string;
             username?: null | string;
             password?: null | string;
+            /** Format: int64 */
+            connectionId?: null | number | string;
         };
         MqttConnectionTestResult: {
             success: boolean;
@@ -3455,6 +3528,7 @@ export interface components {
             /** Format: double */
             elapsedMs: number | string;
             steps: components["schemas"]["ConnectionTestStep"][];
+            certificate?: null | components["schemas"]["ServerCertificateInfo"];
         };
         MqttCredentialMetadata: {
             /** Format: int64 */
@@ -4462,6 +4536,16 @@ export interface components {
             notEffectiveReason: null | string;
             changeDescription: null | string;
         };
+        ServerCertificateInfo: {
+            subject: string;
+            issuer: string;
+            /** Format: date-time */
+            notBefore: string;
+            /** Format: date-time */
+            notAfter: string;
+            sha256Fingerprint: string;
+            certificateDerBase64: string;
+        };
         SessionResponse: {
             accountName: string;
             displayName: null | string;
@@ -4534,6 +4618,8 @@ export interface components {
         };
         /** @enum {unknown} */
         TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced" | null;
+        /** @enum {unknown} */
+        TlsTrustMode: "pinnedCertificate" | "certificateAuthority";
         TrustedProxyRequest: {
             networks: string[];
             expectedVersion: null | string;
@@ -10815,6 +10901,139 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConnectionTlsTrust: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTrustMetadata"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    writeConnectionTlsTrust: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionTrustRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTrustMetadata"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    clearConnectionTlsTrust: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectionTrustClearRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

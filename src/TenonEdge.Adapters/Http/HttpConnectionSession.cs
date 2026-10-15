@@ -10,12 +10,15 @@ namespace TenonEdge.Adapters.Http;
 /// <summary>由共享连接管理拥有的 HTTP 客户端；请求路径、凭证及成功约定逐次提供，不绑死某个输出节点。</summary>
 internal sealed class HttpConnectionSession : IAsyncDisposable
 {
-    private HttpClient _client;
+    private HttpClient? _client;
     private readonly IOutboundConnector _connector;
     private readonly int _timeoutMs;
-    public HttpConnectionSession(IOutboundConnector connector, int timeoutMs)
+    private readonly ITlsTrustResolver? _trust;
+    private TlsTrustSnapshot? _clientTrust;
+    public HttpConnectionSession(IOutboundConnector connector, int timeoutMs, ITlsTrustResolver? trust = null)
     {
         _connector = connector;
+        _trust = trust;
         _timeoutMs = timeoutMs;
         _client = OutboundHttpTransport.CreateClient(connector, TimeSpan.FromMilliseconds(timeoutMs));
     }
@@ -24,10 +27,14 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     internal async Task<HttpConnectionTestResult> TestConnectionAsync(HttpRequestSettings settings, HttpRequestMessage request,
         bool credentialUsed, TimeProvider time, CancellationToken token)
     {
-        _client.Dispose();
+        _client?.Dispose();
         try
-        { return await HttpConnectionTest.ExecuteAsync(settings, request, credentialUsed, _connector, time, token); }
-        finally { _client = OutboundHttpTransport.CreateClient(_connector, TimeSpan.FromMilliseconds(_timeoutMs)); }
+        { return await HttpConnectionTest.ExecuteAsync(settings, request, credentialUsed, _connector, time, token, ResolveTrust(settings)); }
+        finally
+        {
+            _clientTrust = null;
+            _client = OutboundHttpTransport.CreateClient(_connector, TimeSpan.FromMilliseconds(_timeoutMs));
+        }
     }
 
     public async Task<OutputSendResult> SendOutputAsync(HttpOutputSettings settings, IHttpCredentialResolver credentials, TimeProvider time, OutputMessage message, CancellationToken cancellationToken)
@@ -71,7 +78,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
                 catch (Exception exception) when (exception is ArgumentException or FormatException)
                 { return new(OutputSendStatus.SuspendTarget, "HTTP 凭证格式无效或与固定请求参数冲突。"); }
             }
-            using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await Client(settings).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             var evaluator = new HttpOutputResponse(successRule, time);
             return await evaluator.EvaluateAsync(response, time.GetUtcNow(), cancellationToken, credential);
         }
@@ -86,9 +93,9 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     }
 
     // 在原共享串行租约内完成响应读取，释放响应后才允许下一个业务请求。
-    internal async Task<HttpTestSendResult> SendTestOutputAsync(HttpRequestMessage request, HttpCredential? credential, CancellationToken token)
+    internal async Task<HttpTestSendResult> SendTestOutputAsync(HttpRequestSettings settings, HttpRequestMessage request, HttpCredential? credential, CancellationToken token)
     {
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        using var response = await Client(settings).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         return await HttpTestResponseCapture.ReadAsync(response, credential, token);
     }
 
@@ -96,7 +103,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     {
         var (message, _) = CreateInputRequest(settings, credentials);
         using var request = message;
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await Client(settings).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         return await HttpInputResponse.ReadAsync(response, cancellationToken);
     }
 
@@ -105,7 +112,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     {
         var (message, credential) = CreateInputRequest(settings, credentials);
         using var request = message;
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await Client(settings).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
         try
         {
@@ -121,7 +128,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     {
         var (message, credential) = CreateInputRequest(settings, credentials);
         using var request = message;
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await Client(settings).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         try
         {
             using var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
@@ -138,7 +145,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     {
         var (message, credential) = CreateInputRequest(settings, credentials);
         using var request = message;
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        using var response = await Client(settings).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         try
         {
             using var document = await HttpInputResponse.ReadAsync(response, token);
@@ -146,6 +153,30 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         }
         catch (HttpInputResponseException exception)
         { return JsonReadSampleResult.Failure(PreviewFailure(exception)); }
+    }
+
+    private TlsTrustSnapshot? ResolveTrust(HttpRequestSettings settings) => settings.BaseUri.Scheme == "https"
+        ? _trust?.ResolveTlsTrust(settings.ConnectionId, settings.BaseAddress) : null;
+
+    private HttpClient Client(HttpRequestSettings settings)
+    {
+        TlsTrustSnapshot? trust;
+        try
+        { trust = ResolveTrust(settings); }
+        catch
+        {
+            // 读取失败也不能继续使用之前已经验证的长连接。
+            _client?.Dispose();
+            _client = null;
+            throw;
+        }
+        if (_client is null || _clientTrust != trust)
+        {
+            _client?.Dispose();
+            _client = OutboundHttpTransport.CreateClient(_connector, TimeSpan.FromMilliseconds(_timeoutMs), trust);
+            _clientTrust = trust;
+        }
+        return _client;
     }
 
     private static string PreviewFailure(HttpInputResponseException exception) => exception.Failure switch
@@ -209,5 +240,5 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     }
 
     private static bool HasCause<T>(Exception exception) where T : Exception => exception is T || exception.InnerException is { } inner && HasCause<T>(inner);
-    public ValueTask DisposeAsync() { _client.Dispose(); return ValueTask.CompletedTask; }
+    public ValueTask DisposeAsync() { _client?.Dispose(); return ValueTask.CompletedTask; }
 }

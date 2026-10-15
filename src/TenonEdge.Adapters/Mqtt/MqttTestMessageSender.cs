@@ -8,7 +8,7 @@ public sealed record MqttTestSendResult(bool Sent, bool BrokerAcknowledged, stri
 /// <summary>一次显式测试的传输原语：复用正式会话的格式、TLS、接收上界和出站连接器，
 /// 但使用独立随机 ClientId / CleanSession，不借用运行 ClientId、不重连重试、不入队。
 /// Host 必须先核对权限、确认、凭证绑定及共享测试预算；本类不提供管理入口。</summary>
-public sealed class MqttTestMessageSender(IOutboundConnector connector, TimeProvider time)
+public sealed class MqttTestMessageSender(IOutboundConnector connector, TimeProvider time, ITlsTrustResolver? trust = null)
 {
     public async Task<MqttTestSendResult> SendAsync(MqttConnectionSettings settings, MqttCredential? credential,
         OutputMessage message, CancellationToken cancellationToken)
@@ -30,7 +30,7 @@ public sealed class MqttTestMessageSender(IOutboundConnector connector, TimeProv
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.TimeoutMs), time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var credentials = new SnapshotCredential(settings.ConnectionId, settings.Recipient, credential);
-        await using var session = new MqttSession(settings, "te-send-test-" + Guid.NewGuid().ToString("N"), credentials, time, connector);
+        await using var session = new MqttSession(settings, "te-send-test-" + Guid.NewGuid().ToString("N"), credentials, time, connector, trust: trust);
         try
         {
             var result = await session.SendAsync(message, operation.Token);

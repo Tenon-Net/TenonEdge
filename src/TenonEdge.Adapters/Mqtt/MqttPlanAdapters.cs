@@ -18,9 +18,10 @@ internal sealed class MqttPlanAdapters
     private readonly string _clientPrefix;
     private readonly Action<long, string> _report;
     private readonly IMqttSubscriptionStore? _subscriptions;
+    private readonly ITlsTrustResolver? _trust;
 
     public MqttPlanAdapters(ICredentialResolver credentials, IJsonInputDecoderFactory decoders, ISharedConnections shared,
-        IOutboundConnector connector, TimeProvider time, string gatewayNodeId, Action<long, string> report, IMqttSubscriptionStore? subscriptions = null)
+        IOutboundConnector connector, TimeProvider time, string gatewayNodeId, Action<long, string> report, IMqttSubscriptionStore? subscriptions = null, ITlsTrustResolver? trust = null)
     {
         _credentials = credentials;
         _decoders = decoders;
@@ -30,8 +31,9 @@ internal sealed class MqttPlanAdapters
         _clientPrefix = "tenon-" + Guid.Parse(gatewayNodeId).ToString("N");
         _report = report;
         _subscriptions = subscriptions;
+        _trust = trust;
         InputFactory = new Inputs(this);
-        OutputFactory = new MqttOutputFactory(credentials, time, connector, shared, gatewayNodeId)
+        OutputFactory = new MqttOutputFactory(credentials, time, connector, shared, gatewayNodeId, trust)
         { InputGroups = ResolveOutputGroup };
     }
 
@@ -78,7 +80,7 @@ internal sealed class MqttPlanAdapters
             connection.Group = new Lazy<MqttConnectionGroup>(() => new MqttConnectionGroup(settings, clientId,
                 captured.Inputs.Select(input => new MqttInputBinding(input.Settings.TopicFilter, input.Settings.Qos,
                     input.ReceiveAsync, input.Settings.ProcessRetained)), _shared, _credentials, _time, _connector,
-                captured.WaitForActivationAsync, reason => _report(settings.ConnectionId, reason), _subscriptions, context.BufferBudget));
+                captured.WaitForActivationAsync, reason => _report(settings.ConnectionId, reason), _subscriptions, context.BufferBudget, _trust));
             _connections.Add(settings.ConnectionId, connection);
         }
         if (connection.Settings.ConnectionIdentity(connection.ClientId) != settings.ConnectionIdentity(clientId))
