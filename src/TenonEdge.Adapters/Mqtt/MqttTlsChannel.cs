@@ -11,11 +11,11 @@ namespace TenonEdge.Adapters.Mqtt;
 /// <summary>所有 MQTT TLS 使用的 BCL 通道。MQTTnet 5.2 的 TLS 选项不能禁用证书 AIA 下载，
 /// 因此在原受控 TCP StreamProvider 之上显式提供离线链策略；MQTT 编解码、收发限制和确认仍由原适配器处理。
 /// 默认使用系统根，连接信任由原回调判断。没有关闭验证或另建 TCP 连接，不声明在线吊销验证。</summary>
-internal sealed class MqttTlsChannel(MqttClientTcpOptions options) : IMqttChannel
+internal sealed class MqttTlsChannel(MqttClientTcpOptions options, TlsClientCertificate? clientCertificate = null) : IMqttChannel
 {
     private SslStream? _stream;
     private int _disposed;
-    public X509Certificate2 ClientCertificate => null!;
+    public X509Certificate2 ClientCertificate => _stream?.LocalCertificate as X509Certificate2 ?? null!;
     public EndPoint LocalEndPoint => null!;
     public EndPoint RemoteEndPoint => options.RemoteEndpoint;
     public bool IsSecureConnection => true;
@@ -27,6 +27,8 @@ internal sealed class MqttTlsChannel(MqttClientTcpOptions options) : IMqttChanne
             options.TlsOptions is not { UseTls: true, CertificateValidationHandler: not null } tls ||
             tls.ClientCertificatesProvider is not null || tls.CertificateSelectionHandler is not null)
         { throw new InvalidOperationException("受控 TLS 通道参数无效。"); }
+        // 私钥由连接/测试的所有者持有；通道只借用，不选择系统证书库里的其他身份。
+        var clientContext = clientCertificate?.Context(DateTimeOffset.UtcNow);
         var network = await options.StreamProvider.ConnectAsync(endpoint, cancellationToken);
         SslStream stream;
         try
@@ -45,6 +47,7 @@ internal sealed class MqttTlsChannel(MqttClientTcpOptions options) : IMqttChanne
                 TargetHost = endpoint.Host,
                 EnabledSslProtocols = tls.SslProtocol,
                 CertificateChainPolicy = ServerCertificateTrust.OfflineChainPolicy(),
+                ClientCertificateContext = clientContext,
                 EncryptionPolicy = EncryptionPolicy.RequireEncryption,
                 AllowRenegotiation = tls.AllowRenegotiation,
             }, cancellationToken);

@@ -51,7 +51,8 @@ internal sealed class MosquittoBroker : IAsyncDisposable
     /// <summary>Broker 服务器证书的 SHA-256 指纹（十六进制大写）。</summary>
     public string ServerCertificateSha256 { get; }
 
-    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false, int? maxQueuedMessages = null, int? maxQueuedBytes = null, bool deviceAcl = false)
+    public static async Task<MosquittoBroker> StartAsync(CancellationToken cancellationToken, bool persistence = false, bool stablePorts = false, int? maxQueuedMessages = null, int? maxQueuedBytes = null, bool deviceAcl = false,
+        string? clientAuthorityPem = null)
     {
         if (maxQueuedMessages is <= 0)
         { throw new ArgumentOutOfRangeException(nameof(maxQueuedMessages)); }
@@ -61,6 +62,13 @@ internal sealed class MosquittoBroker : IAsyncDisposable
         var authority = TestCertificateAuthority.Create("TenonEdge Probe CA");
         var (certificate, key, fingerprint) = authority.IssueServerCertificate(ServerName);
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Probes", "Mqtt", "mosquitto.conf"), Path.Combine(files.Path, "mosquitto.conf"));
+        if (clientAuthorityPem is not null)
+        {
+            // 只修改本测试的 TLS listener；明文 listener 仍以账号密码供独立测试收发端使用。
+            await File.WriteAllTextAsync(Path.Combine(files.Path, "client-ca.crt"), clientAuthorityPem, cancellationToken);
+            await File.AppendAllTextAsync(Path.Combine(files.Path, "mosquitto.conf"),
+                "\ncafile /mosquitto/config/client-ca.crt\nrequire_certificate true\nuse_identity_as_username true\n", cancellationToken);
+        }
         if (persistence)
         {
             // 不自动保存：分别实测正常停止的检查点与强杀前尚未保存的窗口。
@@ -93,6 +101,7 @@ internal sealed class MosquittoBroker : IAsyncDisposable
             // 以 root 把配置、证书复制进容器并生成密码文件，交给 mosquitto 用户；Mosquitto 2.1 要求密码文件归运行用户所有且不可被其他人读取。
             const string Setup =
                 "set -e; if [ ! -f /mosquitto/config/server.key ]; then cp /probe/mosquitto.conf /probe/server.crt /probe/server.key /mosquitto/config/; "
+                + "if [ -f /probe/client-ca.crt ]; then cp /probe/client-ca.crt /mosquitto/config/; fi; "
                 + $"mosquitto_passwd -b -c /mosquitto/config/passwd {UserName} {Password}; "
                 + "if [ -f /probe/acl ]; then cp /probe/acl /mosquitto/config/acl; "
                 + $"mosquitto_passwd -b /mosquitto/config/passwd sensor-a {Password}; mosquitto_passwd -b /mosquitto/config/passwd sensor-b {Password}; fi; fi; "

@@ -9,19 +9,29 @@ namespace TenonEdge.Adapters.Http;
 /// </summary>
 public static class OutboundHttpTransport
 {
-    public static HttpClient CreateClient(IOutboundConnector connector, TimeSpan timeout, TlsTrustSnapshot? trust = null)
+    // clientCertificate 由调用者持有，须晚于 HttpClient 释放；不会被作为服务器信任锚。
+    public static HttpClient CreateClient(IOutboundConnector connector, TimeSpan timeout, TlsTrustSnapshot? trust = null,
+        TlsClientCertificate? clientCertificate = null)
     {
         ArgumentNullException.ThrowIfNull(connector);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
         var handler = CreateHandler(connector);
+        HttpMessageHandler pipeline = handler;
         if (trust is not null)
         {
             handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
             ServerCertificateTrust.Evaluate(certificate, chain, errors, trust) is null;
         }
         try
-        { return new HttpClient(handler, disposeHandler: true) { Timeout = timeout }; }
-        catch { handler.Dispose(); throw; }
+        {
+            if (clientCertificate is not null)
+            {
+                handler.SslOptions.ClientCertificateContext = clientCertificate.Context(DateTimeOffset.UtcNow);
+                pipeline = new ClientCertificateHandler(handler, clientCertificate);
+            }
+            return new HttpClient(pipeline, disposeHandler: true) { Timeout = timeout };
+        }
+        catch { pipeline.Dispose(); throw; }
     }
 
     internal static SocketsHttpHandler CreateHandler(IOutboundConnector connector) => new()
@@ -35,4 +45,26 @@ public static class OutboundHttpTransport
         MaxResponseDrainSize = 0,
         ConnectCallback = (context, token) => connector.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, token),
     };
+
+    private sealed class ClientCertificateHandler(HttpMessageHandler inner, TlsClientCertificate certificate) : DelegatingHandler(inner)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Validate(request);
+            return base.SendAsync(request, cancellationToken);
+        }
+
+        protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Validate(request);
+            return base.Send(request, cancellationToken);
+        }
+
+        private void Validate(HttpRequestMessage request)
+        {
+            if (request.RequestUri?.Scheme != "https")
+            { throw new ArgumentException("客户端证书认证要求 HTTPS，不能降级为明文请求。"); }
+            certificate.ValidateForUse(DateTimeOffset.UtcNow);
+        }
+    }
 }
