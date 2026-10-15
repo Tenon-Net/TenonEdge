@@ -56,10 +56,10 @@ public sealed class ConfigurationExportTests
         var connections = factory.Services.GetRequiredService<ConnectionDraftStore>();
         var http = connections.Write(null, new("0", "http", "HTTP", ConnectionKind.Http, Http: new("https://example.com/base/")), "fixture", null);
         var mqtt = connections.Write(null, new(http.Version, "mqtt", "MQTT", ConnectionKind.Mqtt, Mqtt: new("broker.example.com")), "fixture", null);
-        factory.Services.GetRequiredService<HttpCredentialStore>().Write(http.Connection.Id,
-            new("https://example.com/base/", HttpCredentialKind.Bearer, Secret: "not-a-real-http-secret", ExpectedDraftVersion: mqtt.Version), "fixture", null, true);
-        factory.Services.GetRequiredService<MqttCredentialStore>().Write(mqtt.Connection.Id,
-            new("mqtt://broker.example.com:1883", Username: "private-fixture-username", Password: "not-a-real-mqtt-secret", ExpectedDraftVersion: mqtt.Version), "fixture", null, true);
+        await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(http.Connection.Id,
+            new("https://example.com/base/", HttpCredentialKind.Bearer, Secret: "not-a-real-http-secret", ExpectedDraftVersion: mqtt.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
+        await factory.Services.GetRequiredService<MqttCredentialStore>().WriteAsync(mqtt.Connection.Id,
+            new("mqtt://broker.example.com:1883", Username: "private-fixture-username", Password: "not-a-real-mqtt-secret", ExpectedDraftVersion: mqtt.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var device = factory.Services.GetRequiredService<DeviceDraftStore>().Write(null,
             new(mqtt.Version, "meter", "Meter", DeviceKind.Mqtt, ConnectionId: mqtt.Connection.Id), "fixture", null);
         var db = factory.Services.GetRequiredService<ConfigDatabase>();
@@ -96,8 +96,8 @@ public sealed class ConfigurationExportTests
         var saved = factory.Services.GetRequiredService<ConnectionDraftStore>().Write(null,
             new("0", "http", "HTTP", ConnectionKind.Http, Http: new("https://example.com/base/")), "fixture", null);
         var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
-        var first = credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
-            Name: "X-First-Key", Secret: "fixture-first-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        var first = await credentials.WriteAsync(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
+            Name: "X-First-Key", Secret: "fixture-first-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         async Task<string> Digest()
         {
             using var response = await client.GetAsync(new Uri(Endpoint, UriKind.Relative), Token);
@@ -106,14 +106,14 @@ public sealed class ConfigurationExportTests
             return value.GetProperty("connections")[0].GetProperty("credential").GetProperty("accountIdentity").GetString()!;
         }
         var original = await Digest();
-        var rotated = credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
+        var rotated = await credentials.WriteAsync(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
             Name: "X-Second-Key", Secret: "fixture-rotated-secret", ExpectedVersion: first.Version,
-            ExpectedDraftVersion: saved.Version, AccountChanged: false), "fixture", null, true);
+            ExpectedDraftVersion: saved.Version, AccountChanged: false), "fixture", null, true, token: TestContext.Current.CancellationToken);
         Assert.NotEqual(first.Version, rotated.Version);
         Assert.Equal(original, await Digest());
-        credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
+        await credentials.WriteAsync(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.ApiKeyHeader,
             Name: "X-Second-Key", Secret: "fixture-other-account", ExpectedVersion: rotated.Version,
-            ExpectedDraftVersion: saved.Version, AccountChanged: true), "fixture", null, true);
+            ExpectedDraftVersion: saved.Version, AccountChanged: true), "fixture", null, true, token: TestContext.Current.CancellationToken);
         Assert.NotEqual(original, await Digest());
     }
 
@@ -124,8 +124,8 @@ public sealed class ConfigurationExportTests
         var store = factory.Services.GetRequiredService<ConnectionDraftStore>();
         var saved = store.Write(null, new("0", "http", "HTTP", ConnectionKind.Http, Http: new("https://example.com/base/")), "fixture", null);
         var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
-        var first = credentials.Write(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.Bearer,
-            Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        var first = await credentials.WriteAsync(saved.Connection.Id, new("https://example.com/base/", HttpCredentialKind.Bearer,
+            Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var changed = store.Write(saved.Connection.Id, new(saved.Version, "http", "HTTP", ConnectionKind.Http,
             Http: new("https://new.example.com/")), "fixture", null);
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
@@ -133,8 +133,8 @@ public sealed class ConfigurationExportTests
         Assert.True(actual.HasSecret);
         Assert.Equal("https://example.com/base/", actual.Recipient);
         Assert.Equal(first.Version, actual.Version);
-        credentials.Write(saved.Connection.Id, new("https://new.example.com/", ExpectedVersion: first.Version,
-            ExpectedDraftVersion: changed.Version), "fixture", null, true);
+        await credentials.WriteAsync(saved.Connection.Id, new("https://new.example.com/", ExpectedVersion: first.Version,
+            ExpectedDraftVersion: changed.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var invalidated = Assert.Single(database.InTransaction(ConfigurationCredentialMetadata.Read));
         Assert.False(invalidated.HasSecret);
         Assert.Equal("https://new.example.com/", invalidated.Recipient);

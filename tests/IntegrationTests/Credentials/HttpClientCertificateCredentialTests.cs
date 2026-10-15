@@ -114,7 +114,7 @@ public sealed class HttpClientCertificateCredentialTests
         await using var factory = new TenonEdgeApplicationFactory();
         using var client = await AdminAsync(factory);
         var store = Store(factory);
-        var first = store.Write(1, Request(peer.Issue()), "admin", null, true);
+        var first = await store.WriteAsync(1, Request(peer.Issue()), "admin", null, true, token: TestContext.Current.CancellationToken);
         var old = store.DescribeHttp(1)!;
         var settings = new HttpOutputSettings { ConnectionId = 1, BaseAddress = Recipient };
         var fingerprint = settings.Fingerprint(old);
@@ -124,16 +124,16 @@ public sealed class HttpClientCertificateCredentialTests
         if (failed)
         { Assert.True((await cache.RecordFailureAsync(new(Assert.Single(cache.ReadPending(1, 0, 1)).Seq, 0, "rejected", true, false), Token)).Committed); }
         var rotated = Request(peer.Issue()) with { ExpectedVersion = first.Version };
-        var error = Assert.Throws<CredentialWriteException>(() => store.Write(1, rotated, "admin", null, true));
+        var error = await Assert.ThrowsAsync<CredentialWriteException>(() => store.WriteAsync(1, rotated, "admin", null, true, token: TestContext.Current.CancellationToken));
         Assert.Equal("credential.accountDeclarationRequired", error.Code);
-        var same = store.Write(1, rotated with { AccountChanged = false }, "admin", null, true);
+        var same = await store.WriteAsync(1, rotated with { AccountChanged = false }, "admin", null, true, token: TestContext.Current.CancellationToken);
         Assert.Equal(fingerprint, settings.Fingerprint(store.DescribeHttp(1)));
         Assert.Equal(old.AccountMarker, store.DescribeHttp(1)!.AccountMarker);
-        var changed = store.Write(1, Request(peer.Issue("different")) with { ExpectedVersion = same.Version }, "admin", null, true);
+        var changed = await store.WriteAsync(1, Request(peer.Issue("different")) with { ExpectedVersion = same.Version }, "admin", null, true, token: TestContext.Current.CancellationToken);
         Assert.NotEqual(fingerprint, settings.Fingerprint(store.DescribeHttp(1)));
         Assert.Equal("CN=different", OutputRecipientIdentity.Http(Recipient, store.DescribeHttp(1)).ClientCertificateSubject);
         Assert.Equal(old.AccountMarker, store.DescribeHttp(1)!.AccountMarker);
-        store.Write(1, Request(peer.Issue("different")) with { ExpectedVersion = changed.Version, AccountChanged = true }, "admin", null, true);
+        await store.WriteAsync(1, Request(peer.Issue("different")) with { ExpectedVersion = changed.Version, AccountChanged = true }, "admin", null, true, token: TestContext.Current.CancellationToken);
         Assert.NotEqual(old.AccountMarker, store.DescribeHttp(1)!.AccountMarker);
         Assert.Single(failed ? cache.ReadFailed(1, 0, 10) : cache.ReadPending(1, 0, 10));
     }
@@ -148,20 +148,20 @@ public sealed class HttpClientCertificateCredentialTests
         {
             using var client = await AdminAsync(factory);
             var store = Store(factory);
-            var first = store.Write(1, Request(peer.Issue()), "admin", null, true);
-            Assert.Throws<ArgumentException>(() => store.Write(1, new("http://localhost:8883/", ExpectedVersion: first.Version, RetainExisting: true), "admin", null, true));
-            Assert.Equal("credential.administratorRequired", Assert.Throws<CredentialWriteException>(() =>
-                store.Write(1, new("https://localhost:8884/", ExpectedVersion: first.Version, RetainExisting: true), "admin", null, false)).Code);
-            var retained = store.Write(1, new("https://localhost:8884/", ExpectedVersion: first.Version, RetainExisting: true), "admin", null, true);
+            var first = await store.WriteAsync(1, Request(peer.Issue()), "admin", null, true, token: TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<ArgumentException>(() => store.WriteAsync(1, new("http://localhost:8883/", ExpectedVersion: first.Version, RetainExisting: true), "admin", null, true, token: TestContext.Current.CancellationToken));
+            Assert.Equal("credential.administratorRequired", (await Assert.ThrowsAsync<CredentialWriteException>(() =>
+                store.WriteAsync(1, new("https://localhost:8884/", ExpectedVersion: first.Version, RetainExisting: true), "admin", null, false, token: TestContext.Current.CancellationToken))).Code);
+            var retained = await store.WriteAsync(1, new("https://localhost:8884/", ExpectedVersion: first.Version, RetainExisting: true), "admin", null, true, token: TestContext.Current.CancellationToken);
             Assert.NotNull(store.ResolveHttp(1, retained.Recipient));
             Assert.Null(store.ResolveHttp(1, Recipient));
-            var invalidated = store.Write(1, new(Recipient, ExpectedVersion: retained.Version), "admin", null, true);
+            var invalidated = await store.WriteAsync(1, new(Recipient, ExpectedVersion: retained.Version), "admin", null, true, token: TestContext.Current.CancellationToken);
             Assert.False(invalidated.Configured);
             Assert.Null(store.ResolveHttp(1, Recipient));
-            first = store.Write(1, Request(peer.Issue(pfx: true)) with { ExpectedVersion = invalidated.Version }, "admin", null, true);
+            first = await store.WriteAsync(1, Request(peer.Issue(pfx: true)) with { ExpectedVersion = invalidated.Version }, "admin", null, true, token: TestContext.Current.CancellationToken);
             using var db = factory.Services.GetRequiredService<ConfigDatabase>().CreateIsolatedClient();
             db.Ado.ExecuteCommand("CREATE TRIGGER fail_certificate_audit BEFORE INSERT ON audit_log WHEN NEW.action = 'credential.http.write' BEGIN SELECT RAISE(ABORT, 'fixture'); END");
-            Assert.ThrowsAny<Exception>(() => store.Write(1, Request(peer.Issue("other")) with { ExpectedVersion = first.Version }, "admin", null, true));
+            await Assert.ThrowsAnyAsync<Exception>(() => store.WriteAsync(1, Request(peer.Issue("other")) with { ExpectedVersion = first.Version }, "admin", null, true, token: TestContext.Current.CancellationToken));
             Assert.Equal(first.Version, store.DescribeHttp(1)!.Version);
             db.Ado.ExecuteCommand("DROP TRIGGER fail_certificate_audit");
             expectedVersion = first.Version;
@@ -173,7 +173,7 @@ public sealed class HttpClientCertificateCredentialTests
             using var reloaded = HttpClientCertificate.Open(store.ResolveHttp(1, Recipient), DateTimeOffset.UtcNow);
             Assert.Equal("CN=gateway-client", reloaded!.Info.Subject);
             Assert.Equal(expectedVersion, store.DescribeHttp(1)!.Version);
-            store.Write(1, new(Recipient, HttpCredentialKind.Bearer, Secret: "fixture-token", ExpectedVersion: expectedVersion), "admin", null, true);
+            await store.WriteAsync(1, new(Recipient, HttpCredentialKind.Bearer, Secret: "fixture-token", ExpectedVersion: expectedVersion), "admin", null, true, token: TestContext.Current.CancellationToken);
             Assert.Null(store.DescribeHttp(1)!.CertificateSubject);
             Assert.Equal(HttpCredentialKind.Bearer, store.DescribeHttp(1)!.Kind);
             Assert.Equal("fixture-token", store.ResolveHttp(1, Recipient)!.Secret);
@@ -191,13 +191,13 @@ public sealed class HttpClientCertificateCredentialTests
         var id = draft.Connection.Id;
         var store = Store(factory);
         var request = Request(peer.Issue()) with { ExpectedDraftVersion = draft.Version };
-        var first = store.Write(id, request, "admin", null, true);
+        var first = await store.WriteAsync(id, request, "admin", null, true, token: TestContext.Current.CancellationToken);
         var digest = Digest();
-        var second = store.Write(id, request with { Certificate = peer.Issue(), ExpectedVersion = first.Version }, "admin", null, true);
+        var second = await store.WriteAsync(id, request with { Certificate = peer.Issue(), ExpectedVersion = first.Version }, "admin", null, true, token: TestContext.Current.CancellationToken);
         Assert.Equal(digest, Digest());
-        store.Write(id, request with { Certificate = peer.Issue("other"), ExpectedVersion = second.Version }, "admin", null, true);
+        await store.WriteAsync(id, request with { Certificate = peer.Issue("other"), ExpectedVersion = second.Version }, "admin", null, true, token: TestContext.Current.CancellationToken);
         Assert.NotEqual(digest, Digest());
-        Assert.Throws<CredentialWriteException>(() => store.Write(id, request with { ExpectedDraftVersion = "stale" }, "admin", null, true));
+        await Assert.ThrowsAsync<CredentialWriteException>(() => store.WriteAsync(id, request with { ExpectedDraftVersion = "stale" }, "admin", null, true, token: TestContext.Current.CancellationToken));
         string Digest()
         {
             using var db = factory.Services.GetRequiredService<ConfigDatabase>().CreateIsolatedClient();

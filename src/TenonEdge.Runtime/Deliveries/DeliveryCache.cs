@@ -76,6 +76,10 @@ public sealed class DeliveryCache
     public RuntimeActivityTotals GetActivityTotals() => PendingCounters.ActivitySnapshot();
     internal PendingCounters PendingCounters { get; } = new();
 
+    public DeliveryIdentityBarrier IdentityBarrier { get; } = new();
+
+    public bool HasUndelivered(long connectionId) => Store.HasUndelivered(connectionId);
+
     public DeliveryCacheOptions Options { get; }
     public OutputTrafficHistory OutputTraffic { get; }
 
@@ -85,6 +89,7 @@ public sealed class DeliveryCache
 
     /// <summary>
     /// 把一组记录交给写者，等待它们所在的分组提交返回。符合配额的记录在同一事务中接管；超额记录只计拒绝，结果通过 QuotaRejectedRecords 明示。
+    /// 业务生成者须在冻结身份之前预约 IdentityBarrier，并持有至接管结果确定；仅在此处预约无法保护已冻结的旧身份。
     /// </summary>
     public async Task<DeliveryWriteResult> EnqueueAsync(IReadOnlyList<DeliveryDraft> drafts, CancellationToken cancellationToken)
     {

@@ -38,17 +38,17 @@ public sealed class ConfigurationImportStoreTests
         services.GetRequiredService<ConfigurationExportStore>().Export(null, Token), Token);
     private static ConnectionDraftResult Connection(IServiceProvider services, string key = "receiver") => services.GetRequiredService<ConnectionDraftStore>()
         .Write(null, new(Draft(services).Version, key, key, ConnectionKind.Http, Http: new("https://example.com/base/")), "original", null);
-    private static HttpCredentialMetadata Credential(IServiceProvider services, ConnectionDraftResult connection, string? expected = null, string secret = "fixture-secret") =>
-        services.GetRequiredService<HttpCredentialStore>().Write(connection.Connection.Id,
+    private static async Task<HttpCredentialMetadata> Credential(IServiceProvider services, ConnectionDraftResult connection, string? expected = null, string secret = "fixture-secret") =>
+        await services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Connection.Id,
             new("https://example.com/base/", HttpCredentialKind.Bearer, Secret: secret, ExpectedVersion: expected,
-                ExpectedDraftVersion: Draft(services).Version), "original", null, true);
+                ExpectedDraftVersion: Draft(services).Version), "original", null, true, token: TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task ExportAcrossIndependentHostsRemapsReferencesAndCommitsOnlyDraftWithRefillRequirement()
     {
         await using var source = new TenonEdgeApplicationFactory();
         var output = Connection(source.Services);
-        Credential(source.Services, output);
+        await Credential(source.Services, output);
         var device = source.Services.GetRequiredService<DeviceDraftStore>().Write(null,
             new(output.Version, "meter", "Meter", DeviceKind.Simulator), "original", null);
         var input = source.Services.GetRequiredService<InputDraftStore>().Write(device.Device.Id, null,
@@ -103,7 +103,7 @@ public sealed class ConfigurationImportStoreTests
         {
             var connection = Connection(host.Services);
             id = connection.Connection.Id;
-            var credential = Credential(host.Services, connection);
+            var credential = await Credential(host.Services, connection);
             var store = Store(host.Services);
             var file = Export(host.Services);
             var same = store.Prepare(Bytes(file), ConfigurationImportMode.Merge, Draft(host.Services).Version, Token);
@@ -133,7 +133,7 @@ public sealed class ConfigurationImportStoreTests
     {
         await using var host = new TenonEdgeApplicationFactory();
         var connection = Connection(host.Services);
-        var credential = Credential(host.Services, connection);
+        var credential = await Credential(host.Services, connection);
         var before = Draft(host.Services);
         Database(host.Services).InTransaction(client => { ConfigurationEditJournal.Retain(client, before.Edits); return true; });
         var store = Store(host.Services);
@@ -159,13 +159,13 @@ public sealed class ConfigurationImportStoreTests
     {
         await using var host = new TenonEdgeApplicationFactory();
         var connection = Connection(host.Services);
-        var credential = kind == "credentialAdded" ? null : Credential(host.Services, connection);
+        var credential = kind == "credentialAdded" ? null : await Credential(host.Services, connection);
         var store = Store(host.Services);
         var candidate = store.Prepare(Bytes(Export(host.Services)), ConfigurationImportMode.Replace, connection.Version, Token);
         if (kind == "draft")
         { Connection(host.Services, "newer"); }
         else
-        { Credential(host.Services, connection, credential?.Version, "fixture-rotated"); }
+        { await Credential(host.Services, connection, credential?.Version, "fixture-rotated"); }
         var before = JsonSerializer.Serialize(Draft(host.Services));
         var currentCredential = host.Services.GetRequiredService<HttpCredentialStore>().Read(connection.Connection.Id);
         var error = Assert.Throws<DraftWriteException>(() => store.Commit(candidate, Actor(host.Services), Token));
@@ -180,7 +180,7 @@ public sealed class ConfigurationImportStoreTests
     {
         await using var host = new TenonEdgeApplicationFactory();
         var connection = Connection(host.Services);
-        Credential(host.Services, connection);
+        await Credential(host.Services, connection);
         var file = Export(host.Services);
         file.Connections[0] = file.Connections[0] with { ConnectionKey = "new-receiver" };
         var store = Store(host.Services);
@@ -200,7 +200,7 @@ public sealed class ConfigurationImportStoreTests
     {
         await using var host = new TenonEdgeApplicationFactory();
         var connection = Connection(host.Services);
-        Credential(host.Services, connection);
+        await Credential(host.Services, connection);
         var file = Export(host.Services);
         file.Connections[0] = file.Connections[0] with { ConnectionKey = "new-receiver" };
         var store = Store(host.Services);
@@ -302,7 +302,7 @@ public sealed class ConfigurationImportStoreTests
     {
         await using var source = new TenonEdgeApplicationFactory();
         var connection = Connection(source.Services);
-        Credential(source.Services, connection);
+        await Credential(source.Services, connection);
         var file = Export(source.Services);
         await using var target = new TenonEdgeApplicationFactory();
         var store = Store(target.Services);

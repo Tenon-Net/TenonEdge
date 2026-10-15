@@ -75,17 +75,17 @@ public sealed class ExplicitAuditAccountTests
         {
             var store = factory.Services.GetRequiredService<MqttCredentialStore>();
             var request = new MqttCredentialRequest("mqtt://10.0.0.1:1883", "receiver", "fixture-secret", ExpectedDraftVersion: connection.Version);
-            var saved = store.Write(connection.Connection.Id, request, Actor, Ip, true);
+            var saved = await store.WriteAsync(connection.Connection.Id, request, Actor, Ip, true, token: TestContext.Current.CancellationToken);
             store.Clear(connection.Connection.Id, connection.Version, saved.Version, Actor, Ip);
-            store.Write(connection.Connection.Id, request, Actor, Ip, true);
+            await store.WriteAsync(connection.Connection.Id, request, Actor, Ip, true, token: TestContext.Current.CancellationToken);
         }
         else
         {
             var store = factory.Services.GetRequiredService<HttpCredentialStore>();
             var request = new HttpCredentialRequest("http://10.0.0.1/", HttpCredentialKind.Basic, Username: "receiver", Secret: "fixture-secret", ExpectedDraftVersion: connection.Version);
-            var saved = store.Write(connection.Connection.Id, request, Actor, Ip, true);
+            var saved = await store.WriteAsync(connection.Connection.Id, request, Actor, Ip, true, token: TestContext.Current.CancellationToken);
             store.Clear(connection.Connection.Id, connection.Version, saved.Version, Actor, Ip);
-            store.Write(connection.Connection.Id, request, Actor, Ip, true);
+            await store.WriteAsync(connection.Connection.Id, request, Actor, Ip, true, token: TestContext.Current.CancellationToken);
         }
         connections.Delete(connection.Connection.Id, connection.Version, Actor, Ip);
         var protocol = mqtt ? "mqtt" : "http";

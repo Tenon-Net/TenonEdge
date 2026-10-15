@@ -236,8 +236,8 @@ public sealed class DeliveryMigrationPreparationTests
             var review = preparation.Prepare(Request(saved), Actor, Token);
             if (change == "changedTarget")
             {
-                factory.Services.GetRequiredService<HttpCredentialStore>().Write(saved.Target,
-                    new("http://target.test/", HttpCredentialKind.Basic, Username: "different-owner", Secret: "test-only", ExpectedDraftVersion: saved.Version), "admin", null, true);
+                await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(saved.Target,
+                    new("http://target.test/", HttpCredentialKind.Basic, Username: "different-owner", Secret: "test-only", ExpectedDraftVersion: saved.Version), "admin", null, true, token: TestContext.Current.CancellationToken);
             }
             if (change == "changedRevision")
             { Assert.True((await coordinator.ApplyDraftAsync(saved.Version, "admin", null, Token)).Activated); }
@@ -349,8 +349,8 @@ public sealed class DeliveryMigrationPreparationTests
         if (withCredentials)
         {
             var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
-            credentials.Write(source.Connection.Id, new("http://current-source.test/", HttpCredentialKind.Basic, Username: "not-the-original-account", Secret: "fixture-source", ExpectedDraftVersion: target.Version), "admin", null, true);
-            credentials.Write(target.Connection.Id, new("http://target.test/", HttpCredentialKind.Basic, Username: "confirmed-target-account", Secret: "fixture-target", ExpectedDraftVersion: target.Version), "admin", null, true);
+            await credentials.WriteAsync(source.Connection.Id, new("http://current-source.test/", HttpCredentialKind.Basic, Username: "not-the-original-account", Secret: "fixture-source", ExpectedDraftVersion: target.Version), "admin", null, true, token: TestContext.Current.CancellationToken);
+            await credentials.WriteAsync(target.Connection.Id, new("http://target.test/", HttpCredentialKind.Basic, Username: "confirmed-target-account", Secret: "fixture-target", ExpectedDraftVersion: target.Version), "admin", null, true, token: TestContext.Current.CancellationToken);
         }
         var controls = factory.Services.GetRequiredService<OutputControlStore>();
         controls.Write(source.Connection.Id, new(true, true), "admin", null);

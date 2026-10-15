@@ -103,8 +103,8 @@ public sealed class MqttConnectionTestApiTests(MosquittoBrokerFixture fixture) :
         var saved = drafts.Write(null, new(drafts.Read().Version, "mqtt-test", "MQTT", ConnectionKind.Mqtt,
             Mqtt: new("127.0.0.1", broker.Port)), "fixture", null);
         var credentials = factory.Services.GetRequiredService<MqttCredentialStore>();
-        credentials.Write(saved.Connection.Id, new($"mqtt://127.0.0.1:{broker.Port}", MosquittoBroker.UserName,
-            MosquittoBroker.Password, ExpectedDraftVersion: saved.Version), "fixture", null, false);
+        await credentials.WriteAsync(saved.Connection.Id, new($"mqtt://127.0.0.1:{broker.Port}", MosquittoBroker.UserName,
+            MosquittoBroker.Password, ExpectedDraftVersion: saved.Version), "fixture", null, false, token: TestContext.Current.CancellationToken);
         var metadata = credentials.Read(saved.Connection.Id);
         var request = new MqttConnectionTestRequest(new("127.0.0.1", broker.Port), ConnectionTestAuthentication.Provided,
             Username: MosquittoBroker.UserName, Password: MosquittoBroker.Password);

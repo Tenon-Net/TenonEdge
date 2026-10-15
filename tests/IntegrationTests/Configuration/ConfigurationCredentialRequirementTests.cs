@@ -77,8 +77,8 @@ public sealed class ConfigurationCredentialRequirementTests
         var http = host.Services.GetRequiredService<HttpCredentialStore>();
         var broker = host.Services.GetRequiredService<MqttCredentialStore>();
         var first = mqtt
-            ? broker.Write(id, new("mqtt://broker.example.com:1883", Username: "fixture-user", Password: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true).Version
-            : http.Write(id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true).Version;
+            ? (await broker.WriteAsync(id, new("mqtt://broker.example.com:1883", Username: "fixture-user", Password: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken)).Version
+            : (await http.WriteAsync(id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken)).Version;
         var version = Require(host.Services, id);
         if (mqtt)
         { Assert.Equal("fixture-secret", broker.ResolveMqtt(id, "mqtt://broker.example.com:1883")!.Password); }
@@ -86,19 +86,19 @@ public sealed class ConfigurationCredentialRequirementTests
         { Assert.Equal("fixture-secret", http.ResolveHttp(id, "https://example.com/")!.Secret); }
         // Administrator retain is not an imported-secret refill.
         var retained = mqtt
-            ? broker.Write(id, new("mqtt://broker.example.com:1883", ExpectedVersion: first, RetainExisting: true, ExpectedDraftVersion: version), "fixture", null, true).Version
-            : http.Write(id, new("https://example.com/", ExpectedVersion: first, RetainExisting: true, ExpectedDraftVersion: version), "fixture", null, true).Version;
+            ? (await broker.WriteAsync(id, new("mqtt://broker.example.com:1883", ExpectedVersion: first, RetainExisting: true, ExpectedDraftVersion: version), "fixture", null, true, token: TestContext.Current.CancellationToken)).Version
+            : (await http.WriteAsync(id, new("https://example.com/", ExpectedVersion: first, RetainExisting: true, ExpectedDraftVersion: version), "fixture", null, true, token: TestContext.Current.CancellationToken)).Version;
         Assert.Single(Draft(host.Services).RequiredCredentials!);
         Assert.Equal(version, Draft(host.Services).Version);
         if (mqtt)
         {
-            broker.Write(id, new("mqtt://broker.example.com:1883", Username: "fixture-user", Password: "fixture-new-secret", ExpectedVersion: retained,
-                ExpectedDraftVersion: version, AccountChanged: false), "fixture", null, true);
+            await broker.WriteAsync(id, new("mqtt://broker.example.com:1883", Username: "fixture-user", Password: "fixture-new-secret", ExpectedVersion: retained,
+                ExpectedDraftVersion: version, AccountChanged: false), "fixture", null, true, token: TestContext.Current.CancellationToken);
         }
         else
         {
-            http.Write(id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-new-secret", ExpectedVersion: retained,
-                ExpectedDraftVersion: version, AccountChanged: false), "fixture", null, true);
+            await http.WriteAsync(id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-new-secret", ExpectedVersion: retained,
+                ExpectedDraftVersion: version, AccountChanged: false), "fixture", null, true, token: TestContext.Current.CancellationToken);
         }
         Assert.Empty(Draft(host.Services).RequiredCredentials!);
         Assert.NotEqual(version, Draft(host.Services).Version);
@@ -111,14 +111,14 @@ public sealed class ConfigurationCredentialRequirementTests
         await using var host = new TenonEdgeApplicationFactory();
         var saved = Connection(host.Services);
         var store = host.Services.GetRequiredService<HttpCredentialStore>();
-        var first = store.Write(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer,
-            Secret: "fixture-old-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        var first = await store.WriteAsync(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer,
+            Secret: "fixture-old-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var version = Require(host.Services, saved.Connection.Id);
         var before = JsonSerializer.Serialize(Draft(host.Services));
         var db = host.Services.GetRequiredService<ConfigDatabase>();
         db.Client.Ado.ExecuteCommand("CREATE TRIGGER reject_refill_audit BEFORE INSERT ON audit_log WHEN NEW.action = 'credential.http.write' BEGIN SELECT RAISE(ABORT, 'fixture'); END;");
-        Assert.ThrowsAny<Exception>(() => store.Write(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer,
-            Secret: "fixture-new-secret", ExpectedVersion: first.Version, ExpectedDraftVersion: version), "fixture", null, true));
+        await Assert.ThrowsAnyAsync<Exception>(() => store.WriteAsync(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer,
+            Secret: "fixture-new-secret", ExpectedVersion: first.Version, ExpectedDraftVersion: version), "fixture", null, true, token: TestContext.Current.CancellationToken));
         Assert.Equal(before, JsonSerializer.Serialize(Draft(host.Services)));
         Assert.Equal(first, store.Read(saved.Connection.Id));
         Assert.Equal("fixture-old-secret", store.ResolveHttp(saved.Connection.Id, "https://example.com/")!.Secret);
@@ -131,7 +131,7 @@ public sealed class ConfigurationCredentialRequirementTests
         var saved = Connection(host.Services);
         var original = Draft(host.Services);
         var store = host.Services.GetRequiredService<HttpCredentialStore>();
-        store.Write(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        await store.WriteAsync(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var version = Require(host.Services, saved.Connection.Id);
         var flagged = Draft(host.Services);
         var db = host.Services.GetRequiredService<ConfigDatabase>();
@@ -150,8 +150,8 @@ public sealed class ConfigurationCredentialRequirementTests
         await using var host = new TenonEdgeApplicationFactory();
         var saved = Connection(host.Services);
         var store = host.Services.GetRequiredService<HttpCredentialStore>();
-        var credential = store.Write(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer,
-            Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true);
+        var credential = await store.WriteAsync(saved.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer,
+            Secret: "fixture-secret", ExpectedDraftVersion: saved.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var version = Require(host.Services, saved.Connection.Id);
         store.Clear(saved.Connection.Id, version, credential.Version, "fixture", null);
         Assert.Null(store.Read(saved.Connection.Id));

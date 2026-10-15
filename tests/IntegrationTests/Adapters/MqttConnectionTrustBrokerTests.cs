@@ -75,8 +75,8 @@ public sealed class MqttConnectionTrustBrokerTests(MosquittoBrokerFixture fixtur
             Assert.Equal(payload, (await received.NextAsync(Token)).ApplicationMessage.Payload.ToArray());
             await subscriber.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(topic).WithPayload(payload)
                 .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(), Token);
-            factory.Services.GetRequiredService<MqttCredentialStore>().Write(settings.ConnectionId,
-                new(settings.Recipient, credential.Username, credential.Password, ExpectedDraftVersion: draft.Version), "fixture", null, true);
+            await factory.Services.GetRequiredService<MqttCredentialStore>().WriteAsync(settings.ConnectionId,
+                new(settings.Recipient, credential.Username, credential.Password, ExpectedDraftVersion: draft.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
             var input = new MqttInputSettings
             {
                 ConnectionId = settings.ConnectionId,

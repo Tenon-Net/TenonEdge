@@ -42,7 +42,7 @@ public sealed class MqttReadPreviewApiTests(MosquittoBrokerFixture fixture) : IC
                 .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(), Token);
         }
         await using var factory = new TenonEdgeApplicationFactory();
-        var (device, input, version) = Setup(factory.Services, broker.Port);
+        var (device, input, version) = await Setup(factory.Services, broker.Port);
         TestAccounts.Create(factory.Services, "tester", ApiRequests.StrongPassword, Enum.Parse<UserRole>(role));
         using var client = await factory.CreateLoggedInClientAsync("tester", Token);
         using var response = await client.PostJsonAsync(Endpoint(device), new MqttReadPreviewRequest(version, input, Source(topic)), Token);
@@ -65,7 +65,7 @@ public sealed class MqttReadPreviewApiTests(MosquittoBrokerFixture fixture) : IC
     public async Task AnonymousCsrfVersionOwnershipAndInvalidFiltersRejectBeforeCapture()
     {
         await using var factory = new TenonEdgeApplicationFactory();
-        var (device, input, version) = Setup(factory.Services, fixture.Require().Port);
+        var (device, input, version) = await Setup(factory.Services, fixture.Require().Port);
         using var anonymous = factory.CreateClient();
         using var unauthenticated = await anonymous.PostJsonAsync(Endpoint(device), new MqttReadPreviewRequest(version, input), Token);
         Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
@@ -88,7 +88,7 @@ public sealed class MqttReadPreviewApiTests(MosquittoBrokerFixture fixture) : IC
     public async Task RevokedBoundCredentialDoesNotFallBackToAnonymous()
     {
         await using var factory = new TenonEdgeApplicationFactory();
-        var (device, input, version) = Setup(factory.Services, fixture.Require().Port);
+        var (device, input, version) = await Setup(factory.Services, fixture.Require().Port);
         using (var database = factory.Services.GetRequiredService<ConfigDatabase>().CreateIsolatedClient())
         { database.Updateable<MqttCredentialRecord>().SetColumns(record => record.ProtectedPassword == null).Where(record => record.ConnectionId > 0).ExecuteCommand(); }
         TestAccounts.Create(factory.Services, "tester", ApiRequests.StrongPassword, UserRole.Configurator);
@@ -112,7 +112,7 @@ public sealed class MqttReadPreviewApiTests(MosquittoBrokerFixture fixture) : IC
         Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
     }
 
-    private static (long Device, long Input, string Version) Setup(IServiceProvider services, int port)
+    private static async Task<(long Device, long Input, string Version)> Setup(IServiceProvider services, int port)
     {
         services.GetRequiredService<OutboundPolicyStore>().Write(new([], [port]), "fixture", null);
         var connections = services.GetRequiredService<ConnectionDraftStore>();
@@ -122,8 +122,8 @@ public sealed class MqttReadPreviewApiTests(MosquittoBrokerFixture fixture) : IC
             new(connection.Version, "device", "Device", DeviceKind.Mqtt, ConnectionId: connection.Connection.Id), "fixture", null);
         var input = services.GetRequiredService<InputDraftStore>().Write(device.Device.Id, null,
             new(device.Version, "values", "Values", Mqtt: Source("saved/topic")), "fixture", null);
-        services.GetRequiredService<MqttCredentialStore>().Write(connection.Connection.Id,
-            new($"mqtt://127.0.0.1:{port}", MosquittoBroker.UserName, MosquittoBroker.Password, ExpectedDraftVersion: input.Version), "fixture", null, false);
+        await services.GetRequiredService<MqttCredentialStore>().WriteAsync(connection.Connection.Id,
+            new($"mqtt://127.0.0.1:{port}", MosquittoBroker.UserName, MosquittoBroker.Password, ExpectedDraftVersion: input.Version), "fixture", null, false, token: TestContext.Current.CancellationToken);
         return (device.Device.Id, input.Input.Id, input.Version);
     }
 }

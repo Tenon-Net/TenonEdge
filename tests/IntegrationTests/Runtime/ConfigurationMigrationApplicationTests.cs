@@ -218,8 +218,8 @@ public sealed class ConfigurationMigrationApplicationTests
         }
         else
         {
-            factory.Services.GetRequiredService<HttpCredentialStore>().Write(saved.Id,
-                new("http://new.test/base/", HttpCredentialKind.Basic, Username: "different-owner", Secret: "test-only", ExpectedDraftVersion: saved.Version), "admin", null, true);
+            await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(saved.Id,
+                new("http://new.test/base/", HttpCredentialKind.Basic, Username: "different-owner", Secret: "test-only", ExpectedDraftVersion: saved.Version), "admin", null, true, token: TestContext.Current.CancellationToken);
         }
         using var changed = await admin.PostJsonAsync($"{Root}/{id}/confirm", new ConfigurationMigrationConfirmation(true, true), Token);
         Assert.Equal(HttpStatusCode.Conflict, changed.StatusCode);

@@ -36,7 +36,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
         var topic = MqttProbe.NewTopic("route-sample");
         await Publish(topic, """{"value":9223372036854775807}""");
         await using var factory = new TenonEdgeApplicationFactory();
-        var request = Seed(factory.Services, broker.Port, topic, ((IPEndPoint)listener.LocalEndpoint).Port);
+        var request = await Seed(factory.Services, broker.Port, topic, ((IPEndPoint)listener.LocalEndpoint).Port);
         TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, Enum.Parse<UserRole>(role));
         using var client = await factory.CreateLoggedInClientAsync("operator", Token);
         using var response = await client.PostJsonAsync(Endpoint, request, Token);
@@ -68,7 +68,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
         var topic = MqttProbe.NewTopic("route-full");
         await Publish(topic, "{\"padding\":\"" + new string('x', size) + "\",\"value\":1,\"tail\":9223372036854775807}");
         await using var factory = new TenonEdgeApplicationFactory();
-        var request = Seed(factory.Services, broker.Port, topic, 1);
+        var request = await Seed(factory.Services, broker.Port, topic, 1);
         request = request with
         {
             Graph = request.Graph with
@@ -105,7 +105,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
         };
         await Publish(topic, payload);
         await using var factory = new TenonEdgeApplicationFactory();
-        var request = Seed(factory.Services, broker.Port, topic, 1);
+        var request = await Seed(factory.Services, broker.Port, topic, 1);
         TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
         using var client = await factory.CreateLoggedInClientAsync("operator", Token);
         using var response = await client.PostJsonAsync(Endpoint, request, Token);
@@ -121,7 +121,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
     public async Task RevokedCredentialNeverDowngradesToAnonymous()
     {
         await using var factory = new TenonEdgeApplicationFactory();
-        var request = Seed(factory.Services, fixture.Require().Port, MqttProbe.NewTopic("revoked"), 1);
+        var request = await Seed(factory.Services, fixture.Require().Port, MqttProbe.NewTopic("revoked"), 1);
         using (var database = factory.Services.GetRequiredService<ConfigDatabase>().CreateIsolatedClient())
         { database.Updateable<MqttCredentialRecord>().SetColumns(row => row.ProtectedPassword == null).Where(row => row.ConnectionId > 0).ExecuteCommand(); }
         TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
@@ -135,7 +135,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
     public async Task AnonymousCsrfStaleVersionAndOutsideSourceCannotCapture()
     {
         await using var factory = new TenonEdgeApplicationFactory();
-        var request = Seed(factory.Services, fixture.Require().Port, MqttProbe.NewTopic("denied"), 1);
+        var request = await Seed(factory.Services, fixture.Require().Port, MqttProbe.NewTopic("denied"), 1);
         using var anonymous = factory.CreateClient();
         using var denied = await anonymous.PostJsonAsync(Endpoint, request, Token);
         Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
@@ -161,7 +161,7 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
         }
     }
 
-    private static RouteMqttPreviewRequest Seed(IServiceProvider services, int port, string topic, int outputPort)
+    private static async Task<RouteMqttPreviewRequest> Seed(IServiceProvider services, int port, string topic, int outputPort)
     {
         services.GetRequiredService<OutboundPolicyStore>().Write(new([], [port, outputPort]), "fixture", null);
         var connections = services.GetRequiredService<ConnectionDraftStore>();
@@ -173,8 +173,8 @@ public sealed class RouteMqttPreviewTests(MosquittoBrokerFixture fixture) : ICla
             new(output.Version, "device", "Device", DeviceKind.Mqtt, ConnectionId: source.Connection.Id), "fixture", null);
         var input = services.GetRequiredService<InputDraftStore>().Write(device.Device.Id, null,
             new(device.Version, "values", "Values", Mqtt: new(topic, [new("value", "/value", FieldType.Integer)], Qos: 1)), "fixture", null);
-        services.GetRequiredService<MqttCredentialStore>().Write(source.Connection.Id,
-            new($"mqtt://127.0.0.1:{port}", MosquittoBroker.UserName, MosquittoBroker.Password, ExpectedDraftVersion: input.Version), "fixture", null, false);
+        await services.GetRequiredService<MqttCredentialStore>().WriteAsync(source.Connection.Id,
+            new($"mqtt://127.0.0.1:{port}", MosquittoBroker.UserName, MosquittoBroker.Password, ExpectedDraftVersion: input.Version), "fixture", null, false, token: TestContext.Current.CancellationToken);
         var graph = new RouteGraph(1,
             [new("in", "input.mqtt", 1, "Input", JsonSerializer.SerializeToElement(new { sourceIds = new[] { input.Input.Id } })),
             new("out", "output.http", 1, "Output", JsonSerializer.SerializeToElement(new { connectionId = output.Connection.Id,

@@ -124,9 +124,9 @@ public sealed class RouteTestSendApiTests(MosquittoBrokerFixture brokerFixture) 
         }
         if (scenario == "credential")
         {
-            factory.Services.GetRequiredService<HttpCredentialStore>().Write(seed.ConnectionId,
+            await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(seed.ConnectionId,
                 new($"http://127.0.0.1:{Port(server)}/", Kind: TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer,
-                    Secret: "fixture-secret", ExpectedDraftVersion: seed.Request.ExpectedVersion), "fixture", null, true);
+                    Secret: "fixture-secret", ExpectedDraftVersion: seed.Request.ExpectedVersion), "fixture", null, true, token: TestContext.Current.CancellationToken);
         }
         if (scenario == "audit")
         {
@@ -214,8 +214,8 @@ public sealed class RouteTestSendApiTests(MosquittoBrokerFixture brokerFixture) 
             await MqttProbe.SubscribeAsync(subscriber, topic, Token);
             await using var factory = new TenonEdgeApplicationFactory();
             var seed = Seed(factory.Services, broker.Port, mqtt: true, topic: topic, qos: qos);
-            factory.Services.GetRequiredService<MqttCredentialStore>().Write(seed.ConnectionId,
-                new($"mqtt://127.0.0.1:{broker.Port}", MosquittoBroker.UserName, MosquittoBroker.Password, ExpectedDraftVersion: seed.Request.ExpectedVersion), "fixture", null, true);
+            await factory.Services.GetRequiredService<MqttCredentialStore>().WriteAsync(seed.ConnectionId,
+                new($"mqtt://127.0.0.1:{broker.Port}", MosquittoBroker.UserName, MosquittoBroker.Password, ExpectedDraftVersion: seed.Request.ExpectedVersion), "fixture", null, true, token: TestContext.Current.CancellationToken);
             TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
             using var client = await factory.CreateLoggedInClientAsync("operator", Token);
             var (id, output) = await PreviewOutput(client, seed.Request);
@@ -242,9 +242,9 @@ public sealed class RouteTestSendApiTests(MosquittoBrokerFixture brokerFixture) 
         using var server = Listen();
         await using var factory = new TenonEdgeApplicationFactory();
         var seed = Seed(factory.Services, Port(server));
-        factory.Services.GetRequiredService<HttpCredentialStore>().Write(seed.ConnectionId,
+        await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(seed.ConnectionId,
             new($"http://127.0.0.1:{Port(server)}/", Kind: TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer,
-                Secret: "fixture-secret", ExpectedDraftVersion: seed.Request.ExpectedVersion), "fixture", null, true);
+                Secret: "fixture-secret", ExpectedDraftVersion: seed.Request.ExpectedVersion), "fixture", null, true, token: TestContext.Current.CancellationToken);
         TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Configurator);
         using var client = await factory.CreateLoggedInClientAsync("operator", Token);
         var (id, _) = await PreviewOutput(client, seed.Request);

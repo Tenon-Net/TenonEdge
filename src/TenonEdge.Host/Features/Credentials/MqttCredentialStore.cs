@@ -51,7 +51,7 @@ internal sealed class MqttCredentialStore(
         return record is null ? null : Metadata(record);
     }
 
-    public MqttCredentialMetadata Write(long connectionId, MqttCredentialRequest request, AuditAccount accountName, string? sourceIp, bool administrator)
+    public async Task<MqttCredentialMetadata> WriteAsync(long connectionId, MqttCredentialRequest request, AuditAccount accountName, string? sourceIp, bool administrator, CancellationToken token = default)
     {
         if (connectionId is < 1 or > 9007199254740991L)
         {
@@ -79,13 +79,22 @@ internal sealed class MqttCredentialStore(
             throw new ArgumentException("账户变更声明须与新凭证一起提交。");
         }
 
-        // 待发和失败区记录都属于尚未交付的数据；跨库管理协同随 T3 补齐。没有在事务中等待网络。
+        // 先阻止本连接的新冻结，等已有发布得到写者结果；此时还没有打开配置事务。
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5), time);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
+        IDisposable change;
+        try
+        { change = await deliveries.IdentityBarrier.EnterChangeAsync(connectionId, operation.Token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { throw new CredentialWriteException("credential.publicationBusy"); }
+        using var changeLease = change;
+        token.ThrowIfCancellationRequested();
         if (deliveries.GetStatus().Store is null)
         {
             throw new CredentialWriteException("credential.queueUnavailable");
         }
 
-        var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0 || deliveries.ReadFailed(connectionId, 0, 1).Count > 0;
+        var hasPending = deliveries.HasUndelivered(connectionId);
         return database.InTransaction(client =>
         {
             CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Mqtt, recipient, request.ExpectedDraftVersion);

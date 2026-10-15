@@ -214,8 +214,8 @@ public sealed class ConfigurationVersionEndpointTests
         versions.Commit(versions.FreezeDraft(Plan(), "0", "editor"), null);
         var connection = factory.Services.GetRequiredService<ConnectionDraftStore>().Write(null,
             new("0", "unused", "Unused", ConnectionKind.Http, Enabled: false, Http: new("http://localhost/")), "editor", null);
-        factory.Services.GetRequiredService<HttpCredentialStore>().Write(connection.Connection.Id,
-            new("http://localhost/", HttpCredentialKind.Bearer, Secret: "version-api-private-secret", ExpectedDraftVersion: connection.Version), "editor", null, true);
+        await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Connection.Id,
+            new("http://localhost/", HttpCredentialKind.Bearer, Secret: "version-api-private-secret", ExpectedDraftVersion: connection.Version), "editor", null, true, token: TestContext.Current.CancellationToken);
         var encrypted = factory.Services.GetRequiredService<ConfigDatabase>().Client.Queryable<HttpCredentialRecord>().Single().ProtectedSecret!;
         versions.Commit(versions.FreezeDraft(Plan(), connection.Version, "editor"), null);
         using var client = await factory.CreateLoggedInClientAsync("reader", Token);

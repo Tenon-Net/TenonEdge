@@ -5,6 +5,17 @@ namespace TenonEdge.Runtime.Deliveries;
 
 internal sealed partial class DeliveryStore
 {
+    // 单次 SQLite 快照：失败重试可能在两次查询之间从 failed 移到 pending，不能分开判断。
+    internal bool HasUndelivered(long connectionId)
+    {
+        EnsureInitialized();
+        using var connection = Open(_readConnectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM delivery WHERE connection_id = $id AND state IN ('pending', 'failed'))";
+        command.Parameters.AddWithValue("$id", connectionId);
+        return Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture) != 0;
+    }
+
     public DeliveryQueueTotals ReadQueueTotals(long connectionId)
     {
         EnsureInitialized();

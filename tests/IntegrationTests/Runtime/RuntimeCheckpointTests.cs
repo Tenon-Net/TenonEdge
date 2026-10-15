@@ -33,8 +33,8 @@ public sealed class RuntimeCheckpointTests
             var device = devices.Write(null, new(connection.Version, "meter", "Meter", DeviceKind.Simulator, Enabled: false), "test", null);
             var input = inputs.Write(device.Device.Id, null, new(device.Version, "sample", "Sample", Enabled: false,
                 Simulator: new(SampleJson: "{\"value\":42}")), "test", null);
-            factory.Services.GetRequiredService<HttpCredentialStore>().Write(connection.Connection.Id,
-                new("http://localhost/", HttpCredentialKind.Bearer, Secret: "checkpoint-secret-not-for-snapshot", ExpectedDraftVersion: input.Version), "test", null, true);
+            await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Connection.Id,
+                new("http://localhost/", HttpCredentialKind.Bearer, Secret: "checkpoint-secret-not-for-snapshot", ExpectedDraftVersion: input.Version), "test", null, true, token: TestContext.Current.CancellationToken);
             var graph = new RouteGraph(1,
                 [new("source", "input.simulator", 1, "Source", JsonSerializer.SerializeToElement(new { sourceIds = new[] { input.Input.Id } }))],
                 [], new(new() { ["source"] = new(12, 34) }));

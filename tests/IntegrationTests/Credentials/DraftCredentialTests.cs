@@ -183,16 +183,16 @@ public sealed class DraftCredentialTests
         using var admin = await Admin(factory);
         var draft = CreateDraft(factory, false);
         var store = factory.Services.GetRequiredService<HttpCredentialStore>();
-        var initial = store.Write(draft.Connection.Id, new("http://10.0.0.1/", HttpCredentialKind.ApiKeyHeader,
-            Name: "X-Key-One", Secret: Secret, ExpectedDraftVersion: draft.Version), "admin", null, true);
+        var initial = await store.WriteAsync(draft.Connection.Id, new("http://10.0.0.1/", HttpCredentialKind.ApiKeyHeader,
+            Name: "X-Key-One", Secret: Secret, ExpectedDraftVersion: draft.Version), "admin", null, true, token: TestContext.Current.CancellationToken);
         var cache = factory.Services.GetRequiredService<DeliveryCache>();
         Assert.True((await cache.EnqueueAsync([new DeliveryDraft(Guid.NewGuid(), draft.Connection.Id, Guid.NewGuid(), "meter", 1,
             Encoding.UTF8.GetBytes("{}"), "fixture", "fixture")], Token)).Committed);
         var request = new HttpCredentialRequest("http://10.0.0.1/", HttpCredentialKind.ApiKeyHeader, Name: "X-Key-Two", Secret: "replacement",
             ExpectedVersion: initial.Version, ExpectedDraftVersion: draft.Version);
-        Assert.Equal("credential.accountDeclarationRequired", Assert.Throws<CredentialWriteException>(() => store.Write(draft.Connection.Id, request, "admin", null, true)).Code);
+        Assert.Equal("credential.accountDeclarationRequired", (await Assert.ThrowsAsync<CredentialWriteException>(() => store.WriteAsync(draft.Connection.Id, request, "admin", null, true, token: TestContext.Current.CancellationToken))).Code);
         var before = store.DescribeHttp(draft.Connection.Id)!.AccountMarker;
-        store.Write(draft.Connection.Id, request with { AccountChanged = true }, "admin", null, true);
+        await store.WriteAsync(draft.Connection.Id, request with { AccountChanged = true }, "admin", null, true, token: TestContext.Current.CancellationToken);
         Assert.NotEqual(before, store.DescribeHttp(draft.Connection.Id)!.AccountMarker);
         Assert.DoesNotContain(Secret, new MqttCredentialRequest("mqtt://10.0.0.1:1883", "user", Secret).ToString(), StringComparison.Ordinal);
     }

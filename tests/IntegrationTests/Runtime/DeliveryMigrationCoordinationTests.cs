@@ -69,6 +69,44 @@ public sealed class DeliveryMigrationCoordinationTests
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
+    public async Task MigrationOwnsBothIdentityReservationsUntilQueueCommit(long changed)
+    {
+        using var data = TemporaryDirectory.Create();
+        var source = new Target(1);
+        var target = new Target(2);
+        await using var runtime = Create(data.Path, source, target);
+        runtime.StartCore();
+        await runtime.Deliveries.EnqueueAsync([Draft(1, "a"), Draft(1, "b"), Draft(2, "target")], Token);
+        var command = Command(runtime.Deliveries.ReadPending(1, 0, 10));
+        await Activate(runtime, source, target);
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Token);
+        Task<IDisposable>? change = null;
+        try
+        {
+            await Task.WhenAll(source.Sending.Task, target.Sending.Task).WaitAsync(TimeSpan.FromSeconds(10), Token);
+            var moving = runtime.MigrateDeliveriesAsync(command, 1, Token);
+            change = runtime.Deliveries.IdentityBarrier.EnterChangeAsync(changed, cancel.Token).AsTask();
+            Assert.False(change.IsCompleted);
+            source.Result.TrySetResult(new(OutputSendStatus.Retry, RetryAfter: TimeSpan.FromSeconds(60)));
+            target.Result.TrySetResult(new(OutputSendStatus.SuspendTarget));
+            Assert.True((await moving.WaitAsync(TimeSpan.FromSeconds(10), Token)).Committed);
+            using var writing = await change.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            Assert.NotNull(runtime.Deliveries.ReadMigrationReceipt(command.OperationId));
+            Assert.True(runtime.Deliveries.HasUndelivered(2));
+        }
+        finally
+        {
+            source.Release();
+            target.Release();
+            await cancel.CancelAsync();
+            if (change is not null)
+            { try { (await change).Dispose(); } catch (OperationCanceledException) { } }
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
     public async Task EitherSenderTimeoutRefusesWithoutMovingOrReplacingAndLateAckStillCommits(long blocked)
     {
         using var data = TemporaryDirectory.Create();

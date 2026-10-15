@@ -11,6 +11,29 @@ public sealed class DeliveryManualRetryTests
     private static readonly IReadOnlyDictionary<long, string> Targets = new Dictionary<long, string> { [1] = "fp", [2] = "fp" };
 
     [Fact]
+    public async Task UndeliveredSnapshotIncludesBothStatesButExcludesQuarantineAndOtherTargets()
+    {
+        using var data = TemporaryDirectory.Create();
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path);
+        runtime.StartCore();
+        var cache = runtime.Deliveries;
+        var draft = Draft(1);
+        var seq = Assert.Single((await cache.EnqueueAsync([draft], Token)).Seqs);
+        Assert.True(cache.HasUndelivered(1));
+        Assert.False(cache.HasUndelivered(2));
+        await cache.RecordFailureAsync(new(seq, 1, "failure", true, false), Token);
+        Assert.Empty(cache.ReadPending(1, 0, 10));
+        Assert.True(cache.HasUndelivered(1));
+        Assert.True((await cache.RetryFailedAsync([new(seq, draft.DeliveryId)], Targets, Token)).Committed);
+        Assert.Empty(cache.ReadFailed(1, 0, 10));
+        Assert.True(cache.HasUndelivered(1));
+        seq = Assert.Single(cache.ReadPending(1, 0, 10)).Seq;
+        await cache.QuarantineAsync(seq, "targetChanged", Token);
+        Assert.False(cache.HasUndelivered(1));
+        Assert.Single(cache.ReadQuarantined(1, 0, 10));
+    }
+
+    [Fact]
     public async Task RetryMovesOnlySelectedFailuresToTailAndPreservesAllFrozenIdentityAndContent()
     {
         using var data = TemporaryDirectory.Create();

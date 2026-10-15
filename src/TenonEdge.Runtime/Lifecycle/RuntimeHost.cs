@@ -648,6 +648,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             // 写者已退出、请求已完成，才能释放停止途中仍由分发器持有的额度。
             foreach (var dispatcher in _dispatchers)
             {
+                dispatcher.State.Publication?.Dispose();
+                dispatcher.State.Publication = null;
                 if (dispatcher.State.Message is { } message && dispatcher.Channel is BudgetedInputChannel channel)
                 {
                     channel.Release(message);

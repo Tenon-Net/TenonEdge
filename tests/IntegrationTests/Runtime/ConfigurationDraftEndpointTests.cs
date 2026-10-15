@@ -85,8 +85,8 @@ public sealed class ConfigurationDraftEndpointTests
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
         var frozenMetadata = database.InTransaction(ConfigurationEditJournal.Read);
         var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
-        credentials.Write(connection.Connection.Id, new("http://localhost/", HttpCredentialKind.Bearer,
-            Secret: "new-immediate-secret", ExpectedDraftVersion: route.Version), "operator", null, true);
+        await credentials.WriteAsync(connection.Connection.Id, new("http://localhost/", HttpCredentialKind.Bearer,
+            Secret: "new-immediate-secret", ExpectedDraftVersion: route.Version), "operator", null, true, token: TestContext.Current.CancellationToken);
         var credentialRow = database.Client.Queryable<HttpCredentialRecord>().Single();
         var deletedRoute = routes.Delete(route.Route.Id, route.Version, "editor", null);
         var deletedInput = inputs.Delete(device.Device.Id, input.Input.Id, deletedRoute.Version, "editor", null);

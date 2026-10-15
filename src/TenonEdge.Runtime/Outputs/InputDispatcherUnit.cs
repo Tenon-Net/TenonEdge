@@ -11,6 +11,7 @@ namespace TenonEdge.Runtime.Outputs;
 /// <summary>单输入最多一条在途消息及 32 条冻结记录；提交等待期间持有，停止后由写者结果确定释放时机。</summary>
 internal sealed class InputDispatcherState
 {
+    public IDisposable? Publication { get; set; }
     public EdgeMessage? Message { get; set; }
     public IReadOnlyList<DeliveryDraft>? Drafts { get; set; }
     public Dictionary<Guid, (RuntimeUnitId ObjectId, long Sequence)> Diagnostics { get; } = [];
@@ -46,6 +47,8 @@ internal sealed class InputDispatcherUnit(
                 state.Message = message;
             }
 
+            // 租约跟随冻结状态跨监督者重启；取消等待不代表写者已经回滚。
+            state.Publication ??= await deliveries.IdentityBarrier.EnterPublicationAsync(targets.Select(target => target.ConnectionId), stoppingToken);
             if (state.Drafts is null)
             {
                 var drafts = new List<DeliveryDraft>();
@@ -128,6 +131,8 @@ internal sealed class InputDispatcherUnit(
                 if (result.Status == DeliveryWriteStatus.Stopped)
                 {
                     budgetedChannel?.Release(state.Message, InputHandoffStatus.Stopped);
+                    state.Publication.Dispose();
+                    state.Publication = null;
                     state.Message = null;
                     state.Drafts = null;
                     state.Diagnostics.Clear();
@@ -146,6 +151,8 @@ internal sealed class InputDispatcherUnit(
             }
 
             budgetedChannel?.Release(state.Message, handoff);
+            state.Publication.Dispose();
+            state.Publication = null;
             state.Message = null;
             state.Drafts = null;
             state.Diagnostics.Clear();

@@ -37,13 +37,13 @@ internal static class HttpCredentialEndpoints
     private static Results<Ok<HttpCredentialMetadata>, NotFound> Get(long connectionId, HttpCredentialStore store) =>
         store.Read(connectionId) is { } value ? TypedResults.Ok(value) : TypedResults.NotFound();
 
-    private static Results<Ok<HttpCredentialMetadata>, ValidationProblem, ProblemHttpResult> Put(
+    private static async Task<Results<Ok<HttpCredentialMetadata>, ValidationProblem, ProblemHttpResult>> Put(
         long connectionId, HttpCredentialRequest request, HttpCredentialStore store, HttpContext context)
     {
         try
         {
-            return TypedResults.Ok(store.Write(connectionId, request, ManagementIdentity.Audit(context.User),
-                SourceAddress.Of(context), context.User.IsInRole(nameof(UserRole.Administrator))));
+            return TypedResults.Ok(await store.WriteAsync(connectionId, request, ManagementIdentity.Audit(context.User),
+                SourceAddress.Of(context), context.User.IsInRole(nameof(UserRole.Administrator)), context.RequestAborted));
         }
         catch (ArgumentException exception)
         {
@@ -52,7 +52,9 @@ internal static class HttpCredentialEndpoints
         catch (CredentialWriteException exception)
         {
             var status = exception.Code == "credential.administratorRequired" ? StatusCodes.Status403Forbidden : StatusCodes.Status409Conflict;
-            return ApiProblems.Problem(status, exception.Code, "凭证未更新，请核对权限、版本和账户变更声明。");
+            return ApiProblems.Problem(status, exception.Code, exception.Code == "credential.publicationBusy"
+                ? "该连接仍有报文正在冻结、入队或迁移，凭证尚未更新。请稍后重新核对并保存。"
+                : "凭证未更新，请核对权限、版本和账户变更声明。");
         }
     }
 }

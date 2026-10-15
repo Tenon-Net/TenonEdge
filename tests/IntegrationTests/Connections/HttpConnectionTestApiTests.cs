@@ -71,8 +71,8 @@ public sealed class HttpConnectionTestApiTests
         var request = Request with { ConnectionId = saved.Connection.Id, Authentication = ConnectionTestAuthentication.Stored };
         using var absent = await client.PostJsonAsync(Endpoint, request, Token);
         Assert.Equal(HttpStatusCode.Conflict, absent.StatusCode);
-        factory.Services.GetRequiredService<HttpCredentialStore>().Write(saved.Connection.Id,
-            new(Request.Connection.BaseAddress, HttpCredentialKind.Bearer, Secret: "fixture-not-logged", ExpectedDraftVersion: saved.Version), "fixture", null, false);
+        await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(saved.Connection.Id,
+            new(Request.Connection.BaseAddress, HttpCredentialKind.Bearer, Secret: "fixture-not-logged", ExpectedDraftVersion: saved.Version), "fixture", null, false, token: TestContext.Current.CancellationToken);
         using var bound = await client.PostJsonAsync(Endpoint, request, Token);
         Assert.Equal(HttpStatusCode.OK, bound.StatusCode);
         Assert.Equal("outbound.denied", (await bound.Content.ReadFromJsonAsync<HttpConnectionTestResult>(Token))!.Code);

@@ -124,8 +124,8 @@ public sealed class HttpReadPreviewApiTests
         await using var factory = new TenonEdgeApplicationFactory();
         var (device, input, version) = Setup(factory.Services, ((IPEndPoint)listener.LocalEndpoint).Port);
         var connection = Assert.Single(factory.Services.GetRequiredService<ConnectionDraftStore>().Read().Connections);
-        factory.Services.GetRequiredService<HttpCredentialStore>().Write(connection.Id,
-            new(connection.Http!.BaseAddress, HttpCredentialKind.Bearer, Secret: "fixture-not-logged", ExpectedDraftVersion: version), "fixture", null, false);
+        await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Id,
+            new(connection.Http!.BaseAddress, HttpCredentialKind.Bearer, Secret: "fixture-not-logged", ExpectedDraftVersion: version), "fixture", null, false, token: TestContext.Current.CancellationToken);
         var peer = Task.Run(async () =>
         {
             using var socket = await listener.AcceptTcpClientAsync(Token);

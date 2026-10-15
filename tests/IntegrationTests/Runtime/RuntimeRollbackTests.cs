@@ -29,8 +29,8 @@ public sealed class RuntimeRollbackTests
         var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
         var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
         var old = credentials.Read(saved.ConnectionId)!;
-        credentials.Write(saved.ConnectionId, new("http://localhost/", HttpCredentialKind.Bearer, Secret: "new-current-secret",
-            ExpectedVersion: old.Version, ExpectedDraftVersion: saved.Version), "operator", null, true);
+        await credentials.WriteAsync(saved.ConnectionId, new("http://localhost/", HttpCredentialKind.Bearer, Secret: "new-current-secret",
+            ExpectedVersion: old.Version, ExpectedDraftVersion: saved.Version), "operator", null, true, token: TestContext.Current.CancellationToken);
         var result = await coordinator.RollbackAsync(1, saved.Version, "operator", "127.0.0.1", Token);
         Assert.True(result.Committed && result.Activated);
         Assert.True(result.DraftReplaced);
@@ -225,8 +225,8 @@ public sealed class RuntimeRollbackTests
         var connection = factory.Services.GetRequiredService<ConnectionDraftStore>().Write(null,
             new("0", "mqtt", "MQTT", ConnectionKind.Mqtt, Enabled: false, Mqtt: new(host)), "operator", null);
         var recipient = new MqttConnectionSettings { ConnectionId = connection.Connection.Id, Host = connection.Connection.Mqtt!.Host }.Recipient;
-        factory.Services.GetRequiredService<MqttCredentialStore>().Write(connection.Connection.Id,
-            new(recipient, Username: "fixture", Password: "fixture-password", ExpectedDraftVersion: connection.Version), "operator", null, true);
+        await factory.Services.GetRequiredService<MqttCredentialStore>().WriteAsync(connection.Connection.Id,
+            new(recipient, Username: "fixture", Password: "fixture-password", ExpectedDraftVersion: connection.Version), "operator", null, true, token: TestContext.Current.CancellationToken);
         var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
         Assert.True((await coordinator.ApplyDraftAsync(connection.Version, "operator", null, Token)).Activated);
         Assert.True((await coordinator.ApplyDraftAsync(connection.Version, "operator", null, Token)).Activated);
@@ -246,8 +246,8 @@ public sealed class RuntimeRollbackTests
             new(input.Version, "http", "HTTP", ConnectionKind.Http, Http: new("http://localhost/")), "operator", null);
         if (credential)
         {
-            factory.Services.GetRequiredService<HttpCredentialStore>().Write(connection.Connection.Id,
-                new("http://localhost/", HttpCredentialKind.Bearer, Secret: "initial-secret", ExpectedDraftVersion: connection.Version), "operator", null, true);
+            await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Connection.Id,
+                new("http://localhost/", HttpCredentialKind.Bearer, Secret: "initial-secret", ExpectedDraftVersion: connection.Version), "operator", null, true, token: TestContext.Current.CancellationToken);
         }
         var graph = new RouteGraph(1,
             [new("source", "input.simulator", 1, "Source", JsonSerializer.SerializeToElement(new { sourceIds = new[] { input.Input.Id } })),

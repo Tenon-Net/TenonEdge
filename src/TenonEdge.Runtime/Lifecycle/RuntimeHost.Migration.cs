@@ -39,6 +39,8 @@ public sealed partial class RuntimeHost
         List<(OutputSenderState State, OutputSenderState.QueuePause Pause)> pauses = [];
         try
         {
+            using var publication = await _deliveries.IdentityBarrier.EnterPublicationAsync(
+                [command.SourceConnectionId, command.TargetConnectionId], CancellationToken.None);
             PreparedOutput target;
             PreparedOutput? source;
             TimeSpan timeout;

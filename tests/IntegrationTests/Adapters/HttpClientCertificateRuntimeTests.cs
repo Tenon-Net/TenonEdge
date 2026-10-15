@@ -43,7 +43,7 @@ public sealed class HttpClientCertificateRuntimeTests
         await using var factory = new TenonEdgeApplicationFactory();
         await HttpClientCertificateCredentialTests.ReadyAsync(factory);
         var store = HttpClientCertificateCredentialTests.Store(factory);
-        store.Write(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, Certificate: peer.Issue()), "fixture", null, true);
+        await store.WriteAsync(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, Certificate: peer.Issue()), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var credential = store.ResolveHttp(1, peer.Recipient)!;
         var connector = new OutboundConnector(new ConnectionTrustTests.LoopbackPolicy());
         var trust = new ConnectionTrustTests.TrustResolver(1, peer.Recipient, peer.Trust);
@@ -102,7 +102,7 @@ public sealed class HttpClientCertificateRuntimeTests
         await using var factory = new TenonEdgeApplicationFactory();
         await HttpClientCertificateCredentialTests.ReadyAsync(factory);
         var store = HttpClientCertificateCredentialTests.Store(factory);
-        var first = store.Write(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, Certificate: peer.Issue()), "fixture", null, true);
+        var first = await store.WriteAsync(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, Certificate: peer.Issue()), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var settings = new HttpOutputSettings { ConnectionId = 1, BaseAddress = peer.Recipient };
         var oldIdentity = store.DescribeHttp(1)!;
         var frozen = settings.FreezePayload("{}"u8.ToArray(), Guid.NewGuid(), oldIdentity);
@@ -112,15 +112,15 @@ public sealed class HttpClientCertificateRuntimeTests
         Assert.Equal(OutputSendStatus.Ack, (await SendAsync(frozen)).Status);
         var requests = peer.Requests.ToArray();
         Assert.Equal(requests[0].Connection, requests[1].Connection); // 确实复用旧连接，不以每次都重连冒充轮换。
-        var same = store.Write(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedVersion: first.Version,
-            Certificate: peer.Issue()), "fixture", null, true);
+        var same = await store.WriteAsync(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedVersion: first.Version,
+            Certificate: peer.Issue()), "fixture", null, true, token: TestContext.Current.CancellationToken);
         Assert.Equal(settings.Fingerprint(oldIdentity), settings.Fingerprint(store.DescribeHttp(1)));
         Assert.Equal(OutputSendStatus.Ack, (await SendAsync(frozen)).Status);
         var renewed = peer.Requests.Last();
         Assert.NotEqual(requests[0].Connection, renewed.Connection);
         Assert.NotEqual(requests[0].Fingerprint, renewed.Fingerprint);
-        var changed = store.Write(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedVersion: same.Version,
-            Certificate: peer.Issue("other-account")), "fixture", null, true);
+        var changed = await store.WriteAsync(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedVersion: same.Version,
+            Certificate: peer.Issue("other-account")), "fixture", null, true, token: TestContext.Current.CancellationToken);
         var blocked = await SendAsync(frozen);
         Assert.Equal(OutputSendStatus.SuspendTarget, blocked.Status);
         Assert.True(blocked.FingerprintMismatch);
@@ -128,7 +128,7 @@ public sealed class HttpClientCertificateRuntimeTests
         var current = settings.FreezePayload("{}"u8.ToArray(), Guid.NewGuid(), store.DescribeHttp(1));
         Assert.Equal(OutputSendStatus.Ack, (await SendAsync(current)).Status);
         Assert.Equal("CN=other-account", peer.Requests.Last().Subject);
-        store.Write(1, new(peer.Recipient, HttpCredentialKind.Bearer, Secret: "fixture-token", ExpectedVersion: changed.Version), "fixture", null, true);
+        await store.WriteAsync(1, new(peer.Recipient, HttpCredentialKind.Bearer, Secret: "fixture-token", ExpectedVersion: changed.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         current = settings.FreezePayload("{}"u8.ToArray(), Guid.NewGuid(), store.DescribeHttp(1));
         Assert.Equal(OutputSendStatus.Ack, (await SendAsync(current)).Status);
         Assert.Null(peer.Requests.Last().Subject); // 切回 Token 不继续携带旧客户端私钥。
@@ -192,16 +192,16 @@ public sealed class HttpClientCertificateRuntimeTests
                 new ConnectionTrustRequest(draft.Version, peer.Recipient, peer.Trust.Mode, peer.Trust.CertificateDerBase64, info.Sha256Fingerprint, true), Json, Token);
             Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
             var store = HttpClientCertificateCredentialTests.Store(bootstrap);
-            var first = store.Write(id, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedDraftVersion: draft.Version,
-                Certificate: peer.Issue()), "admin", null, true);
+            var first = await store.WriteAsync(id, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedDraftVersion: draft.Version,
+                Certificate: peer.Issue()), "admin", null, true, token: TestContext.Current.CancellationToken);
             var settings = new HttpOutputSettings { ConnectionId = id, BaseAddress = peer.Recipient, Path = "events" };
             var message = settings.FreezePayload(original, deliveryId, store.DescribeHttp(id));
             oldFingerprint = message.Fingerprint;
             Assert.Equal(id, Draft(message, deliveryId).ConnectionId);
             var cache = bootstrap.Services.GetRequiredService<DeliveryCache>();
             Assert.True((await cache.EnqueueAsync([Draft(message, deliveryId)], Token)).Committed);
-            store.Write(id, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedVersion: first.Version, ExpectedDraftVersion: draft.Version,
-                AccountChanged: differentSubject ? null : false, Certificate: peer.Issue(differentSubject ? "other-account" : "gateway-client")), "admin", null, true);
+            await store.WriteAsync(id, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedVersion: first.Version, ExpectedDraftVersion: draft.Version,
+                AccountChanged: differentSubject ? null : false, Certificate: peer.Issue(differentSubject ? "other-account" : "gateway-client")), "admin", null, true, token: TestContext.Current.CancellationToken);
             var newId = Guid.NewGuid();
             var current = settings.FreezePayload(original, newId, store.DescribeHttp(id));
             Assert.True((await cache.EnqueueAsync([Draft(current, newId)], Token)).Committed);
@@ -262,7 +262,7 @@ public sealed class HttpClientCertificateRuntimeTests
         var upload = peer.Issue(pfx: stored);
         var store = HttpClientCertificateCredentialTests.Store(factory);
         if (stored)
-        { store.Write(id, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedDraftVersion: draft.Version, Certificate: upload), "admin", null, true); }
+        { await store.WriteAsync(id, new(peer.Recipient, HttpCredentialKind.ClientCertificate, ExpectedDraftVersion: draft.Version, Certificate: upload), "admin", null, true, token: TestContext.Current.CancellationToken); }
         using var response = await client.PostAsJsonAsync(new Uri("/api/edge-admin/v1/connections/test/http", UriKind.Relative),
             new HttpConnectionTestRequest(new(peer.Recipient), id, stored ? ConnectionTestAuthentication.Stored : ConnectionTestAuthentication.Provided,
                 stored ? null : new(HttpCredentialKind.ClientCertificate, Certificate: upload)), Json, Token);

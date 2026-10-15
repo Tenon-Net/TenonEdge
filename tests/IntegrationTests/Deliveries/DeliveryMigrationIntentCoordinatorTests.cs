@@ -105,8 +105,8 @@ public sealed class DeliveryMigrationIntentCoordinatorTests
             }
             if (change == "account")
             {
-                setup.Services.GetRequiredService<HttpCredentialStore>().Write(1,
-                    new(intent.TargetRecipient, HttpCredentialKind.Basic, Username: "different-owner", Secret: "test-only"), "admin", null, true);
+                await setup.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(1,
+                    new(intent.TargetRecipient, HttpCredentialKind.Basic, Username: "different-owner", Secret: "test-only"), "admin", null, true, token: TestContext.Current.CancellationToken);
             }
             setup.Services.GetRequiredService<OutputControlStore>().Write(1, new(true, true), "admin", null);
         }

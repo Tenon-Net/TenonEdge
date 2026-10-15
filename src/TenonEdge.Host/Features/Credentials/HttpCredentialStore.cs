@@ -43,7 +43,7 @@ internal sealed class HttpCredentialStore(
         return record is null ? null : Metadata(record);
     }
 
-    public HttpCredentialMetadata Write(long connectionId, HttpCredentialRequest request, AuditAccount accountName, string? sourceIp, bool administrator)
+    public async Task<HttpCredentialMetadata> WriteAsync(long connectionId, HttpCredentialRequest request, AuditAccount accountName, string? sourceIp, bool administrator, CancellationToken token = default)
     {
         if (connectionId is < 1 or > 9007199254740991L)
         { throw new ArgumentException("连接 ID 超出安全整数范围。"); }
@@ -71,9 +71,19 @@ internal sealed class HttpCredentialStore(
         }
         else if (request.Kind is not null || request.Username is not null || request.Name is not null || request.AccountChanged is not null)
         { throw new ArgumentException("认证类型、用户名、参数名和账户变更声明须与新凭证一起提交。"); }
+        // 先阻止本连接的新冻结，等已有发布得到写者结果；此时还没有打开配置事务。
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5), time);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
+        IDisposable change;
+        try
+        { change = await deliveries.IdentityBarrier.EnterChangeAsync(connectionId, operation.Token); }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        { throw new CredentialWriteException("credential.publicationBusy"); }
+        using var changeLease = change;
+        token.ThrowIfCancellationRequested();
         if (deliveries.GetStatus().Store is null)
         { throw new CredentialWriteException("credential.queueUnavailable"); }
-        var hasPending = deliveries.ReadPending(connectionId, 0, 1).Count > 0 || deliveries.ReadFailed(connectionId, 0, 1).Count > 0;
+        var hasPending = deliveries.HasUndelivered(connectionId);
         return database.InTransaction(client =>
         {
             CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Http, recipient, request.ExpectedDraftVersion);

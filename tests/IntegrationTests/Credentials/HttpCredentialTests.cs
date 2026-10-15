@@ -279,13 +279,13 @@ public sealed class HttpCredentialTests
         var httpRequest = new HttpCredentialRequest(Recipient, TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer, Secret: Secret);
         if (httpFirst)
         {
-            http.Write(1, httpRequest, "admin", null, true);
-            Assert.Equal("credential.protocolConflict", Assert.Throws<CredentialWriteException>(() => mqtt.Write(1, mqttRequest, "admin", null, true)).Code);
+            await http.WriteAsync(1, httpRequest, "admin", null, true, token: TestContext.Current.CancellationToken);
+            Assert.Equal("credential.protocolConflict", (await Assert.ThrowsAsync<CredentialWriteException>(() => mqtt.WriteAsync(1, mqttRequest, "admin", null, true, token: TestContext.Current.CancellationToken))).Code);
         }
         else
         {
-            mqtt.Write(1, mqttRequest, "admin", null, true);
-            Assert.Equal("credential.protocolConflict", Assert.Throws<CredentialWriteException>(() => http.Write(1, httpRequest, "admin", null, true)).Code);
+            await mqtt.WriteAsync(1, mqttRequest, "admin", null, true, token: TestContext.Current.CancellationToken);
+            Assert.Equal("credential.protocolConflict", (await Assert.ThrowsAsync<CredentialWriteException>(() => http.WriteAsync(1, httpRequest, "admin", null, true, token: TestContext.Current.CancellationToken))).Code);
         }
     }
 
@@ -298,8 +298,8 @@ public sealed class HttpCredentialTests
         var version = first.GetProperty("version").GetString();
         factory.Services.GetRequiredService<ConfigDatabase>().Client.Ado.ExecuteCommand(
             "CREATE TRIGGER fail_http_write BEFORE INSERT ON audit_log WHEN NEW.action = 'credential.http.write' BEGIN SELECT RAISE(ABORT, 'test-audit-fault'); END");
-        Assert.ThrowsAny<Exception>(() => Store(factory).Write(1,
-            new HttpCredentialRequest(Recipient, TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer, Secret: "replacement", ExpectedVersion: version), "admin", null, true));
+        await Assert.ThrowsAnyAsync<Exception>(() => Store(factory).WriteAsync(1,
+            new HttpCredentialRequest(Recipient, TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer, Secret: "replacement", ExpectedVersion: version), "admin", null, true, token: TestContext.Current.CancellationToken));
         Assert.Equal(version, Store(factory).Read(1)!.Version);
         Assert.Equal(Secret, Store(factory).ResolveHttp(1, Recipient)!.Secret);
         Assert.Single(TestAccounts.Audit(factory.Services, "credential.http.write"));

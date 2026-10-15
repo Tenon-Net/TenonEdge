@@ -75,8 +75,8 @@ public sealed class ConfigurationImportApiTests
         using var client = await Login(host, UserRole.Administrator);
         var connection = host.Services.GetRequiredService<ConnectionDraftStore>().Write(null,
             new("0", "receiver", "Receiver", ConnectionKind.Http, Http: new("https://example.com/")), "fixture", null);
-        var secret = host.Services.GetRequiredService<HttpCredentialStore>().Write(connection.Connection.Id,
-            new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-not-real", ExpectedDraftVersion: connection.Version), "fixture", null, true);
+        var secret = await host.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Connection.Id,
+            new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture-not-real", ExpectedDraftVersion: connection.Version), "fixture", null, true, token: TestContext.Current.CancellationToken);
         const string file = """{"formatVersion":1,"connections":[],"devices":[{"deviceKey":"meter","name":"Meter","kind":"simulator","enabled":true,"addressNotation":"offset","group":null,"connectionKey":null,"unitId":null}],"inputs":[{"deviceKey":"meter","inputKey":"values","name":"Values","kind":"simulator","enabled":true,"modbus":null,"mqtt":null,"http":null,"simulator":{"sampleJson":"{\"value\":9223372036854775807}"}}],"routes":[]}""";
         var id = await Prepare(client, file, connection.Version, mode);
         Assert.Equal(connection.Version, Version(host.Services));
@@ -164,7 +164,7 @@ public sealed class ConfigurationImportApiTests
         if (change == "draft")
         { host.Services.GetRequiredService<ConnectionDraftStore>().Write(null, new(connection.Version, "other", "Other", ConnectionKind.Http, Http: new("https://example.org/")), "fixture", null); }
         if (change == "credential")
-        { host.Services.GetRequiredService<HttpCredentialStore>().Write(connection.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture", ExpectedDraftVersion: connection.Version), "fixture", null, true); }
+        { await host.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(connection.Connection.Id, new("https://example.com/", HttpCredentialKind.Bearer, Secret: "fixture", ExpectedDraftVersion: connection.Version), "fixture", null, true, token: TestContext.Current.CancellationToken); }
         if (change == "audit")
         { Database(host.Services).Client.Ado.ExecuteCommand("CREATE TRIGGER reject_import BEFORE INSERT ON audit_log WHEN NEW.action='configuration.imported' BEGIN SELECT RAISE(ABORT, 'fixture'); END;"); }
         var before = JsonSerializer.Serialize(Database(host.Services).InTransaction(sql => ConfigurationCheckpoint.Read(sql, ConfigurationDraft.ReadVersion(sql))));

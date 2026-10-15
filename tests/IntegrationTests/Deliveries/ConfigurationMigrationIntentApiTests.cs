@@ -235,8 +235,8 @@ public sealed class ConfigurationMigrationIntentApiTests
         var original = store.ReadIntent(intent.Hold.IntentId)!;
         if (change == "identity")
         {
-            factory.Services.GetRequiredService<HttpCredentialStore>().Write(1,
-                new(CurrentAddress, HttpCredentialKind.Basic, Username: "changed-after-review", Secret: "test-only"), "admin", null, true);
+            await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(1,
+                new(CurrentAddress, HttpCredentialKind.Basic, Username: "changed-after-review", Secret: "test-only"), "admin", null, true, token: TestContext.Current.CancellationToken);
         }
         else
         {

@@ -122,8 +122,8 @@ public sealed partial class ConfigurationRecoveryTests
         var review = await Review(factory, client);
         var credentials = factory.Services.GetRequiredService<HttpCredentialStore>();
         var old = credentials.Read(id)!;
-        credentials.Write(id, new("http://192.0.2.1/", TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer,
-            Secret: "rotated-fixture-secret", ExpectedVersion: old.Version, ExpectedDraftVersion: review.GetProperty("draftVersion").GetString()), "operator", null, true);
+        await credentials.WriteAsync(id, new("http://192.0.2.1/", TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer,
+            Secret: "rotated-fixture-secret", ExpectedVersion: old.Version, ExpectedDraftVersion: review.GetProperty("draftVersion").GetString()), "operator", null, true, token: TestContext.Current.CancellationToken);
         using var stale = await client.PostJsonAsync(Root + "/recover", Request(review), Token);
         Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
         var changed = await Review(factory, client);
@@ -176,8 +176,8 @@ public sealed partial class ConfigurationRecoveryTests
             id = connection.Connection.Id;
             if (credential)
             {
-                factory.Services.GetRequiredService<HttpCredentialStore>().Write(id, new("http://192.0.2.1/", TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer,
-                    Secret: "initial-fixture-secret", ExpectedDraftVersion: connection.Version), "operator", null, true);
+                await factory.Services.GetRequiredService<HttpCredentialStore>().WriteAsync(id, new("http://192.0.2.1/", TenonEdge.Abstractions.Contracts.HttpCredentialKind.Bearer,
+                    Secret: "initial-fixture-secret", ExpectedDraftVersion: connection.Version), "operator", null, true, token: TestContext.Current.CancellationToken);
             }
             var plan = Empty;
             if (formatted)
