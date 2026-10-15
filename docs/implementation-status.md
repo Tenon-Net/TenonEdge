@@ -5930,7 +5930,7 @@ TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil \
 | OpenAPI / 前端构建、lint、格式 | 通过；保留既有 >500 kB 分块提示 | `openapi-generation.log`、`web-{build,lint,format}.log` |
 | 全量 Vitest | 569/569，0 跳过 | `vitest.json` |
 | 当前 Chromium 既有关联回归 | 13/13，0 跳过，1.3 分钟；不是信任网页验收 | `browser-regression.json` |
-| Chromium 111 同组关联回归（首轮） | 10/13，3 项失败、0 跳过；正在定位，不能写成通过 | `chromium111.json` |
+| Chromium 111 同组关联回归（首轮） | 10/13，3 项失败、0 跳过；根因及修复后重跑见 §2.255，保留首次失败事实 | `chromium111.json` |
 
 命令/环境：Ubuntu 26.04 / Linux x64，SDK 10.0.401（锁定依赖不变），Node 22.23.2、npm 11.21.0。本机脚本及原始失败/成功日志在 `/tmp/tenonedge-tls-trust/`，无需修改其他仓库；这些本地证据不是远端 CI。实际入口：
 
@@ -5956,6 +5956,48 @@ npx --yes npm@11.21.0 exec -- playwright test auth.spec.ts test-send.spec.ts \
 失败过程保留而不覆盖：新增测试曾因公开方法使用内部角色枚举、缺少 `System.Buffers` 和误写 `Raw` 字段构建失败，均修正；初次 API 清单顺序及分组空路径尾斜杠错误，修清单并采用父分组显式路径；新增 Broker 夹具错误启用“正式处理保留消息”但没有上游时间映射，改为诊断读取（只展示 Retained 标记）；AIA 测试最初由测试服务器自身构造证书上下文时触发下载，改为显式离线服务器证书上下文后，客户端零下载断言通过；新增 HTTP GET 夹具对零正文调用 `StreamReader.ReadBlockAsync` 造成等待，改为仅在有正文时读取。最终以表中报告为准，不把这些早期失败写成通过。
 
 未覆盖/下一步：服务器信任网页和 CA 文件上传/PEM 处理、客户端证书 PKCS#12/PEM 认证及账户变更边界、统一默认 TLS 联网边界确认、完整运行输入/版本切换的信任专项矩阵、最低浏览器信任交互、T3-10 六类扩展表单与 T3-11 无 JSON 业务闭环。用法见 [connection-tls-trust.md](connection-tls-trust.md)。
+
+### 2.255 T3-11 最低 Chromium 样本字段推断兼容修复（2026-10-15）
+
+§2.254 的服务器信任后端已整理为本地提交 `2b3f81a`，未推送。本节只修复既有字段推断，不新增信任页面，也不代表 T3-11 全部完成。
+
+- Chromium 111 不提供 `JSON.parse` reviver 的 `context.source`，原样本推断为防止精度损失而返回 `browser` 错误。这导致 §2.254 最低浏览器同组 3 项失败；不是 TLS 握手或采样链路故障。
+- 用实际 `sample.ts` 源码构建最小浏览器复现：`inferSample('9007199254740993')` 在 111 返回错误、当前 Chromium 正常；修复后两者返回原数字文本。复用已有 `readRouteJson`/`RouteNumber` 词法读取器，删除重复数字包装和重复键扫描，不经 JS number 保存数值。
+- 保留 1 MiB、64 层、1000 字段、路径长度和重复成员约束，补空容器深度边界；回归断言覆盖无 reviver source 时的大整数、小数、负零和指数。单测先红后绿，无新增依赖。
+
+证据目录 `/tmp/tenonedge-tls-trust/`；SDK 10.0.401、Node 22.23.2、npm 11.21.0，Chromium 111.0.5563.0 / 156.0.8078.4。后端沿用 §2.254 实际测试结果，不重复计数。前端重新构建并执行：
+
+| 本轮检查 | 实际结果 | 证据 |
+|---|---|---|
+| 最小浏览器复现、关联单元 | 红→绿；关联 34/34 | `repro-sample.mjs`、`minimal-{red,modern,green}.log`、`sample-unit-{red,green}.log` |
+| 前端构建、类型、lint、格式 | 通过；既有 >500 kB 分块提示保留 | `web-{build,lint,format}-final.log` |
+| 全量 Vitest | **569/569**，0 失败/跳过 | `vitest-final.json/.log` |
+| 当前 Chromium 关联组 | **13/13**，0 失败/跳过/重试，79.4 秒 | `browser-final.json/.log` |
+| Chromium 111 相同关联组 | **13/13**，0 失败/跳过/重试，86.6 秒 | `chromium111-final.json/.log` |
+| 冻结检查、报告核对 | 通过 | 新建 `source-frozen-sample-fix.sha256` 和 `source-verification-sample-fix.log`；没有覆盖修复前清单 |
+
+实际命令（浏览器与后端网络测试串行，浏览器期间不改源码/测试或产物）：
+
+```sh
+# web/；build 内含 tsc --noEmit
+npx --yes npm@11.21.0 run build
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 exec -- vitest run --reporter=json --outputFile=/tmp/tenonedge-tls-trust/vitest-final.json
+TENONEDGE_CERTUTIL=/tmp/tenonedge-tokens/nss-tool/extracted/usr/bin/certutil \
+PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-tls-trust/browser-final.json \
+npx --yes npm@11.21.0 exec -- playwright test auth.spec.ts test-send.spec.ts --grep 'HTTP|MQTT|changed samples' --reporter=line,json
+# 第二次同命令追加 TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-minimum-browser/chrome-linux/chrome，报告 chromium111-final.json
+node scripts/verify-results.mjs /tmp/tenonedge-tls-trust/vitest-final.json /tmp/tenonedge-tls-trust/browser-final.json
+node scripts/verify-results.mjs /tmp/tenonedge-tls-trust/vitest-final.json /tmp/tenonedge-tls-trust/chromium111-final.json
+# 仓库根目录
+sha256sum -c /tmp/tenonedge-tls-trust/source-frozen-sample-fix.sha256
+git diff --check
+```
+
+首次用带 `^` 的 grep 缩小失败用例时发现零项，不作为通过；更正过滤器后再次复现，最终重跑完整同组 13 项。不是整个最低浏览器矩阵，也不是真实 Chrome/Edge/Safari 验收。
+
+维护者本轮已确认默认 TLS 路径也采用本地建链、禁止自动 AIA/CRL/OCSP 外联；§2.254 的“待确认”是首次实现时状态。下一子项须修改默认传输并验证，不能只据确认改成实现完成。仍继续信任网页、客户端证书及 §1 的 T3 缺项，不进入 T4/T5/G1。
 
 ## 3. 验收编号登记
 

@@ -39,6 +39,10 @@ describe('transient JSON sample inference', () => {
         expect(() =>
             inferSample(JSON.stringify({ ['a'.repeat(4096)]: 1 })),
         ).toThrow('limit')
+        expect(() =>
+            inferSample('['.repeat(64) + '{}' + ']'.repeat(64)),
+        ).toThrow('limit')
+        expect(inferSample('['.repeat(63) + '{}' + ']'.repeat(63))).toEqual([])
         expect(inferSample(JSON.stringify(Array(1000).fill(1)))).toHaveLength(
             1000,
         )
@@ -80,7 +84,7 @@ describe('transient JSON sample inference', () => {
             inferSample('{"braces":"[{}]","quote":"\\\"a\\\": 1"}'),
         ).toHaveLength(2)
     })
-    it('fails closed when the browser cannot expose original numeric tokens', () => {
+    it('preserves exact numeric tokens without native reviver source support', () => {
         const nativeParse = JSON.parse
         const spy = vi
             .spyOn(JSON, 'parse')
@@ -95,7 +99,16 @@ describe('transient JSON sample inference', () => {
                 ),
             )
         try {
-            expect(() => inferSample('9007199254740993')).toThrow('browser')
+            expect(
+                inferSample(
+                    '[9007199254740993,1.234567890123456789,-0,1e400]',
+                ).map((field) => field.preview),
+            ).toEqual([
+                '9007199254740993',
+                '1.234567890123456789',
+                '-0',
+                '1e400',
+            ])
         } finally {
             spy.mockRestore()
         }

@@ -1,3 +1,4 @@
+import { readRouteJson, RouteNumber } from '../canvas/json'
 import type { JsonField } from './model'
 
 export const maxSampleBytes = 1024 * 1024
@@ -6,62 +7,34 @@ export type SampleField = {
     type: JsonField['type']
     preview: string
 }
-// Never turn a JSON number into a JS number for display or persistence.
-class RawNumber {
-    constructor(readonly text: string) {}
-}
-
-// JSON.parse discards duplicate object members, but runtime JSON Pointer rejects
-// ambiguous members. Scan only strings/containers after native syntax validation.
-function rejectAmbiguousMembers(text: string) {
-    const stack: (Set<string> | null)[] = []
-    const tokens = /"(?:[^"\\]|\\[\s\S])*"|[{}[\]]/g
-    for (const match of text.matchAll(tokens)) {
-        const token = match[0]
-        if (token === '{' || token === '[') {
-            stack.push(token === '{' ? new Set() : null)
-            if (stack.length > 64) throw new Error('limit')
-        } else if (token === '}' || token === ']') stack.pop()
-        else {
-            let next = match.index! + token.length
-            while (/\s/.test(text[next] ?? '') && next < text.length) next++
-            if (text[next] !== ':') continue
-            const keys = stack.at(-1)
-            const key: string = JSON.parse(token)
-            if (keys?.has(key)) throw new Error('duplicate')
-            keys?.add(key)
-        }
-    }
-}
-
 /** Page-local inference only. Returns no input values in the generated descriptors. */
 export function inferSample(text: string): SampleField[] {
-    if (
-        text.length > maxSampleBytes ||
-        new TextEncoder().encode(text).length > maxSampleBytes
-    )
-        throw new Error('limit')
     let root: unknown
     try {
-        root = JSON.parse(
-            text,
-            (_key: string, value: unknown, context?: { source?: string }) => {
-                if (typeof value !== 'number') return value
-                // Older engines must not silently round an int64/decimal sample.
-                if (!context?.source) throw new Error('browser')
-                return new RawNumber(context.source)
-            },
-        )
+        // Reuse the bounded lexical reader: JSON.parse's numeric result is never
+        // used, and Chrome/Edge 111 do not need the newer reviver context.source.
+        root = readRouteJson(text, maxSampleBytes, 64)
     } catch (error) {
-        if (error instanceof Error && error.message === 'browser') throw error
+        if (
+            error instanceof Error &&
+            ['limit', 'duplicate'].includes(error.message)
+        )
+            throw error
         throw new Error('json')
     }
-    rejectAmbiguousMembers(text)
     const fields: SampleField[] = []
     function visit(value: unknown, path: string, depth: number) {
-        if (depth > 64 || path.length > 4096) throw new Error('limit')
         if (
-            value instanceof RawNumber ||
+            depth > 64 ||
+            path.length > 4096 ||
+            (depth === 64 &&
+                value !== null &&
+                typeof value === 'object' &&
+                !(value instanceof RouteNumber))
+        )
+            throw new Error('limit')
+        if (
+            value instanceof RouteNumber ||
             value === null ||
             typeof value !== 'object'
         ) {
@@ -69,7 +42,7 @@ export function inferSample(text: string): SampleField[] {
             fields.push({
                 path,
                 type:
-                    value instanceof RawNumber
+                    value instanceof RouteNumber
                         ? 'number'
                         : typeof value === 'boolean'
                           ? 'boolean'
@@ -77,7 +50,7 @@ export function inferSample(text: string): SampleField[] {
                             ? 'string'
                             : null,
                 preview:
-                    value instanceof RawNumber
+                    value instanceof RouteNumber
                         ? value.text
                         : JSON.stringify(value),
             })
