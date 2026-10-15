@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
@@ -62,17 +61,9 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
             }
             if (message.Payload.IsEmpty || message.Payload.Length > StandardEnvelope.MaximumPayloadBytes || message.QualityOfService is not null)
             { return new(OutputSendStatus.RejectMessage, "HTTP 冻结报文无效。"); }
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Content = new ReadOnlyMemoryContent(message.Payload);
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
             if (message.Headers is null || !message.Headers.TryGetValue("Idempotency-Key", out var key) || !Guid.TryParseExact(key, "D", out _))
             { return new(OutputSendStatus.RejectMessage, "HTTP 冻结记录缺少有效的幂等编号。"); }
-            foreach (var pair in message.Headers)
-            {
-                if (!pair.Key.Equals("Idempotency-Key", StringComparison.OrdinalIgnoreCase))
-                { HttpOutputSettings.ValidateHeader(pair.Key, pair.Value); }
-                request.Headers.Add(pair.Key, pair.Value);
-            }
+            using var request = HttpFrozenRequest.CreatePost(endpoint, message);
             if (credential is not null)
             {
                 try
@@ -92,6 +83,13 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
             var network = exception is HttpRequestException or IOException or OperationCanceledException or TimeoutException;
             return new(OutputSendStatus.Retry, network ? "HTTP 网络失败或超时，记录保持待发。" : "HTTP 本地配置或未知异常，记录保持待发。", CountsTowardPoison: !network);
         }
+    }
+
+    // 在原共享串行租约内完成响应读取，释放响应后才允许下一个业务请求。
+    internal async Task<HttpTestSendResult> SendTestOutputAsync(HttpRequestMessage request, HttpCredential? credential, CancellationToken token)
+    {
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        return await HttpTestResponseCapture.ReadAsync(response, credential, token);
     }
 
     public async Task<JsonDocument> ReadInputAsync(HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken)

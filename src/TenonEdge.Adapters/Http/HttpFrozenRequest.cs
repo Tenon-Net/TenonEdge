@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -30,6 +31,26 @@ internal sealed record HttpFrozenRequest(int Version, string Path, string? Succe
             (rule.SuccessPath is null) != (rule.SuccessValue.ValueKind == JsonValueKind.Undefined))
         { throw new ArgumentException("冻结 HTTP 约定无效。"); }
         return rule.SuccessPath is null ? null : new HttpSuccessRule(rule.SuccessPath, rule.SuccessValue);
+    }
+
+    // 正式发送与一次测试共用的线级编码，不重新生成正文、幂等编号或请求头。
+    // 调用方先检查冻结约定、身份和幂等编号；秘密仍由 ApplyCredential 单独加入。
+    internal static HttpRequestMessage CreatePost(Uri endpoint, OutputMessage message)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        try
+        {
+            request.Content = new ReadOnlyMemoryContent(message.Payload);
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            foreach (var pair in message.Headers!)
+            {
+                if (!pair.Key.Equals("Idempotency-Key", StringComparison.OrdinalIgnoreCase))
+                { HttpOutputSettings.ValidateHeader(pair.Key, pair.Value); }
+                request.Headers.Add(pair.Key, pair.Value);
+            }
+            return request;
+        }
+        catch { request.Dispose(); throw; }
     }
 
     private static void CheckSize(string metadata)

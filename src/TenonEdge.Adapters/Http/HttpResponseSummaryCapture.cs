@@ -1,8 +1,6 @@
 using System.Buffers;
 using System.Text;
-using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
-using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Http;
 
@@ -12,7 +10,6 @@ internal static class HttpResponseSummaryCapture
 {
     internal const int MaximumBodyBytes = 64 * 1024;
     internal static readonly TimeSpan CaptureTimeout = TimeSpan.FromMilliseconds(250);
-    private static readonly UTF8Encoding Utf8 = new(false, true);
 
     internal static async Task<HttpResponseSummary> ReadAsync(HttpResponseMessage response, HttpCredential? credential, TimeProvider time, CancellationToken token)
     {
@@ -52,31 +49,10 @@ internal static class HttpResponseSummaryCapture
     {
         if (body.Length > MaximumBodyBytes)
         { return new(status, HttpResponseSummaryState.TooLarge); }
-        string text;
-        try
-        { text = Utf8.GetString(body).TrimStart('\uFEFF'); }
-        catch (DecoderFallbackException) { return new(status, HttpResponseSummaryState.UnsupportedEncoding); }
-        if (string.IsNullOrWhiteSpace(text))
-        { return new(status, HttpResponseSummaryState.Empty); }
-        // 看似JSON但损坏时不把包含转义秘密的片段作为纯文本回传；完整JSON检查在截断之前。
-        var first = text.AsSpan().TrimStart()[0];
-        if (requireJson || first is '{' or '[' or '"')
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(text, new() { MaxDepth = 64 });
-                if (JsonReadPreview.IsSensitive(document.RootElement, credential, CancellationToken.None))
-                { return new(status, HttpResponseSummaryState.Redacted); }
-            }
-            catch (Exception error) when (error is JsonException or InvalidOperationException)
-            { return new(status, HttpResponseSummaryState.InvalidBody); }
-        }
-        if (JsonReadPreview.IsSensitiveText(text, credential))
-        { return new(status, HttpResponseSummaryState.Redacted); }
-        // 不把控制序列或双向排版控制保存给网页；普通换行/制表保留。正文始终作为纯文本显示。
-        if (text.Any(character => char.IsControl(character) && character is not ('\r' or '\n' or '\t') ||
-            character is '\u202A' or '\u202B' or '\u202D' or '\u202E' or '\u202C' or '\u2066' or '\u2067' or '\u2068' or '\u2069'))
-        { return new(status, HttpResponseSummaryState.InvalidBody); }
+        var state = HttpResponseBodyPrivacy.Inspect(body, credential, requireJson, out var captured);
+        if (state != HttpResponseSummaryState.Captured)
+        { return new(status, state); }
+        var text = captured!;
         var chars = 0;
         var bytes = 0;
         foreach (var rune in text.EnumerateRunes())
