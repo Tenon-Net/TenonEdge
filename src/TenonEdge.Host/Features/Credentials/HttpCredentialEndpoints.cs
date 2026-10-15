@@ -14,7 +14,8 @@ internal static class HttpCredentialEndpoints
         group.MapPut("/http-credential", Put).RequireAuthorization(AuthorizationPolicies.Configurator)
             .WithName("writeHttpCredential").WithSummary("写入 HTTP 凭证或更新接收方绑定")
             .WithDescription("草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。")
-            .ProducesProblem(409).ProducesProblem(403);
+            .WithMetadata(new RequestBodyLimit(256 * 1024))
+            .ProducesProblem(409).ProducesProblem(403).ProducesProblem(413);
         group.MapDelete("/http-credential", Clear).RequireAuthorization(AuthorizationPolicies.Configurator)
             .WithName("clearHttpCredential").WithSummary("清除未被保留运行版本引用的草稿连接认证凭证")
             .ProducesProblem(403).ProducesProblem(409);

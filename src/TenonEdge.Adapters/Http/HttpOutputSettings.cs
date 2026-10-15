@@ -59,7 +59,7 @@ public sealed record HttpOutputSettings : HttpRequestSettings
     // §8.3：身份属于连接；输出路径由冻结报文与配置变更保护单独检查。凭证版本/头名称不代表接收账户。
     internal string Fingerprint(HttpCredentialIdentity? identity) => "sha256:" + Convert.ToHexStringLower(SHA256.HashData(
         Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { BaseAddress, identity?.Kind.ToString() ?? "none",
-            identity?.Username ?? "", identity?.AccountMarker ?? "" }))));
+            (identity?.Kind == HttpCredentialKind.ClientCertificate ? identity.CertificateSubject : identity?.Username) ?? "", identity?.AccountMarker ?? "" }))));
 
     /// <summary>将已经生成的完整正文冻结为一次请求，不重新格式化正文或生成编号；不连接、不读取秘密。</summary>
     public OutputMessage FreezePayload(ReadOnlyMemory<byte> payload, Guid deliveryId, HttpCredentialIdentity? identity)

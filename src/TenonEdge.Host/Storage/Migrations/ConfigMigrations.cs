@@ -411,5 +411,30 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(32, "http_client_certificate_identity", [
+            // SQLite 不能直接扩宽旧 CHECK；同一迁移事务中显式复制所有旧字段后替换表。
+            """
+            CREATE TABLE http_credential_v32 (
+                connection_id INTEGER NOT NULL PRIMARY KEY,
+                recipient TEXT NOT NULL,
+                kind INTEGER NOT NULL CHECK (kind BETWEEN 0 AND 4),
+                username TEXT,
+                name TEXT,
+                protected_secret TEXT,
+                account_marker TEXT NOT NULL,
+                version TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                certificate_subject TEXT,
+                CHECK ((kind = 4 AND certificate_subject IS NOT NULL AND length(certificate_subject) BETWEEN 1 AND 1024 AND username IS NULL AND name IS NULL)
+                    OR (kind <> 4 AND certificate_subject IS NULL))
+            )
+            """,
+            """
+            INSERT INTO http_credential_v32 (connection_id, recipient, kind, username, name, protected_secret, account_marker, version, updated_at)
+                SELECT connection_id, recipient, kind, username, name, protected_secret, account_marker, version, updated_at FROM http_credential
+            """,
+            "DROP TABLE http_credential",
+            "ALTER TABLE http_credential_v32 RENAME TO http_credential",
+        ]),
     ];
 }

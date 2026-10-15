@@ -36,7 +36,7 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
         await using var ownership = lease;
         try
         {
-            var result = await lease.ExecuteAsync((session, token) => session.TestConnectionAsync(settings, request, credential is not null, time, token), linked.Token);
+            var result = await lease.ExecuteAsync((session, token) => session.TestConnectionAsync(settings, request, credential, time, token), linked.Token);
             cancellationToken.ThrowIfCancellationRequested();
             return result with { ElapsedMs = time.GetElapsedTime(started).TotalMilliseconds };
         }
@@ -49,14 +49,16 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
     }
 
     internal static async Task<HttpConnectionTestResult> ExecuteAsync(HttpRequestSettings settings, HttpRequestMessage request,
-        bool credentialUsed, IOutboundConnector connector, TimeProvider time, CancellationToken token, TlsTrustSnapshot? trust = null)
+        HttpCredential? credential, IOutboundConnector connector, TimeProvider time, CancellationToken token, TlsTrustSnapshot? trust = null)
     {
         var started = time.GetTimestamp();
         var trace = new ConnectionTestTrace(time, settings.BaseUri.Scheme == "https");
         string? certificateFailure = null;
         ServerCertificateInfo? serverCertificate = null;
+        using var clientCertificate = HttpClientCertificate.Open(credential, time.GetUtcNow());
         using var handler = OutboundHttpTransport.CreateHandler(new ObservedTestConnector(connector, trace));
         handler.MaxResponseHeadersLength = 64;
+        handler.SslOptions.ClientCertificateContext = clientCertificate?.Context(time.GetUtcNow());
         handler.PlaintextStreamFilter = (context, _) =>
         {
             trace.Begin("protocol");
@@ -84,7 +86,7 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
         }
 
         HttpConnectionTestResult Result(string code, int? status, bool success) =>
-            new(success, code, status, time.GetElapsedTime(started).TotalMilliseconds, trace.FinishHttp(code, status, credentialUsed), Volatile.Read(ref serverCertificate));
+            new(success, code, status, time.GetElapsedTime(started).TotalMilliseconds, trace.FinishHttp(code, status, credential is not null), Volatile.Read(ref serverCertificate));
     }
 
     private static string Classify(Exception exception)

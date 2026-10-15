@@ -25,6 +25,10 @@ public sealed record OutputRecipientIdentity(string Protocol, string Address, st
             !usePassword || identity is not null, null, true);
 
     public static OutputRecipientIdentity Http(string address, HttpCredentialIdentity? identity) =>
+        identity?.Kind == HttpCredentialKind.ClientCertificate
+        ? new("http", address, identity.Kind.ToString(), identity.CertificateSubject, identity.CertificateSubject is not null,
+            identity.CertificateSubject, identity.CertificateSubject is not null)
+        :
         new("http", address, identity?.Kind.ToString() ?? "none", identity?.Kind == HttpCredentialKind.Basic ? identity.Username : null,
             identity?.Kind != HttpCredentialKind.Basic || identity.Username is not null, null, true);
 
@@ -116,6 +120,8 @@ public sealed record OutputRecipientIdentity(string Protocol, string Address, st
                 (Authentication == "password" && (!AccountRecorded || Account is not null) || Authentication == "anonymous" && AccountRecorded && Account is null),
             "http" => uri.Scheme is "http" or "https" &&
                 (Authentication == "Basic" && (!AccountRecorded || Account is not null) ||
+                    Authentication == "ClientCertificate" && AccountRecorded && ClientCertificateRecorded &&
+                    !string.IsNullOrWhiteSpace(ClientCertificateSubject) && Account == ClientCertificateSubject ||
                     Authentication is "none" or "Bearer" or "ApiKeyHeader" or "ApiKeyQuery" && AccountRecorded && Account is null),
             _ => false,
         };

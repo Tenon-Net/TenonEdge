@@ -60,7 +60,10 @@ public sealed partial class HttpOutputTests
         }, Token);
         Guid deliveryId;
         var area = status == 422 ? DeliveryState.Failed : DeliveryState.Quarantined;
-        await using (var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], data.Path, events: events,
+        // 固定运行时单调时间，使 503 的原发送者停在退避；HTTP 读取/超时仍使用真实时钟。
+        // 不将首次响应摘要测试变成与合法重试竞争的墙钟竞赛。
+        var runtimeTime = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        await using (var runtime = RuntimeTesting.CreateRuntime([new OneShotInputFactory()], data.Path, events: events, time: runtimeTime,
             outputs: [new HttpOutputFactory(credentials, TimeProvider.System, new OutboundConnector(new LoopbackPolicy()), new SharedConnections())]))
         {
             var input = new RuntimeUnitPlan(RuntimeUnitId.Create("input.test", "device/input"), JsonSerializer.SerializeToElement(new { }));
@@ -81,6 +84,9 @@ public sealed partial class HttpOutputTests
                 Assert.DoesNotContain("field must be integer", JsonSerializer.Serialize(events.Events), StringComparison.Ordinal);
                 if (status == 401)
                 { Assert.Contains("HTTP 401", record.LastError, StringComparison.Ordinal); }
+                // 该用例只验证第一次响应与持久摘要，显式留下超过测试退避的清理窗口。
+                if (status == 503)
+                { await Task.Delay(150, Token); }
                 if (status != 422)
                 { await runtime.Deliveries.QuarantineAsync(record.Seq, DeliveryQuarantineReasons.TargetChanged, Token); }
                 var summary = runtime.Deliveries.InspectBody(deliveryId, area)!.ResponseSummary!;

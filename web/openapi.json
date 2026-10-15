@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:40491/"
+      "url": "http://127.0.0.1:36761/"
     }
   ],
   "paths": {
@@ -7910,6 +7910,16 @@
                 }
               }
             }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         }
       },
@@ -11355,6 +11365,36 @@
             ]
           }
         }
+      },
+      "ClientCertificateUpload": {
+        "type": "object",
+        "properties": {
+          "pkcs12": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "certificatePem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "privateKeyPem": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "ClockSyncState": {
         "enum": [
@@ -15133,7 +15173,8 @@
           "basic",
           "bearer",
           "apiKeyHeader",
-          "apiKeyQuery"
+          "apiKeyQuery",
+          "clientCertificate"
         ]
       },
       "HttpCredentialMetadata": {
@@ -15226,6 +15267,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientCertificateUpload"
+              }
             ]
           }
         }
@@ -15424,8 +15475,7 @@
       },
       "HttpTestCredential": {
         "required": [
-          "kind",
-          "secret"
+          "kind"
         ],
         "type": "object",
         "properties": {
@@ -15433,7 +15483,10 @@
             "$ref": "#/components/schemas/HttpCredentialKind"
           },
           "secret": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "username": {
             "type": [
@@ -15445,6 +15498,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientCertificateUpload"
+              }
             ]
           }
         },

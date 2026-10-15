@@ -7,8 +7,10 @@ public interface IHttpCredentialResolver
     HttpCredential? ResolveHttp(long connectionId, string recipient);
 }
 
-public enum HttpCredentialKind { Basic, Bearer, ApiKeyHeader, ApiKeyQuery }
-public sealed record HttpCredentialIdentity(HttpCredentialKind Kind, string? Username, string? Name, string AccountMarker, string Version);
+public enum HttpCredentialKind { Basic, Bearer, ApiKeyHeader, ApiKeyQuery, ClientCertificate }
+public sealed record HttpCredentialIdentity(HttpCredentialKind Kind, string? Username, string? Name, string AccountMarker, string Version,
+    string? CertificateSubject = null);
+// ClientCertificate 的 Secret 是仅供内部使用的规范 PKCS#12 Base64，仍属于秘密，不可序列化为管理响应或快照。
 public sealed record HttpCredential(HttpCredentialIdentity Identity, string Secret)
 {
     public override string ToString() => $"HTTP credential ({Identity.Kind}, version {Identity.Version})";

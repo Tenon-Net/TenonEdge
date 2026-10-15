@@ -2322,6 +2322,12 @@ export interface components {
             currentPassword: null | string;
             newPassword: null | string;
         };
+        ClientCertificateUpload: {
+            pkcs12?: null | string;
+            password?: null | string;
+            certificatePem?: null | string;
+            privateKeyPem?: null | string;
+        };
         /** @enum {unknown} */
         ClockSyncState: "unknown" | "synchronized" | "notSynchronized";
         CompleteSetupRequest: {
@@ -3162,7 +3168,7 @@ export interface components {
             certificate?: null | components["schemas"]["ServerCertificateInfo"];
         };
         /** @enum {unknown} */
-        HttpCredentialKind: "basic" | "bearer" | "apiKeyHeader" | "apiKeyQuery";
+        HttpCredentialKind: "basic" | "bearer" | "apiKeyHeader" | "apiKeyQuery" | "clientCertificate";
         HttpCredentialMetadata: {
             /** Format: int64 */
             connectionId: number | string;
@@ -3183,6 +3189,7 @@ export interface components {
             /** @default false */
             retainExisting: boolean;
             expectedDraftVersion?: null | string;
+            certificate?: null | components["schemas"]["ClientCertificateUpload"];
         };
         HttpDevicePreviewResult: {
             /** Format: int32 */
@@ -3233,9 +3240,10 @@ export interface components {
         };
         HttpTestCredential: {
             kind: components["schemas"]["HttpCredentialKind"];
-            secret: string;
+            secret?: null | string;
             username?: null | string;
             name?: null | string;
+            certificate?: null | components["schemas"]["ClientCertificateUpload"];
         };
         HttpTestSendResult: {
             code: string;
@@ -10931,6 +10939,15 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -1,4 +1,5 @@
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Http;
 
@@ -7,6 +8,12 @@ public static class HttpCredentialValidation
 {
     public static void Validate(HttpCredentialKind kind, string? username, string? name, string secret)
     {
+        if (kind == HttpCredentialKind.ClientCertificate)
+        {
+            if (string.IsNullOrEmpty(secret) || secret.Length > 4 * ((TlsClientCertificate.MaximumPkcs12Bytes + 2) / 3) || username is not null || name is not null)
+            { throw new ArgumentException("HTTP 客户端证书凭证无效。"); }
+            return; // 容器/私钥/主题在 TLS 所有者创建时再次校验，不能作为请求头发送。
+        }
         if (secret is null || secret.Length > 4096 || secret.IndexOfAny(['\r', '\n', '\0']) >= 0)
         { throw new ArgumentException("HTTP 凭证无效。"); }
         switch (kind)

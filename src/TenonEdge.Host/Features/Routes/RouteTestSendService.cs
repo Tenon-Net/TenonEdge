@@ -29,7 +29,8 @@ internal sealed class RouteTestSendService(RouteTestSendArtifacts artifacts, Con
             CheckDraft(artifact, settings.ConnectionId);
             var identity = httpCredentials.DescribeHttp(settings.ConnectionId);
             return artifacts.Prepare(id, owner, artifact, settings.ConnectionId, settings.BaseAddress,
-                identity?.Kind.ToString().ToLowerInvariant() ?? "none", identity?.Username, identity, null);
+                identity?.Kind.ToString().ToLowerInvariant() ?? "none",
+                identity?.Kind == HttpCredentialKind.ClientCertificate ? identity.CertificateSubject : identity?.Username, identity, null);
         }
         if (artifact.Output.Kind != "output.mqtt")
         { throw new ArgumentException("仅通用 HTTP/MQTT 输出可发送测试报文。"); }

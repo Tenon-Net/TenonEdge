@@ -10,7 +10,7 @@ namespace TenonEdge.Host.Storage.Migrations;
 /// 失败的迁移和原因写入日志，宿主不启动。</item>
 /// <item>库中出现本程序不认识的更高版本（由更新版本的程序迁移过）时拒绝启动，不支持降级；
 /// 迁移历史与本程序的定义不一致时同样拒绝，不在不清楚的结构上继续写入。</item>
-/// <item>迁移只做显式的建表和追加。已存在的同名表不会被覆盖：建表语句失败会使整次迁移回滚，不静默清空数据。</item>
+/// <item>迁移使用显式 SQL；修改约束时须在同一事务逐列保留旧数据后替换表。已存在的同名目标表不会被覆盖：任一步失败会使整次迁移回滚，不静默清空数据。</item>
 /// </list>
 /// </summary>
 internal sealed partial class ConfigMigrator(

@@ -50,6 +50,19 @@ internal sealed class HttpCredentialStore(
         var recipient = NormalizeRecipient(request.Recipient);
         if (request.RetainExisting && !administrator)
         { throw new CredentialWriteException("credential.administratorRequired"); }
+        string? certificateSubject = null;
+        if (request.Certificate is not null || request.Kind == HttpCredentialKind.ClientCertificate)
+        {
+            if (request.Kind != HttpCredentialKind.ClientCertificate || request.Certificate is null || request.Secret is not null ||
+                request.Username is not null || request.Name is not null || request.RetainExisting || !recipient.StartsWith("https://", StringComparison.Ordinal))
+            { throw new ArgumentException("客户端证书仅用于 HTTPS，须单独提交证书材料，不可混用其他认证。"); }
+            using var material = request.Certificate.Open(time.GetUtcNow());
+            certificateSubject = material.Info.Subject;
+            var data = material.ExportPkcs12();
+            try
+            { request = request with { Secret = Convert.ToBase64String(data), Certificate = null }; }
+            finally { CryptographicOperations.ZeroMemory(data); }
+        }
         if (request.Secret is not null)
         {
             if (request.RetainExisting || request.Kind is null)
@@ -71,11 +84,14 @@ internal sealed class HttpCredentialStore(
             { throw new CredentialWriteException("credential.versionConflict"); }
             if (request.RetainExisting && record?.ProtectedSecret is null)
             { throw new ArgumentException("保留操作要求原凭证可用。"); }
+            if (request.RetainExisting && record?.Kind == (int)HttpCredentialKind.ClientCertificate && !recipient.StartsWith("https://", StringComparison.Ordinal))
+            { throw new ArgumentException("客户端证书认证不能保留到明文 HTTP 地址。"); }
             if (record is null && request.Secret is null)
             { throw new ArgumentException("首次写入须提供认证类型和秘密。"); }
             if (request.Secret is not null && record is not null && hasPending &&
                 record.Kind == (int)request.Kind!.Value &&
-                (request.Kind != HttpCredentialKind.Basic || record.Username == request.Username) && request.AccountChanged is null)
+                (request.Kind != HttpCredentialKind.Basic || record.Username == request.Username) &&
+                (request.Kind != HttpCredentialKind.ClientCertificate || record.CertificateSubject == certificateSubject) && request.AccountChanged is null)
             { throw new CredentialWriteException("credential.accountDeclarationRequired"); }
             var existed = record is not null;
             record ??= new HttpCredentialRecord { ConnectionId = connectionId, AccountMarker = Guid.NewGuid().ToString("N") };
@@ -87,6 +103,7 @@ internal sealed class HttpCredentialStore(
                 record.Kind = (int)request.Kind!.Value;
                 record.Username = request.Username;
                 record.Name = request.Name;
+                record.CertificateSubject = certificateSubject;
                 record.ProtectedSecret = Protector(connectionId).Protect(request.Secret);
                 if (request.AccountChanged == true)
                 { record.AccountMarker = Guid.NewGuid().ToString("N"); }
@@ -149,12 +166,12 @@ internal sealed class HttpCredentialStore(
     }
 
     private IDataProtector Protector(long connectionId) => protection.CreateProtector(SecretProtection.Purposes.HttpCredential, connectionId.ToString(CultureInfo.InvariantCulture));
-    private static HttpCredentialIdentity Identity(HttpCredentialRecord record) => new((HttpCredentialKind)record.Kind, record.Username, record.Name, record.AccountMarker, record.Version);
+    private static HttpCredentialIdentity Identity(HttpCredentialRecord record) => new((HttpCredentialKind)record.Kind, record.Username, record.Name, record.AccountMarker, record.Version, record.CertificateSubject);
     private static HttpCredentialMetadata Metadata(HttpCredentialRecord record) => new(record.ConnectionId, record.Recipient, record.Version, record.ProtectedSecret is not null, DateTimeOffset.FromUnixTimeMilliseconds(record.UpdatedAt));
 }
 
 internal sealed record HttpCredentialRequest(string Recipient, HttpCredentialKind? Kind = null, string? Username = null, string? Name = null, string? Secret = null,
-    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false, string? ExpectedDraftVersion = null)
+    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false, string? ExpectedDraftVersion = null, ClientCertificateUpload? Certificate = null)
 {
     public override string ToString() => "HTTP credential write request (secret omitted)";
 }

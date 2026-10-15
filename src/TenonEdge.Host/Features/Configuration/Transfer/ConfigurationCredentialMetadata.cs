@@ -15,7 +15,8 @@ internal sealed record ConfigurationCredentialMetadata(long ConnectionId, Connec
                c.version AS Version, (c.protected_password IS NOT NULL) AS HasSecret
         FROM mqtt_credential c INNER JOIN connection_draft d ON d.id = c.connection_id
         UNION ALL
-        SELECT c.connection_id AS ConnectionId, 'http' AS Protocol, c.username AS Username,
+        SELECT c.connection_id AS ConnectionId, 'http' AS Protocol,
+               CASE WHEN c.kind = 4 THEN c.certificate_subject ELSE c.username END AS Username,
                c.kind AS Kind, c.account_marker AS AccountMarker, c.recipient AS Recipient,
                c.version AS Version, (c.protected_secret IS NOT NULL) AS HasSecret
         FROM http_credential c INNER JOIN connection_draft d ON d.id = c.connection_id

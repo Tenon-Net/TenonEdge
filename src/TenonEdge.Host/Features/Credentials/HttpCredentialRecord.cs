@@ -17,6 +17,8 @@ internal sealed class HttpCredentialRecord
     public int Kind { get; set; }
     [SugarColumn(ColumnName = "name")]
     public string? Name { get; set; }
+    [SugarColumn(ColumnName = "certificate_subject")]
+    public string? CertificateSubject { get; set; }
     [SugarColumn(ColumnName = "protected_secret")]
     public string? ProtectedSecret { get; set; }
     [SugarColumn(ColumnName = "account_marker")]

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Abstractions.Contracts;
@@ -12,7 +13,8 @@ using TenonEdge.Runtime.Diagnostics;
 namespace TenonEdge.Host.Features.Connections;
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record HttpTestCredential(HttpCredentialKind Kind, string Secret, string? Username = null, string? Name = null)
+internal sealed record HttpTestCredential(HttpCredentialKind Kind, string? Secret = null, string? Username = null, string? Name = null,
+    ClientCertificateUpload? Certificate = null)
 {
     public override string ToString() => "HTTP test credential (secret omitted)";
 }
@@ -32,14 +34,14 @@ internal static class HttpConnectionTestEndpoints
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("testHttpConnection")
             .WithSummary("通过共享会话串行测试未保存的 HTTP 参数，只 GET 基础地址，不保存、不读取正文或跟随重定向")
             .WithDescription("显式测试重建该会话空闲客户端；运行参数不匹配时拒绝借用。stored 使用已存凭证且接收方必须匹配。HTTP 状态不能单独证明认证有效。")
-            .WithMetadata(new RequestBodyLimit(128 * 1024))
+            .WithMetadata(new RequestBodyLimit(256 * 1024))
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413).ProducesProblem(429);
         return api;
     }
 
     private static async Task<Results<Ok<HttpConnectionTestResult>, ValidationProblem, ProblemHttpResult>> Test(
         HttpConnectionTestRequest request, HttpConnectionTest probe, HttpCredentialStore credentials, ConnectionDraftStore drafts,
-        SnowflakeIdGenerator ids, PreviewOperationBudget budget, HttpContext context)
+        SnowflakeIdGenerator ids, PreviewOperationBudget budget, TimeProvider time, HttpContext context)
     {
         context.Response.Headers.CacheControl = "no-store";
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
@@ -66,8 +68,7 @@ internal static class HttpConnectionTestEndpoints
             var credential = request.Authentication switch
             {
                 ConnectionTestAuthentication.Stored => credentials.ResolveHttp(settings.ConnectionId, settings.BaseAddress),
-                ConnectionTestAuthentication.Provided => new HttpCredential(new(request.Credential!.Kind, request.Credential.Username,
-                    request.Credential.Name, "transient-test", "transient-test"), request.Credential.Secret),
+                ConnectionTestAuthentication.Provided => Transient(request.Credential!, time.GetUtcNow()),
                 _ => null,
             };
             if (request.Authentication == ConnectionTestAuthentication.Stored && credential is null)
@@ -78,5 +79,22 @@ internal static class HttpConnectionTestEndpoints
         { return ApiProblems.Validation(new Dictionary<string, string[]> { ["connection"] = ["请检查 HTTP 地址、超时、非秘密请求头和认证参数。"] }); }
         catch (HttpConnectionUnavailableException)
         { return ApiProblems.Problem(409, "connection.inUse", "当前会话配置不匹配、正在释放或连接数达到上限，未建立第二个会话。"); }
+    }
+
+    private static HttpCredential Transient(HttpTestCredential value, DateTimeOffset now)
+    {
+        if (value.Kind == HttpCredentialKind.ClientCertificate)
+        {
+            if (value.Certificate is null || value.Secret is not null || value.Username is not null || value.Name is not null)
+            { throw new ArgumentException("客户端证书须单独提交。"); }
+            using var material = value.Certificate.Open(now);
+            var data = material.ExportPkcs12();
+            try
+            { return new(new(value.Kind, null, null, "transient-test", "transient-test", material.Info.Subject), Convert.ToBase64String(data)); }
+            finally { CryptographicOperations.ZeroMemory(data); }
+        }
+        if (value.Certificate is not null || value.Secret is null)
+        { throw new ArgumentException("认证参数无效。"); }
+        return new(new(value.Kind, value.Username, value.Name, "transient-test", "transient-test"), value.Secret);
     }
 }
