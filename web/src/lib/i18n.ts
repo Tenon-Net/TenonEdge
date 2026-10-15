@@ -22,6 +22,7 @@ import {
     credentialStrings,
 } from '../features/connections/strings'
 import { canvasStrings } from '../features/canvas/strings'
+import { trustStrings } from '../features/connections/trust-strings'
 import { pointStrings } from '../features/points/strings'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
@@ -73,6 +74,7 @@ void i18n.use(initReactI18next).init({
                 canvas: canvasStrings,
                 connections: connectionStrings,
                 credentials: credentialStrings,
+                trust: trustStrings,
                 product: 'TenonEdge',
                 subtitle: '边缘接入与转发网关',
                 loading: '正在读取网关状态…',

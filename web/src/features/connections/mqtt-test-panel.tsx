@@ -6,10 +6,21 @@ import { ConnectionTestSteps } from './test-steps'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'
 import type { components } from '../../api/schema'
-import { connectionRequest, type ConnectionForm } from './model'
+import {
+    connectionRequest,
+    type Connection,
+    type ConnectionForm,
+} from './model'
+import { ConnectionTrustPanel } from './trust-panel'
 
 type Authentication = components['schemas']['ConnectionTestAuthentication']
-export function MqttTestPanel({ form }: { form: ConnectionForm }) {
+export function MqttTestPanel({
+    form,
+    savedConnection,
+}: {
+    form: ConnectionForm
+    savedConnection?: Connection
+}) {
     const { t } = useTranslation()
     const [authentication, setAuthentication] = useState<Authentication>('none')
     const [username, setUsername] = useState('')
@@ -29,6 +40,7 @@ export function MqttTestPanel({ form }: { form: ConnectionForm }) {
                     signal: controller.current.signal,
                     body: {
                         connection,
+                        connectionId: form.id ?? null,
                         authentication,
                         credentialConnectionId:
                             authentication === 'stored' ? form.id : null,
@@ -40,7 +52,11 @@ export function MqttTestPanel({ form }: { form: ConnectionForm }) {
                 },
             )
             if (!data) throw new Error('missing-test-result')
-            return { ...data, target: `${connection.host}:${connection.port}` }
+            return {
+                ...data,
+                target: `${connection.host}:${connection.port}`,
+                formSnapshot: JSON.stringify(form),
+            }
         },
         onSettled: () => setPassword(''),
     })
@@ -140,6 +156,11 @@ export function MqttTestPanel({ form }: { form: ConnectionForm }) {
             {test.data && (
                 <ConnectionTestSteps steps={test.data.steps} protocol="mqtt" />
             )}
+            <ConnectionTrustPanel
+                form={form}
+                savedConnection={savedConnection}
+                tested={test.data}
+            />
         </section>
     )
 }

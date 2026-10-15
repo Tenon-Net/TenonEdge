@@ -42,6 +42,9 @@ const mqttTestStrings = {
         'certificate.notYetValid': '证书尚未生效，请同时检查网关时间',
         'certificate.timeInvalid': '证书有效期校验失败，请检查网关时间',
         'certificate.untrusted': '证书不受信任或证书链不完整',
+        'certificate.changed': '服务器证书已变更，须管理员核对新指纹后重新确认',
+        'certificate.trustInvalid': '已保存的连接信任不可用，拒绝连接',
+        'certificate.tooLarge': '服务器证书超出大小限制',
         'certificate.revoked': '证书已被吊销',
         'certificate.revocationUnavailable': '无法确认证书吊销状态',
         'dns.failed': 'DNS 解析失败',
@@ -132,7 +135,7 @@ export const connectionStrings = {
     },
     notice: '这些连接保存在网关配置库的全局草稿中，刷新页面后仍保留。保存、启停或删除草稿均不改变运行配置，运行需另行应用。保存后自动解析目标并检查出站规则，不连接目标或自动授权。',
     security:
-        '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。Modbus/MQTT/HTTP 可显式测试连接；Modbus、MQTT、HTTP 设备可在来源页显式读取或采样；客户端证书和信任证书表单尚未接入。',
+        '这里只保存非秘密参数。不要把密码、Token 或 API Key 填入地址、名称或请求头；凭证独立保存且立即生效，选中已保存的 MQTT/HTTP 连接可管理认证凭证。Modbus/MQTT/HTTP 可显式测试连接；Modbus、MQTT、HTTP 设备可在来源页显式读取或采样；连接级 TLS 服务器信任已接入，管理员可核对固定证书或上传 CA；客户端证书认证尚未接入。',
     add: '新建连接',
     edit: '编辑连接',
     view: '查看连接',

@@ -455,12 +455,44 @@ async function broker() {
             '-v',
             `${files}:/probe:ro`,
             'eclipse-mosquitto:2.1.2-alpine',
-            'mosquitto',
+            // Keep the startup window deterministic: docker run returning is
+            // not evidence that the broker can accept MQTT connections yet.
+            'sh',
             '-c',
-            '/probe/mosquitto.conf',
+            'sleep 1; exec mosquitto -c /probe/mosquitto.conf',
         ])
         const mapping = await docker(['port', name, '1883/tcp'])
         const port = Number(mapping.stdout.trim().split(':').at(-1))
+        await expect
+            .poll(
+                async () => {
+                    try {
+                        // A real PUBACK on a separate fixture-only topic proves
+                        // protocol readiness; a host TCP proxy accepting is insufficient.
+                        await docker([
+                            'exec',
+                            name,
+                            'timeout',
+                            '2',
+                            'mosquitto_pub',
+                            '-h',
+                            '127.0.0.1',
+                            '-t',
+                            'fixture/readiness',
+                            '-n',
+                            '-q',
+                            '1',
+                        ])
+                        return 'ready'
+                    } catch (error) {
+                        return error instanceof Error
+                            ? error.message
+                            : String(error)
+                    }
+                },
+                { timeout: 10000 },
+            )
+            .toBe('ready')
         const subscriber = spawn(
             'docker',
             [

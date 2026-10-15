@@ -6,12 +6,23 @@ import { ApiError } from '../../api/errors'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'
 import type { components } from '../../api/schema'
-import { connectionRequest, type ConnectionForm } from './model'
+import {
+    connectionRequest,
+    type Connection,
+    type ConnectionForm,
+} from './model'
 import { ConnectionTestSteps } from './test-steps'
+import { ConnectionTrustPanel } from './trust-panel'
 
 type Authentication = components['schemas']['ConnectionTestAuthentication']
 type Kind = components['schemas']['HttpCredentialKind']
-export function HttpTestPanel({ form }: { form: ConnectionForm }) {
+export function HttpTestPanel({
+    form,
+    savedConnection,
+}: {
+    form: ConnectionForm
+    savedConnection?: Connection
+}) {
     const { t } = useTranslation()
     const [authentication, setAuthentication] = useState<Authentication>('none')
     const [kind, setKind] = useState<Kind>('bearer')
@@ -59,7 +70,11 @@ export function HttpTestPanel({ form }: { form: ConnectionForm }) {
                 },
             )
             if (!data) throw new Error('missing-test-result')
-            return { ...data, target: connection.baseAddress }
+            return {
+                ...data,
+                target: connection.baseAddress,
+                formSnapshot: JSON.stringify(form),
+            }
         },
         onSettled: () => setSecret(''),
     })
@@ -206,6 +221,11 @@ export function HttpTestPanel({ form }: { form: ConnectionForm }) {
                     />
                 </>
             )}
+            <ConnectionTrustPanel
+                form={form}
+                savedConnection={savedConnection}
+                tested={test.data}
+            />
         </section>
     )
 }

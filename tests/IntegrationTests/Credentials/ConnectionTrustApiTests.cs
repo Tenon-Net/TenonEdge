@@ -27,6 +27,65 @@ public sealed class ConnectionTrustApiTests
     private static string Path(long id) => $"/api/edge-admin/v1/connections/{id}/tls-trust";
 
     [Theory]
+    [InlineData(null, HttpStatusCode.Unauthorized)]
+    [InlineData("Viewer", HttpStatusCode.Forbidden)]
+    [InlineData("Configurator", HttpStatusCode.Forbidden)]
+    [InlineData("Administrator", HttpStatusCode.OK)]
+    public async Task CertificateInspectionIsAdministratorOnlyAndDoesNotSaveTrust(string? role, HttpStatusCode expected)
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        if (role is not null)
+        { TestAccounts.Create(factory.Services, "actor", ApiRequests.StrongPassword, Enum.Parse<UserRole>(role)); }
+        using var client = role is null ? factory.CreateClient() : await factory.CreateLoggedInClientAsync("actor", Token);
+        using var key = ECDsa.Create();
+        using var certificate = ConnectionTrustTests.Certificate(key, "root", authority: true);
+        using var response = await client.PostJsonAsync("/api/edge-admin/v1/connections/tls-trust/inspect",
+            new { certificateDerBase64 = Convert.ToBase64String(certificate.RawData) }, Token);
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.OK)
+        {
+            Assert.True(response.Headers.CacheControl?.NoStore);
+            var info = await response.Content.ReadFromJsonAsync<ServerCertificateInfo>(Token);
+            Assert.Equal(certificate.GetCertHashString(HashAlgorithmName.SHA256), info!.Sha256Fingerprint);
+            using var db = factory.Services.GetRequiredService<ConfigDatabase>().CreateIsolatedClient();
+            Assert.Equal(0, db.Queryable<ConnectionTrustRecord>().Count());
+            client.DefaultRequestHeaders.Remove(ApiRequests.CsrfHeader);
+            using var noCsrf = await client.PostJsonAsync("/api/edge-admin/v1/connections/tls-trust/inspect",
+                new { certificateDerBase64 = info.CertificateDerBase64 }, Token);
+            Assert.Equal(HttpStatusCode.Forbidden, noCsrf.StatusCode);
+        }
+    }
+
+    [Theory]
+    [InlineData("leaf")]
+    [InlineData("expired")]
+    [InlineData("future")]
+    [InlineData("invalid")]
+    [InlineData("private")]
+    [InlineData("multiple")]
+    [InlineData("large")]
+    public async Task InspectionRejectsInvalidOrNonCaCertificates(string scenario)
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "actor", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("actor", Token);
+        using var key = ECDsa.Create();
+        using var certificate = ConnectionTrustTests.Certificate(key, "fixture", authority: scenario != "leaf",
+            expired: scenario == "expired", future: scenario == "future");
+        var encoded = scenario switch
+        {
+            "invalid" => "invalid",
+            "private" => Convert.ToBase64String(certificate.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx)),
+            "multiple" => Convert.ToBase64String([.. certificate.RawData, .. certificate.RawData]),
+            "large" => new string('A', 45000),
+            _ => Convert.ToBase64String(certificate.RawData),
+        };
+        using var response = await client.PostJsonAsync("/api/edge-admin/v1/connections/tls-trust/inspect",
+            new { certificateDerBase64 = encoded }, Token);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Theory]
     [InlineData("Administrator", HttpStatusCode.OK, HttpStatusCode.NotFound)]
     [InlineData("Configurator", HttpStatusCode.Forbidden, HttpStatusCode.NotFound)]
     [InlineData("Viewer", HttpStatusCode.Forbidden, HttpStatusCode.Forbidden)]

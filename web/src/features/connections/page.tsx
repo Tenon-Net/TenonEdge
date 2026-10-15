@@ -627,10 +627,30 @@ export function ConnectionsPage() {
                 <ModbusTestPanel key={testGeneration} form={form} />
             )}
             {form?.kind === 'http' && canEdit && (
-                <HttpTestPanel key={testGeneration} form={form} />
+                <HttpTestPanel
+                    key={testGeneration}
+                    form={form}
+                    savedConnection={
+                        !dirty && form.version === query.data?.version
+                            ? query.data.connections.find(
+                                  (item) => item.id === form.id,
+                              )
+                            : undefined
+                    }
+                />
             )}
             {form?.kind === 'mqtt' && canEdit && (
-                <MqttTestPanel key={testGeneration} form={form} />
+                <MqttTestPanel
+                    key={testGeneration}
+                    form={form}
+                    savedConnection={
+                        !dirty && form.version === query.data?.version
+                            ? query.data.connections.find(
+                                  (item) => item.id === form.id,
+                              )
+                            : undefined
+                    }
+                />
             )}
             {form?.id !== undefined &&
                 form.kind !== 'modbus' &&

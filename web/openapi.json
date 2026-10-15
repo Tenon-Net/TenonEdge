@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:39441/"
+      "url": "http://127.0.0.1:40491/"
     }
   ],
   "paths": {
@@ -1415,6 +1415,67 @@
           },
           "504": {
             "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/tls-trust/inspect": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "解析单个 CA 公钥证书供管理员核对，不保存或建立网络连接",
+        "operationId": "inspectConnectionTrustCertificate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionTrustInspectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCertificateInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7973,7 +8034,7 @@
           "Connections"
         ],
         "summary": "管理员核对指纹后保存连接级固定服务器证书或 CA 信任",
-        "description": "立即影响后续连接操作，不应用草稿；保留名称/时间/用途校验，自定义信任离线建链，不提供忽略错误。信任版本变化后重建连接；不撤销已经在途的请求。",
+        "description": "立即影响后续连接操作，不应用草稿；保留名称/时间/用途校验，系统/连接信任均离线建链，不提供忽略错误。信任版本变化后重建连接；不撤销已经在途的请求。",
         "operationId": "writeConnectionTlsTrust",
         "parameters": [
           {
@@ -12914,6 +12975,18 @@
           },
           "confirmed": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConnectionTrustInspectRequest": {
+        "required": [
+          "certificateDerBase64"
+        ],
+        "type": "object",
+        "properties": {
+          "certificateDerBase64": {
+            "type": "string"
           }
         },
         "additionalProperties": false

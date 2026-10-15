@@ -1,0 +1,46 @@
+export const trustStrings = {
+    title: 'TLS 服务器信任',
+    observed: '本次测试收到的服务器证书',
+    current: '已保存的连接信任',
+    none: '未配置连接信任，使用本地系统根。',
+    unavailable: '已配置的信任无法读取，连接将拒绝，不退回系统信任。',
+    mismatch: '原信任绑定的接收方与当前草稿不同，不会自动用于新地址。',
+    subject: '证书主题',
+    issuer: '颁发者',
+    notBefore: '有效期起点',
+    notAfter: '有效期终点',
+    fingerprint: 'SHA-256 指纹',
+    recipient: '绑定接收方',
+    version: '信任版本',
+    pinnedCertificate: '固定服务器证书',
+    certificateAuthority: 'CA 信任',
+    notice: '只影响本连接，保存后立即影响后续操作，不需要应用草稿。保留主机名、有效期、用途及链约束校验；只在本地建链，不自动访问证书网址，不提供在线吊销检查。',
+    pinNotice:
+        '固定整张服务器证书；对方换证后须重新核对并确认，不是忽略证书错误。请通过独立可信渠道核对指纹。',
+    caNotice:
+        '信任上传 CA 签发的有效链，合法续签无需逐次确认。只接收单个 PEM 或 DER 公钥证书，不接收私钥、PFX 或证书包。',
+    saveFirst: '先保存或重新载入连接草稿，再管理连接信任。',
+    adminOnly: '配置人员可以核对证书；只有管理员可以更改信任。',
+    pin: '核对并信任本次服务器证书',
+    upload: 'CA 公钥证书文件',
+    inspect: '解析 CA 证书（不保存）',
+    inspected: '待确认的 CA 证书',
+    prepareCa: '核对并采用此 CA',
+    fileSize: '文件须为非空且不超过 48 KiB，单个 DER 证书不超过 32 KiB。',
+    fileFormat:
+        '请提供单个完整 PEM 公钥证书或 DER 文件；不接受私钥、多个证书或附加文本。',
+    clear: '准备清除连接信任',
+    clearNotice:
+        '清除后使用本地系统根；被有效、上一或待提交运行版本引用时拒绝清除。',
+    confirmTitle: '确认更改连接信任',
+    acknowledge:
+        '我已通过可信渠道核对接收方和证书指纹，了解信任立即生效且不豁免证书错误',
+    acknowledgeClear: '我已核对接收方，确认清除这份连接信任并恢复系统信任',
+    confirm: '确认执行信任变更',
+    cancel: '取消本次确认',
+    reload: '重新读取信任状态',
+    saved: '信任已更新。请显式重新测试连接；没有自动测试、应用或重放请求。',
+    cleared: '连接信任已清除。',
+    unknown:
+        '此次请求未得到成功确认；请重新读取并核对信任状态。不会自动重试，不要直接重复提交。',
+}

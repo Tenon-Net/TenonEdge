@@ -111,6 +111,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "importDevicePointCsv",
         "inspectConfigurationMigrationIntent",
         "inspectConnectionOutbound",
+        "inspectConnectionTrustCertificate",
         "listApiTokens",
         "listAuditRecords",
         "listConfigurationOperations",
