@@ -12,7 +12,7 @@ namespace TenonEdge.Host.Features.Routes;
 internal sealed record RoutePreviewField(string Key, string Type, string? Unit, string? Text, string Quality, QualityCode? Reason);
 internal sealed record RoutePreviewStage(string NodeId, bool Succeeded, RoutePreviewField[] Fields, FieldMappingIssue[] Issues, bool Truncated);
 internal sealed record RoutePreviewOutput(string NodeId, string Kind, Guid DeliveryId, string Address, int? Qos,
-    IReadOnlyDictionary<string, string> Headers, string Body, int BodyBytes, bool Truncated);
+    IReadOnlyDictionary<string, string> Headers, string Body, int BodyBytes, bool Truncated, Guid? TestSendId = null);
 internal sealed record RoutePreviewPath(ImmutableArray<string> Nodes, bool Succeeded, RoutePreviewStage[] Stages,
     RoutePreviewOutput? Output, RouteTopologyIssue[] Issues);
 internal sealed record RouteSamplePreviewResult(string Version, long SourceId, Guid SourceMessageId, DateTimeOffset CollectedAt,
@@ -25,7 +25,7 @@ internal sealed record RouteSamplePreviewResult(string Version, long SourceId, G
 internal static class RouteSamplePreview
 {
     // A caller must separately acquire/authorize a sample. This function never samples a device.
-    internal static RouteSamplePreviewResult Run(RouteCompilationSnapshot snapshot, long sourceId, EdgeMessage sample, CancellationToken token)
+    internal static RouteSamplePreviewResult Run(RouteCompilationSnapshot snapshot, long sourceId, EdgeMessage sample, CancellationToken token, RouteTestSendCapture? capture = null)
     {
         ArgumentNullException.ThrowIfNull(sample);
         token.ThrowIfCancellationRequested();
@@ -111,20 +111,26 @@ internal static class RouteSamplePreview
                 var configuration = RoutePlanCompiler.Output(output, [selected.Source.UnitId.Key], [], snapshot, route.Key);
                 phase = "output.payload";
                 var deliveryId = Guid.CreateVersion7();
+                Guid? testSendId = capture is null ? null : Guid.NewGuid();
+                byte[] body;
                 if (output.Type == "output.http")
                 {
                     var settings = HttpOutputSettings.Parse(configuration);
-                    var body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
+                    body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
                     display.Output(state, activeNode, output.Type, deliveryId, settings.Path, null,
-                        settings.Headers.SetItem("Idempotency-Key", deliveryId.ToString("D")).SetItem("Content-Type", "application/json"), body);
+                        settings.Headers.SetItem("Idempotency-Key", deliveryId.ToString("D")).SetItem("Content-Type", "application/json"), body, testSendId);
                 }
                 else
                 {
                     var settings = MqttOutputSettings.Parse(configuration);
-                    var body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
+                    body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
                     display.Output(state, activeNode, output.Type, deliveryId, settings.TopicFor(message.DeviceKey), settings.Qos,
-                        ImmutableDictionary<string, string>.Empty, body);
+                        ImmutableDictionary<string, string>.Empty, body, testSendId);
                 }
+                if (state.Output?.TestSendId is { } capturedId &&
+                    !capture!.TryAdd(capturedId, snapshot.Version, sourceId, sample.SourceMessageId, sample.CollectedAt,
+                        path.Nodes, configuration, state.Output, body))
+                { state.Output = state.Output with { TestSendId = null }; }
                 display.Complete(state);
             }
             catch (RouteTopologyException error)

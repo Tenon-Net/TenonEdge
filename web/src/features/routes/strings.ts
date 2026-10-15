@@ -3,7 +3,7 @@ export const routeStrings = {
     references: '来源 / 输出连接',
     preview: {
         title: '路线样本预览',
-        notice: '使用当前图已确认配置计算所选来源的路径，不访问输出、不入队、不应用。手工模式不采集；HTTP/MQTT/Modbus 现场采样须另行确认。样本只留在内存，不写入草稿。运行中最近消息尚未接入。',
+        notice: '使用当前图已确认配置计算所选来源的路径，不访问输出、不入队、不应用。手工模式不采集；HTTP/MQTT/Modbus 现场采样须另行确认。样本只留在内存，不写入草稿。测试发送须在预览后单独核对并确认。',
         modbusRun: '现场读取 Modbus 一次并预览',
         modbusConfirm:
             '将按所选采集组已保存的点表、UnitId 和字节序读取一次，复用共享串行连接。不访问输出、不入队、不应用。继续？',
@@ -75,7 +75,8 @@ export const routeStrings = {
         truncated:
             '总显示预算已达到上限，部分字段、路径或正文已省略；计算仍按完整样本执行。',
         fieldsTruncated: '本阶段显示已截断。',
-        bodyTruncated: '报文显示已截断，不是完整 JSON，不能用于测试发送。',
+        bodyTruncated:
+            '报文显示已截断，不是完整 JSON。测试发送须另行核对服务端完整报文的大小和指纹。',
         input: '映射前：输入字段',
         path: '预览路径 {{index}}',
         success: '计算成功',

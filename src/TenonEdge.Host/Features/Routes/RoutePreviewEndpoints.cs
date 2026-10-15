@@ -32,11 +32,12 @@ internal static partial class RoutePreviewEndpoints
         MapMqttSamplePreview(api);
         MapModbusSamplePreview(api);
         MapRecentSamplePreview(api);
+        RouteTestSendEndpoints.Map(api);
         return api;
     }
 
     private static Results<Ok<RoutePreviewResponse>, ValidationProblem, ProblemHttpResult> Preview(RoutePreviewRequest request,
-        RouteDraftStore drafts, PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, HttpContext context)
+        RouteDraftStore drafts, PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, RouteTestSendArtifacts artifacts, HttpContext context)
     {
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
@@ -47,7 +48,7 @@ internal static partial class RoutePreviewEndpoints
         {
             var snapshot = drafts.ReadGraphCompilation(request.ExpectedVersion, request.Graph, operation.Token);
             var sample = RoutePreviewSample.Decode(snapshot, request.SourceId, request.SampleJson, time.GetUtcNow(), clock.State, operation.Token);
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, sample.Message, operation.Token);
+            var result = RunCaptured(snapshot, request.SourceId, sample.Message, artifacts, context, operation.Token);
             return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, sample.InvalidUpstreamTime, result, []));
         }
         catch (RouteTopologyException error)
@@ -59,4 +60,20 @@ internal static partial class RoutePreviewEndpoints
         catch (Exception error) when (error is ArgumentException or JsonException or InputMessageSizeException or RuntimeUnitBuildException)
         { return ApiProblems.Validation(new Dictionary<string, string[]> { ["preview"] = ["请检查当前图、所选来源、版本和不超过 64 KiB 的手工 JSON 样本。"] }); }
     }
+    private static RouteSamplePreviewResult RunCaptured(RouteCompilationSnapshot snapshot, long sourceId,
+        TenonEdge.Abstractions.Messages.EdgeMessage sample, RouteTestSendArtifacts artifacts, HttpContext context, CancellationToken token)
+    {
+        var capture = new RouteTestSendCapture();
+        var result = RouteSamplePreview.Run(snapshot, sourceId, sample, token, capture);
+        token.ThrowIfCancellationRequested();
+        context.Response.Headers.CacheControl = "no-store";
+        if (artifacts.Publish(ManagementIdentity.OwnerKey(context.User)!, capture))
+        { return result; }
+        return result with
+        {
+            Paths = result.Paths.Select(path => path.Output is { } output
+            ? path with { Output = output with { TestSendId = null } } : path).ToArray()
+        };
+    }
+
 }

@@ -367,3 +367,76 @@ it('an unavailable recent record is not retried or replaced with another acquisi
     ).rejects.toBeInstanceOf(ApiError)
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
+
+it('test-send transport sends only server artifact ids, with CSRF and no body or recipient', async () => {
+    const requests: Request[] = []
+    const bodies: unknown[] = []
+    const f = fixture(async (input) => {
+        const request = new Request(input)
+        requests.push(request)
+        bodies.push(await request.json())
+        return Response.json({ id: 'artifact' })
+    })
+    await f.api.prepareTestSend('artifact')
+    await f.api.confirmTestSend('artifact', 'confirmation')
+    expect(requests.map((r) => new URL(r.url).pathname)).toEqual([
+        '/api/edge-admin/v1/routes/test-send/prepare',
+        '/api/edge-admin/v1/routes/test-send/confirm',
+    ])
+    expect(bodies).toEqual([
+        { id: 'artifact' },
+        { id: 'artifact', confirmationId: 'confirmation', confirmed: true },
+    ])
+    for (const request of requests) {
+        expect(request.method).toBe('POST')
+        expect(request.headers.get('X-CSRF-Token')).toBe('csrf')
+    }
+})
+
+it.each([404, 409, 429, 500])(
+    'test-send actions never retry HTTP %s',
+    async (status) => {
+        const fetcher = vi.fn(async () =>
+            Response.json({ code: 'failure' }, { status }),
+        )
+        const f = fixture(fetcher)
+        await expect(f.api.prepareTestSend('artifact')).rejects.toBeInstanceOf(
+            ApiError,
+        )
+        expect(fetcher).toHaveBeenCalledTimes(1)
+        await expect(
+            f.api.confirmTestSend('artifact', 'confirmation'),
+        ).rejects.toBeInstanceOf(ApiError)
+        expect(fetcher).toHaveBeenCalledTimes(2)
+    },
+)
+
+it('test-send cancellation reaches the original fetch and never replays', async () => {
+    let started!: () => void
+    const entered = new Promise<void>((resolve) => {
+        started = resolve
+    })
+    const fetcher = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+        const request = new Request(input)
+        return new Promise<Response>((_, reject) => {
+            request.signal.addEventListener(
+                'abort',
+                () => reject(new Error('canceled')),
+                { once: true },
+            )
+            started()
+        })
+    })
+    const f = fixture(fetcher)
+    const stop = new AbortController()
+    const pending = f.api.confirmTestSend(
+        'artifact',
+        'confirmation',
+        stop.signal,
+    )
+    const rejected = expect(pending).rejects.toThrow('canceled')
+    await entered
+    stop.abort()
+    await rejected
+    expect(fetcher).toHaveBeenCalledTimes(1)
+})

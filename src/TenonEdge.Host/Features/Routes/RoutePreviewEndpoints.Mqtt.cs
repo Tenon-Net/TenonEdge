@@ -26,7 +26,7 @@ internal static partial class RoutePreviewEndpoints
 
     private static async Task<Results<Ok<RoutePreviewResponse>, ValidationProblem, ProblemHttpResult>> PreviewMqtt(
         RouteMqttPreviewRequest request, RouteDraftStore drafts, MqttReadPreview reader,
-        PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, HttpContext context)
+        PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, RouteTestSendArtifacts artifacts, HttpContext context)
     {
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
@@ -52,7 +52,7 @@ internal static partial class RoutePreviewEndpoints
             {
                 return ApiProblems.Problem(422, "preview.mqtt." + received.Code, "未取得完整且可用于路线预览的 MQTT 样本；未执行输出、保存或入队。");
             }
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, received.Message, operation.Token);
+            var result = RunCaptured(snapshot, request.SourceId, received.Message, artifacts, context, operation.Token);
             return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, received.InvalidUpstreamTime, result, [],
                 new(received.Retained, received.Duplicate, received.Qos)));
         }

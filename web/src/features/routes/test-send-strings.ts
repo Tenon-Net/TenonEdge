@@ -1,0 +1,56 @@
+export const testSendStrings = {
+    title: '发送预览测试报文',
+    prepare: '核对测试发送',
+    preparing: '正在核对原预览目标；尚未发送。',
+    notice: '仅测试通用 HTTP/MQTT 输出。预览与核对不会发送；确认后向真实目标发送一次，不入队、不重试，也不额外添加测试标记。',
+    recipient: '目标连接 #{{id}}：{{recipient}}',
+    account: '认证：{{authentication}}；可见账号：{{username}}',
+    noUsername: '无可见账号',
+    address: '原路径 / Topic：{{address}}',
+    bytes: '完整原报文：{{bytes}} 字节',
+    digest: '完整原报文 SHA-256：{{sha256}}',
+    delivery: '原投递编号：{{id}}',
+    source: '原源消息编号：{{id}}',
+    collected: '原采集时间：{{time}}',
+    expires: '本次预览有效至 {{time}}；新预览、草稿或凭证变化后须重新核对。',
+    truncated:
+        '上方预览正文已截断。实际发送服务端保存的完整原报文，包括未显示的尾部，不是截断前缀。',
+    acknowledge:
+        '我已核对真实目标、账号及完整原报文，了解对方可能将其当作真实数据保存',
+    confirm: '确认发送一次',
+    discard: '放弃本次核对',
+    sending: '正在发送一次；离页或取消无法撤回已发送的数据。',
+    cancel: '取消等待',
+    unknown:
+        '发送结果未知，对方可能已经收到。旧确认已停用；不会自动重发。请先核对对方记录，需要再次发送时须重新预览并确认。',
+    consumed: '本次确认已使用。不会重发；需要再次测试时须重新预览。',
+    failedPrepare:
+        '无法核对此预览。它可能已过期、被新预览替换，或草稿/凭证已变化。请重新预览；未自动发送。',
+    result: '测试发送结果',
+    status: 'HTTP 状态码：{{status}}',
+    httpNotice:
+        '收到 HTTP 响应不等于对方业务已成功保存；不跟随重定向、不自动重试。',
+    response: '安全响应正文',
+    elapsed: '传输耗时：{{ms}} ms',
+    codes: {
+        'http.response': '已收到 HTTP 响应',
+        'mqtt.puback': '已收到 Broker PUBACK（QoS 1）；不代表下游业务确认。',
+        'mqtt.writtenWithoutAck':
+            'QoS 0 已写出，没有 Broker 发布确认；不能证明对方收到。',
+        'outbound.denied': '出站规则拒绝此目标；未自动重试。',
+        'certificate.invalid': '目标证书校验失败；未自动重试。',
+        'recipient.changed': '目标或凭证身份已变化；未自动重试。',
+        'connection.rejected': 'MQTT 连接被拒绝；未自动重试。',
+        'connection.busy': '等待共享连接超时；未开始本次发送。',
+    },
+    bodies: {
+        captured: '以下为完整且通过敏感检查的响应正文（最多 64 KiB）。',
+        empty: '对方响应正文为空。',
+        tooLarge: '已达读取上限，正文隐藏。',
+        unsupportedEncoding: '响应编码不受支持，正文隐藏。',
+        unsupportedMediaType: '响应内容类型不支持安全展示，正文隐藏。',
+        invalidBody: '正文不完整或无法安全解析，已隐藏。',
+        redacted: '响应含敏感内容或凭证回显，正文隐藏。',
+        unavailable: '未能完整读取响应正文，已隐藏；已收到的状态码仍有效。',
+    },
+}

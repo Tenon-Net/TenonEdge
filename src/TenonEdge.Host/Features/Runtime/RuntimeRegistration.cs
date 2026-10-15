@@ -7,6 +7,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Deliveries;
+using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.SystemInfo;
 using TenonEdge.Host.Storage;
 using TenonEdge.Runtime.Connections;
@@ -78,6 +79,10 @@ internal static class RuntimeRegistration
         services.AddSingleton(provider => new PreviewOperationBudget(readLimits: () => provider.GetRequiredService<RuntimeParameterStore>().Read().Values.Preview));
         services.AddSingleton<MqttConnectionTest>();
         services.AddSingleton<HttpConnectionTest>();
+        services.AddSingleton<HttpTestMessageSender>();
+        services.AddSingleton<MqttTestMessageSender>();
+        services.AddSingleton<RouteTestSendArtifacts>();
+        services.AddSingleton<RouteTestSendService>();
         services.AddSingleton<ModbusConnectionTest>();
         services.AddSingleton<ModbusReadPreview>();
         services.AddSingleton<HttpReadPreview>();

@@ -729,6 +729,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/test-send/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 核对本会话原预览的通用输出目标、完整字节数与指纹；不发送
+         * @description 只接受服务端原预览编号，不接受客户端正文/地址。准备不延长五分钟产物期限；再次准备使旧确认失效。
+         */
+        post: operations["prepareRouteTestSend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/edge-admin/v1/routes/test-send/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 确认后向原通用输出真实发送一次完整预览报文；不入队、不重试
+         * @description 一次消费确认。包括展示被截断时的完整原报文，编号和时间不重新生成。结果未知/丢回复也不能重放；必须重新预览并确认。全局/会话共享预览预算，最多30秒。TenonIoT不提供。
+         */
+        post: operations["confirmRouteTestSend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}/preview/modbus": {
         parameters: {
             query?: never;
@@ -2976,7 +3016,7 @@ export interface components {
             truncated: boolean;
         };
         /** @enum {unknown} */
-        HttpResponseSummaryState: "captured" | "empty" | "tooLarge" | "unsupportedEncoding" | "unsupportedMediaType" | "invalidBody" | "redacted" | "unavailable";
+        HttpResponseSummaryState: "captured" | "empty" | "tooLarge" | "unsupportedEncoding" | "unsupportedMediaType" | "invalidBody" | "redacted" | "unavailable" | null;
         HttpsCertificateInfo: {
             sha256Fingerprint: string;
             /** Format: date-time */
@@ -3004,6 +3044,16 @@ export interface components {
             secret: string;
             username?: null | string;
             name?: null | string;
+        };
+        HttpTestSendResult: {
+            code: string;
+            /** Format: int32 */
+            statusCode: null | number | string;
+            bodyState: null | components["schemas"]["HttpResponseSummaryState"];
+            body: null | string;
+            truncated: boolean;
+            /** Format: double */
+            elapsedMs: number | string;
         };
         HttpValidationProblemDetails: {
             type?: null | string;
@@ -3353,6 +3403,13 @@ export interface components {
             /** @default false */
             processRetained: boolean;
             upstreamTime?: null | components["schemas"]["SourceTimeMapping"];
+        };
+        MqttTestSendResult: {
+            sent: boolean;
+            brokerAcknowledged: boolean;
+            code: string;
+            /** Format: double */
+            elapsedMs: number | string;
         };
         /** @enum {unknown} */
         OutboundAddressDecision: "allowed" | "publicGrantRequired" | "localPortRequired" | "forbidden";
@@ -3798,6 +3855,8 @@ export interface components {
             /** Format: int32 */
             bodyBytes: number | string;
             truncated: boolean;
+            /** Format: uuid */
+            testSendId?: null | string;
         };
         RoutePreviewPath: {
             nodes: string[];
@@ -3883,6 +3942,53 @@ export interface components {
             truncated: boolean;
             source: null | components["schemas"]["RoutePreviewStage"];
             paths: components["schemas"]["RoutePreviewPath"][];
+        };
+        RouteTestSendConfirmRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            confirmationId: string;
+            confirmed: boolean;
+        };
+        RouteTestSendPrepareRequest: {
+            /** Format: uuid */
+            id: string;
+        };
+        RouteTestSendResult: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            code: string;
+            http?: null | components["schemas"]["HttpTestSendResult"];
+            mqtt?: null | components["schemas"]["MqttTestSendResult"];
+        };
+        RouteTestSendReview: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            confirmationId: string;
+            version: string;
+            kind: string;
+            /** Format: int64 */
+            connectionId: number | string;
+            recipient: string;
+            authentication: string;
+            username: null | string;
+            address: string;
+            /** Format: int32 */
+            qos: null | number | string;
+            /** Format: uuid */
+            deliveryId: string;
+            /** Format: uuid */
+            sourceMessageId: string;
+            /** Format: date-time */
+            collectedAt: string;
+            /** Format: int32 */
+            bodyBytes: number | string;
+            previewTruncated: boolean;
+            sha256: string;
+            /** Format: date-time */
+            expiresAt: string;
         };
         RouteTopologyIssue: {
             code: string;
@@ -6572,6 +6678,162 @@ export interface operations {
             };
             /** @description Gateway Timeout */
             504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    prepareRouteTestSend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteTestSendPrepareRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteTestSendReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    confirmRouteTestSend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteTestSendConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteTestSendResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

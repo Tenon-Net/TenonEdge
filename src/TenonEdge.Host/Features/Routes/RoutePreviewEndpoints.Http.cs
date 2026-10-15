@@ -26,7 +26,7 @@ internal static partial class RoutePreviewEndpoints
 
     private static async Task<Results<Ok<RoutePreviewResponse>, ValidationProblem, ProblemHttpResult>> PreviewHttp(
         RouteHttpPreviewRequest request, RouteDraftStore drafts, HttpReadPreview reader,
-        PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, HttpContext context)
+        PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, RouteTestSendArtifacts artifacts, HttpContext context)
     {
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
@@ -52,7 +52,7 @@ internal static partial class RoutePreviewEndpoints
             {
                 return ApiProblems.Problem(422, "preview.http." + captured.Code, "未取得完整且可用于路线预览的 HTTP 样本；未执行输出、保存或入队。");
             }
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, captured.Message, operation.Token);
+            var result = RunCaptured(snapshot, request.SourceId, captured.Message, artifacts, context, operation.Token);
             return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, captured.InvalidUpstreamTime, result, []));
         }
         catch (RouteTopologyException error)

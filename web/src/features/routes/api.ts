@@ -322,5 +322,31 @@ export function createRouteApi(api: ReturnType<typeof createGatewayClient>) {
             if (!data) throw new Error('route-response')
             return data
         },
+        async prepareTestSend(id: string, signal?: AbortSignal) {
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/routes/test-send/prepare',
+                {
+                    body: { id },
+                    signal,
+                },
+            )
+            if (!data) throw new Error('test-send-response')
+            return data
+        },
+        async confirmTestSend(
+            id: string,
+            confirmationId: string,
+            signal?: AbortSignal,
+        ) {
+            const { data } = await api.POST(
+                '/api/edge-admin/v1/routes/test-send/confirm',
+                {
+                    body: { id, confirmationId, confirmed: true },
+                    signal,
+                },
+            )
+            if (!data) throw new Error('test-send-response')
+            return data
+        },
     }
 }

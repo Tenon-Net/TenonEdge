@@ -26,7 +26,7 @@ internal static partial class RoutePreviewEndpoints
 
     private static async Task<Results<Ok<RoutePreviewResponse>, ValidationProblem, ProblemHttpResult>> PreviewModbus(
         RouteModbusPreviewRequest request, RouteDraftStore drafts, ModbusReadPreview reader,
-        PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, HttpContext context)
+        PreviewOperationBudget budget, IClockSyncStatus clock, TimeProvider time, RouteTestSendArtifacts artifacts, HttpContext context)
     {
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
@@ -52,7 +52,7 @@ internal static partial class RoutePreviewEndpoints
             { return ApiProblems.Problem(504, "preview.deadline", "现场读取超过 30 秒，未执行输出、保存或入队。"); }
             if (captured.Message is null)
             { return ApiProblems.Problem(422, "preview.modbus.readFailed", "未取得可用 Modbus 采集消息；请在设备读取面板核对失败块，未执行输出、保存或入队。"); }
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, captured.Message, operation.Token);
+            var result = RunCaptured(snapshot, request.SourceId, captured.Message, artifacts, context, operation.Token);
             return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, false, result, []));
         }
         catch (RouteTopologyException error)

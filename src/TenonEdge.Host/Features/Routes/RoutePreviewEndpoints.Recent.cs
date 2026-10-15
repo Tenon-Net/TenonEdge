@@ -72,7 +72,7 @@ internal static partial class RoutePreviewEndpoints
 
     private static Results<Ok<RoutePreviewResponse>, ValidationProblem, ProblemHttpResult> PreviewRecent(
         RouteRecentPreviewRequest request, RouteDraftStore drafts, RuntimeHost runtime,
-        PreviewOperationBudget budget, TimeProvider time, HttpContext context)
+        PreviewOperationBudget budget, TimeProvider time, RouteTestSendArtifacts artifacts, HttpContext context)
     {
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
@@ -90,7 +90,7 @@ internal static partial class RoutePreviewEndpoints
             operation.Token.ThrowIfCancellationRequested();
             if (!runtime.TryReadInputSample(id, sequence, revision, request.SourceMessageId, out var sample))
             { return ApiProblems.Problem(409, "preview.recent.unavailable", "所选记录已不可执行：请核对输入运行状态、版本、敏感内容限制、截断或淘汰；未替换样本或触发采集。"); }
-            var result = RouteSamplePreview.Run(snapshot, request.SourceId, sample, operation.Token);
+            var result = RunCaptured(snapshot, request.SourceId, sample, artifacts, context, operation.Token);
             return TypedResults.Ok(new RoutePreviewResponse(snapshot.Version, true, sample.SampleMetadata?.InvalidUpstreamTime, result, [],
                 sample.SampleMetadata?.Mqtt is { } mqtt ? new(mqtt.Retained, mqtt.Duplicate, mqtt.Qos) : null));
         }

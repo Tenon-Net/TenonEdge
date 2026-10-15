@@ -1,4 +1,5 @@
 import { messageStrings } from '../features/diagnostics/message-strings'
+import { testSendStrings } from '../features/routes/test-send-strings'
 import { documentationStrings } from '../features/documentation/strings'
 import { systemStrings } from '../features/system/strings'
 import { auditStrings } from '../features/audit/strings'
@@ -30,6 +31,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                testSend: testSendStrings,
                 systemSettings: systemStrings,
                 documentation: documentationStrings,
                 audit: auditStrings,

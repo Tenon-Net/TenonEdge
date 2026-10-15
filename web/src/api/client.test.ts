@@ -107,6 +107,9 @@ describe('single same-origin API client', () => {
         ).rejects.toThrow('aborted')
     })
     it.each([
+        ['POST', '/api/edge-admin/v1/routes/test-send/confirm', 35000],
+        ['POST', '/api/edge-admin/v1/routes/test-send/prepare', 15000],
+        ['GET', '/api/edge-admin/v1/routes/test-send/confirm', 15000],
         ['POST', '/api/edge-admin/v1/routes/preview', 35000],
         ['POST', '/api/edge-admin/v1/routes/preview/http', 35000],
         ['POST', '/api/edge-admin/v1/routes/preview/mqtt', 35000],

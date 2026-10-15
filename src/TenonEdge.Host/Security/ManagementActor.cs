@@ -39,6 +39,21 @@ internal sealed record ManagementActor(long? UserId, string? SecurityStamp, stri
         { throw new ApiTokenException(401, "auth.actorChanged"); }
         return (new(user.AccountName), user.Id);
     }
+
+    public AuditAccount RequireConfigurator(SqlSugarClient client, long now)
+    {
+        if (TokenId is { } tokenId)
+        {
+            var token = client.Queryable<ApiTokenRecord>().InSingle(tokenId);
+            if (!ApiTokenStore.IsUsable(token, now) || token!.Role is not (nameof(UserRole.Administrator) or nameof(UserRole.Configurator)))
+            { throw new ApiTokenException(401, "auth.actorChanged"); }
+            return new(token.CreatorAccountName, token.Name);
+        }
+        var user = UserId is { } id ? client.Queryable<UserAccountRecord>().InSingle(id) : null;
+        if (user is null || !user.IsEnabled || user.MustChangePassword || user.Role is not (nameof(UserRole.Administrator) or nameof(UserRole.Configurator)) || user.SecurityStamp != SecurityStamp)
+        { throw new ApiTokenException(401, "auth.actorChanged"); }
+        return new(user.AccountName);
+    }
 }
 
 internal static class ManagementIdentity

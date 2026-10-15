@@ -92,11 +92,11 @@ internal sealed class RoutePreviewDisplay
     }
 
     internal void Output(PathState path, string node, string kind, Guid deliveryId, string address, int? qos,
-        IReadOnlyDictionary<string, string> headers, byte[] body)
+        IReadOnlyDictionary<string, string> headers, byte[] body, Guid? testSendId = null)
     {
         if (!path.Visible)
         { return; }
-        var basis = new RoutePreviewOutput(node, kind, deliveryId, address, qos, headers, "", body.Length, false);
+        var basis = new RoutePreviewOutput(node, kind, deliveryId, address, qos, headers, "", body.Length, false, testSendId);
         if (!Take(basis))
         { return; }
         var text = Encoding.UTF8.GetString(body);

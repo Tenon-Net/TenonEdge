@@ -15,6 +15,7 @@ import {
 } from './preview-model'
 
 import { RecentSamples, type RecentMessage } from './recent-samples'
+import { RouteTestSend } from './test-send'
 
 const routes = createRouteApi(api)
 type Response = Awaited<ReturnType<typeof routes.preview>>
@@ -509,6 +510,22 @@ export function RoutePreview({
                                             >
                                                 {path.output.body}
                                             </pre>
+                                            {path.output.testSendId &&
+                                                (path.output.kind ===
+                                                    'output.http' ||
+                                                    path.output.kind ===
+                                                        'output.mqtt') && (
+                                                    <RouteTestSend
+                                                        key={
+                                                            path.output
+                                                                .testSendId
+                                                        }
+                                                        id={
+                                                            path.output
+                                                                .testSendId
+                                                        }
+                                                    />
+                                                )}
                                         </div>
                                     )}
                                 </section>

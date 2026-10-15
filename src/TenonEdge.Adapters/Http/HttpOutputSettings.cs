@@ -60,4 +60,15 @@ public sealed record HttpOutputSettings : HttpRequestSettings
     internal string Fingerprint(HttpCredentialIdentity? identity) => "sha256:" + Convert.ToHexStringLower(SHA256.HashData(
         Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { BaseAddress, identity?.Kind.ToString() ?? "none",
             identity?.Username ?? "", identity?.AccountMarker ?? "" }))));
+
+    /// <summary>将已经生成的完整正文冻结为一次请求，不重新格式化正文或生成编号；不连接、不读取秘密。</summary>
+    public OutputMessage FreezePayload(ReadOnlyMemory<byte> payload, Guid deliveryId, HttpCredentialIdentity? identity)
+    {
+        if (QueueOnly || payload.IsEmpty || payload.Length > StandardEnvelope.MaximumPayloadBytes || deliveryId == Guid.Empty)
+        { throw new ArgumentException("须提供有效完整报文及原投递编号。"); }
+        if (identity is { Kind: HttpCredentialKind.ApiKeyHeader, Name: { } name } && Headers.ContainsKey(name))
+        { throw new ArgumentException("API Key 请求头不能同时保存在非秘密静态请求头中。"); }
+        return new(payload, Path, null, Fingerprint(identity), OutputRecipientIdentity.Http(BaseAddress, identity).Freeze(),
+            Headers.SetItem("Idempotency-Key", deliveryId.ToString("D")), HttpFrozenRequest.Freeze(this));
+    }
 }
