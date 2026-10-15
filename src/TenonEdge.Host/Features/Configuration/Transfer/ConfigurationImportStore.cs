@@ -4,6 +4,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
 
@@ -53,30 +54,27 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
         return new(draft, changes, decisions, captured.Credentials, added, mode);
     }
 
-    // Only a later owner-bound, expiring, once-consumed preparation service may
-    // expose this operation. No public import endpoint is registered in this batch.
-    public DraftVersion Commit(ConfigurationImportCandidate candidate, AuditAccount account, string? sourceIp, CancellationToken token)
+    // Only the owner-bound, expiring, once-consumed preparation service exposes
+    // this operation. Authorization is rechecked in the same transaction as writes.
+    public DraftVersion Commit(ConfigurationImportCandidate candidate, ManagementActor actor, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        var now = time.GetUtcNow().ToUnixTimeMilliseconds();
+        var draft = candidate.Draft;
         var changedRoutes = candidate.Changes.Where(value => value.Kind == "route" && value.Change != "removed").Select(value => value.Id).ToHashSet();
-        var draft = candidate.Draft with
-        {
-            Routes = candidate.Draft.Routes.Select(value => changedRoutes.Contains(value.Id)
-                ? value with { UpdatedBy = account.Name, UpdatedAt = now } : value).ToArray(),
-        };
         var rows = new ConfigurationImportRows(draft);
         rows.CheckSize(draft.Edits, candidate.Changes.Length);
         return database.InTransaction(client =>
         {
             token.ThrowIfCancellationRequested();
+            var now = time.GetUtcNow().ToUnixTimeMilliseconds();
+            var account = actor.RequireConfigurator(client, now);
             ConfigurationDraft.CheckVersion(client, draft.Version);
             // Credential rotations intentionally do not advance the draft version.
             // Recheck all nonsecret metadata captured in the same preview transaction.
             if (!SameCredentials(candidate.OriginalCredentials, ConfigurationCredentialMetadata.Read(client)))
             { throw new DraftWriteException("configuration.importCredentialsChanged"); }
             CheckReserved(candidate.Draft, candidate.Changes, ReservedIdentities(client));
-            rows.Write(client);
+            rows.Write(client, changedRoutes, account.Name, now);
             foreach (var change in candidate.Changes)
             {
                 ConfigurationEditJournal.Record(client, change.Kind, change.Id, account.Name, time, change.Change == "removed");
@@ -85,7 +83,7 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
             // Final persisted-size check includes actual journal rows. Any failure,
             // including audit insertion, rolls back every row and the new version.
             ConfigurationCheckpoint.CheckSize(client);
-            audit.Append(client, new AuditEntry("configuration.imported", AuditResults.Success, account, sourceIp, null,
+            audit.Append(client, new AuditEntry("configuration.imported", AuditResults.Success, account, actor.SourceIp, null,
                 JsonSerializer.Serialize(new
                 {
                     mode = candidate.Mode == ConfigurationImportMode.Merge ? "merge" : "replace",

@@ -20,6 +20,7 @@ public sealed class ManagementApiAccessTests(
     {
         Assert.Equal(
             [
+                "DELETE /api/edge-admin/v1/configuration/import/{id:guid} (protected: role:configurator)",
                 "DELETE /api/edge-admin/v1/configuration/migrations/intent-retry/preparation/{id:guid} (protected: role:administrator)",
                 "DELETE /api/edge-admin/v1/configuration/migrations/preparation/{id:guid} (protected: role:administrator)",
                 "DELETE /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
@@ -36,6 +37,7 @@ public sealed class ManagementApiAccessTests(
                 "GET /api/edge-admin/v1/auth/session (protected)",
                 "GET /api/edge-admin/v1/configuration/draft/ (protected)",
                 "GET /api/edge-admin/v1/configuration/export (protected: role:configurator)",
+                "GET /api/edge-admin/v1/configuration/import/ (protected: role:configurator)",
                 "GET /api/edge-admin/v1/configuration/migrations/intent-retry/preparation (protected: role:administrator)",
                 "GET /api/edge-admin/v1/configuration/migrations/intents (protected: role:administrator)",
                 "GET /api/edge-admin/v1/configuration/migrations/intents/{id:guid} (protected: role:administrator)",
@@ -94,6 +96,8 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/auth/password (protected)",
                 "POST /api/edge-admin/v1/configuration/apply (protected: role:configurator)",
                 "POST /api/edge-admin/v1/configuration/draft/discard (protected: role:configurator)",
+                "POST /api/edge-admin/v1/configuration/import/confirm (protected: role:configurator)",
+                "POST /api/edge-admin/v1/configuration/import/prepare (protected: role:configurator)",
                 "POST /api/edge-admin/v1/configuration/migrations/intent-retry/{id:guid}/confirm (protected: role:administrator)",
                 "POST /api/edge-admin/v1/configuration/migrations/intents/{id:guid}/retry/prepare (protected: role:administrator)",
                 "POST /api/edge-admin/v1/configuration/migrations/prepare (protected: role:administrator)",
@@ -134,6 +138,8 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/routes/preview/mqtt (protected: role:configurator)",
                 "POST /api/edge-admin/v1/routes/preview/recent (protected: role:configurator)",
                 "POST /api/edge-admin/v1/routes/preview/recent/messages (protected: role:configurator)",
+                "POST /api/edge-admin/v1/routes/test-send/confirm (protected: role:configurator)",
+                "POST /api/edge-admin/v1/routes/test-send/prepare (protected: role:configurator)",
                 "POST /api/edge-admin/v1/routes/{routeId:long}/copy (protected: role:configurator)",
                 "POST /api/edge-admin/v1/setup (anonymous)",
                 "POST /api/edge-admin/v1/tokens/ (protected: role:administrator)",
@@ -164,6 +170,7 @@ public sealed class ManagementApiAccessTests(
     {
         Assert.Equal(
             [
+                "DELETE /api/edge-admin/v1/configuration/import/{id:guid} (protected: role:configurator)",
                 "DELETE /api/edge-admin/v1/configuration/migrations/intent-retry/preparation/{id:guid} (protected: role:administrator)",
                 "DELETE /api/edge-admin/v1/configuration/migrations/preparation/{id:guid} (protected: role:administrator)",
                 "DELETE /api/edge-admin/v1/connections/{connectionId:long} (protected: role:configurator)",
@@ -180,6 +187,7 @@ public sealed class ManagementApiAccessTests(
                 "GET /api/edge-admin/v1/auth/session (protected)",
                 "GET /api/edge-admin/v1/configuration/draft/ (protected)",
                 "GET /api/edge-admin/v1/configuration/export (protected: role:configurator)",
+                "GET /api/edge-admin/v1/configuration/import/ (protected: role:configurator)",
                 "GET /api/edge-admin/v1/configuration/migrations/intent-retry/preparation (protected: role:administrator)",
                 "GET /api/edge-admin/v1/configuration/migrations/intents (protected: role:administrator)",
                 "GET /api/edge-admin/v1/configuration/migrations/intents/{id:guid} (protected: role:administrator)",
@@ -238,6 +246,8 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/auth/password (protected)",
                 "POST /api/edge-admin/v1/configuration/apply (protected: role:configurator)",
                 "POST /api/edge-admin/v1/configuration/draft/discard (protected: role:configurator)",
+                "POST /api/edge-admin/v1/configuration/import/confirm (protected: role:configurator)",
+                "POST /api/edge-admin/v1/configuration/import/prepare (protected: role:configurator)",
                 "POST /api/edge-admin/v1/configuration/migrations/intent-retry/{id:guid}/confirm (protected: role:administrator)",
                 "POST /api/edge-admin/v1/configuration/migrations/intents/{id:guid}/retry/prepare (protected: role:administrator)",
                 "POST /api/edge-admin/v1/configuration/migrations/prepare (protected: role:administrator)",
@@ -278,6 +288,8 @@ public sealed class ManagementApiAccessTests(
                 "POST /api/edge-admin/v1/routes/preview/mqtt (protected: role:configurator)",
                 "POST /api/edge-admin/v1/routes/preview/recent (protected: role:configurator)",
                 "POST /api/edge-admin/v1/routes/preview/recent/messages (protected: role:configurator)",
+                "POST /api/edge-admin/v1/routes/test-send/confirm (protected: role:configurator)",
+                "POST /api/edge-admin/v1/routes/test-send/prepare (protected: role:configurator)",
                 "POST /api/edge-admin/v1/routes/{routeId:long}/copy (protected: role:configurator)",
                 "POST /api/edge-admin/v1/setup (anonymous)",
                 "POST /api/edge-admin/v1/tokens/ (protected: role:administrator)",

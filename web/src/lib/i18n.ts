@@ -11,6 +11,7 @@ import { outputControlStrings } from '../features/deliveries/control-strings'
 import { deliveryStrings } from '../features/deliveries/strings'
 import { outputStrings } from '../features/diagnostics/output-strings'
 import { currentValueStrings } from '../features/diagnostics/current-value-strings'
+import { configurationImportStrings } from '../features/configuration/import-strings'
 import { configurationStrings } from '../features/configuration/strings'
 import { diagnosticsStrings } from '../features/diagnostics/strings'
 import { routeStrings } from '../features/routes/strings'
@@ -42,6 +43,7 @@ void i18n.use(initReactI18next).init({
                 migration: migrationStrings,
                 configurationMigration: configurationMigrationStrings,
                 configuration: configurationStrings,
+                configurationImport: configurationImportStrings,
                 configurationExport: {
                     title: '配置草稿导出',
                     notice: '下载网关当前已保存的完整草稿（最多 16 MiB），不是当前运行版本。未保存的页面编辑不在文件中；导出不会应用或修改配置。',

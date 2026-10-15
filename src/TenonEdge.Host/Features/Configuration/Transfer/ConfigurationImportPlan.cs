@@ -45,6 +45,8 @@ internal static class ConfigurationImportPlanner
             token.ThrowIfCancellationRequested();
             var value = file.Connections[index];
             var id = oldConnections.TryGetValue(value.ConnectionKey, out var old) ? old.Id : Allocate();
+            if (old is not null && old.Kind != value.Kind)
+            { throw ConfigurationImportDocument.Error("import.connectionKindImmutable", $"$.connections[{index}].kind"); }
             connections[value.ConnectionKey] = Validate($"$.connections[{index}]", () => ConnectionDraftValidation.Normalize(id,
                 new("import", value.ConnectionKey, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http)));
         }

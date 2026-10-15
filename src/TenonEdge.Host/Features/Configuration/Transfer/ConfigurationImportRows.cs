@@ -44,8 +44,10 @@ internal sealed class ConfigurationImportRows(ConfigurationCheckpoint draft)
         { throw ConfigurationImportDocument.Error("import.draftTooLarge", "$"); }
     }
 
-    public void Write(SqlSugarClient client)
+    public void Write(SqlSugarClient client, HashSet<long> changedRoutes, string? account, long now)
     {
+        foreach (var route in _routes.Where(value => changedRoutes.Contains(value.Id)))
+        { route.UpdatedBy = account; route.UpdatedAt = now; }
         // Removed identities must never be reused, even when the corresponding
         // object never reached a runtime version. Existing credentials stay intact.
         client.Ado.ExecuteCommand("""

@@ -1,0 +1,51 @@
+export const configurationImportStrings = {
+    title: '配置草稿导入',
+    notice: '上传导出的 JSON 原文件，先核对完整变更，再一次写入草稿。不自动应用，不改变运行版本、当前凭证或发送队列。',
+    boundary:
+        '最多 16 MiB；内部编号在本机分配。同 key 的连接不能更换协议类型。全网关最多保留一份候选，15 分钟后失效。',
+    file: '选择配置 JSON 文件',
+    mode: '导入模式',
+    merge: '合并：按 key 新增或更新，不删除其他对象',
+    replace: '替换：删除文件以外的全部草稿对象',
+    prepare: '上传并预检',
+    current: '读取本会话待确认导入',
+    cancel: '取消本次导入',
+    confirm: '确认写入草稿',
+    cancelRequest: '停止等待（不撤回可能已提交的导入）',
+    accept: '我已核对导入模式、全部新增/修改/删除和凭证重填清单；知道确认只写草稿，应用须另行确认。',
+    review: '导入核对：{{mode}} · 草稿 {{version}}',
+    expires:
+        '候选 {{id}}，到期时间：{{time}}。该时间仅供显示，是否过期由网关判定。',
+    credentials: '连接凭证核对',
+    none: '没有连接凭证变更。',
+    noChanges: '没有对象内容差异；确认仍只写草稿，不暂停输入、不生成运行版本。',
+    previous: '上一页',
+    next: '下一页',
+    page: '第 {{page}} / {{total}} 页，共 {{count}} 项（未截断）',
+    reasons: {
+        alreadyRequiresInput: '此前已要求重填',
+        noCredential: '没有凭证',
+        exportRequiresInput: '文件标记需补填',
+        protocolChanged: '凭证协议不一致',
+        credentialUnavailable: '当前凭证不可用',
+        recipientChanged: '接收方改变',
+        accountChanged: '账户摘要不同或无法确认',
+        sameRecipientAndAccount: '接收方和账户摘要一致',
+    },
+    noCandidate: '本会话没有待确认导入。',
+    success:
+        '已写入草稿（{{version}}），尚未应用。请到配置变更页继续核对，缺少凭证时须先补填。',
+    unknown:
+        '没有重放确认。若请求失败、取消或回复丢失，导入可能已经提交；请先重新读取草稿核对，再决定是否重新上传。',
+    cancelled: '候选已取消，草稿未因本次取消而改变。',
+    tooLarge: '文件超过 16 MiB，未上传；不能截断后导入。',
+    denied: '仅配置人员和管理员可以导入配置。',
+    draftVersion:
+        '预检使用当前读取的草稿版本：{{version}}。冲突时重新读取后再上传。',
+    readDraft: '重新读取草稿版本',
+    actions: {
+        requiresInput: '需重新填写凭证',
+        preserved: '保留当前凭证',
+        none: '没有凭证',
+    },
+}

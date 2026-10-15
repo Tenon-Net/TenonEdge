@@ -89,6 +89,35 @@ public sealed class ConfigurationImportTests
     }
 
     [Theory]
+    [InlineData(ConfigurationImportMode.Merge)]
+    [InlineData(ConfigurationImportMode.Replace)]
+    internal void SameConnectionKeyCannotChangeProtocolInEitherImportMode(ConfigurationImportMode mode)
+    {
+        var before = Prepare(File()).Draft;
+        var snapshot = JsonSerializer.Serialize(before);
+        var file = File() with { Devices = [], Inputs = [], Routes = [] };
+        file.Connections[0] = file.Connections[0] with { Kind = ConnectionKind.Mqtt, Http = null, Mqtt = new("broker.example.com") };
+        var error = Assert.Throws<ConfigurationImportException>(() => Prepare(file, before, mode));
+        Assert.Equal(new("import.connectionKindImmutable", "$.connections[0].kind"), Assert.Single(error.Issues));
+        Assert.Equal(snapshot, JsonSerializer.Serialize(before));
+    }
+
+    [Theory]
+    [InlineData(ConfigurationImportMode.Merge)]
+    [InlineData(ConfigurationImportMode.Replace)]
+    internal void DifferentProtocolWithNewConnectionKeyGetsANewLocalIdentity(ConfigurationImportMode mode)
+    {
+        var before = Prepare(File()).Draft;
+        var file = File() with { Devices = [], Inputs = [], Routes = [] };
+        file.Connections[0] = file.Connections[0] with { ConnectionKey = "new-broker", Kind = ConnectionKind.Mqtt, Http = null, Mqtt = new("broker.example.com") };
+        var result = ConfigurationImportPlanner.Prepare(file, before, mode, () => 2001, Token);
+        var added = Assert.Single(result.Draft.Connections, value => value.Key == "new-broker");
+        Assert.Equal(2001, added.Id);
+        Assert.Equal(ConnectionKind.Mqtt, added.Kind);
+        Assert.Equal(mode == ConfigurationImportMode.Merge, result.Draft.Connections.Any(value => value.Key == "receiver"));
+    }
+
+    [Theory]
     [InlineData("connection")]
     [InlineData("device")]
     [InlineData("input")]

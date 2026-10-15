@@ -50,6 +50,8 @@ internal static class HostServiceRegistration
         builder.Services.AddSingleton<InputDraftStore>();
         builder.Services.AddSingleton<RouteDraftStore>();
         builder.Services.AddSingleton<ConfigurationExportStore>();
+        builder.Services.AddSingleton<ConfigurationImportStore>();
+        builder.Services.AddSingleton<ConfigurationImportPreparation>();
 
         // 运行时（T1-01—T1-03）：协调者、运行时宿主、发送缓存与输入适配器。
         builder.Services.AddRuntimeFeature();

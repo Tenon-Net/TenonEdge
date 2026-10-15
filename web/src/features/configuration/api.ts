@@ -27,6 +27,34 @@ export type Comparison = Omit<
     Schema['ConfigurationVersionComparison'],
     'changes'
 > & { changes: Review['changes'] }
+export type ImportReview = Omit<
+    Schema['ConfigurationImportReview'],
+    'changes'
+> & {
+    changes: Review['changes']
+}
+
+function importReview(value: RouteJson): ImportReview {
+    const { changes, ...fields } = routeObject(value)
+    const envelope = metadata(fields) as Schema['ConfigurationImportReview']
+    if (
+        typeof envelope.id !== 'string' ||
+        typeof envelope.version !== 'string' ||
+        !['merge', 'replace'].includes(envelope.mode) ||
+        !Array.isArray(envelope.credentials) ||
+        typeof envelope.expiresAt !== 'string' ||
+        !Number.isFinite(Date.parse(envelope.expiresAt))
+    )
+        throw new Error('configuration-import-response')
+    return { ...envelope, changes: decodeChanges(changes) }
+}
+export function decodeImportReview(body: string): ImportReview {
+    return importReview(readRouteJson(body, maximumResponseBytes, 64))
+}
+export function decodeCurrentImport(body: string): ImportReview | null {
+    const raw = routeObject(readRouteJson(body, maximumResponseBytes, 64))
+    return raw.review === null ? null : importReview(raw.review)
+}
 
 /** Generated integer metadata permits strings, so large revision numbers need not be rounded. */
 function metadata(value: RouteJson): unknown {

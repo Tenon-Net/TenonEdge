@@ -1,5 +1,5 @@
 using System.Buffers;
-using TenonEdge.Host.Features.Audit;
+using TenonEdge.Host.Security;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
 
@@ -70,7 +70,7 @@ internal sealed class ConfigurationImportPreparation(ConfigurationImportStore st
         }
     }
 
-    public DraftVersion Confirm(Guid id, bool confirmed, string owner, AuditAccount account, string? sourceIp, CancellationToken token)
+    public DraftVersion Confirm(Guid id, bool confirmed, string owner, ManagementActor actor, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (!confirmed)
@@ -83,7 +83,7 @@ internal sealed class ConfigurationImportPreparation(ConfigurationImportStore st
             _working = true;
         }
         try
-        { return store.Commit(selected.Candidate, account, sourceIp, token); }
+        { return store.Commit(selected.Candidate, actor, token); }
         finally { lock (_gate) { _working = false; } }
     }
 

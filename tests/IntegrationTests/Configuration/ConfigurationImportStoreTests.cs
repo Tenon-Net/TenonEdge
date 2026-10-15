@@ -9,6 +9,7 @@ using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
 
@@ -19,7 +20,17 @@ public sealed class ConfigurationImportStoreTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static readonly PortableConfiguration Empty = new(1, [], [], [], []);
     private static ConfigDatabase Database(IServiceProvider services) => services.GetRequiredService<ConfigDatabase>();
-    private static ConfigurationImportStore Store(IServiceProvider services) => ActivatorUtilities.CreateInstance<ConfigurationImportStore>(services);
+    private static ConfigurationImportStore Store(IServiceProvider services)
+    {
+        if (TestAccounts.Find(services, "importer") is null)
+        { TestAccounts.Create(services, "importer", ApiRequests.StrongPassword, UserRole.Configurator); }
+        return ActivatorUtilities.CreateInstance<ConfigurationImportStore>(services);
+    }
+    private static ManagementActor Actor(IServiceProvider services)
+    {
+        var user = TestAccounts.Find(services, "importer")!;
+        return new(user.Id, user.SecurityStamp, "127.0.0.1");
+    }
     private static ConfigurationCheckpoint Draft(IServiceProvider services) => Database(services).InTransaction(client =>
         ConfigurationCheckpoint.Read(client, ConfigurationDraft.ReadVersion(client)));
     private static byte[] Bytes(PortableConfiguration file) => ConfigurationExport.Serialize(file, Token);
@@ -56,7 +67,7 @@ public sealed class ConfigurationImportStoreTests
         var store = Store(target.Services);
         var candidate = store.Prepare(Bytes(file), ConfigurationImportMode.Merge, before.Version, Token);
         Assert.Equal(JsonSerializer.Serialize(before), JsonSerializer.Serialize(Draft(target.Services)));
-        var result = store.Commit(candidate, "importer", "127.0.0.1", Token);
+        var result = store.Commit(candidate, Actor(target.Services), Token);
         var after = Draft(target.Services);
         Assert.Equal(result.Version, after.Version);
         Assert.NotEqual(before.Version, after.Version);
@@ -98,13 +109,13 @@ public sealed class ConfigurationImportStoreTests
             var same = store.Prepare(Bytes(file), ConfigurationImportMode.Merge, Draft(host.Services).Version, Token);
             Assert.Equal("preserved", Assert.Single(same.Credentials).Action);
             Assert.Empty(same.Changes);
-            store.Commit(same, "importer", null, Token);
+            store.Commit(same, Actor(host.Services), Token);
             Assert.Empty(Draft(host.Services).RequiredCredentials!);
             file.Connections[0] = file.Connections[0] with { Http = new("https://other.example.com/base/") };
             var changed = store.Prepare(Bytes(file), ConfigurationImportMode.Merge, Draft(host.Services).Version, Token);
             Assert.Equal("recipientChanged", Assert.Single(changed.Credentials).Reason);
             Assert.Equal("modified", Assert.Single(changed.Changes).Change);
-            version = store.Commit(changed, "importer", null, Token).Version;
+            version = store.Commit(changed, Actor(host.Services), Token).Version;
             Assert.Equal(credential, host.Services.GetRequiredService<HttpCredentialStore>().Read(id));
             Assert.Equal("fixture-secret", host.Services.GetRequiredService<HttpCredentialStore>().ResolveHttp(id, "https://example.com/base/")!.Secret);
         }
@@ -128,7 +139,7 @@ public sealed class ConfigurationImportStoreTests
         var store = Store(host.Services);
         var candidate = store.Prepare(Bytes(Empty), ConfigurationImportMode.Replace, before.Version, Token);
         Assert.Equal("removed", Assert.Single(candidate.Changes).Change);
-        store.Commit(candidate, "importer", null, Token);
+        store.Commit(candidate, Actor(host.Services), Token);
         var after = Draft(host.Services);
         Assert.Empty(after.Connections);
         Assert.Empty(after.RequiredCredentials!);
@@ -157,7 +168,7 @@ public sealed class ConfigurationImportStoreTests
         { Credential(host.Services, connection, credential?.Version, "fixture-rotated"); }
         var before = JsonSerializer.Serialize(Draft(host.Services));
         var currentCredential = host.Services.GetRequiredService<HttpCredentialStore>().Read(connection.Connection.Id);
-        var error = Assert.Throws<DraftWriteException>(() => store.Commit(candidate, "importer", null, Token));
+        var error = Assert.Throws<DraftWriteException>(() => store.Commit(candidate, Actor(host.Services), Token));
         Assert.Equal(kind == "draft" ? "configuration.draftConflict" : "configuration.importCredentialsChanged", error.Code);
         Assert.Equal(before, JsonSerializer.Serialize(Draft(host.Services)));
         Assert.Equal(currentCredential, host.Services.GetRequiredService<HttpCredentialStore>().Read(connection.Connection.Id));
@@ -178,7 +189,7 @@ public sealed class ConfigurationImportStoreTests
         var before = JsonSerializer.Serialize(Draft(host.Services));
         var state = JsonSerializer.Serialize(db.Client.Queryable<SystemStateRecord>().InSingle(1));
         db.Client.Ado.ExecuteCommand("CREATE TRIGGER reject_import_audit BEFORE INSERT ON audit_log WHEN NEW.action='configuration.imported' BEGIN SELECT RAISE(ABORT, 'fixture'); END;");
-        Assert.ThrowsAny<Exception>(() => store.Commit(candidate, "importer", null, Token));
+        Assert.ThrowsAny<Exception>(() => store.Commit(candidate, Actor(host.Services), Token));
         Assert.Equal(before, JsonSerializer.Serialize(Draft(host.Services)));
         Assert.Equal(state, JsonSerializer.Serialize(db.Client.Queryable<SystemStateRecord>().InSingle(1)));
         Assert.Equal("fixture-secret", host.Services.GetRequiredService<HttpCredentialStore>().ResolveHttp(connection.Connection.Id, "https://example.com/base/")!.Secret);
@@ -200,7 +211,7 @@ public sealed class ConfigurationImportStoreTests
         existing.ConnectionId = newId;
         db.Client.Insertable(existing).ExecuteCommand(); // Explicit collision fixture, not a valid API operation.
         var before = JsonSerializer.Serialize(Draft(host.Services));
-        Assert.Equal("connection.reservedIdentity", Assert.Throws<DraftWriteException>(() => store.Commit(candidate, "importer", null, Token)).Code);
+        Assert.Equal("connection.reservedIdentity", Assert.Throws<DraftWriteException>(() => store.Commit(candidate, Actor(host.Services), Token)).Code);
         Assert.Equal(before, JsonSerializer.Serialize(Draft(host.Services)));
     }
 
@@ -259,7 +270,7 @@ public sealed class ConfigurationImportStoreTests
         var before = JsonSerializer.Serialize(Draft(host.Services));
         var pointers = versions.ReadPointers();
         var error = afterPreview
-            ? Assert.Throws<DraftWriteException>(() => store.Commit(candidate!, "importer", null, Token))
+            ? Assert.Throws<DraftWriteException>(() => store.Commit(candidate!, Actor(host.Services), Token))
             : Assert.Throws<DraftWriteException>(() => store.Prepare(Bytes(file), ConfigurationImportMode.Merge, version, Token));
         Assert.Equal(existingDevice ? "input.reservedKey" : "device.reservedKey", error.Code);
         Assert.Equal(before, JsonSerializer.Serialize(Draft(host.Services)));
@@ -279,7 +290,7 @@ public sealed class ConfigurationImportStoreTests
         db.Client.Ado.ExecuteCommand("INSERT INTO configuration_edit(kind,object_id,stamp,updated_by,updated_at,deleted,retained) VALUES ('device',123,'fixture',@oversize,0,1,1)",
             new SqlSugar.SugarParameter("@oversize", new string('a', 17 * 1024 * 1024)));
         var floor = db.Client.Queryable<SystemStateRecord>().InSingle(1).IdFloor;
-        Assert.Throws<RuntimePlanDocumentException>(() => store.Commit(candidate, "importer", null, Token));
+        Assert.Throws<RuntimePlanDocumentException>(() => store.Commit(candidate, Actor(host.Services), Token));
         Assert.Equal(connection.Version, db.InTransaction(ConfigurationDraft.ReadVersion));
         Assert.Equal(connection.Connection.Id, db.Client.Queryable<ConnectionDraftRecord>().Single().Id);
         Assert.Equal(floor, db.Client.Queryable<SystemStateRecord>().InSingle(1).IdFloor);
@@ -295,12 +306,12 @@ public sealed class ConfigurationImportStoreTests
         var file = Export(source.Services);
         await using var target = new TenonEdgeApplicationFactory();
         var store = Store(target.Services);
-        store.Commit(store.Prepare(Bytes(file), ConfigurationImportMode.Merge, "0", Token), "importer", null, Token);
+        store.Commit(store.Prepare(Bytes(file), ConfigurationImportMode.Merge, "0", Token), Actor(target.Services), Token);
         var original = Assert.Single(Draft(target.Services).RequiredCredentials!);
         file.Connections[0] = file.Connections[0] with { Credential = null };
         var candidate = store.Prepare(Bytes(file), ConfigurationImportMode.Replace, Draft(target.Services).Version, Token);
         Assert.Equal("alreadyRequiresInput", Assert.Single(candidate.Credentials).Reason);
-        store.Commit(candidate, "importer", null, Token);
+        store.Commit(candidate, Actor(target.Services), Token);
         Assert.Equal(original.AccountIdentity, Assert.Single(Draft(target.Services).RequiredCredentials!).AccountIdentity);
         Assert.Equal("configuration.credentialsRequired", Assert.Throws<DraftWriteException>(() =>
             target.Services.GetRequiredService<RuntimeVersionStore>().ReviewDraft(Draft(target.Services).Version, Token)).Code);
@@ -318,7 +329,7 @@ public sealed class ConfigurationImportStoreTests
         cancelled.Cancel();
         Assert.Throws<OperationCanceledException>(() => store.Prepare(Bytes(Empty), ConfigurationImportMode.Replace, Draft(host.Services).Version, cancelled.Token));
         var candidate = store.Prepare(Bytes(Empty), ConfigurationImportMode.Replace, Draft(host.Services).Version, Token);
-        Assert.Throws<OperationCanceledException>(() => store.Commit(candidate, "importer", null, cancelled.Token));
+        Assert.Throws<OperationCanceledException>(() => store.Commit(candidate, Actor(host.Services), cancelled.Token));
         Assert.Equal(before, JsonSerializer.Serialize(Draft(host.Services)));
     }
 }
