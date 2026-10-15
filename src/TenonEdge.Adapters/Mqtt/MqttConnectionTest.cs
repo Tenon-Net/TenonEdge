@@ -35,7 +35,7 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
         var trace = new ConnectionTestTrace(time, settings.Tls);
         var snapshot = settings.Tls ? trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) : null;
         using var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => { }, AdmitFrame,
-            connected: () => trace.Begin("protocol"), offlineTrust: settings.Tls && snapshot is not null));
+            connected: () => trace.Begin("protocol")));
         var options = new MqttClientOptionsBuilder()
             .WithTcpServer(settings.Host, settings.Port)
             .WithStreamProvider(new MqttStreamProvider(new ObservedTestConnector(connector, trace)))

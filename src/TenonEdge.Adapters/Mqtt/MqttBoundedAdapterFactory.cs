@@ -7,8 +7,8 @@ using MQTTnet.Implementations;
 
 namespace TenonEdge.Adapters.Mqtt;
 
-/// <summary>使用库的 TCP/TLS、编码器和通道适配器；自有包装只负责分配前的帧长度限制。</summary>
-internal sealed class MqttBoundedAdapterFactory(Action oversized, Func<byte, int, bool>? admit = null, MqttReceiveBuffer? receiveBuffer = null, Action? connected = null, bool offlineTrust = false) : IMqttClientAdapterFactory
+/// <summary>使用库的 TCP、编码器和通道适配器；自有 TLS 通道禁止证书 URL 外联，帧包装负责分配前长度限制。</summary>
+internal sealed class MqttBoundedAdapterFactory(Action oversized, Func<byte, int, bool>? admit = null, MqttReceiveBuffer? receiveBuffer = null, Action? connected = null) : IMqttClientAdapterFactory
 {
     // 3.1.1 的 PUBLISH：允许完整 1 MiB 载荷、最长 UTF-8 Topic、Topic 长度字段及 QoS 1 PacketId。
     // 限制 Remaining Length 而不是只限载荷；业务回调仍独立执行 1 MiB 载荷上限。
@@ -16,10 +16,11 @@ internal sealed class MqttBoundedAdapterFactory(Action oversized, Func<byte, int
 
     public IMqttChannelAdapter CreateClientAdapter(MqttClientOptions options, MqttPacketInspector packetInspector, IMqttNetLogger logger)
     {
-        if (options.ProtocolVersion != MqttProtocolVersion.V311 || options.ChannelOptions is not MqttClientTcpOptions)
+        if (options.ProtocolVersion != MqttProtocolVersion.V311 || options.ChannelOptions is not MqttClientTcpOptions tcp)
         { throw new NotSupportedException("接收长度保护仅用于 MQTT 3.1.1 TCP/TLS。"); }
-        IMqttChannel transport = offlineTrust
-            ? new MqttTrustedTlsChannel((MqttClientTcpOptions)options.ChannelOptions) : new MqttTcpChannel(options);
+        // 所有 TLS 使用同一策略，由实际选项选择；调用方不能遗漏另一个离线开关。
+        IMqttChannel transport = tcp.TlsOptions?.UseTls == true
+            ? new MqttTlsChannel(tcp) : new MqttTcpChannel(options);
         var channel = new MqttFrameLimitChannel(transport, MaximumRemainingLength, oversized, admit, receiveBuffer is null ? null : receiveBuffer.AdmitAsync, connected);
         var formatter = new MqttPacketFormatterAdapter(options.ProtocolVersion,
             new MqttBufferWriter(options.WriterBufferSize, options.WriterBufferSizeMax));

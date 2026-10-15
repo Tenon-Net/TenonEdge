@@ -13,7 +13,7 @@ public sealed record ServerCertificateInfo(string Subject, string Issuer, DateTi
 }
 
 /// <summary>两协议、运行及诊断共用的服务器信任判断。固定证书只替代信任锚，不豁免名称、时间、用途或其他链错误。
-/// 自定义信任离线建链，禁止 AIA/CRL 网络下载；已有平台 Revoked 结果仍拒绝。未设置时保持平台默认验证结果。</summary>
+/// 系统/连接信任均离线建链，禁止 AIA/CRL 网络下载；已有平台 Revoked 结果仍拒绝。未设置时使用本地系统根验证结果。</summary>
 public static class ServerCertificateTrust
 {
     public const int MaximumCertificateBytes = 32 * 1024;

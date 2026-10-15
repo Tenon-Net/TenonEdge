@@ -5999,6 +5999,39 @@ git diff --check
 
 维护者本轮已确认默认 TLS 路径也采用本地建链、禁止自动 AIA/CRL/OCSP 外联；§2.254 的“待确认”是首次实现时状态。下一子项须修改默认传输并验证，不能只据确认改成实现完成。仍继续信任网页、客户端证书及 §1 的 T3 缺项，不进入 T4/T5/G1。
 
+### 2.256 T3-04 系统默认 TLS 统一本地建链（2026-10-15）
+
+维护者已明确确认：系统默认信任和连接级信任均采用本地建链，不自动访问证书中的 AIA/CRL/OCSP 地址，不声明在线吊销验证。规则同步功能 §2.6、总设计 §10.3；§2.254 的待确认是历史状态。本子项基于本地提交 `046cef7`，只落实出站 TLS 边界，不改变管理 HTTPS 配置或推进 T5。
+
+- HTTP 共用 `OutboundHttpTransport.CreateHandler` 无条件设置离线 `CertificateChainPolicy`，诊断、预览、读取与发送不再因未配置连接信任而走默认下载策略；系统根、主机名、有效期、服务器用途及链约束仍校验。没有连接信任时不安装放行回调。
+- MQTT 原有界通道工厂按实际 `UseTls` 选择 `MqttTlsChannel`，移除容易遗漏的 `offlineTrust` 参数；正式会话、独立诊断、连接测试与发送统一使用受控 TCP 连接器及本地链策略。连接级固定证书/CA 的原判断保留，明文 TCP 不变。
+- 新增原产品 Host 子进程测试，独立 `SSL_CERT_FILE`、空 `SSL_CERT_DIR` 和临时 HOME，不修改机器/用户信任库。HTTP/MQTT 默认系统根成功；缺失中间证书、未知根、错误名称、过期/未生效及用途错误仍拒绝，失败前无应用凭证字节。包含真实 AIA/CRL/OCSP URL，监听器断言握手期间零连接。环境为 Linux/OpenSSL，不冒充其他平台验证。
+
+证据 `/tmp/tenonedge-tls-local-chain/`，Ubuntu 26.04 / SDK 10.0.401 / 原锁定依赖；最终 `verify-backend.sh` 实际执行 locked restore、Release build、格式检查、单元和关联集成、原 TRX 核验。未新增依赖。
+
+| 检查 | 结果 | 证据/边界 |
+|---|---|---|
+| 新默认 TLS 实网矩阵 | **16/16** | 已包含在最终关联集成；首次有效红测旧策略 **11/16**，两协议 AIA 外联、MQTT 吊销策略及用途分类暴露不一致 |
+| 默认及连接信任关联验证 | **76/76** | `green/trust.trx`；真实 TLS 与 Host/Broker/API，不是网页 |
+| TLS 帧限额/接收预算回归 | **19/19** | `buffer/buffer.trx`，全部原断言保留 |
+| 最终全量单元 | **1589/1589**，0 失败/跳过 | `final/unit.trx` |
+| 最终关联集成 | **720/720**，0 失败/跳过，54 秒 | `final/integration.trx`、`final/trx-verification.log`；不是全量后端集成 |
+| 构建/格式/差异 | 通过，0 警告/错误 | `final/{restore,build,format,diff-check}.log` |
+
+实际入口：
+
+```sh
+bash /tmp/tenonedge-tls-local-chain/verify-backend.sh
+# 关联过滤原文保留在脚本：Adapters|Credentials|Connections|Api|ConfigMigratorTests|ConfigurationImport|Runtime.Http|Runtime.Mqtt
+# 单独复验：
+dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~DefaultTlsPolicyTests|FullyQualifiedName~ConnectionTrust'
+dotnet test tests/IntegrationTests -c Release --no-build --no-restore --filter 'FullyQualifiedName~MqttReceiveBufferTests|FullyQualifiedName~MqttFrameLimitTests'
+```
+
+失败历史：首轮新夹具没有先创建数据目录，16 项启动失败，修正夹具后才得到上述旧策略红测（`red/`、`red2/` 分开保留）。扩大回归首次 **714/720**：六项旧 TLS 缓冲/帧测试直接用 MQTTnet `TrustChain`/默认 TCP，缺少受控通道所需连接器和校验回调，连接在接收之前被拒绝；夹具改接产品连接器与同一 CA 校验，未给生产代码加入不受控回退，未删除任何帧/背压断言。失败完整记录保留 `regression-first/`，最终整组重跑 720 项通过。
+
+本子项未重复执行网页或新增网页通过计数；§2.255 的浏览器证据是此前冻结产物。连接信任网页/CA 上传正在接续，客户端证书及 §1 其他 T3 缺项仍未完成。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |

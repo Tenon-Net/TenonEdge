@@ -16,7 +16,6 @@ public static class OutboundHttpTransport
         var handler = CreateHandler(connector);
         if (trust is not null)
         {
-            handler.SslOptions.CertificateChainPolicy = ServerCertificateTrust.OfflineChainPolicy();
             handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
             ServerCertificateTrust.Evaluate(certificate, chain, errors, trust) is null;
         }
@@ -30,6 +29,8 @@ public static class OutboundHttpTransport
         UseProxy = false,
         AllowAutoRedirect = false,
         UseCookies = false,
+        // 系统根与连接级信任均只在本地建链；证书内 URL 不能绕过出站连接器。
+        SslOptions = new() { CertificateChainPolicy = ServerCertificateTrust.OfflineChainPolicy() },
         // 达到读取上限或无需正文时直接关闭流，不为复用连接在 Dispose 后继续排空未读取的正文。
         MaxResponseDrainSize = 0,
         ConnectCallback = (context, token) => connector.ConnectAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, token),

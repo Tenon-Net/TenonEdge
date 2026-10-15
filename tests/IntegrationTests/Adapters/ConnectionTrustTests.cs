@@ -131,7 +131,7 @@ public sealed class ConnectionTrustTests
     }
 
     internal static X509Certificate2 Certificate(ECDsa key, string name, bool authority = false, X509Certificate2? issuer = null,
-        bool expired = false, bool future = false, bool clientOnly = false, string? issuerUrl = null)
+        bool expired = false, bool future = false, bool clientOnly = false, string? issuerUrl = null, string? revocationUrl = null)
     {
         var request = new CertificateRequest($"CN={name}", key, HashAlgorithmName.SHA256);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(authority, false, 0, true));
@@ -143,16 +143,33 @@ public sealed class ConnectionTrustTests
             request.CertificateExtensions.Add(names.Build());
             request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid(clientOnly ? "1.3.6.1.5.5.7.3.2" : "1.3.6.1.5.5.7.3.1")], true));
         }
-        if (issuerUrl is not null)
+        if (issuerUrl is not null || revocationUrl is not null)
+        {
+            var writer = new AsnWriter(AsnEncodingRules.DER);
+            using (writer.PushSequence())
+            {
+                foreach (var (oid, url) in new[] { ("1.3.6.1.5.5.7.48.2", issuerUrl), ("1.3.6.1.5.5.7.48.1", revocationUrl) })
+                {
+                    if (url is null)
+                    { continue; }
+                    using (writer.PushSequence())
+                    {
+                        writer.WriteObjectIdentifier(oid);
+                        writer.WriteCharacterString(UniversalTagNumber.IA5String, url, new Asn1Tag(TagClass.ContextSpecific, 6));
+                    }
+                }
+            }
+            request.CertificateExtensions.Add(new X509Extension("1.3.6.1.5.5.7.1.1", writer.Encode(), false));
+        }
+        if (revocationUrl is not null)
         {
             var writer = new AsnWriter(AsnEncodingRules.DER);
             using (writer.PushSequence())
             using (writer.PushSequence())
-            {
-                writer.WriteObjectIdentifier("1.3.6.1.5.5.7.48.2");
-                writer.WriteCharacterString(UniversalTagNumber.IA5String, issuerUrl, new Asn1Tag(TagClass.ContextSpecific, 6));
-            }
-            request.CertificateExtensions.Add(new X509Extension("1.3.6.1.5.5.7.1.1", writer.Encode(), false));
+            using (writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0, true)))
+            using (writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 0, true)))
+            { writer.WriteCharacterString(UniversalTagNumber.IA5String, revocationUrl, new Asn1Tag(TagClass.ContextSpecific, 6)); }
+            request.CertificateExtensions.Add(new X509Extension("2.5.29.31", writer.Encode(), false));
         }
         var now = DateTimeOffset.UtcNow;
         var from = now.AddDays(future ? 1 : -3);

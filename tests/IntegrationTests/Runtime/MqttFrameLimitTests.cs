@@ -5,7 +5,9 @@ using System.Security.Cryptography.X509Certificates;
 using MQTTnet;
 using MQTTnet.Formatter;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Diagnostics;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.IntegrationTests.Adapters;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
 
@@ -37,7 +39,13 @@ public sealed class MqttFrameLimitTests
         var options = new MqttClientOptionsBuilder().WithTcpServer("127.0.0.1", port)
             .WithProtocolVersion(MqttProtocolVersion.V311).WithClientId("frame-limit-test");
         if (tls)
-        { options.WithTlsOptions(value => value.UseTls().WithTrustChain([root])); }
+        {
+            // Exercise the product's controlled TLS channel, not MQTTnet's direct-socket trust options.
+            var trust = new TlsTrustSnapshot(TlsTrustMode.CertificateAuthority, Convert.ToBase64String(root.RawData), "fixture");
+            options.WithStreamProvider(new MqttStreamProvider(new OutboundConnector(new ConnectionTrustTests.LoopbackPolicy())))
+                .WithTlsOptions(value => value.UseTls().WithCertificateValidationHandler(args =>
+                    ServerCertificateTrust.Evaluate(args.Certificate, args.Chain, args.SslPolicyErrors, trust) is null));
+        }
         var connecting = client.ConnectAsync(options.Build(), deadline.Token);
         using var peer = await listener.AcceptTcpClientAsync(deadline.Token);
         using var network = peer.GetStream();

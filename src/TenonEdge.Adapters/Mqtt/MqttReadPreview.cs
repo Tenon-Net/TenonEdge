@@ -99,7 +99,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                     { received.TrySetResult(Failure("buffer.unavailable")); }
                 }, time);
                 capture.Client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => { Volatile.Write(ref wireFailure, "payload.tooLarge"); }, receiveBuffer: capture.Buffer, offlineTrust: settings.Tls && snapshot is not null));
+                    () => { Volatile.Write(ref wireFailure, "payload.tooLarge"); }, receiveBuffer: capture.Buffer));
                 var client = capture.Client;
                 client.DisconnectedAsync += _ =>
                 {

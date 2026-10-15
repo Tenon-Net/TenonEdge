@@ -8,10 +8,10 @@ using TenonEdge.Adapters.Diagnostics;
 
 namespace TenonEdge.Adapters.Mqtt;
 
-/// <summary>仅自定义连接信任使用的 BCL TLS 通道。MQTTnet 5.2 的 TLS 选项不能禁用证书 AIA 下载，
+/// <summary>所有 MQTT TLS 使用的 BCL 通道。MQTTnet 5.2 的 TLS 选项不能禁用证书 AIA 下载，
 /// 因此在原受控 TCP StreamProvider 之上显式提供离线链策略；MQTT 编解码、收发限制和确认仍由原适配器处理。
-/// 默认系统信任继续走库原路径，不改变其既有吊销策略。没有关闭验证或另建 TCP 连接。</summary>
-internal sealed class MqttTrustedTlsChannel(MqttClientTcpOptions options) : IMqttChannel
+/// 默认使用系统根，连接信任由原回调判断。没有关闭验证或另建 TCP 连接，不声明在线吊销验证。</summary>
+internal sealed class MqttTlsChannel(MqttClientTcpOptions options) : IMqttChannel
 {
     private SslStream? _stream;
     private int _disposed;
@@ -26,7 +26,7 @@ internal sealed class MqttTrustedTlsChannel(MqttClientTcpOptions options) : IMqt
         if (options.RemoteEndpoint is not DnsEndPoint endpoint || options.StreamProvider is null ||
             options.TlsOptions is not { UseTls: true, CertificateValidationHandler: not null } tls ||
             tls.ClientCertificatesProvider is not null || tls.CertificateSelectionHandler is not null)
-        { throw new InvalidOperationException("自定义连接信任的 TLS 通道参数无效。"); }
+        { throw new InvalidOperationException("受控 TLS 通道参数无效。"); }
         var network = await options.StreamProvider.ConnectAsync(endpoint, cancellationToken);
         SslStream stream;
         try

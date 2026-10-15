@@ -57,8 +57,6 @@ public sealed class HttpConnectionTest(ISharedConnections connections, IOutbound
         ServerCertificateInfo? serverCertificate = null;
         using var handler = OutboundHttpTransport.CreateHandler(new ObservedTestConnector(connector, trace));
         handler.MaxResponseHeadersLength = 64;
-        if (trust is not null)
-        { handler.SslOptions.CertificateChainPolicy = ServerCertificateTrust.OfflineChainPolicy(); }
         handler.PlaintextStreamFilter = (context, _) =>
         {
             trace.Begin("protocol");

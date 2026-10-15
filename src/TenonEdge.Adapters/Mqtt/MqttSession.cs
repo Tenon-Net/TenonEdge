@@ -98,7 +98,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     { _receiveBuffer = new MqttReceiveBuffer(input.BufferBudget, 100, receive, input.ReportBuffer, time); }
                 }
                 client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer, offlineTrust: settings.Tls && snapshot is not null));
+                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer));
                 _client = client;
                 if (_receiveBuffer is null && receive is not null)
                 { client.ApplicationMessageReceivedAsync += args => receive(args, CancellationToken.None); }

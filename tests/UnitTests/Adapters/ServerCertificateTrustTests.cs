@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Diagnostics;
+using TenonEdge.Adapters.Http;
 
 namespace TenonEdge.UnitTests.Adapters;
 
@@ -59,5 +60,28 @@ public sealed class ServerCertificateTrustTests
         Assert.Equal(X509RevocationMode.NoCheck, policy.RevocationMode);
         Assert.Equal(X509VerificationFlags.NoFlag, policy.VerificationFlags);
         Assert.Equal("1.3.6.1.5.5.7.3.1", Assert.Single(policy.ApplicationPolicy.Cast<Oid>()).Value);
+        Assert.Equal(X509ChainTrustMode.System, policy.TrustMode);
+    }
+
+    [Fact]
+    public void DefaultHttpHandlerCannotDownloadCertificatesAndDoesNotDisableSystemValidation()
+    {
+        var connector = new NeverConnect();
+        using var first = OutboundHttpTransport.CreateHandler(connector);
+        using var second = OutboundHttpTransport.CreateHandler(connector);
+        var policy = Assert.IsType<X509ChainPolicy>(first.SslOptions.CertificateChainPolicy);
+        Assert.True(policy.DisableCertificateDownloads);
+        Assert.Equal(X509RevocationMode.NoCheck, policy.RevocationMode);
+        Assert.Equal(X509ChainTrustMode.System, policy.TrustMode);
+        Assert.Equal(X509VerificationFlags.NoFlag, policy.VerificationFlags);
+        Assert.Null(first.SslOptions.RemoteCertificateValidationCallback);
+        Assert.NotSame(policy, second.SslOptions.CertificateChainPolicy);
+        Assert.Equal("1.3.6.1.5.5.7.3.1", Assert.Single(policy.ApplicationPolicy.Cast<Oid>()).Value);
+    }
+
+    private sealed class NeverConnect : IOutboundConnector
+    {
+        public ValueTask<Stream> ConnectAsync(string host, int port, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("仅检查选项，不能外联。");
     }
 }
