@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { SecretCredential } from './secret-credential'
 import { ClientCertificateCredential } from './client-certificate-credential'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -29,6 +30,7 @@ export function CredentialPanel({
         queryKey: key,
         retry: false,
         refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
         queryFn: async ({ signal }) => {
             try {
                 const response = mqtt
@@ -50,17 +52,13 @@ export function CredentialPanel({
         },
     })
     const [kind, setKind] = useState<Kind>(mqtt ? 'basic' : 'bearer')
-    const [username, setUsername] = useState('')
-    const [secret, setSecret] = useState('')
-    const [name, setName] = useState('')
-    const [account, setAccount] = useState('')
     const [notice, setNotice] = useState('')
     const [certificateBusy, setCertificateBusy] = useState(false)
     const mutation = useMutation({
         gcTime: 0,
         retry: false,
         // Only the non-secret action enters mutation variables; secrets stay in this form's memory.
-        mutationFn: async (action: 'save' | 'clear' | 'retain') => {
+        mutationFn: async (action: 'clear' | 'retain') => {
             if (action === 'clear') {
                 const options = {
                     params: {
@@ -88,23 +86,12 @@ export function CredentialPanel({
                     expectedVersion: query.data?.version ?? null,
                     retainExisting: action === 'retain',
                 }
-                const accountChanged =
-                    account === '' ? null : account === 'changed'
                 if (mqtt)
                     await api.PUT(
                         '/api/edge-admin/v1/connections/{connectionId}/mqtt-credential',
                         {
                             params: { path: { connectionId: id } },
-                            body: {
-                                ...common,
-                                ...(action === 'save'
-                                    ? {
-                                          username,
-                                          password: secret,
-                                          accountChanged,
-                                      }
-                                    : {}),
-                            },
+                            body: common,
                         },
                     )
                 else
@@ -112,35 +99,13 @@ export function CredentialPanel({
                         '/api/edge-admin/v1/connections/{connectionId}/http-credential',
                         {
                             params: { path: { connectionId: id } },
-                            body: {
-                                ...common,
-                                ...(action === 'save'
-                                    ? {
-                                          kind,
-                                          secret,
-                                          username:
-                                              kind === 'basic'
-                                                  ? username
-                                                  : null,
-                                          name:
-                                              kind === 'apiKeyHeader' ||
-                                              kind === 'apiKeyQuery'
-                                                  ? name
-                                                  : null,
-                                          accountChanged,
-                                      }
-                                    : {}),
-                            },
+                            body: common,
                         },
                     )
             }
             return action
         },
         onSuccess: async (action) => {
-            setSecret('')
-            setUsername('')
-            setName('')
-            setAccount('')
             setNotice(
                 t(
                     action === 'clear'
@@ -160,6 +125,13 @@ export function CredentialPanel({
             ])
         },
     })
+    async function refresh() {
+        await query.refetch({ throwOnError: true })
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['connection-drafts'] }),
+            queryClient.invalidateQueries({ queryKey: summaryKey }),
+        ])
+    }
     const blocked =
         query.isPending ||
         query.isError ||
@@ -167,16 +139,14 @@ export function CredentialPanel({
         mutation.isPending ||
         certificateBusy
     const mismatch = query.data && query.data.recipient !== recipient
-    function act(action: 'save' | 'clear' | 'retain') {
+    function act(action: 'clear' | 'retain') {
         if (blocked) return
         if (
             window.confirm(
                 t(
-                    action === 'save'
-                        ? 'credentials.confirmSave'
-                        : action === 'clear'
-                          ? 'credentials.confirmClear'
-                          : 'credentials.confirmRetain',
+                    action === 'clear'
+                        ? 'credentials.confirmClear'
+                        : 'credentials.confirmRetain',
                 ),
             )
         ) {
@@ -219,13 +189,7 @@ export function CredentialPanel({
                 {t('credentials.refresh')}
             </Button>
             {canEdit && (
-                <form
-                    className="space-y-3"
-                    onSubmit={(event) => {
-                        event.preventDefault()
-                        if (kind !== 'clientCertificate') act('save')
-                    }}
-                >
+                <div className="space-y-3">
                     <fieldset
                         disabled={blocked}
                         className="grid gap-3 md:grid-cols-2"
@@ -238,10 +202,6 @@ export function CredentialPanel({
                                     value={kind}
                                     onChange={(event) => {
                                         setKind(event.target.value as Kind)
-                                        setSecret('')
-                                        setUsername('')
-                                        setName('')
-                                        setAccount('')
                                     }}
                                 >
                                     {(
@@ -272,77 +232,6 @@ export function CredentialPanel({
                                 </select>
                             </label>
                         }
-                        {kind !== 'clientCertificate' &&
-                            (mqtt || kind === 'basic') && (
-                                <label>
-                                    {t('credentials.username')}
-                                    <input
-                                        className="mt-1 w-full rounded border p-2"
-                                        value={username}
-                                        onChange={(event) =>
-                                            setUsername(event.target.value)
-                                        }
-                                        autoComplete="off"
-                                        required
-                                        maxLength={256}
-                                    />
-                                </label>
-                            )}
-                        {!mqtt &&
-                            (kind === 'apiKeyHeader' ||
-                                kind === 'apiKeyQuery') && (
-                                <label>
-                                    {t('credentials.name')}
-                                    <input
-                                        className="mt-1 w-full rounded border p-2"
-                                        value={name}
-                                        onChange={(event) =>
-                                            setName(event.target.value)
-                                        }
-                                        autoComplete="off"
-                                        required
-                                        maxLength={256}
-                                    />
-                                </label>
-                            )}
-                        {kind !== 'clientCertificate' && (
-                            <label>
-                                {t('credentials.secret')}
-                                <input
-                                    className="mt-1 w-full rounded border p-2"
-                                    type="password"
-                                    value={secret}
-                                    onChange={(event) =>
-                                        setSecret(event.target.value)
-                                    }
-                                    autoComplete="new-password"
-                                    required
-                                    maxLength={4096}
-                                />
-                            </label>
-                        )}
-                        {kind !== 'clientCertificate' && (
-                            <label>
-                                {t('credentials.account')}
-                                <select
-                                    className="mt-1 w-full rounded border p-2"
-                                    value={account}
-                                    onChange={(event) =>
-                                        setAccount(event.target.value)
-                                    }
-                                >
-                                    <option value="">
-                                        {t('credentials.choose')}
-                                    </option>
-                                    <option value="same">
-                                        {t('credentials.same')}
-                                    </option>
-                                    <option value="changed">
-                                        {t('credentials.changed')}
-                                    </option>
-                                </select>
-                            </label>
-                        )}
                     </fieldset>
                     {kind === 'clientCertificate' ? (
                         <ClientCertificateCredential
@@ -351,29 +240,21 @@ export function CredentialPanel({
                             version={query.data?.version ?? null}
                             blocked={blocked}
                             onBusy={setCertificateBusy}
-                            refresh={async () => {
-                                await query.refetch({ throwOnError: true })
-                                await Promise.all([
-                                    queryClient.invalidateQueries({
-                                        queryKey: ['connection-drafts'],
-                                    }),
-                                    queryClient.invalidateQueries({
-                                        queryKey: summaryKey,
-                                    }),
-                                ])
-                            }}
+                            refresh={refresh}
                         />
                     ) : (
-                        <p className="text-sm text-muted-foreground">
-                            {t('credentials.accountHelp')}
-                        </p>
+                        <SecretCredential
+                            key={`${kind}:${query.data?.version ?? 'none'}`}
+                            connection={connection}
+                            draftVersion={draftVersion}
+                            kind={kind}
+                            version={query.data?.version ?? null}
+                            blocked={blocked}
+                            onBusy={setCertificateBusy}
+                            refresh={refresh}
+                        />
                     )}
                     <div className="flex flex-wrap gap-2">
-                        {kind !== 'clientCertificate' && (
-                            <Button type="submit" disabled={blocked}>
-                                {t('credentials.save')}
-                            </Button>
-                        )}
                         <Button
                             variant="outline"
                             type="button"
@@ -395,7 +276,7 @@ export function CredentialPanel({
                                 </Button>
                             )}
                     </div>
-                </form>
+                </div>
             )}
         </section>
     )

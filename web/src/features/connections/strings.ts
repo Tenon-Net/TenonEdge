@@ -189,7 +189,7 @@ export const connectionStrings = {
 
 export const credentialStrings = {
     title: '连接认证凭证',
-    notice: '凭证与草稿分开保存，成功后立即生效，不需要应用。秘密从不回显；更换接收方默认需要重新填写。客户端证书与信任证书表单尚未接入。',
+    notice: '凭证与草稿分开保存，成功后立即生效，不需要应用。秘密从不回显；更换接收方默认需要重新填写。客户端证书用于身份认证，服务器信任须在独立的管理员表单中设置。',
     configured: '已设置',
     empty: '未设置',
     loading: '正在读取凭证状态',
@@ -213,8 +213,15 @@ export const credentialStrings = {
     save: '立即保存凭证',
     clear: '清除凭证',
     retain: '保留旧凭证用于新地址（管理员）',
-    confirmSave:
-        '立即更换认证凭证？若更换接收账户，旧身份记录不会用新账户发送。',
+    review: '核对凭证变更（不保存）',
+    reviewTitle: '确认凭证身份与积存',
+    proposed: '新认证身份',
+    reviewLive:
+        '核对不发送密码或 Token，也不冻结队列，数量可能继续变化。保存时重新检查版本与账户声明；隔离记录不会自动恢复或迁移。',
+    reviewAcknowledge: '我已核对原新身份和积存，了解凭证立即生效及隔离规则',
+    reviewCancel: '取消核对并清除秘密',
+    reviewUnknown:
+        '本次保存未取得成功确认，本页秘密已清除。请先重新读取状态并核对审计，不会自动重试。',
     confirmClear: '立即清除凭证？被有效、上一或待生效配置引用时会被拒绝。',
     confirmRetain:
         '把已保存秘密用于新的接收方地址？请核对新地址可信，此操作立即生效并记审计。',

@@ -743,7 +743,14 @@ test('managed connection credentials save separately, never echo, and clear with
     await panel.getByLabel('认证用户名', { exact: true }).fill('fixture-user')
     const secret = 'Browser-credential-fixture-1048'
     await panel.getByLabel('新密码或秘密', { exact: true }).fill(secret)
-    page.once('dialog', (dialog) => dialog.accept())
+    await panel
+        .getByRole('button', { name: '核对凭证变更（不保存）', exact: true })
+        .click()
+    await panel
+        .getByRole('checkbox', {
+            name: '我已核对原新身份和积存，了解凭证立即生效及隔离规则',
+        })
+        .check()
     await panel
         .getByRole('button', { name: '立即保存凭证', exact: true })
         .click()
@@ -835,7 +842,17 @@ test('HTTP credential form writes each supported authentication kind without ech
                 response.url().endsWith('/http-credential') &&
                 response.request().method() === 'PUT',
         )
-        page.once('dialog', (dialog) => dialog.accept())
+        await panel
+            .getByRole('button', {
+                name: '核对凭证变更（不保存）',
+                exact: true,
+            })
+            .click()
+        await panel
+            .getByRole('checkbox', {
+                name: '我已核对原新身份和积存，了解凭证立即生效及隔离规则',
+            })
+            .check()
         await panel
             .getByRole('button', { name: '立即保存凭证', exact: true })
             .click()
@@ -847,7 +864,10 @@ test('HTTP credential form writes each supported authentication kind without ech
             panel.getByLabel('新密码或秘密', { exact: true }),
         ).toHaveValue('')
         await expect(
-            panel.getByRole('button', { name: '立即保存凭证', exact: true }),
+            panel.getByRole('button', {
+                name: '核对凭证变更（不保存）',
+                exact: true,
+            }),
         ).toBeEnabled()
     }
     await page.screenshot({

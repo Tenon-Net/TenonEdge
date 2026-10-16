@@ -9,6 +9,8 @@
 
 HTTP / MQTT 的[客户端证书表单](../docs/client-certificates.md)支持有界 PKCS#12/PEM 上传、公开身份与动态积存核对、账户声明和确认保存；材料只留当前表单，不进 Query 操作参数或本地持久存储。取消、切换、提交及离开后释放材料，冲突或丢回复后须显式读取状态，不重放保存。临时连接测试支持证书但不保存；服务器信任仍单独核对。证据与边界见实施状态 §2.262。
 
+密码、Token 和 API Key 也已接入[公开身份与动态积存核对](../docs/connection-credentials.md)：核对时不发送秘密，有积存且账户相同/不可见时无默认声明，最终保存仍由原写入端复核。冲突或丢回复清除秘密并要求重新读取，不自动重放；证据见实施状态 §2.263。
+
 ## 环境与命令
 
 - Node.js 22（实际验证 22.23.2），npm **11.21.0**；可用 `npx --yes npm@11.21.0 <command>` 运行固定版本，不必修改系统 npm。
@@ -16,7 +18,7 @@ HTTP / MQTT 的[客户端证书表单](../docs/client-certificates.md)支持有�
 - `npm run build`：类型检查、生产依赖许可文本和静态构建，输出 `dist/`。
 - `npm test`、`npm run lint`、`npm run format:check`：Vitest、oxlint、Prettier。
 - 在仓库根运行 `dotnet build TenonEdge.sln -c Release --no-restore`，再回到 web 执行 `npm run test:e2e`。
-  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的端口（多数仍为回环；客户端证书场景跟随 `TENONEDGE_TEST_URL` 的主机地址），在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
+  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的端口（多数仍为回环；客户端证书和凭证核对场景跟随 `TENONEDGE_TEST_URL` 的主机地址），在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
 - HTTPS Token 浏览器用例还需 Linux `openssl` 与 `libnss3-tools` 的 `certutil`（可用 `TENONEDGE_CERTUTIL` 指向在临时目录解包的工具）。用例只信任已与自有 Host 控制台指纹核对的公开证书，在隔离 HOME 中建立 NSS 信任库；不修改开发机信任库、不关闭证书校验，不保留令牌响应的浏览器 trace。
 - `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
   当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。

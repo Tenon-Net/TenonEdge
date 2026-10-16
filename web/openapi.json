@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:42717/"
+      "url": "http://127.0.0.1:43471/"
     }
   ],
   "paths": {
@@ -1463,6 +1463,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClientCertificateReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/{connectionId}/credential-review": {
+      "post": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "核对密码、Token 或 API Key 的公开身份与当前积存，不接收秘密或保存",
+        "description": "仅动态核对；最终保存仍调用原凭证写入接口，重新验证草稿、凭证版本和账户声明。",
+        "operationId": "reviewCredentialChange",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialChangeReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialChangeReview"
                 }
               }
             }
@@ -13437,6 +13541,140 @@
             "type": "boolean"
           }
         }
+      },
+      "CredentialChangeReview": {
+        "required": [
+          "connectionId",
+          "recipient",
+          "expectedDraftVersion",
+          "expectedVersion",
+          "authenticationKind",
+          "account",
+          "name",
+          "current",
+          "identityChanged",
+          "accountDeclarationRequired",
+          "pendingCount",
+          "failedCount",
+          "capturedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "authenticationKind": {
+            "type": "string"
+          },
+          "account": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "current": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialAccountReview"
+              }
+            ]
+          },
+          "identityChanged": {
+            "type": "boolean"
+          },
+          "accountDeclarationRequired": {
+            "type": "boolean"
+          },
+          "pendingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CredentialChangeReviewRequest": {
+        "required": [
+          "kind",
+          "recipient",
+          "expectedDraftVersion",
+          "expectedVersion",
+          "authenticationKind"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionKind"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "authenticationKind": {
+            "type": "string"
+          },
+          "username": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "CurrentFieldValue": {
         "required": [

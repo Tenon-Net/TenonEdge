@@ -94,7 +94,17 @@ with sqlite3.connect(sys.argv[1]) as db:
         await panel
             .getByLabel('新密码或秘密', { exact: true })
             .fill('not-a-real-refill-secret')
-        page.once('dialog', (dialog) => dialog.accept())
+        await panel
+            .getByRole('button', {
+                name: '核对凭证变更（不保存）',
+                exact: true,
+            })
+            .click()
+        await panel
+            .getByRole('checkbox', {
+                name: '我已核对原新身份和积存，了解凭证立即生效及隔离规则',
+            })
+            .check()
         await panel
             .getByRole('button', { name: '立即保存凭证', exact: true })
             .click()

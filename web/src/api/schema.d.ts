@@ -458,6 +458,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/credential-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 核对密码、Token 或 API Key 的公开身份与当前积存，不接收秘密或保存
+         * @description 仅动态核对；最终保存仍调用原凭证写入接口，重新验证草稿、凭证版本和账户声明。
+         */
+        post: operations["reviewCredentialChange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/tls-trust/inspect": {
         parameters: {
             query?: never;
@@ -2763,6 +2783,34 @@ export interface components {
             kind: string;
             account: null | string;
             configured: boolean;
+        };
+        CredentialChangeReview: {
+            /** Format: int64 */
+            connectionId: number | string;
+            recipient: string;
+            expectedDraftVersion: string;
+            expectedVersion: null | string;
+            authenticationKind: string;
+            account: null | string;
+            name: null | string;
+            current: null | components["schemas"]["CredentialAccountReview"];
+            identityChanged: boolean;
+            accountDeclarationRequired: boolean;
+            /** Format: int64 */
+            pendingCount: number | string;
+            /** Format: int64 */
+            failedCount: number | string;
+            /** Format: date-time */
+            capturedAt: string;
+        };
+        CredentialChangeReviewRequest: {
+            kind: components["schemas"]["ConnectionKind"];
+            recipient: string;
+            expectedDraftVersion: string;
+            expectedVersion: null | string;
+            authenticationKind: string;
+            username?: null | string;
+            name?: null | string;
         };
         CurrentFieldValue: {
             key: string;
@@ -5798,6 +5846,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientCertificateReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reviewCredentialChange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialChangeReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CredentialChangeReview"];
                 };
             };
             /** @description Bad Request */
