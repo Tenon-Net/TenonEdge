@@ -1,6 +1,6 @@
 # Modbus 后端接入与软件验证
 
-T2-02 已接入产品 Host 的 `input.modbus`，支持只读 TCP 与 RTU over TCP。当前使用运行计划种子配置，**没有配置网页**。完整验收与未覆盖场景统一见 [实施状态 §2.94](implementation-status.md)。
+T2-02 已接入产品 Host 的 `input.modbus`，支持只读 TCP 与 RTU over TCP。本文保留 T2 的运行计划种子配置与后端软件验证；T3 的[网页配置 Modbus → 映射 → HTTP](modbus-web-workflow.md)已另有不手写业务 JSON 的操作与软件验收场景。完整验收与未覆盖场景统一见[实施状态](implementation-status.md)，不将软件从站视为实物兼容证明。
 
 ## 软件验证
 
