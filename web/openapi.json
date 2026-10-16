@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:43471/"
+      "url": "http://127.0.0.1:32771/"
     }
   ],
   "paths": {
@@ -9692,6 +9692,56 @@
         }
       }
     },
+    "/api/edge-admin/v1/parameter-schemas/{id}": {
+      "get": {
+        "tags": [
+          "参数声明"
+        ],
+        "operationId": "getParameterSchema",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParameterSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections": {
       "get": {
         "tags": [
@@ -18345,6 +18395,136 @@
           }
         }
       },
+      "ParameterDefinition": {
+        "required": [
+          "name",
+          "displayName",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ParameterType"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "defaultJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "minimumJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "maximumJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "wholeNumber": {
+            "type": "boolean"
+          },
+          "maximumLength": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParameterOption"
+            }
+          },
+          "connectionKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ParameterOption": {
+        "required": [
+          "value",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          }
+        }
+      },
+      "ParameterSchema": {
+        "required": [
+          "id",
+          "scope"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ParameterScope"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParameterDefinition"
+            }
+          }
+        }
+      },
+      "ParameterScope": {
+        "enum": [
+          "connection",
+          "input",
+          "transform",
+          "output"
+        ]
+      },
+      "ParameterType": {
+        "enum": [
+          "text",
+          "number",
+          "switch",
+          "choice",
+          "credential",
+          "connectionReference"
+        ]
+      },
       "PointCsvEncoding": {
         "enum": [
           "utf8",
@@ -22501,6 +22681,9 @@
     },
     {
       "name": "Tokens"
+    },
+    {
+      "name": "参数声明"
     },
     {
       "name": "Devices"

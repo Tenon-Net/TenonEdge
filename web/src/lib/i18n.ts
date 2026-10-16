@@ -1,3 +1,4 @@
+import { parameterStrings } from '../features/parameters/strings'
 import { clientCertificateStrings } from '../features/connections/client-certificate-strings'
 import { messageStrings } from '../features/diagnostics/message-strings'
 import { testSendStrings } from '../features/routes/test-send-strings'
@@ -34,6 +35,7 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                parameters: parameterStrings,
                 testSend: testSendStrings,
                 systemSettings: systemStrings,
                 documentation: documentationStrings,

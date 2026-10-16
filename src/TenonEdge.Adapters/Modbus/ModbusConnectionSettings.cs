@@ -21,11 +21,11 @@ public sealed record ModbusConnectionSettings
         if (string.IsNullOrWhiteSpace(Host) || Host.Length > 253 || Host != Host.Trim() ||
             Uri.CheckHostName(Host) == UriHostNameType.Unknown)
         { throw new ArgumentException("Modbus 主机必须为固定主机名或 IP 地址。"); }
-        if (Port is < 1 or > 65535 || !Enum.IsDefined(Format))
-        { throw new ArgumentException("Modbus 端口或帧格式无效。"); }
-        if (ConnectTimeoutMs is < 100 or > 60000 || ReadTimeoutMs is < 100 or > 60000 ||
-            RequestIntervalMs is < 0 or > 60000 || RtuSilenceMs is < 1 or > 60000)
-        { throw new ArgumentException("Modbus 超时、请求间隔或静默间隔无效。"); }
+        ModbusConnectionParameters.Schema.ThrowIfInvalid(JsonSerializer.SerializeToElement(new
+        {
+            host = Host, port = Port, format = Format == ModbusFrameFormat.Tcp ? "tcp" : Format == ModbusFrameFormat.RtuOverTcp ? "rtuOverTcp" : "invalid",
+            connectTimeoutMs = ConnectTimeoutMs, readTimeoutMs = ReadTimeoutMs, requestIntervalMs = RequestIntervalMs, rtuSilenceMs = RtuSilenceMs,
+        }));
         return this with { Host = Host.ToLowerInvariant() };
     }
 

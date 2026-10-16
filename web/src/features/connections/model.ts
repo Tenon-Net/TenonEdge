@@ -1,3 +1,4 @@
+import { wholeNumberText } from '../parameters/model'
 import type { components } from '../../api/schema'
 export type Connection = components['schemas']['ConnectionDraft']
 export type ConnectionRequest = components['schemas']['ConnectionDraftRequest']
@@ -40,21 +41,21 @@ export function connectionRequest(form: ConnectionForm): ConnectionRequest {
     if (form.kind === 'modbus')
         request.modbus = {
             host: form.host,
-            port: form.port,
+            port: wholeNumberText(form.port),
             format: form.format,
-            connectTimeoutMs: form.connectTimeout,
-            readTimeoutMs: form.readTimeout,
-            requestIntervalMs: form.interval,
-            rtuSilenceMs: form.rtuSilence,
+            connectTimeoutMs: wholeNumberText(form.connectTimeout),
+            readTimeoutMs: wholeNumberText(form.readTimeout),
+            requestIntervalMs: wholeNumberText(form.interval),
+            rtuSilenceMs: wholeNumberText(form.rtuSilence),
         }
     if (form.kind === 'mqtt')
         request.mqtt = {
             host: form.host,
-            port: form.port,
+            port: wholeNumberText(form.port),
             tls: form.tls,
             clientId: form.clientId || null,
-            timeoutMs: form.timeout,
-            pingIntervalMs: form.ping,
+            timeoutMs: wholeNumberText(form.timeout),
+            pingIntervalMs: wholeNumberText(form.ping),
         }
     if (form.kind === 'http') {
         const names = form.headers.map((header) => header.name.toLowerCase())
@@ -62,7 +63,7 @@ export function connectionRequest(form: ConnectionForm): ConnectionRequest {
             throw new Error('duplicateHeaders')
         request.http = {
             baseAddress: form.baseAddress,
-            timeoutMs: form.timeout,
+            timeoutMs: wholeNumberText(form.timeout),
             headers: Object.fromEntries(
                 form.headers.map((header) => [header.name, header.value]),
             ),

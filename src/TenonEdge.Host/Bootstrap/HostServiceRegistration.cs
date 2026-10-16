@@ -45,6 +45,9 @@ internal static class HostServiceRegistration
 
         builder.Services.AddAuthFeature();
         builder.Services.AddScoped<GatewayNameStore>();
+        builder.Services.AddSingleton(TenonEdge.Adapters.Modbus.ModbusConnectionParameters.Schema);
+        builder.Services.AddSingleton(TenonEdge.Adapters.Mqtt.MqttConnectionParameters.Schema);
+        builder.Services.AddSingleton<TenonEdge.Host.Features.Parameters.ParameterSchemaCatalog>();
         builder.Services.AddSingleton<ConnectionDraftStore>();
         builder.Services.AddSingleton<DeviceDraftStore>();
         builder.Services.AddSingleton<InputDraftStore>();

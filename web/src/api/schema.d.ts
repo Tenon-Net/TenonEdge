@@ -2065,6 +2065,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/parameter-schemas/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getParameterSchema"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections": {
         parameters: {
             query?: never;
@@ -3871,6 +3887,35 @@ export interface components {
             windowSeconds: null | number | string;
             accumulating: null | boolean;
         };
+        ParameterDefinition: {
+            name: string;
+            displayName: string;
+            type: components["schemas"]["ParameterType"];
+            required?: boolean;
+            description?: null | string;
+            group?: null | string;
+            defaultJson?: null | string;
+            minimumJson?: null | string;
+            maximumJson?: null | string;
+            wholeNumber?: boolean;
+            /** Format: int32 */
+            maximumLength?: null | number | string;
+            options?: components["schemas"]["ParameterOption"][];
+            connectionKinds?: string[];
+        };
+        ParameterOption: {
+            value: string;
+            displayName: string;
+        };
+        ParameterSchema: {
+            id: string;
+            scope: components["schemas"]["ParameterScope"];
+            parameters?: components["schemas"]["ParameterDefinition"][];
+        };
+        /** @enum {unknown} */
+        ParameterScope: "connection" | "input" | "transform" | "output";
+        /** @enum {unknown} */
+        ParameterType: "text" | "number" | "switch" | "choice" | "credential" | "connectionReference";
         /** @enum {unknown} */
         PointCsvEncoding: "utf8" | "gbk" | null;
         PointCsvImportRequest: {
@@ -12397,6 +12442,46 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getParameterSchema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParameterSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

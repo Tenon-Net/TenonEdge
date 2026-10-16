@@ -1,3 +1,10 @@
+import { ParameterFields } from '../parameters/fields'
+import { parameterIssues } from '../parameters/model'
+import {
+    changeConnectionParameter,
+    connectionParameterValues,
+    initializeConnectionParameters,
+} from './parameters'
 import { businessKeyPattern } from '../../lib/business-key'
 import { CredentialPanel } from './credential-panel'
 import { MqttTestPanel } from './mqtt-test-panel'
@@ -22,6 +29,28 @@ import {
     type ConnectionForm,
 } from './model'
 
+function useParameterSchema(kind: 'modbus' | 'mqtt') {
+    return useQuery({
+        queryKey: ['parameter-schema', kind],
+        queryFn: async ({ signal }) => {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/parameter-schemas/{id}',
+                {
+                    signal,
+                    params: { path: { id: `connection.${kind}` } },
+                },
+            )
+            if (
+                !data ||
+                data.id !== `connection.${kind}` ||
+                data.scope !== 'connection' ||
+                !data.parameters?.length
+            )
+                throw new Error('missing-parameter-schema')
+            return data
+        },
+    })
+}
 const queryKey = ['connection-drafts']
 const fieldClass =
     'mt-1 w-full rounded-md border bg-background p-2 disabled:opacity-60'
@@ -42,6 +71,19 @@ export function ConnectionsPage() {
     })
     const [editor] = useState(createConnectionEditor)
     const { form, setForm, original, setOriginal } = useStore(editor)
+    const modbusSchema = useParameterSchema('modbus')
+    const mqttSchema = useParameterSchema('mqtt')
+    const schemaQuery = form?.kind === 'mqtt' ? mqttSchema : modbusSchema
+    const schemaReady =
+        !!schemaQuery.data && !schemaQuery.error && !schemaQuery.isFetching
+    const [showParameterIssues, setShowParameterIssues] = useState(false)
+    const scalarIssues =
+        form && form.kind !== 'http' && schemaQuery.data
+            ? parameterIssues(
+                  schemaQuery.data,
+                  connectionParameterValues(form, schemaQuery.data),
+              )
+            : []
     const [search, setSearch] = useState('')
     const [kind, setKind] = useState('')
     const [notice, setNotice] = useState('')
@@ -115,7 +157,19 @@ export function ConnectionsPage() {
             return
         setTestGeneration((value) => value + 1)
         setSavedTarget(null)
-        const next = connectionForm(query.data.version, connection)
+        if (
+            !connection &&
+            (!modbusSchema.data ||
+                modbusSchema.error ||
+                modbusSchema.isFetching)
+        )
+            return
+        const base = connectionForm(query.data.version, connection)
+        const next =
+            !connection && modbusSchema.data
+                ? initializeConnectionParameters(base, modbusSchema.data)
+                : base
+        setShowParameterIssues(false)
         setForm(next)
         setOriginal(JSON.stringify(next))
         setNotice('')
@@ -227,7 +281,12 @@ export function ConnectionsPage() {
                 {canEdit && (
                     <Button
                         disabled={
-                            !query.data || mutation.isPending || outboundBusy
+                            !query.data ||
+                            mutation.isPending ||
+                            outboundBusy ||
+                            !modbusSchema.data ||
+                            !!modbusSchema.error ||
+                            modbusSchema.isFetching
                         }
                         onClick={() => open()}
                     >
@@ -236,6 +295,25 @@ export function ConnectionsPage() {
                 )}
             </div>
             <ErrorMessage error={query.error ?? mutation.error} />
+            {[modbusSchema, mqttSchema].map(
+                (metadata, index) =>
+                    metadata.error && (
+                        <div key={index} role="alert">
+                            <p>
+                                {index === 0 ? 'Modbus' : 'MQTT'}:{' '}
+                                {t('parameters.unavailable')}
+                            </p>
+                            <ErrorMessage error={metadata.error} />
+                            <Button
+                                variant="outline"
+                                disabled={metadata.isFetching}
+                                onClick={() => void metadata.refetch()}
+                            >
+                                {t('parameters.refresh')}
+                            </Button>
+                        </div>
+                    ),
+            )}
             {mutation.error instanceof ApiError &&
                 mutation.error.status === 409 && (
                     <p role="alert">{t('connections.conflict')}</p>
@@ -362,6 +440,11 @@ export function ConnectionsPage() {
                     onSubmit={(event) => {
                         event.preventDefault()
                         if (!canEdit) return
+                        if (form.kind !== 'http') {
+                            if (!schemaReady) return
+                            setShowParameterIssues(true)
+                            if (scalarIssues.length) return
+                        }
                         try {
                             connectionRequest(form)
                             setLocalError('')
@@ -387,20 +470,43 @@ export function ConnectionsPage() {
                                 onChange={(event) => {
                                     const value = event.target
                                         .value as ConnectionForm['kind']
-                                    edit('kind', value)
-                                    edit(
-                                        'port',
+                                    const metadata =
                                         value === 'modbus'
-                                            ? '502'
-                                            : form.tls
-                                              ? '8883'
-                                              : '1883',
+                                            ? modbusSchema
+                                            : mqttSchema
+                                    if (
+                                        value !== 'http' &&
+                                        (!metadata.data ||
+                                            metadata.error ||
+                                            metadata.isFetching)
                                     )
+                                        return
+                                    const next = { ...form, kind: value }
+                                    setForm(
+                                        value === 'http'
+                                            ? next
+                                            : initializeConnectionParameters(
+                                                  next,
+                                                  metadata.data!,
+                                              ),
+                                    )
+                                    setShowParameterIssues(false)
                                 }}
                             >
                                 {(['modbus', 'mqtt', 'http'] as const).map(
                                     (value) => (
-                                        <option key={value} value={value}>
+                                        <option
+                                            key={value}
+                                            value={value}
+                                            disabled={
+                                                value !== 'http' &&
+                                                !(
+                                                    value === 'modbus'
+                                                        ? modbusSchema
+                                                        : mqttSchema
+                                                ).isSuccess
+                                            }
+                                        >
                                             {t(`connections.kinds.${value}`)}
                                         </option>
                                     ),
@@ -417,80 +523,55 @@ export function ConnectionsPage() {
                             />
                             {t('connections.enabled')}
                         </label>
-                        {form.kind !== 'http' && (
-                            <>
-                                {textField('host')}
-                                {numberField('port', 1, 65535)}
-                            </>
-                        )}
-                        {form.kind === 'modbus' && (
-                            <>
-                                <label>
-                                    {t('connections.format')}
-                                    <select
-                                        className={fieldClass}
-                                        value={form.format}
-                                        onChange={(event) =>
-                                            edit(
-                                                'format',
-                                                event.target
-                                                    .value as ConnectionForm['format'],
-                                            )
-                                        }
-                                    >
-                                        {(['tcp', 'rtuOverTcp'] as const).map(
-                                            (value) => (
-                                                <option
-                                                    key={value}
-                                                    value={value}
-                                                >
-                                                    {t(
-                                                        `connections.formats.${value}`,
-                                                    )}
-                                                </option>
+                        {form.kind !== 'http' && schemaQuery.data && (
+                            <ParameterFields
+                                schema={schemaQuery.data}
+                                values={connectionParameterValues(
+                                    form,
+                                    schemaQuery.data,
+                                )}
+                                onChange={(name, value) =>
+                                    setForm(
+                                        (current) =>
+                                            current &&
+                                            changeConnectionParameter(
+                                                current,
+                                                name,
+                                                value,
                                             ),
-                                        )}
-                                    </select>
-                                </label>
-                                {numberField('connectTimeout', 100, 60000)}
-                                {numberField('readTimeout', 100, 60000)}
-                                {numberField('interval', 0, 60000)}
-                                {form.format === 'rtuOverTcp' &&
-                                    numberField('rtuSilence', 1, 60000)}
-                            </>
+                                    )
+                                }
+                                hidden={
+                                    form.kind === 'modbus' &&
+                                    form.format === 'tcp'
+                                        ? ['rtuSilenceMs']
+                                        : []
+                                }
+                                issues={showParameterIssues ? scalarIssues : []}
+                            />
                         )}
-                        {form.kind === 'mqtt' && (
-                            <>
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={form.tls}
-                                        onChange={(event) => {
-                                            edit('tls', event.target.checked)
-                                            if (
-                                                ['1883', '8883'].includes(
-                                                    form.port,
-                                                )
-                                            )
-                                                edit(
-                                                    'port',
-                                                    event.target.checked
-                                                        ? '8883'
-                                                        : '1883',
-                                                )
-                                        }}
-                                    />
-                                    {t('connections.tls')}
-                                </label>
-                                {textField('clientId', false, 128)}
-                                {numberField('ping', 1000, 60000)}
-                            </>
-                        )}
-                        {form.kind !== 'modbus' &&
+                        {form.kind === 'http' &&
                             numberField('timeout', 100, 60000)}
                         {form.kind === 'http' &&
                             textField('baseAddress', true, 2048)}
                     </fieldset>
+                    {form.kind !== 'http' && (
+                        <div>
+                            {schemaQuery.isFetching && (
+                                <p role="status">{t('parameters.loading')}</p>
+                            )}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={
+                                    schemaQuery.isFetching || mutation.isPending
+                                }
+                                onClick={() => void schemaQuery.refetch()}
+                            >
+                                {t('parameters.refresh')}
+                            </Button>
+                        </div>
+                    )}
                     {form.kind === 'http' && (
                         <fieldset
                             disabled={!canEdit || mutation.isPending}
@@ -584,7 +665,11 @@ export function ConnectionsPage() {
                         {canEdit && (
                             <Button
                                 type="submit"
-                                disabled={mutation.isPending || outboundBusy}
+                                disabled={
+                                    mutation.isPending ||
+                                    outboundBusy ||
+                                    (form.kind !== 'http' && !schemaReady)
+                                }
                             >
                                 {t('connections.save')}
                             </Button>

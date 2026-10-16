@@ -36,12 +36,11 @@ public record MqttConnectionSettings
             settings = settings with { Host = IPAddress.Parse(settings.Host.Trim('[', ']')).ToString() };
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThan(settings.Port, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(settings.Port, 65535);
-        ArgumentOutOfRangeException.ThrowIfLessThan(settings.TimeoutMs, 100);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(settings.TimeoutMs, 60000);
-        ArgumentOutOfRangeException.ThrowIfLessThan(settings.PingIntervalMs, 1000);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(settings.PingIntervalMs, 60000);
+        MqttConnectionParameters.Schema.ThrowIfInvalid(JsonSerializer.SerializeToElement(new
+        {
+            host = settings.Host, port = settings.Port, tls = settings.Tls, clientId = settings.ClientId,
+            timeoutMs = settings.TimeoutMs, pingIntervalMs = settings.PingIntervalMs,
+        }));
         if (settings.ClientId is not null && string.IsNullOrWhiteSpace(settings.ClientId) || settings.ClientId is { Length: > 128 } || settings.ClientId?.Contains('\0', StringComparison.Ordinal) == true)
         {
             throw new ArgumentException("ClientId 无效。");
