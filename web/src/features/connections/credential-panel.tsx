@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ClientCertificateCredential } from './client-certificate-credential'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, queryClient, useSession } from '../../lib/session'
@@ -27,6 +28,7 @@ export function CredentialPanel({
     const query = useQuery({
         queryKey: key,
         retry: false,
+        refetchOnWindowFocus: false,
         queryFn: async ({ signal }) => {
             try {
                 const response = mqtt
@@ -47,12 +49,13 @@ export function CredentialPanel({
             }
         },
     })
-    const [kind, setKind] = useState<Kind>('bearer')
+    const [kind, setKind] = useState<Kind>(mqtt ? 'basic' : 'bearer')
     const [username, setUsername] = useState('')
     const [secret, setSecret] = useState('')
     const [name, setName] = useState('')
     const [account, setAccount] = useState('')
     const [notice, setNotice] = useState('')
+    const [certificateBusy, setCertificateBusy] = useState(false)
     const mutation = useMutation({
         gcTime: 0,
         retry: false,
@@ -161,7 +164,8 @@ export function CredentialPanel({
         query.isPending ||
         query.isError ||
         query.isFetching ||
-        mutation.isPending
+        mutation.isPending ||
+        certificateBusy
     const mismatch = query.data && query.data.recipient !== recipient
     function act(action: 'save' | 'clear' | 'retain') {
         if (blocked) return
@@ -207,7 +211,9 @@ export function CredentialPanel({
             {notice && <p role="status">{notice}</p>}
             <Button
                 variant="outline"
-                disabled={query.isFetching || mutation.isPending}
+                disabled={
+                    query.isFetching || mutation.isPending || certificateBusy
+                }
                 onClick={() => void query.refetch()}
             >
                 {t('credentials.refresh')}
@@ -217,53 +223,71 @@ export function CredentialPanel({
                     className="space-y-3"
                     onSubmit={(event) => {
                         event.preventDefault()
-                        act('save')
+                        if (kind !== 'clientCertificate') act('save')
                     }}
                 >
                     <fieldset
                         disabled={blocked}
                         className="grid gap-3 md:grid-cols-2"
                     >
-                        {!mqtt && (
+                        {
                             <label>
                                 {t('credentials.kind')}
                                 <select
                                     className="mt-1 w-full rounded border p-2"
                                     value={kind}
-                                    onChange={(event) =>
+                                    onChange={(event) => {
                                         setKind(event.target.value as Kind)
-                                    }
+                                        setSecret('')
+                                        setUsername('')
+                                        setName('')
+                                        setAccount('')
+                                    }}
                                 >
                                     {(
-                                        [
-                                            'basic',
-                                            'bearer',
-                                            'apiKeyHeader',
-                                            'apiKeyQuery',
-                                        ] as const
+                                        (mqtt
+                                            ? ['basic', 'clientCertificate']
+                                            : [
+                                                  'basic',
+                                                  'bearer',
+                                                  'apiKeyHeader',
+                                                  'apiKeyQuery',
+                                                  'clientCertificate',
+                                              ]) as Kind[]
                                     ).map((value) => (
                                         <option key={value} value={value}>
-                                            {t(`credentials.kinds.${value}`)}
+                                            {value === 'clientCertificate'
+                                                ? t(
+                                                      'clientCertificate.kinds.clientCertificate',
+                                                  )
+                                                : mqtt
+                                                  ? t(
+                                                        'clientCertificate.kinds.password',
+                                                    )
+                                                  : t(
+                                                        `credentials.kinds.${value}`,
+                                                    )}
                                         </option>
                                     ))}
                                 </select>
                             </label>
-                        )}
-                        {(mqtt || kind === 'basic') && (
-                            <label>
-                                {t('credentials.username')}
-                                <input
-                                    className="mt-1 w-full rounded border p-2"
-                                    value={username}
-                                    onChange={(event) =>
-                                        setUsername(event.target.value)
-                                    }
-                                    autoComplete="off"
-                                    required
-                                    maxLength={256}
-                                />
-                            </label>
-                        )}
+                        }
+                        {kind !== 'clientCertificate' &&
+                            (mqtt || kind === 'basic') && (
+                                <label>
+                                    {t('credentials.username')}
+                                    <input
+                                        className="mt-1 w-full rounded border p-2"
+                                        value={username}
+                                        onChange={(event) =>
+                                            setUsername(event.target.value)
+                                        }
+                                        autoComplete="off"
+                                        required
+                                        maxLength={256}
+                                    />
+                                </label>
+                            )}
                         {!mqtt &&
                             (kind === 'apiKeyHeader' ||
                                 kind === 'apiKeyQuery') && (
@@ -281,48 +305,75 @@ export function CredentialPanel({
                                     />
                                 </label>
                             )}
-                        <label>
-                            {t('credentials.secret')}
-                            <input
-                                className="mt-1 w-full rounded border p-2"
-                                type="password"
-                                value={secret}
-                                onChange={(event) =>
-                                    setSecret(event.target.value)
-                                }
-                                autoComplete="new-password"
-                                required
-                                maxLength={4096}
-                            />
-                        </label>
-                        <label>
-                            {t('credentials.account')}
-                            <select
-                                className="mt-1 w-full rounded border p-2"
-                                value={account}
-                                onChange={(event) =>
-                                    setAccount(event.target.value)
-                                }
-                            >
-                                <option value="">
-                                    {t('credentials.choose')}
-                                </option>
-                                <option value="same">
-                                    {t('credentials.same')}
-                                </option>
-                                <option value="changed">
-                                    {t('credentials.changed')}
-                                </option>
-                            </select>
-                        </label>
+                        {kind !== 'clientCertificate' && (
+                            <label>
+                                {t('credentials.secret')}
+                                <input
+                                    className="mt-1 w-full rounded border p-2"
+                                    type="password"
+                                    value={secret}
+                                    onChange={(event) =>
+                                        setSecret(event.target.value)
+                                    }
+                                    autoComplete="new-password"
+                                    required
+                                    maxLength={4096}
+                                />
+                            </label>
+                        )}
+                        {kind !== 'clientCertificate' && (
+                            <label>
+                                {t('credentials.account')}
+                                <select
+                                    className="mt-1 w-full rounded border p-2"
+                                    value={account}
+                                    onChange={(event) =>
+                                        setAccount(event.target.value)
+                                    }
+                                >
+                                    <option value="">
+                                        {t('credentials.choose')}
+                                    </option>
+                                    <option value="same">
+                                        {t('credentials.same')}
+                                    </option>
+                                    <option value="changed">
+                                        {t('credentials.changed')}
+                                    </option>
+                                </select>
+                            </label>
+                        )}
                     </fieldset>
-                    <p className="text-sm text-muted-foreground">
-                        {t('credentials.accountHelp')}
-                    </p>
+                    {kind === 'clientCertificate' ? (
+                        <ClientCertificateCredential
+                            connection={connection}
+                            draftVersion={draftVersion}
+                            version={query.data?.version ?? null}
+                            blocked={blocked}
+                            onBusy={setCertificateBusy}
+                            refresh={async () => {
+                                await query.refetch({ throwOnError: true })
+                                await Promise.all([
+                                    queryClient.invalidateQueries({
+                                        queryKey: ['connection-drafts'],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                        queryKey: summaryKey,
+                                    }),
+                                ])
+                            }}
+                        />
+                    ) : (
+                        <p className="text-sm text-muted-foreground">
+                            {t('credentials.accountHelp')}
+                        </p>
+                    )}
                     <div className="flex flex-wrap gap-2">
-                        <Button type="submit" disabled={blocked}>
-                            {t('credentials.save')}
-                        </Button>
+                        {kind !== 'clientCertificate' && (
+                            <Button type="submit" disabled={blocked}>
+                                {t('credentials.save')}
+                            </Button>
+                        )}
                         <Button
                             variant="outline"
                             type="button"

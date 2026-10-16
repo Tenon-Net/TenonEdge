@@ -7,6 +7,8 @@
 
 管理员 `/users` 页面使用真实本地账号 API：创建与重置临时密码、编辑角色/显示名/启停、解锁、强制下线、删除及分页信息；现有账号操作须核对并二次确认，冲突/丢回复先清除表单并重新读取，不自动重放。临时密码用户必须改密；页头显示本会话的上次登录时间/IP，其他会话的新登录不会覆盖。`/tokens` 已接入 HTTPS 一次性创建、元数据分页和确认吊销；停用/删除用户时列出尚未吊销令牌，须明确选择保留或一并吊销，绑定清单版本。`/audit` 提供管理员审计筛选/分页和整个已应用范围的 CSV 导出，固定范围、明确确认、后台生成并持久审计、一次原生下载及丢回复后只读恢复；说明见[审计导出](../docs/audit-export.md)。`/system` 已提供全角色系统信息、页头/标签页已有网关名称和管理员出站规则编辑；分开展示只读部署/可编辑持久规则，显式确认、原版本绑定、冲突/丢回复只读核对。管理员还可确认修改/清空网关显示名称，绑定开始编辑时的原名称，名称和审计同事务；保存后刷新页头/标签页，不改变NodeId、草稿或运行版本。冲突/丢回复不重放，读取失败禁止编辑。连接页成功保存三协议草稿后会仅解析/检查目标，管理员可核对精确公网IP与端口后确认追加授权，原规则/本机例外保留，不自动授权/建连/应用；冲突或丢回复须重新检查，不重放。配置人员提示联系管理员，只读不能解析。说明见[系统设置](../docs/system-settings.md)，系统管理剩余项未完成，验证证据见实施状态 §2.219、§2.221—§2.226。
 
+HTTP / MQTT 的[客户端证书表单](../docs/client-certificates.md)支持有界 PKCS#12/PEM 上传、公开身份与动态积存核对、账户声明和确认保存；材料只留当前表单，不进 Query 操作参数或本地持久存储。取消、切换、提交及离开后释放材料，冲突或丢回复后须显式读取状态，不重放保存。临时连接测试支持证书但不保存；服务器信任仍单独核对。证据与边界见实施状态 §2.262。
+
 ## 环境与命令
 
 - Node.js 22（实际验证 22.23.2），npm **11.21.0**；可用 `npx --yes npm@11.21.0 <command>` 运行固定版本，不必修改系统 npm。
@@ -14,7 +16,7 @@
 - `npm run build`：类型检查、生产依赖许可文本和静态构建，输出 `dist/`。
 - `npm test`、`npm run lint`、`npm run format:check`：Vitest、oxlint、Prettier。
 - 在仓库根运行 `dotnet build TenonEdge.sln -c Release --no-restore`，再回到 web 执行 `npm run test:e2e`。
-  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的回环端口，在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
+  Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的端口（多数仍为回环；客户端证书场景跟随 `TENONEDGE_TEST_URL` 的主机地址），在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
 - HTTPS Token 浏览器用例还需 Linux `openssl` 与 `libnss3-tools` 的 `certutil`（可用 `TENONEDGE_CERTUTIL` 指向在临时目录解包的工具）。用例只信任已与自有 Host 控制台指纹核对的公开证书，在隔离 HOME 中建立 NSS 信任库；不修改开发机信任库、不关闭证书校验，不保留令牌响应的浏览器 trace。
 - `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
   当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。

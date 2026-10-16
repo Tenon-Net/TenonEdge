@@ -140,6 +140,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "retryConfigurationRuntime",
         "retryFailedDeliveries",
         "retryOutputNow",
+        "reviewClientCertificateCredential",
         "reviewConfigurationDraft",
         "reviewConfigurationRollback",
         "reviewCorruptSnapshotRecovery",

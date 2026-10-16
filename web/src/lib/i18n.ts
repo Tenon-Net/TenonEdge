@@ -1,3 +1,4 @@
+import { clientCertificateStrings } from '../features/connections/client-certificate-strings'
 import { messageStrings } from '../features/diagnostics/message-strings'
 import { testSendStrings } from '../features/routes/test-send-strings'
 import { documentationStrings } from '../features/documentation/strings'
@@ -74,6 +75,7 @@ void i18n.use(initReactI18next).init({
                 canvas: canvasStrings,
                 connections: connectionStrings,
                 credentials: credentialStrings,
+                clientCertificate: clientCertificateStrings,
                 trust: trustStrings,
                 product: 'TenonEdge',
                 subtitle: '边缘接入与转发网关',

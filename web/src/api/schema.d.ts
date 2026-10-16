@@ -438,6 +438,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/client-certificate-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 核对待上传客户端证书的公开身份与当前积存，不保存或联网
+         * @description 仅供保存前核对，不冻结队列或授权保存。确认仍调用原凭证写入接口，重新验证草稿、凭证版本、证书和积存声明。
+         */
+        post: operations["reviewClientCertificateCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/tls-trust/inspect": {
         parameters: {
             query?: never;
@@ -2322,6 +2342,39 @@ export interface components {
             currentPassword: null | string;
             newPassword: null | string;
         };
+        ClientCertificateInfo: {
+            subject: string;
+            issuer: string;
+            /** Format: date-time */
+            notBefore: string;
+            /** Format: date-time */
+            notAfter: string;
+            sha256Fingerprint: string;
+        };
+        ClientCertificateReview: {
+            /** Format: int64 */
+            connectionId: number | string;
+            recipient: string;
+            expectedDraftVersion: string;
+            expectedVersion: null | string;
+            certificate: components["schemas"]["ClientCertificateInfo"];
+            current: null | components["schemas"]["CredentialAccountReview"];
+            identityChanged: boolean;
+            accountDeclarationRequired: boolean;
+            /** Format: int64 */
+            pendingCount: number | string;
+            /** Format: int64 */
+            failedCount: number | string;
+            /** Format: date-time */
+            capturedAt: string;
+        };
+        ClientCertificateReviewRequest: {
+            kind: components["schemas"]["ConnectionKind"];
+            recipient: string;
+            expectedDraftVersion: string;
+            expectedVersion: null | string;
+            certificate: components["schemas"]["ClientCertificateUpload"];
+        };
         ClientCertificateUpload: {
             pkcs12?: null | string;
             password?: null | string;
@@ -2704,6 +2757,12 @@ export interface components {
         CreatorTokenReview: {
             version: string;
             items: components["schemas"]["ApiTokenSummary"][];
+        };
+        CredentialAccountReview: {
+            recipient: string;
+            kind: string;
+            account: null | string;
+            configured: boolean;
         };
         CurrentFieldValue: {
             key: string;
@@ -5708,6 +5767,86 @@ export interface operations {
             };
             /** @description Gateway Timeout */
             504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reviewClientCertificateCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientCertificateReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientCertificateReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

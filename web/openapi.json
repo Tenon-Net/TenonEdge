@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:46051/"
+      "url": "http://127.0.0.1:42717/"
     }
   ],
   "paths": {
@@ -1415,6 +1415,110 @@
           },
           "504": {
             "description": "Gateway Timeout",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/connections/{connectionId}/client-certificate-review": {
+      "post": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "核对待上传客户端证书的公开身份与当前积存，不保存或联网",
+        "description": "仅供保存前核对，不冻结队列或授权保存。确认仍调用原凭证写入接口，重新验证草稿、凭证版本、证书和积存声明。",
+        "operationId": "reviewClientCertificateCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientCertificateReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientCertificateReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11376,6 +11480,143 @@
           }
         }
       },
+      "ClientCertificateInfo": {
+        "required": [
+          "subject",
+          "issuer",
+          "notBefore",
+          "notAfter",
+          "sha256Fingerprint"
+        ],
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sha256Fingerprint": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientCertificateReview": {
+        "required": [
+          "connectionId",
+          "recipient",
+          "expectedDraftVersion",
+          "expectedVersion",
+          "certificate",
+          "current",
+          "identityChanged",
+          "accountDeclarationRequired",
+          "pendingCount",
+          "failedCount",
+          "capturedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "certificate": {
+            "$ref": "#/components/schemas/ClientCertificateInfo"
+          },
+          "current": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialAccountReview"
+              }
+            ]
+          },
+          "identityChanged": {
+            "type": "boolean"
+          },
+          "accountDeclarationRequired": {
+            "type": "boolean"
+          },
+          "pendingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ClientCertificateReviewRequest": {
+        "required": [
+          "kind",
+          "recipient",
+          "expectedDraftVersion",
+          "expectedVersion",
+          "certificate"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ConnectionKind"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "certificate": {
+            "$ref": "#/components/schemas/ClientCertificateUpload"
+          }
+        },
+        "additionalProperties": false
+      },
       "ClientCertificateUpload": {
         "type": "object",
         "properties": {
@@ -13168,6 +13409,32 @@
             "items": {
               "$ref": "#/components/schemas/ApiTokenSummary"
             }
+          }
+        }
+      },
+      "CredentialAccountReview": {
+        "required": [
+          "recipient",
+          "kind",
+          "account",
+          "configured"
+        ],
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "account": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configured": {
+            "type": "boolean"
           }
         }
       },
@@ -21983,6 +22250,9 @@
       "name": "Connections"
     },
     {
+      "name": "Credentials"
+    },
+    {
       "name": "Deliveries"
     },
     {
@@ -21993,9 +22263,6 @@
     },
     {
       "name": "Tokens"
-    },
-    {
-      "name": "Credentials"
     },
     {
       "name": "Devices"

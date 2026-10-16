@@ -1,3 +1,7 @@
+import {
+    ClientCertificateFields,
+    useClientCertificateUpload,
+} from './client-certificate-fields'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +29,10 @@ export function MqttTestPanel({
     const [authentication, setAuthentication] = useState<Authentication>('none')
     const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
+    const [kind, setKind] = useState<'password' | 'clientCertificate'>(
+        'password',
+    )
+    const certificate = useClientCertificateUpload()
     const controller = useRef<AbortController | null>(null)
     useEffect(() => () => controller.current?.abort(), [])
     const test = useMutation({
@@ -44,10 +52,11 @@ export function MqttTestPanel({
                         authentication,
                         credentialConnectionId:
                             authentication === 'stored' ? form.id : null,
-                        username:
-                            authentication === 'provided' ? username : null,
-                        password:
-                            authentication === 'provided' ? password : null,
+                        ...(authentication === 'provided'
+                            ? kind === 'clientCertificate'
+                                ? { certificate: certificate.upload }
+                                : { username, password }
+                            : {}),
                     },
                 },
             )
@@ -58,7 +67,10 @@ export function MqttTestPanel({
                 formSnapshot: JSON.stringify(form),
             }
         },
-        onSettled: () => setPassword(''),
+        onSettled: () => {
+            setPassword('')
+            certificate.clear()
+        },
     })
     return (
         <section
@@ -83,6 +95,7 @@ export function MqttTestPanel({
                                 event.target.value as Authentication,
                             )
                             setPassword('')
+                            certificate.clear()
                             test.reset()
                         }}
                     >
@@ -102,36 +115,73 @@ export function MqttTestPanel({
                 {authentication === 'provided' && (
                     <>
                         <label>
-                            {t('connections.mqttTest.username')}
-                            <input
+                            {t('credentials.kind')}
+                            <select
                                 className="ml-2 rounded border p-2"
-                                value={username}
-                                maxLength={256}
-                                autoComplete="off"
-                                onChange={(event) =>
-                                    setUsername(event.target.value)
-                                }
-                            />
+                                value={kind}
+                                onChange={(event) => {
+                                    setKind(
+                                        event.target.value as
+                                            'password' | 'clientCertificate',
+                                    )
+                                    setPassword('')
+                                    setUsername('')
+                                    certificate.clear()
+                                    test.reset()
+                                }}
+                            >
+                                <option value="password">
+                                    {t('clientCertificate.kinds.password')}
+                                </option>
+                                <option value="clientCertificate">
+                                    {t(
+                                        'clientCertificate.kinds.clientCertificate',
+                                    )}
+                                </option>
+                            </select>
                         </label>
-                        <label>
-                            {t('connections.mqttTest.password')}
-                            <input
-                                className="ml-2 rounded border p-2"
-                                type="password"
-                                value={password}
-                                maxLength={4096}
-                                autoComplete="new-password"
-                                onChange={(event) =>
-                                    setPassword(event.target.value)
-                                }
-                            />
-                        </label>
+                        {kind === 'clientCertificate' ? (
+                            <ClientCertificateFields value={certificate} />
+                        ) : (
+                            <>
+                                <label>
+                                    {t('connections.mqttTest.username')}
+                                    <input
+                                        className="ml-2 rounded border p-2"
+                                        value={username}
+                                        maxLength={256}
+                                        autoComplete="off"
+                                        onChange={(event) =>
+                                            setUsername(event.target.value)
+                                        }
+                                    />
+                                </label>
+                                <label>
+                                    {t('connections.mqttTest.password')}
+                                    <input
+                                        className="ml-2 rounded border p-2"
+                                        type="password"
+                                        value={password}
+                                        maxLength={4096}
+                                        autoComplete="new-password"
+                                        onChange={(event) =>
+                                            setPassword(event.target.value)
+                                        }
+                                    />
+                                </label>
+                            </>
+                        )}
                     </>
                 )}
             </fieldset>
             <Button
                 type="button"
-                disabled={test.isPending}
+                disabled={
+                    test.isPending ||
+                    (authentication === 'provided' &&
+                        kind === 'clientCertificate' &&
+                        !certificate.ready)
+                }
                 onClick={() => test.mutate()}
             >
                 {t(

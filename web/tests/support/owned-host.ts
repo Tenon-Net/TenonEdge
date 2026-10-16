@@ -32,6 +32,7 @@ export async function startOwnedHost(
     data: string,
     port = 0,
     extraArguments: string[] = [],
+    httpAddress = '127.0.0.1',
 ) {
     const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -53,7 +54,7 @@ export async function startOwnedHost(
             ),
             `--webroot=${join(root, 'web/dist')}`,
             `--TenonEdge:DataDirectory=${data}`,
-            '--TenonEdge:Http:Address=127.0.0.1',
+            `--TenonEdge:Http:Address=${httpAddress}`,
             `--TenonEdge:Http:Port=${port}`,
             '--TenonEdge:Https:Address=127.0.0.1',
             '--TenonEdge:Https:Port=0',
@@ -81,9 +82,7 @@ export async function startOwnedHost(
     )
     const collect = (chunk: Buffer) => {
         output = (output + chunk.toString('utf8')).slice(-16 * 1024)
-        const url = output.match(
-            /Now listening on:\s*(http:\/\/127\.0\.0\.1:\d+)/,
-        )?.[1]
+        const url = output.match(/Now listening on:\s*(http:\/\/\S+)/)?.[1]
         if (url) admitted(url)
     }
     child.stdout.on('data', collect)

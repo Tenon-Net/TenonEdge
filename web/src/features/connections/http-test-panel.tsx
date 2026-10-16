@@ -1,3 +1,7 @@
+import {
+    ClientCertificateFields,
+    useClientCertificateUpload,
+} from './client-certificate-fields'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -29,6 +33,7 @@ export function HttpTestPanel({
     const [username, setUsername] = useState('')
     const [name, setName] = useState('')
     const [secret, setSecret] = useState('')
+    const certificate = useClientCertificateUpload()
     const controller = useRef<AbortController | null>(null)
     useEffect(() => () => controller.current?.abort(), [])
     const test = useMutation({
@@ -54,17 +59,21 @@ export function HttpTestPanel({
                         authentication,
                         credential:
                             authentication === 'provided'
-                                ? {
-                                      kind,
-                                      secret,
-                                      username:
-                                          kind === 'basic' ? username : null,
-                                      name:
-                                          kind === 'apiKeyHeader' ||
-                                          kind === 'apiKeyQuery'
-                                              ? name
-                                              : null,
-                                  }
+                                ? kind === 'clientCertificate'
+                                    ? { kind, certificate: certificate.upload }
+                                    : {
+                                          kind,
+                                          secret,
+                                          username:
+                                              kind === 'basic'
+                                                  ? username
+                                                  : null,
+                                          name:
+                                              kind === 'apiKeyHeader' ||
+                                              kind === 'apiKeyQuery'
+                                                  ? name
+                                                  : null,
+                                      }
                                 : null,
                     },
                 },
@@ -76,7 +85,10 @@ export function HttpTestPanel({
                 formSnapshot: JSON.stringify(form),
             }
         },
-        onSettled: () => setSecret(''),
+        onSettled: () => {
+            setSecret('')
+            certificate.clear()
+        },
     })
     return (
         <section
@@ -101,6 +113,7 @@ export function HttpTestPanel({
                                 event.target.value as Authentication,
                             )
                             setSecret('')
+                            certificate.clear()
                             test.reset()
                         }}
                     >
@@ -127,6 +140,7 @@ export function HttpTestPanel({
                                 onChange={(event) => {
                                     setKind(event.target.value as Kind)
                                     setSecret('')
+                                    certificate.clear()
                                     test.reset()
                                 }}
                             >
@@ -136,12 +150,17 @@ export function HttpTestPanel({
                                         'bearer',
                                         'apiKeyHeader',
                                         'apiKeyQuery',
+                                        'clientCertificate',
                                     ] as const
                                 ).map((value) => (
                                     <option key={value} value={value}>
-                                        {t(
-                                            `connections.httpTest.kinds.${value}`,
-                                        )}
+                                        {value === 'clientCertificate'
+                                            ? t(
+                                                  'clientCertificate.kinds.clientCertificate',
+                                              )
+                                            : t(
+                                                  `connections.httpTest.kinds.${value}`,
+                                              )}
                                     </option>
                                 ))}
                             </select>
@@ -175,25 +194,34 @@ export function HttpTestPanel({
                                 />
                             </label>
                         )}
-                        <label>
-                            {t('connections.httpTest.password')}
-                            <input
-                                className="ml-2 rounded border p-2"
-                                type="password"
-                                value={secret}
-                                maxLength={4096}
-                                autoComplete="new-password"
-                                onChange={(event) =>
-                                    setSecret(event.target.value)
-                                }
-                            />
-                        </label>
+                        {kind === 'clientCertificate' ? (
+                            <ClientCertificateFields value={certificate} />
+                        ) : (
+                            <label>
+                                {t('connections.httpTest.password')}
+                                <input
+                                    className="ml-2 rounded border p-2"
+                                    type="password"
+                                    value={secret}
+                                    maxLength={4096}
+                                    autoComplete="new-password"
+                                    onChange={(event) =>
+                                        setSecret(event.target.value)
+                                    }
+                                />
+                            </label>
+                        )}
                     </>
                 )}
             </fieldset>
             <Button
                 type="button"
-                disabled={test.isPending}
+                disabled={
+                    test.isPending ||
+                    (authentication === 'provided' &&
+                        kind === 'clientCertificate' &&
+                        !certificate.ready)
+                }
                 onClick={() => test.mutate()}
             >
                 {t(
