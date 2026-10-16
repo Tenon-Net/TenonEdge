@@ -43,7 +43,7 @@ internal sealed record RuntimeSnapshotDocument(int SchemaVersion, string Content
         if (RuntimePlanDocument.HashOf(snapshot.Content) != snapshot.ContentHash)
         { throw new RuntimePlanDocumentException("内容哈希不符"); }
         if (snapshot.SchemaVersion == 1)
-        { return (RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(snapshot.Content)), null); }
+        { return (RuntimePlanDocument.ParseStored(Encoding.UTF8.GetBytes(snapshot.Content)), null); }
         if (snapshot.SchemaVersion != 2)
         { throw new RuntimePlanDocumentException($"快照的 schema 版本 {snapshot.SchemaVersion} 不受支持"); }
         try
@@ -51,7 +51,7 @@ internal sealed record RuntimeSnapshotDocument(int SchemaVersion, string Content
             var value = JsonSerializer.Deserialize<Envelope>(snapshot.Content, Json);
             if (value is not { SchemaVersion: 2, Draft: { Version.Length: > 0, Connections: not null, Devices: not null, Inputs: not null, Routes: not null } })
             { throw new RuntimePlanDocumentException("完整配置快照缺少草稿。"); }
-            return (RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes(value.Plan.GetRawText())), value.Draft);
+            return (RuntimePlanDocument.ParseStored(Encoding.UTF8.GetBytes(value.Plan.GetRawText())), value.Draft);
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         { throw new RuntimePlanDocumentException("完整配置快照格式无效。"); }

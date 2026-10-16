@@ -27,6 +27,8 @@ public sealed record MqttOutputSettings : MqttConnectionSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement MappingStages { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement TransformStages { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Payload { get; init; }
     public string[] Inputs { get; init; } = [];
 
@@ -38,6 +40,7 @@ public sealed record MqttOutputSettings : MqttConnectionSettings
         {
             if (settings.Inputs is not { Length: 0 } || settings.Topic != string.Empty || settings.Qos != 1 ||
                 settings.Mapping.ValueKind != JsonValueKind.Undefined || settings.MappingStages.ValueKind != JsonValueKind.Undefined ||
+                settings.TransformStages.ValueKind != JsonValueKind.Undefined ||
                 settings.Payload.ValueKind != JsonValueKind.Undefined)
             { throw new ArgumentException("仅发送冻结队列的 MQTT 目标不能声明输入、主题、QoS、映射或报文格式。"); }
             return settings;

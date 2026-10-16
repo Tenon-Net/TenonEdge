@@ -7,6 +7,7 @@ using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Runtime;
 
@@ -63,12 +64,30 @@ internal sealed class RuntimePlanDocument
     }
 
     /// <summary>解析运行计划文本；内容无效时抛出 <see cref="RuntimePlanDocumentException"/>，说明面向管理员。</summary>
-    public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8)
+    public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8, TransformCatalog? transforms = null) =>
+        ParseCore(utf8, transforms ?? TransformCatalog.BuiltIn);
+
+    // Only the hash-checked persisted snapshot reader (and its queue-only execution view) uses this.
+    // A document read this way is NOT admission: every freeze revalidates against the installed catalog.
+    internal static RuntimePlanDocument ParseStored(ReadOnlySpan<byte> utf8) => ParseCore(utf8, null);
+
+    public void ValidateTransforms(TransformCatalog transforms)
+    {
+        try
+        {
+            foreach (var unit in Units.Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
+            { _ = transforms.ParsePipeline(unit.Configuration); }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { throw new RuntimePlanDocumentException("转换模块未注册、版本不支持或配置无效。"); }
+    }
+
+    private static RuntimePlanDocument ParseCore(ReadOnlySpan<byte> utf8, TransformCatalog? transforms)
     {
         try
         {
             using var document = JsonDocument.Parse(utf8.ToArray(), new JsonDocumentOptions { MaxDepth = 64 });
-            return FromElement(document.RootElement);
+            return FromElement(document.RootElement, transforms);
         }
         catch (JsonException exception)
         {
@@ -80,7 +99,7 @@ internal sealed class RuntimePlanDocument
     public static string HashOf(string canonicalText) =>
         "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalText)));
 
-    private static RuntimePlanDocument FromElement(JsonElement root)
+    private static RuntimePlanDocument FromElement(JsonElement root, TransformCatalog? transforms)
     {
         if (root.ValueKind != JsonValueKind.Object)
         {
@@ -103,7 +122,7 @@ internal sealed class RuntimePlanDocument
         var index = 0;
         foreach (var unit in unitsElement.EnumerateArray())
         {
-            units.Add(ParseUnit(unit, index++));
+            units.Add(ParseUnit(unit, index++, transforms));
         }
 
         RuntimePlan plan;
@@ -183,7 +202,7 @@ internal sealed class RuntimePlanDocument
         { throw new RuntimePlanDocumentException("连接数量超过上限：全部 500 个、Modbus 256 个。"); }
     }
 
-    private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index)
+    private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index, TransformCatalog? transforms)
     {
         if (unit.ValueKind != JsonValueKind.Object)
         {
@@ -216,7 +235,12 @@ internal sealed class RuntimePlanDocument
             }
 
             if (kind.GetString() is "output.http" or "output.mqtt")
-            { FieldMappingConfiguration.ParsePipeline(configuration); }
+            {
+                if (transforms is null)
+                { TransformCatalog.ValidateStoredShape(configuration); }
+                else
+                { _ = transforms.ParsePipeline(configuration); }
+            }
             if (kind.GetString() == "input.mqtt")
             {
                 var settings = MqttInputSettings.Parse(configuration);

@@ -51,7 +51,7 @@ internal static class RuntimeTesting
         Func<DeliveryCacheOptions, DeliveryCacheOptions>? configureCache = null,
         IEnumerable<IOutputAdapterFactory>? outputs = null,
         IEnumerable<IRuntimePlanAdapterProvider>? planAdapters = null,
-        ILogger<RuntimeHost>? logger = null)
+        ILogger<RuntimeHost>? logger = null, TenonEdge.Runtime.Transforms.TransformCatalog? transforms = null)
     {
         time ??= TimeProvider.System;
         return new RuntimeHost(
@@ -63,7 +63,7 @@ internal static class RuntimeTesting
             options ?? new RuntimeOptions { InitialRestartDelay = TimeSpan.FromMilliseconds(50), RestartJitter = 0 },
             logger ?? NullLogger<RuntimeHost>.Instance,
             random: () => 0,
-            outputFactories: outputs, planAdapterProviders: planAdapters);
+            outputFactories: outputs, planAdapterProviders: planAdapters, transforms: transforms);
     }
 }
 

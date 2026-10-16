@@ -22,6 +22,8 @@ public sealed record HttpOutputSettings : HttpRequestSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement MappingStages { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement TransformStages { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public JsonElement Payload { get; init; }
     public string? SuccessPath { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -36,6 +38,7 @@ public sealed record HttpOutputSettings : HttpRequestSettings
             if (settings.Inputs.IsDefault || settings.Inputs.Length != 0 || settings.Path != string.Empty || settings.Headers.Count != 0 ||
                 settings.SuccessPath is not null || settings.SuccessValue.ValueKind != JsonValueKind.Undefined ||
                 settings.Mapping.ValueKind != JsonValueKind.Undefined || settings.MappingStages.ValueKind != JsonValueKind.Undefined ||
+                settings.TransformStages.ValueKind != JsonValueKind.Undefined ||
                 settings.Payload.ValueKind != JsonValueKind.Undefined)
             { throw new ArgumentException("仅发送冻结队列的 HTTP 目标不能声明输入、路径、头、成功规则、映射或报文格式。"); }
             return settings;

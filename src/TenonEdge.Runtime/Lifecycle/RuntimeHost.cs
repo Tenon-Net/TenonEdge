@@ -6,8 +6,8 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
-using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Outputs;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Runtime.Lifecycle;
 
@@ -66,8 +66,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels, transforms)
     {
     }
 
@@ -82,8 +82,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         ILogger<RuntimeHost> logger,
         Func<double>? random,
         IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null)
     {
+        Transforms = transforms ?? TransformCatalog.BuiltIn;
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
         _planAdapterProviders = (planAdapterProviders ?? []).ToArray();
@@ -128,6 +129,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         }
     }
 
+    public TransformCatalog Transforms { get; }
     public DeliveryCache Deliveries => _deliveries;
     public InputChannelLimit InputChannels { get; }
 
@@ -201,7 +203,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
                 var candidateGroup = factory.RecoveryGroup(unit);
                 recoveryGroup = candidateGroup is not null && units.Any(input => input.RecoveryGroup == candidateGroup) ? candidateGroup : null;
-                var mapping = FieldMappingConfiguration.ParsePipeline(unit.Configuration);
+                var mapping = Transforms.ParsePipeline(unit.Configuration);
+                if (mapping?.WorkingReservationBytes > _options.InFlightBytes)
+                { throw new PlanValidationException("转换工作预算超过全局在途预算。"); }
                 var target = factory.Build(unit);
                 if (target.QuiesceWithInputs && recoveryGroup is null)
                 { throw new PlanValidationException("共用输入会话的输出必须声明对应的恢复分组。"); }

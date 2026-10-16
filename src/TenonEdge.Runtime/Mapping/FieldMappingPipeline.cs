@@ -1,55 +1,29 @@
 using System.Collections.Immutable;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Runtime.Mapping;
 
 public sealed record FieldMappingPipelineResult(EdgeMessage? Message, int InvalidFields, int MissingFields, int? FailedStage);
 
-/// <summary>一条路径按图顺序执行映射；只保留相邻阶段的消息，不缓存中间报文或跨消息状态。</summary>
+/// <summary>旧映射预览/调用入口；执行和预算与通用转换路径共用，不维护第二套转换循环。</summary>
 public sealed class FieldMappingPipeline
 {
-    // 首版一条路线最多 50 节点，扣除输入与输出。
-    public const int MaximumStages = 48;
-    private readonly ImmutableArray<FieldMapping> _stages;
-    public ImmutableArray<MappedFieldSchema> Schema => _stages[^1].Schema;
-    // 单阶段工作区之外，多阶段还须保留上一阶段结果；不按阶段数累积。
-    public long WorkingReservationBytes => FieldMapping.WorkingReservationBytes + (_stages.Length > 1 ? FieldMapping.MaximumResultBytes : 0);
+    public const int MaximumStages = TransformPipeline.MaximumStages;
+    private readonly TransformPipeline _pipeline;
+    public ImmutableArray<MappedFieldSchema> Schema { get; }
+    public long WorkingReservationBytes => _pipeline.WorkingReservationBytes;
 
     public FieldMappingPipeline(IEnumerable<FieldMapping> stages)
     {
         ArgumentNullException.ThrowIfNull(stages);
-        var builder = ImmutableArray.CreateBuilder<FieldMapping>();
-        foreach (var stage in stages)
-        {
-            ArgumentNullException.ThrowIfNull(stage);
-            if (builder.Count == MaximumStages)
-            { throw new ArgumentException("单路径最多 48 个映射阶段。", nameof(stages)); }
-            builder.Add(stage);
-        }
-        if (builder.Count == 0)
-        { throw new ArgumentException("映射路径至少包含一个阶段。", nameof(stages)); }
-        _stages = builder.ToImmutable();
+        _pipeline = new(stages.Select(stage => new FieldMappingTransform(stage ?? throw new ArgumentException("映射阶段不能为空。", nameof(stages)))));
+        Schema = _pipeline.Schema.Select(field => new MappedFieldSchema(field.Key, field.Type, field.Unit)).ToImmutableArray();
     }
 
     public FieldMappingPipelineResult Apply(EdgeMessage source)
     {
-        ArgumentNullException.ThrowIfNull(source);
-        var invalid = 0;
-        var missing = 0;
-        for (var index = 0; index < _stages.Length; index++)
-        {
-            var result = _stages[index].Apply(source);
-            foreach (var issue in result.Issues)
-            {
-                if (issue.Reason is null)
-                { missing++; }
-                else
-                { invalid++; }
-            }
-            if (result.Message is null)
-            { return new(null, invalid, missing, index); }
-            source = result.Message;
-        }
-        return new(source, invalid, missing, null);
+        var result = _pipeline.Apply(source);
+        return new(result.Message, result.InvalidFields, result.MissingFields, result.FailedStage);
     }
 }

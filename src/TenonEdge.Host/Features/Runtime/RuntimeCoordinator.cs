@@ -255,6 +255,14 @@ internal sealed partial class RuntimeCoordinator(
             return StartupDecision.Fail($"有效配置 r{effectiveRevision} 已损坏，不启动输入：{problem}。请回滚或从备份恢复。");
         }
 
+        try
+        { document!.ValidateTransforms(runtime.Transforms); }
+        catch (RuntimePlanDocumentException)
+        {
+            await DisposeAsync(seeded);
+            return StartupDecision.Fail("有效配置需要的转换模块不可用或配置无效；请检查编译期模块，不启动输入，也不把历史快照当作空配置。");
+        }
+
         var previous = pointers.PreviousRevision is { } previousRevision ? versions.Load(previousRevision) : null;
         var protection = StartupProtection.Decide(effective, previous);
         switch (protection.Action)
@@ -286,6 +294,11 @@ internal sealed partial class RuntimeCoordinator(
         {
             return StartupDecision.Fail($"{reason}但上一生效版本 r{target.Revision} 的快照已损坏：{problem}。");
         }
+
+        try
+        { document.ValidateTransforms(runtime.Transforms); }
+        catch (RuntimePlanDocumentException)
+        { return StartupDecision.Fail("上一版本需要的转换模块不可用或配置无效，不能自动回滚。"); }
 
         var interrupted = versions.CountInterrupted(RuntimeSnapshotOrigins.AutoRollback, target.ContentHash, Target(target.Revision));
         if (interrupted >= StartupProtection.AbnormalExitLimit)
@@ -335,7 +348,7 @@ internal sealed partial class RuntimeCoordinator(
                 throw new RuntimePlanDocumentException($"文件超过 {RuntimePlanDocument.MaximumBytes / 1024 / 1024} MiB。");
             }
 
-            document = RuntimePlanDocument.Parse(await File.ReadAllBytesAsync(path));
+            document = RuntimePlanDocument.Parse(await File.ReadAllBytesAsync(path), runtime.Transforms);
             if (versions.ReadPointers().SeedHash != document.ContentHash)
             { versions.CheckNewPlanLimits(document); }
         }

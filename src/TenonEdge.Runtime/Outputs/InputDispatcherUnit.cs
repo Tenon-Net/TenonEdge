@@ -4,7 +4,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
-using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Runtime.Outputs;
 
@@ -21,7 +21,7 @@ internal sealed class InputDispatcherState
 internal sealed class InputDispatcherUnit(
     RuntimeUnitId inputId, ChannelReader<EdgeMessage> input, IReadOnlyList<IOutputTarget> targets,
     InputDispatcherState state, long revision, DeliveryCache deliveries,
-    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null,
+    TimeProvider time, IRuntimeEventSink events, BudgetedInputChannel? budgetedChannel = null, IReadOnlyDictionary<RuntimeUnitId, TransformPipeline>? mappings = null,
     RuntimeMessageCache? messages = null, IReadOnlyDictionary<RuntimeUnitId, RuntimeUnitId>? diagnosticObjects = null) : IRuntimeUnit
 {
     public RuntimeUnitId Id { get; } = RuntimeUnitId.Create("delivery.dispatcher", inputId.Key);

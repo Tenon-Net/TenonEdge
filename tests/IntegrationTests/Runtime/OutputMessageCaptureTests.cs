@@ -7,8 +7,8 @@ using TenonEdge.Abstractions.Plans;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
-using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Outputs;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
@@ -65,10 +65,10 @@ public sealed class OutputMessageCaptureTests
         var missing = new Target("missing", 1);
         var format = new Target("format", 2, rejectFormat: true);
         var accepted = new Target("accepted", 3);
-        var mappings = new Dictionary<RuntimeUnitId, FieldMappingPipeline>
+        var mappings = new Dictionary<RuntimeUnitId, TransformPipeline>
         {
-            [missing.Id] = new([new([new("required", FieldType.Integer, SourceField: "absent", Required: true)])]),
-            [accepted.Id] = new([new([new("exact", FieldType.Integer, SourceField: "value"), new("optional", FieldType.String, SourceField: "absent")])]),
+            [missing.Id] = new([new FieldMappingTransform(new([new("required", FieldType.Integer, SourceField: "absent", Required: true)]))]),
+            [accepted.Id] = new([new FieldMappingTransform(new([new("exact", FieldType.Integer, SourceField: "value"), new("optional", FieldType.String, SourceField: "absent")]))]),
         };
         await Dispatch(runtime.Deliveries, runtime.Messages, Message(), [missing, format, accepted], mappings);
         var missingRecord = Assert.Single(runtime.Messages.Read(missing.Id, true));
@@ -211,7 +211,7 @@ public sealed class OutputMessageCaptureTests
     }
 
     private static async Task Dispatch(DeliveryCache deliveries, RuntimeMessageCache messages, EdgeMessage source,
-        IReadOnlyList<IOutputTarget> targets, IReadOnlyDictionary<RuntimeUnitId, FieldMappingPipeline>? mappings = null)
+        IReadOnlyList<IOutputTarget> targets, IReadOnlyDictionary<RuntimeUnitId, TransformPipeline>? mappings = null)
     {
         var channel = Channel.CreateBounded<EdgeMessage>(1);
         var state = new InputDispatcherState();

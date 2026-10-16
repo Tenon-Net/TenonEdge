@@ -40,7 +40,7 @@ internal static partial class RoutePlanCompiler
             }, RouteSourceCompiler.Json);
             if (bytes.LongLength > RuntimePlanDocument.MaximumBytes)
             { throw new RuntimePlanDocumentException("发送接续后的运行计划超过 16 MiB。"); }
-            return RuntimePlanDocument.Parse(bytes);
+            return RuntimePlanDocument.ParseStored(bytes);
         }
         catch (Exception error) when (error is RouteTopologyException || ConfigurationError(error))
         { throw new RuntimePlanDocumentException("完整配置中的发送接续参数无效。"); }

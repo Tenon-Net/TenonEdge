@@ -23,6 +23,7 @@ internal sealed partial class RuntimeVersionStore
         var plan = RuntimeSnapshotDocument.ReadExecutionPlan(snapshot);
         if (plan.ContentHash != expectedPlanHash)
         { throw new DraftWriteException("configuration.reviewChanged"); }
+        plan.ValidateTransforms(transforms);
         return new(snapshot, plan);
     }
 

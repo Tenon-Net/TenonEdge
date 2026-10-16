@@ -17,7 +17,7 @@ using TenonEdge.Runtime.Deliveries;
 namespace TenonEdge.IntegrationTests.Runtime;
 
 [Trait("Category", "RealBroker")]
-public sealed class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
+public sealed partial class MqttOutputTests(MosquittoBrokerFixture fixture) : IClassFixture<MosquittoBrokerFixture>
 {
     [Theory]
     [InlineData(0, "envelope")]
