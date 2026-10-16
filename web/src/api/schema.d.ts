@@ -3547,6 +3547,7 @@ export interface components {
             password?: null | string;
             /** Format: int64 */
             connectionId?: null | number | string;
+            certificate?: null | components["schemas"]["ClientCertificateUpload"];
         };
         MqttConnectionTestResult: {
             success: boolean;
@@ -3558,6 +3559,8 @@ export interface components {
             steps: components["schemas"]["ConnectionTestStep"][];
             certificate?: null | components["schemas"]["ServerCertificateInfo"];
         };
+        /** @enum {unknown} */
+        MqttCredentialKind: "password" | "clientCertificate" | null;
         MqttCredentialMetadata: {
             /** Format: int64 */
             connectionId: number | string;
@@ -3576,6 +3579,8 @@ export interface components {
             /** @default false */
             retainExisting: boolean;
             expectedDraftVersion?: null | string;
+            kind?: null | components["schemas"]["MqttCredentialKind"];
+            certificate?: null | components["schemas"]["ClientCertificateUpload"];
         };
         MqttReadPreviewRequest: {
             expectedVersion: string;
@@ -10789,6 +10794,15 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

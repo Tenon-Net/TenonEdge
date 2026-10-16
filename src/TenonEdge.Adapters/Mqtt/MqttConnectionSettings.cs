@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using TenonEdge.Abstractions.Contracts;
 
 namespace TenonEdge.Adapters.Mqtt;
 
@@ -60,6 +61,12 @@ public record MqttConnectionSettings
         PingIntervalMs,
         ClientId = clientId,
     });
+
+    // 保留密码/匿名的旧字节布局；证书用独立类型域，不让相同主题与用户名碰撞。
+    public string Fingerprint(MqttCredentialIdentity? identity) => identity?.Kind == MqttCredentialKind.ClientCertificate
+        ? "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+            new[] { Recipient, "clientCertificate", identity.CertificateSubject, identity.AccountMarker }))))
+        : Fingerprint(identity?.Username, identity?.AccountMarker);
 
     public string Fingerprint(string? username, string? accountMarker) => "sha256:" + Convert.ToHexStringLower(
         SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new[] { Recipient, username ?? "", accountMarker ?? "" }))));

@@ -18,10 +18,12 @@ public sealed class MqttTestMessageSenderTests(MosquittoBrokerFixture fixture) :
         new("{\"value\":9223372036854775807}"u8.ToArray(), topic, qos, settings.Fingerprint(credential?.Username, credential?.AccountMarker), "test");
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
     [Trait("Category", "RealBroker")]
-    public async Task SendsExactlyOneFrozenMessageWithoutReplacingTheProductionClientId(int qos)
+    public async Task SendsExactlyOneFrozenMessageWithoutReplacingTheProductionClientId(int qos, bool snapshotRequiresCredential)
     {
         var broker = fixture.Require();
         var topic = MqttProbe.NewTopic("test-message");
@@ -31,7 +33,7 @@ public sealed class MqttTestMessageSenderTests(MosquittoBrokerFixture fixture) :
         {
             var received = ReceivedMessages.Attach(subscriber);
             await MqttProbe.SubscribeAsync(subscriber, topic, Token);
-            var settings = new MqttConnectionSettings { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, ClientId = clientId, UsePassword = true };
+            var settings = new MqttConnectionSettings { ConnectionId = 1, Host = "127.0.0.1", Port = broker.Port, ClientId = clientId, UsePassword = snapshotRequiresCredential };
             var connector = new Connector();
             var message = Message(settings, topic, qos, Credential);
             var result = await new MqttTestMessageSender(connector, TimeProvider.System).SendAsync(settings, Credential, message, Token);
@@ -123,7 +125,7 @@ public sealed class MqttTestMessageSenderTests(MosquittoBrokerFixture fixture) :
             _ => message,
         };
         await Assert.ThrowsAsync<ArgumentException>(() => new MqttTestMessageSender(connector, TimeProvider.System)
-            .SendAsync(settings, scenario == "credential" ? Credential : null, message, Token));
+            .SendAsync(settings, scenario == "credential" ? Credential with { Username = "" } : null, message, Token));
         Assert.Equal(0, connector.Calls);
     }
 

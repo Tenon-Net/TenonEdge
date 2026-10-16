@@ -22,20 +22,19 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings = settings.ValidateConnection();
-        if (settings.UsePassword != (credential is not null))
+        if (settings.UsePassword && credential is null)
         { throw new ArgumentException("测试认证方式与凭证不一致。"); }
-        if (credential is not null && (string.IsNullOrEmpty(credential.Username) || credential.Username.Length > 256 ||
-            credential.Password is null || credential.Password.Length > 4096 || credential.Username.Contains('\0', StringComparison.Ordinal) ||
-            credential.Password.Contains('\0', StringComparison.Ordinal)))
-        { throw new ArgumentException("测试凭证格式无效。"); }
+        if (credential is not null)
+        { MqttCredentialValidation.Validate(credential, settings.Tls); }
         cancellationToken.ThrowIfCancellationRequested();
         var started = time.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.TimeoutMs), time);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var trace = new ConnectionTestTrace(time, settings.Tls);
         var snapshot = settings.Tls ? trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) : null;
+        using var clientCertificate = MqttCredentialValidation.OpenCertificate(credential, time.GetUtcNow());
         using var client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(() => { }, AdmitFrame,
-            connected: () => trace.Begin("protocol")));
+            connected: () => trace.Begin("protocol"), clientCertificate: clientCertificate));
         var options = new MqttClientOptionsBuilder()
             .WithTcpServer(settings.Host, settings.Port)
             .WithStreamProvider(new MqttStreamProvider(new ObservedTestConnector(connector, trace)))
@@ -44,7 +43,7 @@ public sealed class MqttConnectionTest(IOutboundConnector connector, TimeProvide
             .WithClientId("te-test-" + Guid.NewGuid().ToString("N"))
             .WithKeepAlivePeriod(TimeSpan.Zero)
             .WithTimeout(TimeSpan.FromMilliseconds(settings.TimeoutMs));
-        if (credential is not null)
+        if (credential?.Kind == MqttCredentialKind.Password)
         { options.WithCredentials(credential.Username, credential.Password); }
         string? certificateFailure = null;
         ServerCertificateInfo? serverCertificate = null;

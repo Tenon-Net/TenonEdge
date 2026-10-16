@@ -10,6 +10,15 @@ public interface ICredentialResolver
 }
 
 /// <summary>只在准备与发送时取得的值对象；不写入运行快照或发送记录。</summary>
-public sealed record MqttCredential(string Username, string Password, string AccountMarker, string Version);
+public enum MqttCredentialKind { Password, ClientCertificate }
 
-public sealed record MqttCredentialIdentity(string Username, string AccountMarker, string Version);
+// Password 保留旧契约名称；证书类型存的是内部规范 PKCS#12 Base64，绝不能作为 CONNECT 密码发送。
+public sealed record MqttCredential(string Username, string Password, string AccountMarker, string Version,
+    MqttCredentialKind Kind = MqttCredentialKind.Password, string? CertificateSubject = null)
+{
+    public MqttCredentialIdentity Identity => new(Username, AccountMarker, Version, Kind, CertificateSubject);
+    public override string ToString() => "MQTT credential (private material omitted)";
+}
+
+public sealed record MqttCredentialIdentity(string Username, string AccountMarker, string Version,
+    MqttCredentialKind Kind = MqttCredentialKind.Password, string? CertificateSubject = null);

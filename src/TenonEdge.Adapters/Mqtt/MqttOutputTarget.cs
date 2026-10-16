@@ -24,15 +24,15 @@ internal sealed class MqttOutputTarget(
         get
         {
             var identity = Identity();
-            return settings.Fingerprint(identity?.Username, identity?.AccountMarker);
+            return settings.Fingerprint(identity);
         }
     }
-    private MqttCredentialIdentity? Identity() => settings.UsePassword ? credentials.DescribeMqtt(ConnectionId) : null;
+    private MqttCredentialIdentity? Identity() => credentials.DescribeMqtt(ConnectionId);
 
     public OutputTargetIdentity CaptureIdentity()
     {
         var identity = Identity();
-        return new(settings.Fingerprint(identity?.Username, identity?.AccountMarker),
+        return new(settings.Fingerprint(identity),
             OutputRecipientIdentity.Mqtt(Recipient, settings.UsePassword, identity));
     }
 

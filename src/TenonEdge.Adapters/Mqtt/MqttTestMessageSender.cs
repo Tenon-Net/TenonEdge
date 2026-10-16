@@ -16,10 +16,10 @@ public sealed class MqttTestMessageSender(IOutboundConnector connector, TimeProv
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(message);
         settings = settings.ValidateConnection();
-        if (settings.UsePassword != (credential is not null) || credential is not null &&
-            (string.IsNullOrEmpty(credential.Username) || credential.Username.Length > 256 || credential.Username.Contains('\0', StringComparison.Ordinal) ||
-             credential.Password is null || credential.Password.Length > 4096 || credential.Password.Contains('\0', StringComparison.Ordinal)))
+        if (settings.UsePassword && credential is null)
         { throw new ArgumentException("测试凭证与连接要求不一致。"); }
+        if (credential is not null)
+        { MqttCredentialValidation.Validate(credential, settings.Tls); }
         MqttOutputSettings.ValidateTopic(message.Address);
         if (message.QualityOfService is not (0 or 1) || message.Payload.IsEmpty || message.Payload.Length > StandardEnvelope.MaximumPayloadBytes ||
             message.Headers is { Count: > 0 } || message.ProtocolMetadata is not null)
@@ -55,7 +55,7 @@ public sealed class MqttTestMessageSender(IOutboundConnector connector, TimeProv
     private sealed class SnapshotCredential(long id, string recipient, MqttCredential? value) : ICredentialResolver
     {
         public MqttCredentialIdentity? DescribeMqtt(long connectionId) => connectionId == id && value is not null
-            ? new(value.Username, value.AccountMarker, value.Version) : null;
+            ? value.Identity : null;
         public MqttCredential? ResolveMqtt(long connectionId, string expectedRecipient) => connectionId == id && expectedRecipient == recipient ? value : null;
     }
 }

@@ -75,11 +75,10 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
         var started = time.GetTimestamp();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs), time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        if (!settings.UsePassword && credentials.DescribeMqtt(settings.ConnectionId) is not null)
-        { return Failure("credential.changed"); }
-        var credential = settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) : null;
-        if (settings.UsePassword && credential is null)
-        { return Failure("credential.unavailable"); }
+        MqttCredential? credential;
+        try
+        { credential = MqttCredentialValidation.Resolve(settings, credentials); }
+        catch (ArgumentException) { return Failure("credential.unavailable"); }
         IConnectionLease<Capture> lease;
         try
         { lease = connections.AcquireDiagnostic("mqtt-preview", () => new Capture()); }
@@ -98,8 +97,9 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                     if (reason is "bufferFull" or "bufferFailed")
                     { received.TrySetResult(Failure("buffer.unavailable")); }
                 }, time);
+                capture.Certificate = MqttCredentialValidation.OpenCertificate(credential, time.GetUtcNow());
                 capture.Client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => { Volatile.Write(ref wireFailure, "payload.tooLarge"); }, receiveBuffer: capture.Buffer));
+                    () => { Volatile.Write(ref wireFailure, "payload.tooLarge"); }, receiveBuffer: capture.Buffer, clientCertificate: capture.Certificate));
                 var client = capture.Client;
                 client.DisconnectedAsync += _ =>
                 {
@@ -111,7 +111,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                     .WithClientId("te-sample-" + Guid.NewGuid().ToString("N")).WithCleanSession()
                     .WithKeepAlivePeriod(TimeSpan.FromMilliseconds(settings.PingIntervalMs))
                     .WithTimeout(TimeSpan.FromMilliseconds(settings.TimeoutMs));
-                if (credential is not null)
+                if (credential?.Kind == MqttCredentialKind.Password)
                 { options.WithCredentials(credential.Username, credential.Password); }
                 if (settings.Tls)
                 {
@@ -136,7 +136,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                 return CredentialUnchanged() ? result : Failure("credential.changed");
 
                 bool CredentialUnchanged() => (!settings.Tls || trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) == snapshot) &&
-                    (settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient)?.Version == credential!.Version
+                    (credential is not null ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient)?.Identity == credential.Identity
                         : credentials.DescribeMqtt(settings.ConnectionId) is null);
 
                 async Task Receive(MqttApplicationMessageReceivedEventArgs args, CancellationToken lifetime)
@@ -178,6 +178,7 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
                 }
             }, operation.Token);
         }
+        catch (ArgumentException) { return Failure("credential.unavailable"); }
         catch (Exception exception) when (exception is OperationCanceledException or IOException or SocketException or AuthenticationException or MqttCommunicationException or MqttProtocolViolationException)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -200,14 +201,19 @@ public sealed class MqttReadPreview(ISharedConnections connections, IOutboundCon
 
     private sealed class Capture : IAsyncDisposable
     {
+        internal TlsClientCertificate? Certificate { get; set; }
         internal IMqttClient? Client { get; set; }
         internal MqttReceiveBuffer? Buffer { get; set; }
         public async ValueTask DisposeAsync()
         {
-            Client?.Dispose();
-            Buffer?.Dispose();
-            if (Buffer is not null)
-            { await Buffer.Completion; }
+            try
+            {
+                Client?.Dispose();
+                Buffer?.Dispose();
+                if (Buffer is not null)
+                { await Buffer.Completion; }
+            }
+            finally { Certificate?.Dispose(); }
         }
     }
 }

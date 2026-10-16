@@ -37,10 +37,11 @@ internal sealed class RouteTestSendService(RouteTestSendArtifacts artifacts, Con
         var mqtt = MqttOutputSettings.Parse(artifact.Configuration);
         CheckDraft(artifact, mqtt.ConnectionId);
         var account = mqttCredentials.DescribeMqtt(mqtt.ConnectionId);
-        if (mqtt.UsePassword != (account is not null))
+        if (mqtt.UsePassword && account is null)
         { throw Changed(); }
         return artifacts.Prepare(id, owner, artifact, mqtt.ConnectionId, mqtt.Recipient,
-            account is null ? "none" : "password", account?.Username, null, account);
+            account?.Kind == MqttCredentialKind.ClientCertificate ? "clientcertificate" : account is null ? "none" : "password",
+            account?.Kind == MqttCredentialKind.ClientCertificate ? account.CertificateSubject : account?.Username, null, account);
     }
 
     internal async Task<RouteTestSendResult> ConfirmAsync(Guid id, Guid confirmationId, bool confirmed, string owner,
@@ -78,14 +79,13 @@ internal sealed class RouteTestSendService(RouteTestSendArtifacts artifacts, Con
             {
                 mqtt = MqttOutputSettings.Parse(artifact.Configuration);
                 var identity = mqttCredentials.DescribeMqtt(mqtt.ConnectionId);
-                if (identity != selected.MqttIdentity || mqtt.UsePassword != (identity is not null))
+                if (identity != selected.MqttIdentity || mqtt.UsePassword && identity is null)
                 { throw Changed(); }
                 mqttCredential = identity is null ? null : mqttCredentials.ResolveMqtt(mqtt.ConnectionId, mqtt.Recipient);
-                if (identity is not null && (mqttCredential is null || mqttCredential.Version != identity.Version ||
-                    mqttCredential.Username != identity.Username || mqttCredential.AccountMarker != identity.AccountMarker))
+                if (identity is not null && mqttCredential?.Identity != identity)
                 { throw Changed(); }
                 message = new(artifact.Payload, artifact.Output.Address, artifact.Output.Qos,
-                    mqtt.Fingerprint(identity?.Username, identity?.AccountMarker), "test-send");
+                    mqtt.Fingerprint(identity), "test-send");
             }
 
             // 审计开始记录必须先持久成功，否则不发送；同时复核操作者、草稿与凭证版本。

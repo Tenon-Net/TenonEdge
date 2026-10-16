@@ -22,7 +22,7 @@ internal sealed class MqttCredentialStore(
     {
         using var client = database.CreateIsolatedClient();
         var record = client.Queryable<MqttCredentialRecord>().InSingle(connectionId);
-        return record is null ? null : new MqttCredentialIdentity(record.Username, record.AccountMarker, record.Version);
+        return record is null ? null : Identity(record);
     }
 
     public MqttCredential? ResolveMqtt(long connectionId, string recipient)
@@ -36,7 +36,7 @@ internal sealed class MqttCredentialStore(
 
         try
         {
-            return new MqttCredential(record.Username, Protector(connectionId).Unprotect(record.ProtectedPassword), record.AccountMarker, record.Version);
+            return new MqttCredential(record.Username, Protector(connectionId).Unprotect(record.ProtectedPassword), record.AccountMarker, record.Version, (MqttCredentialKind)record.Kind, record.CertificateSubject);
         }
         catch (CryptographicException)
         {
@@ -64,20 +64,29 @@ internal sealed class MqttCredentialStore(
             throw new CredentialWriteException("credential.administratorRequired");
         }
 
-        if (request.Password is { Length: > 4096 } || request.Password?.Contains('\0', StringComparison.Ordinal) == true || request.Username is { Length: > 256 } || request.Username?.Contains('\0', StringComparison.Ordinal) == true)
+        string? certificateSubject = null;
+        if (request.Certificate is not null || request.Kind == MqttCredentialKind.ClientCertificate)
         {
-            throw new ArgumentException("用户名或密码超出长度限制或包含空字符。");
+            if (request.Kind != MqttCredentialKind.ClientCertificate || request.Certificate is null || request.Password is not null ||
+                request.Username is not null || request.RetainExisting || !recipient.StartsWith("mqtts://", StringComparison.Ordinal))
+            { throw new ArgumentException("客户端证书仅用于 MQTT TLS，须单独提交证书材料，不可混用账号密码。"); }
+            using var material = request.Certificate.Open(time.GetUtcNow());
+            certificateSubject = material.Info.Subject;
+            var data = material.ExportPkcs12();
+            try
+            { request = request with { Password = Convert.ToBase64String(data), Username = string.Empty, Certificate = null }; }
+            finally { CryptographicOperations.ZeroMemory(data); }
         }
-
-        if (request.Password is not null && (request.RetainExisting || string.IsNullOrEmpty(request.Username)))
+        if (request.Password is not null)
         {
-            throw new ArgumentException("填写密码时须填写用户名，不能同时选择保留旧凭证。");
+            if (request.RetainExisting)
+            { throw new ArgumentException("填写新凭证时不能同时保留旧凭证。"); }
+            request = request with { Kind = request.Kind ?? MqttCredentialKind.Password };
+            MqttCredentialValidation.Validate(new(request.Username!, request.Password, "validation", "validation", request.Kind.Value, certificateSubject),
+                recipient.StartsWith("mqtts://", StringComparison.Ordinal));
         }
-
-        if (request.Password is null && request.AccountChanged is not null)
-        {
-            throw new ArgumentException("账户变更声明须与新凭证一起提交。");
-        }
+        else if (request.Kind is not null || request.Username is not null || request.AccountChanged is not null)
+        { throw new ArgumentException("认证类型、用户名和账户变更声明须与新凭证一起提交。"); }
 
         // 先阻止本连接的新冻结，等已有发布得到写者结果；此时还没有打开配置事务。
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5), time);
@@ -111,12 +120,15 @@ internal sealed class MqttCredentialStore(
                 throw new ArgumentException("保留操作仅可更改接收方绑定，且原凭证须可用。");
             }
 
+            if (request.RetainExisting && record?.Kind == (int)MqttCredentialKind.ClientCertificate && !recipient.StartsWith("mqtts://", StringComparison.Ordinal))
+            { throw new ArgumentException("客户端证书不能保留到明文 MQTT 地址。"); }
             if (record is null && request.Password is null)
             {
                 throw new ArgumentException("首次写入须填写用户名和密码。");
             }
 
-            if (request.Password is not null && record is not null && hasPending && record.Username == request.Username && request.AccountChanged is null)
+            if (request.Password is not null && record is not null && hasPending && record.Kind == (int)request.Kind!.Value &&
+                (request.Kind == MqttCredentialKind.ClientCertificate ? record.CertificateSubject == certificateSubject : record.Username == request.Username) && request.AccountChanged is null)
             {
                 throw new CredentialWriteException("credential.accountDeclarationRequired");
             }
@@ -136,6 +148,8 @@ internal sealed class MqttCredentialStore(
 
             if (request.Password is not null)
             {
+                record.Kind = (int)request.Kind!.Value;
+                record.CertificateSubject = certificateSubject;
                 record.Username = request.Username!;
                 record.ProtectedPassword = Protector(connectionId).Protect(request.Password);
                 if (request.AccountChanged == true)
@@ -215,11 +229,12 @@ internal sealed class MqttCredentialStore(
     }
 
     private IDataProtector Protector(long connectionId) => protection.CreateProtector(SecretProtection.Purposes.MqttCredential, connectionId.ToString(CultureInfo.InvariantCulture));
+    private static MqttCredentialIdentity Identity(MqttCredentialRecord record) => new(record.Username, record.AccountMarker, record.Version, (MqttCredentialKind)record.Kind, record.CertificateSubject);
     private static MqttCredentialMetadata Metadata(MqttCredentialRecord record) => new(record.ConnectionId, record.Recipient, record.Version, record.ProtectedPassword is not null, DateTimeOffset.FromUnixTimeMilliseconds(record.UpdatedAt));
 }
 
 internal sealed record MqttCredentialRequest(string Recipient, string? Username = null, string? Password = null,
-    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false, string? ExpectedDraftVersion = null)
+    string? ExpectedVersion = null, bool? AccountChanged = null, bool RetainExisting = false, string? ExpectedDraftVersion = null, MqttCredentialKind? Kind = null, ClientCertificateUpload? Certificate = null)
 {
     public override string ToString() => "MQTT credential write request (secret omitted)";
 }

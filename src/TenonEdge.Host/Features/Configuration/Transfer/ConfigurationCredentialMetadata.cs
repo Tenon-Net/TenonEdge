@@ -10,8 +10,9 @@ internal sealed record ConfigurationCredentialMetadata(long ConnectionId, Connec
     string Version, string AccountIdentity, bool HasSecret)
 {
     public static ConfigurationCredentialMetadata[] Read(SqlSugarClient client) => client.Ado.SqlQuery<CredentialProjection>("""
-        SELECT c.connection_id AS ConnectionId, 'mqtt' AS Protocol, c.username AS Username,
-               NULL AS Kind, c.account_marker AS AccountMarker, c.recipient AS Recipient,
+        SELECT c.connection_id AS ConnectionId, 'mqtt' AS Protocol,
+               CASE WHEN c.kind = 1 THEN c.certificate_subject ELSE c.username END AS Username,
+               CASE WHEN c.kind = 0 THEN NULL ELSE c.kind END AS Kind, c.account_marker AS AccountMarker, c.recipient AS Recipient,
                c.version AS Version, (c.protected_password IS NOT NULL) AS HasSecret
         FROM mqtt_credential c INNER JOIN connection_draft d ON d.id = c.connection_id
         UNION ALL

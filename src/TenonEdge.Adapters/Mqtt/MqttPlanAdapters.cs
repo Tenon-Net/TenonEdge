@@ -70,8 +70,7 @@ internal sealed class MqttPlanAdapters
         }
         var settings = MqttInputSettings.Parse(plan.Configuration);
         var decoder = _decoders.Build(settings.Fields, settings.UpstreamTime);
-        if (settings.UsePassword && _credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) is null)
-        { throw new ArgumentException("MQTT 输入凭证未设置或已失效。"); }
+        _ = MqttCredentialValidation.Resolve(settings, _credentials);
         var clientId = settings.ClientId ?? $"{_clientPrefix}-{settings.ConnectionId}";
         if (!_connections.TryGetValue(settings.ConnectionId, out var connection))
         {

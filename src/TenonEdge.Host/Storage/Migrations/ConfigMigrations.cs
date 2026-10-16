@@ -436,5 +436,13 @@ internal static class ConfigMigrations
             "DROP TABLE http_credential",
             "ALTER TABLE http_credential_v32 RENAME TO http_credential",
         ]),
+        new(33, "mqtt_client_certificate_identity", [
+            "ALTER TABLE mqtt_credential ADD COLUMN kind INTEGER NOT NULL DEFAULT 0 CHECK (kind IN (0, 1))",
+            """
+            ALTER TABLE mqtt_credential ADD COLUMN certificate_subject TEXT
+                CHECK ((kind = 0 AND certificate_subject IS NULL) OR
+                    (kind = 1 AND certificate_subject IS NOT NULL AND length(certificate_subject) BETWEEN 1 AND 1024 AND username = ''))
+            """,
+        ]),
     ];
 }

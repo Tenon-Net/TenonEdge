@@ -21,7 +21,10 @@ public sealed record OutputRecipientIdentity(string Protocol, string Address, st
     };
 
     public static OutputRecipientIdentity Mqtt(string address, bool usePassword, MqttCredentialIdentity? identity) =>
-        new("mqtt", address, usePassword ? "password" : "anonymous", usePassword ? identity?.Username : null,
+        identity?.Kind == MqttCredentialKind.ClientCertificate
+        ? new("mqtt", address, "ClientCertificate", identity.CertificateSubject, identity.CertificateSubject is not null,
+            identity.CertificateSubject, identity.CertificateSubject is not null)
+        : new("mqtt", address, usePassword || identity is not null ? "password" : "anonymous", identity?.Username,
             !usePassword || identity is not null, null, true);
 
     public static OutputRecipientIdentity Http(string address, HttpCredentialIdentity? identity) =>
@@ -117,7 +120,9 @@ public sealed record OutputRecipientIdentity(string Protocol, string Address, st
         return Protocol switch
         {
             "mqtt" => uri.Scheme is "mqtt" or "mqtts" && uri.Port > 0 && uri.AbsolutePath is "" or "/" &&
-                (Authentication == "password" && (!AccountRecorded || Account is not null) || Authentication == "anonymous" && AccountRecorded && Account is null),
+                (Authentication == "password" && (!AccountRecorded || Account is not null) || Authentication == "anonymous" && AccountRecorded && Account is null ||
+                    Authentication == "ClientCertificate" && uri.Scheme == "mqtts" && AccountRecorded && ClientCertificateRecorded &&
+                    !string.IsNullOrWhiteSpace(ClientCertificateSubject) && Account == ClientCertificateSubject),
             "http" => uri.Scheme is "http" or "https" &&
                 (Authentication == "Basic" && (!AccountRecorded || Account is not null) ||
                     Authentication == "ClientCertificate" && AccountRecorded && ClientCertificateRecorded &&

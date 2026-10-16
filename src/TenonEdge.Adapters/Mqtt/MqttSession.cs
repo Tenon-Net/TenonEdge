@@ -13,6 +13,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
     Func<CancellationToken, Task>? waitForActivation = null, ITlsTrustResolver? trust = null) : IOutputAdapter
 {
     private IMqttClient? _client;
+    private TlsClientCertificate? _clientCertificate;
     private MqttReceiveBuffer? _receiveBuffer;
     private readonly CancellationTokenSource _outboundStop = new();
     private string? _connectedVersion;
@@ -45,21 +46,14 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
         cancellationToken.ThrowIfCancellationRequested();
         if (Volatile.Read(ref _inputFailed) != 0)
         { Reset(); }
-        var credential = Credential();
-        if (settings.UsePassword && credential is null)
-        {
-            Reset();
-            return new(OutputSendStatus.SuspendTarget, "MQTT 凭证未设置、已作废或无法解密。");
-        }
-
-        if (message is not null && !string.Equals(message.Fingerprint, settings.Fingerprint(credential?.Username, credential?.AccountMarker), StringComparison.Ordinal))
-        {
-            Reset();
-            return new(OutputSendStatus.SuspendTarget, "接收方身份已变化，已停止发送旧记录。", FingerprintMismatch: true);
-        }
-
         try
         {
+            var credential = Credential();
+            if (message is not null && !string.Equals(message.Fingerprint, settings.Fingerprint(credential?.Identity), StringComparison.Ordinal))
+            {
+                Reset();
+                return new(OutputSendStatus.SuspendTarget, "接收方身份已变化，已停止发送旧记录。", FingerprintMismatch: true);
+            }
             var version = credential?.Version ?? "anonymous";
             var snapshot = ResolveTrust();
             if (_connectedVersion != version || _connectedTrust != snapshot)
@@ -72,6 +66,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 // IsConnected=false 也可能仍在异步 DisconnectCore 中；旧对象不能再次 Connect。
                 // 用新的客户端代次重连，保留接收器中的持久订阅状态和实际 ClientId。
                 Reset();
+                _clientCertificate = MqttCredentialValidation.OpenCertificate(credential, time.GetUtcNow());
                 IMqttClient? client = null;
                 Func<MqttApplicationMessageReceivedEventArgs, CancellationToken, Task>? receive = null;
                 if (input is not null)
@@ -98,7 +93,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     { _receiveBuffer = new MqttReceiveBuffer(input.BufferBudget, 100, receive, input.ReportBuffer, time); }
                 }
                 client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
-                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer));
+                    () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer, clientCertificate: _clientCertificate));
                 _client = client;
                 if (_receiveBuffer is null && receive is not null)
                 { client.ApplicationMessageReceivedAsync += args => receive(args, CancellationToken.None); }
@@ -110,7 +105,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     .WithClientId(clientId)
                     .WithKeepAlivePeriod(TimeSpan.FromMilliseconds(settings.PingIntervalMs))
                     .WithTimeout(TimeSpan.FromMilliseconds(settings.TimeoutMs));
-                if (credential is not null)
+                if (credential?.Kind == MqttCredentialKind.Password)
                 {
                     builder.WithCredentials(credential.Username, credential.Password);
                 }
@@ -135,6 +130,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 _lastPing = time.GetTimestamp();
             }
 
+            _clientCertificate?.ValidateForUse(time.GetUtcNow());
             // 持续发送会抑制 MQTTnet 的保活；QoS 0 同样按固定间隔显式确认连接仍可用。
             if (time.GetElapsedTime(_lastPing) >= TimeSpan.FromMilliseconds(settings.PingIntervalMs))
             {
@@ -162,6 +158,11 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             if (input?.IsQuiescing != true)
             { Reset(); }
             throw;
+        }
+        catch (ArgumentException)
+        {
+            Reset();
+            return new(OutputSendStatus.SuspendTarget, "MQTT 凭证或客户端证书无效，请核对材料、有效期和 TLS 设置。");
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -192,7 +193,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
 
     private TlsTrustSnapshot? ResolveTrust() => settings.Tls ? trust?.ResolveTlsTrust(settings.ConnectionId, settings.Recipient) : null;
 
-    private MqttCredential? Credential() => settings.UsePassword ? credentials.ResolveMqtt(settings.ConnectionId, settings.Recipient) : null;
+    private MqttCredential? Credential() => MqttCredentialValidation.Resolve(settings, credentials);
 
     private static bool HasAccessDenial(Exception exception) =>
         exception is OutboundAccessDeniedException || exception.InnerException is { } inner && HasAccessDenial(inner);
@@ -222,6 +223,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             // 库仍在 finally 中释放传输/分派器；只在客户端回收边界接住重复释放，不把原来的网络超时改成毒消息或停机失败。
         }
         _client = null;
+        _clientCertificate?.Dispose();
+        _clientCertificate = null;
         _receiveBuffer?.Dispose();
         _receiveBuffer = null;
         _connectedVersion = null;

@@ -13,6 +13,10 @@ internal sealed class MqttCredentialRecord
     public string Recipient { get; set; } = string.Empty;
     [SugarColumn(ColumnName = "username")]
     public string Username { get; set; } = string.Empty;
+    [SugarColumn(ColumnName = "kind")]
+    public int Kind { get; set; }
+    [SugarColumn(ColumnName = "certificate_subject")]
+    public string? CertificateSubject { get; set; }
     [SugarColumn(ColumnName = "protected_password")]
     public string? ProtectedPassword { get; set; }
     [SugarColumn(ColumnName = "account_marker")]

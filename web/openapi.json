@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:36761/"
+      "url": "http://127.0.0.1:46051/"
     }
   ],
   "paths": {
@@ -7705,6 +7705,16 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16785,6 +16795,16 @@
               "string"
             ],
             "format": "int64"
+          },
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientCertificateUpload"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -16839,6 +16859,13 @@
             ]
           }
         }
+      },
+      "MqttCredentialKind": {
+        "enum": [
+          "password",
+          "clientCertificate",
+          null
+        ]
       },
       "MqttCredentialMetadata": {
         "required": [
@@ -16914,6 +16941,26 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "kind": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MqttCredentialKind"
+              }
+            ]
+          },
+          "certificate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ClientCertificateUpload"
+              }
             ]
           }
         }

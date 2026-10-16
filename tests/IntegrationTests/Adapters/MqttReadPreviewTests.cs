@@ -215,11 +215,15 @@ public sealed class MqttReadPreviewTests(MosquittoBrokerFixture fixture) : IClas
     }
 
     [Fact]
-    public async Task NewlyBoundCredentialRejectsAnonymousSnapshotBeforeNetworking()
+    public async Task NewlyBoundCredentialAuthenticatesAnOldAnonymousSnapshotWithoutApply()
     {
-        var settings = Settings(fixture.Require(), "valid/topic") with { UsePassword = false };
-        var result = await Probe(connector: new ForbiddenConnector()).RunAsync(settings, ClockSyncState.Unknown, Token);
-        Assert.Equal("credential.changed", result.Code);
+        var broker = fixture.Require();
+        var topic = MqttProbe.NewTopic("new-credential");
+        await PublishRetained(broker, topic, "{\"value\":42}");
+        var settings = Settings(broker, topic) with { UsePassword = false };
+        var result = await Probe().RunAsync(settings, ClockSyncState.Unknown, Token);
+        Assert.Equal("success", result.Code);
+        Assert.Equal("{\"value\":42}", result.Preview!.RawJson);
     }
 
     [Fact]
