@@ -273,6 +273,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/runtime/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 核对有效与草稿连接、正式通信事实、使用者及真实待发计数，不触发网络操作 */
+        get: operations["getRuntimeConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/runtime/outputs": {
         parameters: {
             query?: never;
@@ -2790,6 +2807,20 @@ export interface components {
         };
         /** @enum {unknown} */
         ConnectionKind: "modbus" | "mqtt" | "http";
+        ConnectionListDefinition: {
+            key: null | string;
+            name: string;
+            kind: string;
+            target: string;
+            enabled: boolean;
+        };
+        ConnectionListUser: {
+            kind: string;
+            key: string;
+            name: string;
+            enabled: boolean;
+            active: boolean;
+        };
         /**
          * @default none
          * @enum {unknown}
@@ -4477,6 +4508,32 @@ export interface components {
             result: null | components["schemas"]["RuntimeApplicationResult"];
             errorCode: null | string;
         };
+        RuntimeConnectionInfo: {
+            /** Format: int64 */
+            id: number | string;
+            effective: null | components["schemas"]["ConnectionListDefinition"];
+            draft: null | components["schemas"]["ConnectionListDefinition"];
+            draftChanged: null | boolean;
+            state: string;
+            users: components["schemas"]["ConnectionListUser"][];
+            draftUsers: components["schemas"]["ConnectionListUser"][];
+            /** Format: int64 */
+            pendingCount: null | number | string;
+            /** Format: date-time */
+            lastSuccessAt: null | string;
+            lastErrorCode: null | string;
+            /** Format: date-time */
+            lastErrorAt: null | string;
+        };
+        RuntimeConnectionList: {
+            /** Format: int64 */
+            revision: null | number | string;
+            draftVersion: string;
+            /** Format: date-time */
+            capturedAt: string;
+            queueAvailable: boolean;
+            connections: components["schemas"]["RuntimeConnectionInfo"][];
+        };
         /** @enum {unknown} */
         RuntimeCoordinatorState: "starting" | "blocked" | "idle" | "active" | "runFailed" | "stopping" | "stopped";
         RuntimeCoordinatorStatus: {
@@ -5529,6 +5586,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeCurrentValues"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRuntimeConnections: {
+        parameters: {
+            query?: {
+                expectedDraftVersion?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeConnectionList"];
                 };
             };
             /** @description Unauthorized */

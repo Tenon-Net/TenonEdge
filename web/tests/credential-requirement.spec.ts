@@ -76,7 +76,7 @@ with sqlite3.connect(sys.argv[1]) as db:
         await expect(
             page.getByRole('button', { name: '确认应用配置', exact: true }),
         ).toHaveCount(0)
-        await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+        await page.getByRole('link', { name: '连接', exact: true }).click()
         await page
             .getByRole('button', { name: '编辑连接', exact: true })
             .click()

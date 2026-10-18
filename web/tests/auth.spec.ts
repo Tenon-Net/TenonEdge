@@ -564,7 +564,7 @@ test('real connection drafts persist, conflicts and query failures retain edits,
 }) => {
     test.setTimeout(60_000)
     await openPointEditor(page)
-    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    await page.getByRole('link', { name: '连接', exact: true }).click()
     const versionResponse = await page.request.get(
         '/api/edge-admin/v1/runtime/status',
     )
@@ -718,7 +718,7 @@ test('managed connection credentials save separately, never echo, and clear with
     page,
 }) => {
     await openPointEditor(page)
-    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    await page.getByRole('link', { name: '连接', exact: true }).click()
     await page.getByRole('button', { name: '新建连接', exact: true }).click()
     await page.getByLabel('连接 key', { exact: true }).fill('credential-broker')
     await page.getByLabel('连接名称', { exact: true }).fill('凭证测试 Broker')
@@ -803,7 +803,7 @@ test('HTTP credential form writes each supported authentication kind without ech
     page,
 }) => {
     await openPointEditor(page)
-    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    await page.getByRole('link', { name: '连接', exact: true }).click()
     await page.getByRole('button', { name: '新建连接', exact: true }).click()
     await page.getByLabel('连接 key', { exact: true }).fill('credential-http')
     await page.getByLabel('连接名称', { exact: true }).fill('凭证测试 HTTP')
@@ -1920,7 +1920,7 @@ test('MQTT test uses unsaved parameters, reports real policy denial and does not
     page,
 }) => {
     await openPointEditor(page)
-    await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+    await page.getByRole('link', { name: '连接', exact: true }).click()
     const before = await (
         await page.request.get('/api/edge-admin/v1/connections')
     ).json()
@@ -2004,7 +2004,7 @@ test('HTTP unsaved test performs one real GET with transient credentials, status
         throw new Error('fixture-listener-address')
     try {
         await openPointEditor(page)
-        await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+        await page.getByRole('link', { name: '连接', exact: true }).click()
         const before = await (
             await page.request.get('/api/edge-admin/v1/connections')
         ).json()
@@ -2137,7 +2137,7 @@ test('Modbus unsaved TCP and RTU connection tests send no protocol bytes and pre
     let restore: (() => Promise<void>) | undefined
     try {
         await openPointEditor(page)
-        await page.getByRole('link', { name: '连接草稿', exact: true }).click()
+        await page.getByRole('link', { name: '连接', exact: true }).click()
         const before = await (
             await page.request.get('/api/edge-admin/v1/connections')
         ).json()

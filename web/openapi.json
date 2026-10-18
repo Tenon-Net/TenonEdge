@@ -807,6 +807,46 @@
         }
       }
     },
+    "/api/edge-admin/v1/runtime/connections": {
+      "get": {
+        "tags": [
+          "Runtime"
+        ],
+        "summary": "核对有效与草稿连接、正式通信事实、使用者及真实待发计数，不触发网络操作",
+        "operationId": "getRuntimeConnections",
+        "parameters": [
+          {
+            "name": "expectedDraftVersion",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConnectionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/runtime/outputs": {
       "get": {
         "tags": [
@@ -13468,6 +13508,63 @@
           "http"
         ]
       },
+      "ConnectionListDefinition": {
+        "required": [
+          "key",
+          "name",
+          "kind",
+          "target",
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ConnectionListUser": {
+        "required": [
+          "kind",
+          "key",
+          "name",
+          "enabled",
+          "active"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
       "ConnectionTestAuthentication": {
         "enum": [
           "none",
@@ -20931,6 +21028,139 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "RuntimeConnectionInfo": {
+        "required": [
+          "id",
+          "effective",
+          "draft",
+          "draftChanged",
+          "state",
+          "users",
+          "draftUsers",
+          "pendingCount",
+          "lastSuccessAt",
+          "lastErrorCode",
+          "lastErrorAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "effective": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionListDefinition"
+              }
+            ]
+          },
+          "draft": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionListDefinition"
+              }
+            ]
+          },
+          "draftChanged": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionListUser"
+            }
+          },
+          "draftUsers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionListUser"
+            }
+          },
+          "pendingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "lastSuccessAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastErrorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastErrorAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "RuntimeConnectionList": {
+        "required": [
+          "revision",
+          "draftVersion",
+          "capturedAt",
+          "queueAvailable",
+          "connections"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "draftVersion": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "queueAvailable": {
+            "type": "boolean"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeConnectionInfo"
+            }
           }
         }
       },

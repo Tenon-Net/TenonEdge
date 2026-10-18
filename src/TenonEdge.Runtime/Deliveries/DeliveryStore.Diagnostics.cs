@@ -4,6 +4,36 @@ namespace TenonEdge.Runtime.Deliveries;
 
 internal sealed partial class DeliveryStore
 {
+    internal IReadOnlyDictionary<long, long> ReadPendingCounts(IReadOnlyCollection<long> connectionIds)
+    {
+        ArgumentNullException.ThrowIfNull(connectionIds);
+        if (connectionIds.Count > 1000 || connectionIds.Any(id => id <= 0))
+        { throw new ArgumentException("连接计数查询范围无效。", nameof(connectionIds)); }
+        EnsureInitialized();
+        if (connectionIds.Count == 0)
+        { return new Dictionary<long, long>(); }
+        using var connection = Open(_readConnectionString);
+        using var command = connection.CreateCommand();
+        var parameters = new List<string>();
+        foreach (var id in connectionIds.Distinct())
+        {
+            var name = "$id" + parameters.Count;
+            parameters.Add("(" + name + ")");
+            command.Parameters.AddWithValue(name, id);
+        }
+        command.CommandText = $"""
+            WITH ids(connection_id) AS (VALUES {string.Join(",", parameters)})
+            SELECT ids.connection_id, COUNT(d.seq) FROM ids
+            LEFT JOIN delivery d ON d.connection_id = ids.connection_id AND d.state = 'pending'
+            GROUP BY ids.connection_id;
+            """;
+        using var reader = command.ExecuteReader();
+        var result = new Dictionary<long, long>();
+        while (reader.Read())
+        { result.Add(reader.GetInt64(0), reader.GetInt64(1)); }
+        return result;
+    }
+
     private const string UsageColumns = """
         COUNT(*) FILTER (WHERE d.state = 'pending'), COALESCE(SUM(d.byte_size) FILTER (WHERE d.state = 'pending'), 0),
         COUNT(*) FILTER (WHERE d.state = 'failed'), COALESCE(SUM(d.byte_size) FILTER (WHERE d.state = 'failed'), 0),

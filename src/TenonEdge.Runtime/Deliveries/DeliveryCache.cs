@@ -138,6 +138,9 @@ public sealed class DeliveryCache
     public DeliveryQueueReport GetQueueReport(IReadOnlyCollection<long> activeConnections, long after = 0, int limit = 100) =>
         Store.ReadQueueReport(activeConnections, after, limit);
 
+    /// <summary>指定连接的待发计数；单次只读查询，不读取正文。最多覆盖两份各500连接的有效/草稿目录。</summary>
+    public IReadOnlyDictionary<long, long> GetPendingCounts(IReadOnlyCollection<long> connectionIds) => Store.ReadPendingCounts(connectionIds);
+
     public DeliveryRecoveryCheck CheckRecoveryTargets(Func<long, string, string, string?, bool> allows, CancellationToken token) =>
         Store.CheckRecoveryTargets(allows, token);
 

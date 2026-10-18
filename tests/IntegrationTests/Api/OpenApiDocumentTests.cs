@@ -96,6 +96,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getRouteCatalog",
         "getRouteDraft",
         "getRouteDrafts",
+        "getRuntimeConnections",
         "getRuntimeCurrentValues",
         "getRuntimeDevices",
         "getRuntimeMessageBody",

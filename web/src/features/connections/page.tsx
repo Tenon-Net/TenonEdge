@@ -1,3 +1,5 @@
+import { ConnectionTable } from './list'
+import { connectionRows, connectionSnapshotCurrent } from './list-model'
 import { ParameterFields } from '../parameters/fields'
 import { parameterIssues } from '../parameters/model'
 import {
@@ -69,6 +71,30 @@ export function ConnectionsPage() {
             return data
         },
     })
+    const runtime = useQuery({
+        queryKey: ['runtime-connections', query.data?.version],
+        enabled: !!query.data,
+        refetchInterval: 5000,
+        refetchIntervalInBackground: false,
+        queryFn: async ({ signal }) => {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/runtime/connections',
+                {
+                    signal,
+                    params: {
+                        query: { expectedDraftVersion: query.data!.version },
+                    },
+                },
+            )
+            if (!data) throw new Error('missing-runtime-connections')
+            return data
+        },
+    })
+    const current = connectionSnapshotCurrent(
+        query.data?.version,
+        runtime.data,
+        !!runtime.error || !!query.error,
+    )
     const [editor] = useState(createConnectionEditor)
     const { form, setForm, original, setOriginal } = useStore(editor)
     const modbusSchema = useParameterSchema('modbus')
@@ -230,14 +256,12 @@ export function ConnectionsPage() {
             </label>
         )
     }
-    const entries =
-        query.data?.connections.filter(
-            (connection) =>
-                (!kind || connection.kind === kind) &&
-                `${connection.name} ${connection.key}`
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-        ) ?? []
+    const entries = connectionRows(
+        query.data?.connections ?? [],
+        runtime.data?.connections ?? [],
+        search,
+        kind,
+    )
     return (
         <section className="space-y-4">
             <h1 className="text-2xl font-semibold">{t('connections.title')}</h1>
@@ -259,6 +283,7 @@ export function ConnectionsPage() {
                 <label>
                     {t('connections.filter')}
                     <select
+                        aria-label={t('connections.filter')}
                         className={fieldClass}
                         value={kind}
                         onChange={(event) => setKind(event.target.value)}
@@ -274,7 +299,10 @@ export function ConnectionsPage() {
                 <Button
                     variant="outline"
                     disabled={query.isFetching || mutation.isPending}
-                    onClick={() => void query.refetch()}
+                    onClick={() => {
+                        void query.refetch()
+                        void runtime.refetch()
+                    }}
                 >
                     {t('connections.refresh')}
                 </Button>
@@ -295,6 +323,26 @@ export function ConnectionsPage() {
                 )}
             </div>
             <ErrorMessage error={query.error ?? mutation.error} />
+            <ErrorMessage error={runtime.error} />
+            {!current && (
+                <p role="alert">{t('connections.runtime.unavailable')}</p>
+            )}
+            {current && runtime.data && (
+                <p className="text-xs text-muted-foreground">
+                    {t('connections.runtime.snapshot', {
+                        revision: runtime.data.revision ?? '—',
+                        time: new Date(
+                            runtime.data.capturedAt,
+                        ).toLocaleString(),
+                    })}
+                </p>
+            )}
+            {current && runtime.data && !runtime.data.queueAvailable && (
+                <p role="alert">{t('connections.runtime.queueUnavailable')}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+                {t('connections.runtime.notice')}
+            </p>
             {[modbusSchema, mqttSchema].map(
                 (metadata, index) =>
                     metadata.error && (
@@ -332,107 +380,29 @@ export function ConnectionsPage() {
                 </p>
             )}
             {query.isPending && <p>{t('loading')}</p>}
-            {query.data && !query.data.connections.length && (
+            {query.data && current && !entries.length && (
                 <p>{t('connections.empty')}</p>
             )}
             {!!entries.length && (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead>
-                            <tr>
-                                {[
-                                    'key',
-                                    'name',
-                                    'kind',
-                                    'target',
-                                    'enabled',
-                                    'actions',
-                                ].map((field) => (
-                                    <th className="border-b p-2" key={field}>
-                                        {t(`connections.${field}`)}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {entries.map((connection) => (
-                                <tr key={connection.id}>
-                                    <td className="border-b p-2">
-                                        {connection.key}
-                                    </td>
-                                    <td className="border-b p-2">
-                                        {connection.name}
-                                    </td>
-                                    <td className="border-b p-2">
-                                        {t(
-                                            `connections.kinds.${connection.kind}`,
-                                        )}
-                                    </td>
-                                    <td className="border-b p-2">
-                                        {connection.http?.baseAddress ??
-                                            `${connection.modbus?.host ?? connection.mqtt?.host}:${connection.modbus?.port ?? connection.mqtt?.port}`}
-                                    </td>
-                                    <td className="border-b p-2">
-                                        {t(
-                                            connection.enabled
-                                                ? 'connections.enabled'
-                                                : 'connections.disabled',
-                                        )}
-                                    </td>
-                                    <td className="space-x-2 border-b p-2">
-                                        <Button
-                                            variant="outline"
-                                            disabled={
-                                                mutation.isPending ||
-                                                outboundBusy
-                                            }
-                                            onClick={() => open(connection)}
-                                        >
-                                            {t(
-                                                canEdit
-                                                    ? 'connections.edit'
-                                                    : 'connections.view',
-                                            )}
-                                        </Button>
-                                        {canEdit && (
-                                            <Button
-                                                variant="outline"
-                                                disabled={
-                                                    mutation.isPending ||
-                                                    outboundBusy
-                                                }
-                                                onClick={() => {
-                                                    if (
-                                                        (!dirty ||
-                                                            window.confirm(
-                                                                t(
-                                                                    'connections.discard',
-                                                                ),
-                                                            )) &&
-                                                        window.confirm(
-                                                            t(
-                                                                'connections.deleteConfirm',
-                                                            ),
-                                                        )
-                                                    )
-                                                        mutation.mutate({
-                                                            type: 'delete',
-                                                            connection,
-                                                            version:
-                                                                query.data!
-                                                                    .version,
-                                                        })
-                                                }}
-                                            >
-                                                {t('connections.remove')}
-                                            </Button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                <ConnectionTable
+                    rows={entries}
+                    current={current}
+                    canEdit={canEdit}
+                    busy={mutation.isPending || outboundBusy}
+                    onOpen={open}
+                    onDelete={(connection) => {
+                        if (
+                            (!dirty ||
+                                window.confirm(t('connections.discard'))) &&
+                            window.confirm(t('connections.deleteConfirm'))
+                        )
+                            mutation.mutate({
+                                type: 'delete',
+                                connection,
+                                version: query.data!.version,
+                            })
+                    }}
+                />
             )}
             {form && (
                 <form

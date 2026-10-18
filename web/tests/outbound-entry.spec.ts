@@ -179,7 +179,7 @@ test('saved public targets require administrator confirmation; exact grants pres
         await page.getByLabel('密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '登录', exact: true }).click()
         await expect(
-            page.getByRole('heading', { name: '连接草稿', exact: true }),
+            page.getByRole('heading', { name: '连接', exact: true }),
         ).toBeVisible()
         expect(await (await page.request.get(policyUrl)).json()).toEqual(saved)
         const audits = await (
@@ -220,7 +220,7 @@ test('saved public targets require administrator confirmation; exact grants pres
                     .click()
                 await expect(
                     user.getByRole('heading', {
-                        name: '连接草稿',
+                        name: '连接',
                         exact: true,
                     }),
                 ).toBeVisible()
