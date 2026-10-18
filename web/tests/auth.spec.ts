@@ -1152,19 +1152,39 @@ test('Modbus source point table persists normalized offsets and a bounded 10000-
     })
     expect(bulkResponse.status()).toBe(200)
     // Only source writes opt into 16 MiB; their own ceiling and the ordinary 1 MiB limit remain effective.
-    const tooLarge = await page.request.post(endpoint, {
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        data: ' '.repeat(16 * 1024 * 1024 + 1),
-    })
-    expect(tooLarge.status()).toBe(413)
-    const ordinaryTooLarge = await page.request.post(
-        '/api/edge-admin/v1/connections',
-        {
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            data: ' '.repeat(1024 * 1024 + 1),
+    // Exercise the browser transport used by the application. APIRequestContext
+    // can throw EPIPE while Kestrel rejects an oversized Content-Length early.
+    // Require complete 413 responses; a network exception is never a passing result.
+    const oversizeStatuses = await page.evaluate(
+        async ({ endpoint, headers }) => {
+            const statuses: number[] = []
+            for (const [url, limit] of [
+                [endpoint, 16 * 1024 * 1024],
+                ['/api/edge-admin/v1/connections', 1024 * 1024],
+            ] as const) {
+                const controller = new AbortController()
+                const timer = setTimeout(() => controller.abort(), 10_000)
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            ...headers,
+                            'Content-Type': 'application/json',
+                        },
+                        body: ' '.repeat(limit + 1),
+                        signal: controller.signal,
+                    })
+                    await response.text()
+                    statuses.push(response.status)
+                } finally {
+                    clearTimeout(timer)
+                }
+            }
+            return statuses
         },
+        { endpoint, headers },
     )
-    expect(ordinaryTooLarge.status()).toBe(413)
+    expect(oversizeStatuses).toEqual([413, 413])
 
     await page.getByLabel('来源名称', { exact: true }).fill('保留来源修改')
     await page
