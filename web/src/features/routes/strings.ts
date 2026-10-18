@@ -1,4 +1,15 @@
 export const routeStrings = {
+    outputModule: {
+        title: '扩展输出参数',
+        notice: '参数与连接引用分开保存，不填写秘密。投递目标须显式选自本模块引用的 HTTP/MQTT 连接；停用连接或不完整参数可留在草稿，但不能应用。确认节点配置不会发送。',
+        target: '模块投递目标',
+        targetRequired: '请选择当前模块已引用的投递连接，不会自动替换目标。',
+        unsupported:
+            '此模块配置结构不能用自动表单编辑；原配置保留，请核对 JSON 与模块版本。',
+        unavailable:
+            '输出模块目录尚未可用；未保存内容保留，不自动替换类型或版本。',
+        refresh: '重新读取输出模块',
+    },
     title: '路线草稿',
     references: '来源 / 输出连接',
     preview: {

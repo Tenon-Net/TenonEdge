@@ -10,7 +10,20 @@ export const nodeKinds = [
     'output.tenon',
 ] as const
 export type NodeKind =
-    (typeof nodeKinds)[number] | `transform.${string}` | `input.${string}`
+    | (typeof nodeKinds)[number]
+    | `transform.${string}`
+    | `input.${string}`
+    | `output.${string}`
+export function isOutputModuleKind(
+    value: unknown,
+): value is `output.${string}` {
+    return (
+        typeof value === 'string' &&
+        value.length <= 64 &&
+        /^output\.[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/.test(value) &&
+        !nodeKinds.some((kind) => kind === value)
+    )
+}
 export function isInputModuleKind(value: unknown): value is `input.${string}` {
     return (
         typeof value === 'string' &&
@@ -24,6 +37,7 @@ export function isNodeKind(value: unknown): value is NodeKind {
         typeof value === 'string' &&
         (nodeKinds.some((kind) => kind === value) ||
             isInputModuleKind(value) ||
+            isOutputModuleKind(value) ||
             (/^transform\.[A-Za-z0-9._-]+$/.test(value) && value.length <= 64))
     )
 }

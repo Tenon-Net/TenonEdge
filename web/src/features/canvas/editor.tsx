@@ -7,7 +7,10 @@ import {
     transformDefaults,
     type TransformModule,
 } from './transform-model'
-import { isNodeKind } from './model'
+import { isNodeKind, isOutputModuleKind } from './model'
+import { useOutputModules } from './output-module-query'
+import { OutputModuleEditor } from './output-module-editor'
+import { outputModuleDefaults, type OutputModule } from './output-module-model'
 import { RoutePreview } from '../routes/preview'
 import type { PreviewDraft } from '../routes/preview-model'
 import { FieldAnalysis, useFieldAnalysis } from '../routes/field-analysis'
@@ -86,6 +89,9 @@ function CanvasWorkspace({
     const [store] = useState(() => editor ?? createGraphEditor())
     const modules = useTransformModules(persisted)
     const inputModules = useInputModules(persisted)
+    const outputModules = useOutputModules(persisted)
+    const outputsAvailable =
+        outputModules.isSuccess && !outputModules.isFetching
     const inputsAvailable = inputModules.isSuccess && !inputModules.isFetching
     const available = modules.isSuccess && !modules.isFetching
     const palette = [
@@ -104,6 +110,21 @@ function CanvasWorkspace({
                               version: Number(module.version),
                               label: `${module.displayName} (v${module.version})`,
                               configText: '{"sourceIds":[]}',
+                          },
+                      ]
+                    : [],
+        ),
+        ...(outputsAvailable ? (outputModules.data ?? []) : []).flatMap(
+            (module) =>
+                isOutputModuleKind(module.kind)
+                    ? [
+                          {
+                              kind: module.kind,
+                              version: Number(module.version),
+                              label: `${module.displayName} (v${module.version})`,
+                              configText: outputModuleDefaults(
+                                  module.parameters,
+                              ),
                           },
                       ]
                     : [],
@@ -140,6 +161,8 @@ function CanvasWorkspace({
         'json' | 'output' | 'mapping' | 'transform' | null
     >(null)
     const [pendingModule, setPendingModule] = useState<TransformModule>()
+    const [pendingOutputModule, setPendingOutputModule] =
+        useState<OutputModule>()
     const pendingConfig = pendingOwner !== null
     const pending = (
         value: boolean,
@@ -160,6 +183,15 @@ function CanvasWorkspace({
               )
             : undefined
     const formModule = pendingModule ?? selectedModule
+    const selectedOutputModule =
+        selected.length === 1
+            ? outputModules.data?.find(
+                  (module) =>
+                      module.kind === selected[0].kind &&
+                      Number(module.version) === (selected[0].version ?? 1),
+              )
+            : undefined
+    const outputFormModule = pendingOutputModule ?? selectedOutputModule
     const analysis = useFieldAnalysis(
         doc,
         selected.length === 1 ? selected[0].id : undefined,
@@ -177,7 +209,7 @@ function CanvasWorkspace({
                         nodeKinds.some((kind) => kind === n.kind) &&
                         (n.version ?? 1) === 1
                             ? t(`canvas.kinds.${n.kind}`)
-                            : `${[...(modules.data ?? []), ...(inputModules.data ?? [])].find((module) => module.kind === n.kind && Number(module.version) === (n.version ?? 1))?.displayName ?? n.kind} (v${n.version ?? 1})`,
+                            : `${[...(modules.data ?? []), ...(inputModules.data ?? []), ...(outputModules.data ?? [])].find((module) => module.kind === n.kind && Number(module.version) === (n.version ?? 1))?.displayName ?? n.kind} (v${n.version ?? 1})`,
                 },
                 measured: dimensions[n.id],
                 position: {
@@ -192,6 +224,7 @@ function CanvasWorkspace({
             state.selectedNodes,
             modules.data,
             inputModules.data,
+            outputModules.data,
             t,
         ],
     )
@@ -382,6 +415,18 @@ function CanvasWorkspace({
                                 onClick={() => void inputModules.refetch()}
                             >
                                 {t('inputs.moduleRefresh')}
+                            </Button>
+                            {!outputsAvailable && (
+                                <p role="status">
+                                    {t('routes.outputModule.unavailable')}
+                                </p>
+                            )}
+                            <Button
+                                variant="outline"
+                                disabled={outputModules.isFetching}
+                                onClick={() => void outputModules.refetch()}
+                            >
+                                {t('routes.outputModule.refresh')}
                             </Button>
                         </>
                     )}
@@ -676,6 +721,47 @@ function CanvasWorkspace({
                                 }
                             />
                         )}
+                    {pendingOutputModule &&
+                        JSON.stringify(pendingOutputModule) !==
+                            JSON.stringify(selectedOutputModule) && (
+                            <p role="alert">{t('parameters.moduleMissing')}</p>
+                        )}
+                    {persisted &&
+                        selected.length === 1 &&
+                        isOutputModuleKind(selected[0].kind) &&
+                        (outputFormModule ? (
+                            <OutputModuleEditor
+                                key={`output-module:${selected[0].id}:${selected[0].version}:${selected[0].configText}`}
+                                module={outputFormModule}
+                                configText={selected[0].configText}
+                                version={version}
+                                disabled={
+                                    readOnly ||
+                                    !outputsAvailable ||
+                                    JSON.stringify(outputFormModule) !==
+                                        JSON.stringify(selectedOutputModule) ||
+                                    pendingOwner === 'json'
+                                }
+                                dirty={(value) => {
+                                    setPendingOutputModule(
+                                        value ? outputFormModule : undefined,
+                                    )
+                                    pending(value, 'output')
+                                }}
+                                accept={(text) =>
+                                    attempt(
+                                        () =>
+                                            state.configure(
+                                                selected[0].id,
+                                                text,
+                                            ),
+                                        true,
+                                    )
+                                }
+                            />
+                        ) : (
+                            <p role="alert">{t('parameters.moduleMissing')}</p>
+                        ))}
                     {pendingModule &&
                         JSON.stringify(pendingModule) !==
                             JSON.stringify(selectedModule) && (

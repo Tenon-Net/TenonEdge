@@ -1,6 +1,7 @@
 import {
     isNodeKind,
     isInputModuleKind,
+    isOutputModuleKind,
     maxNodes,
     checkPosition,
     type GraphDocument,
@@ -46,6 +47,8 @@ export function defaultConfig(kind: NodeKind, version = 1): string {
     if (kind.startsWith('input.')) return '{"sourceIds":[]}'
     if (kind === 'transform.map' && version === 1) return '{"rules":[]}'
     if (kind.startsWith('transform.')) return '{}'
+    if (isOutputModuleKind(kind))
+        return '{"connectionId":null,"parameters":{},"connections":{}}'
     return '{"connectionId":null}'
 }
 /** Reject ambiguous JSON, not incomplete graph semantics; the server compiles those. */
@@ -82,6 +85,7 @@ export function decodeGraph(text: string): GraphDocument {
             !isNodeKind(kind) ||
             (!kind.startsWith('transform.') &&
                 !isInputModuleKind(kind) &&
+                !isOutputModuleKind(kind) &&
                 version !== 1)
         )
             throw new Error('graph')

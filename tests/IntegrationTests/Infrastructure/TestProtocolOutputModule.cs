@@ -14,9 +14,10 @@ internal sealed class TestProtocolOutputModule(string protocol) : IOutputModuleF
 {
     public string Kind => "output.test" + protocol;
     public int Version { get; init; } = 1;
+    public string DisplayName { get; init; } = "output.test" + protocol;
     public bool Throw { get; set; }
     public int Calls { get; private set; }
-    public ParameterSchema Parameters { get; } = new("output.test" + protocol, ParameterScope.Output,
+    public ParameterSchema Parameters { get; init; } = new("output.test" + protocol, ParameterScope.Output,
         [new("connection", "连接", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [protocol] },
             new("address", "路径/主题", ParameterType.Text) { Required = true, MaximumLength = 1024 }]);
     public OutputProtocolBinding BindProtocol(JsonElement parameters, OutputModuleContext context)

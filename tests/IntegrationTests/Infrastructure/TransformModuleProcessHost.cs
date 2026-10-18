@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Storage;
@@ -10,7 +11,7 @@ using TenonEdge.IntegrationTests.Runtime;
 
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
-/// <summary>仅测试侧编译期登记转换与输入模块，原 Program、管理 API、工厂与运行时全部保留。
+/// <summary>仅测试侧编译期登记转换、输入与输出模块，原 Program、管理 API、工厂与运行时全部保留。
 /// 无产品测试开关，不自动创建配置；用于验证无需改前端即可发现/编辑/运行新的纯转换。</summary>
 internal static class TransformModuleProcessHost
 {
@@ -27,6 +28,8 @@ internal static class TransformModuleProcessHost
                 .AddSingleton<IInputModuleFactory>(new TestScalarInputModule())
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt"))
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("modbus"))
+                .AddSingleton<IOutputModuleFactory>(BrowserOutput("http"))
+                .AddSingleton<IOutputModuleFactory>(BrowserOutput("mqtt"))
                 .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
                     provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single())
                 { PeriodMs = 1000 }));
@@ -41,4 +44,18 @@ internal static class TransformModuleProcessHost
         await stopped.Task;
         return HostExitCodes.AfterShutdown(factory.Services.GetServices<IHostedService>());
     }
+
+    private static TestProtocolOutputModule BrowserOutput(string protocol) => new(protocol)
+    {
+        Version = 2,
+        DisplayName = "测试 " + protocol.ToUpperInvariant() + " 输出",
+        Parameters = new("output.test" + protocol, ParameterScope.Output,
+        [
+            new("connection", "目标连接引用", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [protocol] },
+            new("address", "路径或主题", ParameterType.Text) { Required = true, MaximumLength = 1024, DefaultJson = "\"events\"" },
+            new("precision", "精确参数", ParameterType.Number) { Required = true, WholeNumber = true, DefaultJson = "9007199254740993", MinimumJson = "9007199254740990", MaximumJson = "9007199254740999" },
+            new("flag", "测试开关", ParameterType.Switch) { DefaultJson = "true" },
+            new("mode", "测试选项", ParameterType.Choice) { DefaultJson = "\"one\"", Options = [new("one", "选项一"), new("two", "选项二")] },
+        ]),
+    };
 }
