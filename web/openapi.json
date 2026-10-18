@@ -9821,6 +9821,39 @@
         }
       }
     },
+    "/api/edge-admin/v1/output-modules": {
+      "get": {
+        "tags": [
+          "输出模块"
+        ],
+        "operationId": "getOutputModules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutputModuleDefinition"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections": {
       "get": {
         "tags": [
@@ -18189,6 +18222,34 @@
           }
         }
       },
+      "OutputModuleDefinition": {
+        "required": [
+          "kind",
+          "version",
+          "displayName",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/ParameterSchema"
+          }
+        }
+      },
       "OutputQueueLimits": {
         "required": [
           "targetCount",
@@ -22958,6 +23019,9 @@
     },
     {
       "name": "输入模块"
+    },
+    {
+      "name": "输出模块"
     },
     {
       "name": "Devices"

@@ -89,6 +89,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getMqttCredentialStatus",
         "getOutboundPolicy",
         "getOutputControl",
+        "getOutputModules",
         "getParameterSchema",
         "getQueueParameters",
         "getReadiness",
