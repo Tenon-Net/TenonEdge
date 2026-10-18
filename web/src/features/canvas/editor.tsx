@@ -1,5 +1,6 @@
 import { TransformEditor } from './transform-editor'
 import { useTransformModules } from './transform-query'
+import { useInputModules } from '../inputs/module-query'
 import {
     builtInMap,
     moduleKey,
@@ -84,6 +85,8 @@ function CanvasWorkspace({
     const { t } = useTranslation()
     const [store] = useState(() => editor ?? createGraphEditor())
     const modules = useTransformModules(persisted)
+    const inputModules = useInputModules(persisted)
+    const inputsAvailable = inputModules.isSuccess && !inputModules.isFetching
     const available = modules.isSuccess && !modules.isFetching
     const palette = [
         ...nodeKinds.map((kind) => ({
@@ -92,6 +95,19 @@ function CanvasWorkspace({
             label: t(`canvas.kinds.${kind}`),
             configText: undefined as string | undefined,
         })),
+        ...(inputsAvailable ? (inputModules.data ?? []) : []).flatMap(
+            (module) =>
+                isNodeKind(module.kind)
+                    ? [
+                          {
+                              kind: module.kind,
+                              version: Number(module.version),
+                              label: `${module.displayName} (v${module.version})`,
+                              configText: '{"sourceIds":[]}',
+                          },
+                      ]
+                    : [],
+        ),
         ...(available ? (modules.data ?? []) : [])
             .filter(
                 (module) =>
@@ -161,7 +177,7 @@ function CanvasWorkspace({
                         nodeKinds.some((kind) => kind === n.kind) &&
                         (n.version ?? 1) === 1
                             ? t(`canvas.kinds.${n.kind}`)
-                            : `${modules.data?.find((module) => module.kind === n.kind && Number(module.version) === (n.version ?? 1))?.displayName ?? n.kind} (v${n.version ?? 1})`,
+                            : `${[...(modules.data ?? []), ...(inputModules.data ?? [])].find((module) => module.kind === n.kind && Number(module.version) === (n.version ?? 1))?.displayName ?? n.kind} (v${n.version ?? 1})`,
                 },
                 measured: dimensions[n.id],
                 position: {
@@ -169,7 +185,15 @@ function CanvasWorkspace({
                 },
                 selected: state.selectedNodes.includes(n.id),
             })),
-        [doc, transient, dimensions, state.selectedNodes, modules.data, t],
+        [
+            doc,
+            transient,
+            dimensions,
+            state.selectedNodes,
+            modules.data,
+            inputModules.data,
+            t,
+        ],
     )
     const edges = useMemo(
         () =>
@@ -346,6 +370,18 @@ function CanvasWorkspace({
                                 onClick={() => void modules.refetch()}
                             >
                                 {t('parameters.modulesRefresh')}
+                            </Button>
+                            {!inputsAvailable && (
+                                <p role="status">
+                                    {t('inputs.moduleUnavailable')}
+                                </p>
+                            )}
+                            <Button
+                                variant="outline"
+                                disabled={inputModules.isFetching}
+                                onClick={() => void inputModules.refetch()}
+                            >
+                                {t('inputs.moduleRefresh')}
                             </Button>
                         </>
                     )}

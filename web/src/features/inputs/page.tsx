@@ -3,6 +3,8 @@ import { HttpPreviewPanel } from './http-preview-panel'
 import { ModbusPreviewPanel } from './modbus-preview-panel'
 import { PointCsvPanel } from './csv-panel'
 import { JsonSourceEditor } from './json-editor'
+import { useInputModules } from './module-query'
+import { ModuleSourceEditor, validModuleForm } from './module-editor'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
@@ -19,6 +21,8 @@ import {
     inputForm,
     inputRows,
     inputRequest,
+    inputRequestJson,
+    decodeInputList,
     type Input,
     type InputForm,
     type InputRequest,
@@ -36,6 +40,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
     const { t } = useTranslation()
     const role = useSession((s) => s.value?.role)
     const canEdit = role === 'administrator' || role === 'configurator'
+    const modules = useInputModules()
     const queryKey = ['input-drafts', deviceId]
     const query = useQuery({
         queryKey,
@@ -43,10 +48,10 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
         queryFn: async ({ signal }) => {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/devices/{deviceId}/inputs',
-                { params: { path: { deviceId } }, signal },
+                { params: { path: { deviceId } }, signal, parseAs: 'text' },
             )
             if (!data) throw new Error('missing-inputs')
-            return data
+            return decodeInputList(data)
         },
     })
     const devices = useQuery({
@@ -84,7 +89,12 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
         retry: false,
         mutationFn: async (
             action:
-                | { type: 'save'; id?: number; body: InputRequest }
+                | {
+                      type: 'save'
+                      id?: number
+                      body: InputRequest
+                      serialized?: string
+                  }
                 | { type: 'delete'; id: number; version: string },
         ) => {
             if (action.type === 'delete')
@@ -101,6 +111,10 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                 await api.POST('/api/edge-admin/v1/devices/{deviceId}/inputs', {
                     params: { path: { deviceId } },
                     body: action.body,
+                    bodySerializer:
+                        action.serialized === undefined
+                            ? undefined
+                            : () => action.serialized!,
                 })
             else
                 await api.PUT(
@@ -108,6 +122,10 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                     {
                         params: { path: { deviceId, inputId: action.id } },
                         body: action.body,
+                        bodySerializer:
+                            action.serialized === undefined
+                                ? undefined
+                                : () => action.serialized!,
                     },
                 )
             return action.type
@@ -134,7 +152,12 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
             (dirty && !window.confirm(t('inputs.discard')))
         )
             return
-        const nextForm = inputForm(query.data!.version, input, device!.kind)
+        const nextForm = inputForm(
+            query.data!.version,
+            input,
+            device!.kind,
+            device!.moduleKind,
+        )
         const nextMode: AddressMode =
             device?.addressNotation === 'manual' ? 'manual' : 'offset'
         const nextRows = inputRows(input, nextMode)
@@ -149,11 +172,16 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
         setInvalid(false)
     }
     function save() {
-        if (!canEdit || !form || mutation.isPending) return
+        if (!canEdit || !form || mutation.isPending || moduleBlocked) return
         try {
             const body = inputRequest(form, rows, mode)
             setInvalid(false)
-            mutation.mutate({ type: 'save', id: form.id, body })
+            mutation.mutate({
+                type: 'save',
+                id: form.id,
+                body,
+                serialized: inputRequestJson(form, body),
+            })
         } catch {
             setInvalid(true)
         }
@@ -161,6 +189,11 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
     const patch = (value: Partial<InputForm>) => {
         if (form) editor.setState({ form: { ...form, ...value } })
     }
+    const moduleBlocked =
+        form?.kind === 'module' &&
+        (!modules.isSuccess ||
+            modules.isFetching ||
+            !validModuleForm(form, modules.data ?? []))
     return (
         <section className="space-y-4">
             <h1 className="text-2xl font-semibold">{t('inputs.title')}</h1>
@@ -298,7 +331,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                                     }
                                 />
                             </label>
-                            {form.kind !== 'mqtt' && (
+                            {form.kind !== 'mqtt' && form.kind !== 'module' && (
                                 <>
                                     <label>
                                         {t('inputs.period')}
@@ -336,7 +369,9 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                             {canEdit && (
                                 <Button
                                     type="submit"
-                                    disabled={mutation.isPending}
+                                    disabled={
+                                        mutation.isPending || moduleBlocked
+                                    }
                                 >
                                     {t('inputs.save')}
                                 </Button>
@@ -458,6 +493,14 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                             key={generation}
                             store={points}
                             managed
+                            readOnly={!canEdit || mutation.isPending}
+                        />
+                    ) : form.kind === 'module' ? (
+                        <ModuleSourceEditor
+                            key={generation}
+                            form={form}
+                            patch={patch}
+                            catalog={modules}
                             readOnly={!canEdit || mutation.isPending}
                         />
                     ) : (

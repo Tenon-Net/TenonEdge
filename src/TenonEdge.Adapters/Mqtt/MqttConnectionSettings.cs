@@ -38,8 +38,12 @@ public record MqttConnectionSettings
 
         MqttConnectionParameters.Schema.ThrowIfInvalid(JsonSerializer.SerializeToElement(new
         {
-            host = settings.Host, port = settings.Port, tls = settings.Tls, clientId = settings.ClientId,
-            timeoutMs = settings.TimeoutMs, pingIntervalMs = settings.PingIntervalMs,
+            host = settings.Host,
+            port = settings.Port,
+            tls = settings.Tls,
+            clientId = settings.ClientId,
+            timeoutMs = settings.TimeoutMs,
+            pingIntervalMs = settings.PingIntervalMs,
         }));
         if (settings.ClientId is not null && string.IsNullOrWhiteSpace(settings.ClientId) || settings.ClientId is { Length: > 128 } || settings.ClientId?.Contains('\0', StringComparison.Ordinal) == true)
         {

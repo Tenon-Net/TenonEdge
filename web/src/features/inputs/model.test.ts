@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { inputForm, inputRequest, inputRows, type Input } from './model'
+import {
+    inputForm,
+    inputRequest,
+    inputRows,
+    decodeInputList,
+    inputRequestJson,
+    type Input,
+} from './model'
 import { createPointEditor } from '../points/store'
 
 const input: Input = {
@@ -127,5 +134,63 @@ it('an explicitly enabled root-value timestamp is not lost on save', () => {
     expect(inputRequest(form, [], 'offset').mqtt?.upstreamTime).toEqual({
         path: '',
         format: 'rfc3339',
+    })
+})
+
+describe('input module exact JSON boundary', () => {
+    const source = (parameters: string) =>
+        `{"version":"7","inputs":[{"id":1,"deviceId":2,"key":"value","name":"Value","kind":"module","enabled":true,"module":{"kind":"input.testscalar","version":3,"parameters":${parameters}}}]}`
+    it.each([
+        '9007199254740993',
+        '9223372036854775807',
+        '0.1234567890123456789012345678',
+        '-0',
+        '1.2300e+20',
+    ])('preserves the numeric token %s across read, form and save', (value) => {
+        const list = decodeInputList(
+            source(
+                `{"value":${value},"label":"123","enabled":true,"nullable":null}`,
+            ),
+        )
+        const form = inputForm(list.version, list.inputs[0])
+        expect(form.moduleKind).toBe('input.testscalar')
+        expect(form.moduleVersion).toBe(3)
+        expect(form.moduleConfigText).toBe(
+            `{"value":${value},"label":"123","enabled":true,"nullable":null}`,
+        )
+        const body = inputRequest(form, [], 'offset')
+        const text = inputRequestJson(form, body)
+        expect(text).toContain(`"parameters":${form.moduleConfigText}`)
+        expect(text).not.toContain('"text":')
+        expect(JSON.parse(text)).toMatchObject({
+            expectedVersion: '7',
+            module: { kind: 'input.testscalar', version: 3 },
+        })
+    })
+    it('does not accept already-rounded numbers or nested scalar parameters', () => {
+        const rounded = JSON.parse(source('{"value":9007199254740993}'))
+        expect(() => inputForm('7', rounded.inputs[0])).toThrow(
+            'module-parameters',
+        )
+        const nested = decodeInputList(source('{"value":{"nested":1}}'))
+        expect(() => inputForm('7', nested.inputs[0])).toThrow(
+            'module-parameters',
+        )
+        expect(() => decodeInputList(source('{"value":1,"value":2}'))).toThrow(
+            'duplicate',
+        )
+    })
+    it('new sources require explicit version selection without defaulting to installed versions', () => {
+        const form = inputForm('v1', undefined, 'module', 'input.testscalar')
+        expect(form).toMatchObject({
+            moduleKind: 'input.testscalar',
+            moduleVersion: 0,
+            moduleConfigText: '{}',
+        })
+    })
+    it('keeps the original non-module wire format', () => {
+        const form = inputForm('v1', undefined, 'simulator')
+        const body = inputRequest(form, [], 'offset')
+        expect(inputRequestJson(form, body)).toBe(JSON.stringify(body))
     })
 })

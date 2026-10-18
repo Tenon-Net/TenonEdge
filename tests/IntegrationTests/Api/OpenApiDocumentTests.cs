@@ -83,6 +83,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getDeviceDrafts",
         "getHttpCredentialStatus",
         "getInputDrafts",
+        "getInputModules",
         "getLiveness",
         "getMigrationDeliveryRecords",
         "getMqttCredentialStatus",

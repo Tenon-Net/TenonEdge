@@ -10,10 +10,11 @@ using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
+using TenonEdge.Runtime.Inputs;
 
 namespace TenonEdge.Host.Features.Inputs;
 
-internal sealed partial class InputDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
+internal sealed partial class InputDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, InputModuleCatalog modules)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -30,23 +31,40 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
     public InputDraftResult Write(long deviceId, long? existingId, InputDraftRequest request, AuditAccount account, string? sourceIp)
     {
         var id = existingId ?? ids.NextId();
-        return database.InTransaction(client =>
+        var snapshot = database.InTransaction(client =>
         {
             ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
             var device = DeviceDraftStore.Read(client, deviceId) ?? throw new DraftWriteException("device.notFound");
-            var input = InputDraftValidation.Normalize(id, device, request, device.ConnectionId is { } connectionId ? ConnectionDraftStore.Read(client, connectionId) : null);
+            // Reject invalid resource ownership before invoking any extension code.
+            if (existingId is not null)
+            {
+                var existing = client.Queryable<InputDraftRecord>().InSingle(id);
+                if (existing is null || existing.DeviceId != deviceId)
+                { throw new DraftWriteException("input.notFound"); }
+            }
+            return (Device: device,
+                Connection: device.ConnectionId is { } connectionId ? ConnectionDraftStore.Read(client, connectionId) : null,
+                Siblings: ReadForDevice(client, deviceId).Where(other => other.Id != id).ToArray());
+        });
+        // Trusted module Describe is pure, but never runs under a configuration DB
+        // transaction. Recheck the captured version before publishing its result.
+        var input = InputDraftValidation.Normalize(id, snapshot.Device, request, snapshot.Connection);
+        var keys = snapshot.Siblings.SelectMany(other => InputDraftValidation.FieldKeys(other, modules)).ToHashSet(StringComparer.Ordinal);
+        if (InputDraftValidation.FieldKeys(input, modules).Any(keys.Contains))
+        { throw new DraftWriteException("input.duplicateDeviceField"); }
+        return database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, request.ExpectedVersion);
+            var device = snapshot.Device;
             var existing = existingId is null ? null : client.Queryable<InputDraftRecord>().InSingle(id)
                 ?? throw new DraftWriteException("input.notFound");
             if (existing is not null && existing.DeviceId != deviceId)
             { throw new DraftWriteException("input.notFound"); }
             if (existing is not null && existing.BusinessKey != input.Key)
             { throw new DraftWriteException("input.immutableKey"); }
-            var siblings = ReadForDevice(client, deviceId).Where(other => other.Id != id).ToArray();
+            var siblings = snapshot.Siblings;
             if (siblings.Any(other => other.Key == input.Key))
             { throw new DraftWriteException("input.duplicateKey"); }
-            var keys = siblings.SelectMany(InputDraftValidation.FieldKeys).ToHashSet(StringComparer.Ordinal);
-            if (InputDraftValidation.FieldKeys(input).Any(keys.Contains))
-            { throw new DraftWriteException("input.duplicateDeviceField"); }
             if (existing is null && HasRetainedReference(client, device.Key + "/" + input.Key))
             { throw new DraftWriteException("input.reservedKey"); }
             var row = new InputDraftRecord { Id = id, DeviceId = deviceId, BusinessKey = input.Key, Content = JsonSerializer.Serialize(input, Json) };
@@ -112,7 +130,7 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
             try
             {
                 _ = InputDraftValidation.Normalize(input.Id, device, new("check", input.Key, input.Name, input.Enabled,
-                    input.Modbus, input.Mqtt, input.Http, input.Simulator), connection);
+                    input.Modbus, input.Mqtt, input.Http, input.Simulator, input.Module), connection);
             }
             catch (ArgumentException) { throw new DraftWriteException("device.sourceConflict"); }
         }

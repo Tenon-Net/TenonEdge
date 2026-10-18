@@ -4,6 +4,7 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
@@ -15,7 +16,7 @@ internal sealed record ConfigurationImportPlan(ConfigurationCheckpoint Draft, Co
 internal static class ConfigurationImportPlanner
 {
     public static ConfigurationImportPlan Prepare(PortableConfiguration file, ConfigurationCheckpoint before,
-        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null)
+        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null)
     {
         token.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(mode))
@@ -61,7 +62,7 @@ internal static class ConfigurationImportPlanner
             var id = oldDevices.TryGetValue(value.DeviceKey, out var old) ? old.Id : Allocate();
             devices[value.DeviceKey] = Validate(path, () => DeviceDraftValidation.Normalize(id,
                 new("import", value.DeviceKey, value.Name, value.Kind, value.Group, connection?.Id,
-                    value.UnitId, value.AddressNotation, value.Enabled), connection));
+                    value.UnitId, value.AddressNotation, value.Enabled, value.ModuleKind), connection));
         }
         for (var index = 0; index < file.Inputs.Length; index++)
         {
@@ -75,7 +76,7 @@ internal static class ConfigurationImportPlanner
             var key = value.DeviceKey + "/" + value.InputKey;
             var id = oldInputs.TryGetValue(key, out var old) ? old.Id : Allocate();
             inputs[key] = Validate(path, () => InputDraftValidation.Normalize(id, device,
-                new("import", value.InputKey, value.Name, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator),
+                new("import", value.InputKey, value.Name, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator, value.Module),
                 device.ConnectionId is { } connectionId ? connectionsById.GetValueOrDefault(connectionId) : null));
         }
         for (var index = 0; index < file.Routes.Length; index++)
@@ -95,7 +96,7 @@ internal static class ConfigurationImportPlanner
                 { throw ConfigurationImportDocument.Error("import.schema", nodePath); }
                 return node with { Config = Rewrite(node, nodePath) };
             }).ToArray();
-            var normalized = Validate(path + ".graph", () => RouteGraphFormat.Normalize(new(graph.SchemaVersion, nodes, graph.Edges, graph.Layout), transforms));
+            var normalized = Validate(path + ".graph", () => RouteGraphFormat.Normalize(new(graph.SchemaVersion, nodes, graph.Edges, graph.Layout), transforms, inputModules));
             var id = oldRoutes.TryGetValue(value.RouteKey, out var old) ? old.Id : Allocate();
             routes[value.RouteKey] = new(id, value.RouteKey, value.Name.Trim(), value.Description, value.Enabled, normalized, old?.UpdatedBy, old?.UpdatedAt ?? 0);
         }
@@ -103,7 +104,7 @@ internal static class ConfigurationImportPlanner
             devices.Values.OrderBy(value => value.Id).ToArray(), inputs.Values.OrderBy(value => value.Id).ToArray(),
             routes.Values.OrderBy(value => value.Id).ToArray(), before.CredentialConnections, before.Edits,
             before.RequiredCredentials?.Where(value => connectionsById.ContainsKey(value.ConnectionId)).ToArray());
-        ValidateCombined(candidate, transforms, token);
+        ValidateCombined(candidate, transforms, inputModules ?? InputModuleCatalog.Empty, token);
         return new(candidate, ConfigurationDiff.Between(before, candidate));
 
         ConnectionDraft Connection(string key, string path) => connections.TryGetValue(key, out var connection) ? connection
@@ -243,7 +244,7 @@ internal static class ConfigurationImportPlanner
         { throw ConfigurationImportDocument.Error("import.schema", path); }
     }
 
-    private static void ValidateCombined(ConfigurationCheckpoint draft, TransformCatalog? transforms, CancellationToken token)
+    private static void ValidateCombined(ConfigurationCheckpoint draft, TransformCatalog? transforms, InputModuleCatalog inputModules, CancellationToken token)
     {
         var connections = draft.Connections.ToDictionary(value => value.Id);
         var devices = draft.Devices.ToDictionary(value => value.Id);
@@ -252,8 +253,10 @@ internal static class ConfigurationImportPlanner
         foreach (var device in draft.Devices)
         {
             token.ThrowIfCancellationRequested();
+            if (device.Kind == DeviceKind.Module && !inputModules.Modules.Any(module => module.Kind == device.ModuleKind))
+            { throw ConfigurationImportDocument.Error("import.schema", "$.devices"); }
             Validate("$.devices", () => DeviceDraftValidation.Normalize(device.Id,
-                new("import", device.Key, device.Name, device.Kind, device.Group, device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled),
+                new("import", device.Key, device.Name, device.Kind, device.Group, device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled, device.ModuleKind),
                 device.ConnectionId is { } id ? connections.GetValueOrDefault(id) : null));
         }
         foreach (var input in draft.Inputs)
@@ -264,17 +267,17 @@ internal static class ConfigurationImportPlanner
             if (device.Kind != input.Kind)
             { throw ConfigurationImportDocument.Error("import.protocolMismatch", "$.inputs"); }
             Validate("$.inputs", () => InputDraftValidation.Normalize(input.Id, device,
-                new("import", input.Key, input.Name, input.Enabled, input.Modbus, input.Mqtt, input.Http, input.Simulator),
+                new("import", input.Key, input.Name, input.Enabled, input.Modbus, input.Mqtt, input.Http, input.Simulator, input.Module),
                 device.ConnectionId is { } id ? connections.GetValueOrDefault(id) : null));
             if (!fields.TryGetValue(input.DeviceId, out var keys))
             { fields.Add(input.DeviceId, keys = new(StringComparer.Ordinal)); }
-            foreach (var key in InputDraftValidation.FieldKeys(input))
+            foreach (var key in Validate("$.inputs", () => InputDraftValidation.FieldKeys(input, inputModules).ToArray()))
             { if (!keys.Add(key)) { throw ConfigurationImportDocument.Error("import.duplicateFieldKey", "$.inputs"); } }
         }
         foreach (var route in draft.Routes)
         {
             token.ThrowIfCancellationRequested();
-            var graph = Validate("$.routes", () => RouteGraphFormat.Normalize(route.Graph, transforms));
+            var graph = Validate("$.routes", () => RouteGraphFormat.Normalize(route.Graph, transforms, inputModules));
             var nodeIds = graph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
             if (graph.Edges.Any(edge => !nodeIds.Contains(edge.Source) || !nodeIds.Contains(edge.Target)))
             { throw ConfigurationImportDocument.Error("import.referenceMissing", "$.routes"); }
@@ -293,7 +296,9 @@ internal static class ConfigurationImportPlanner
                 {
                     foreach (var id in node.Config.GetProperty("sourceIds").EnumerateArray())
                     {
-                        if (node.Type != "input." + inputs[id.GetInt64()].Kind.ToString().ToLowerInvariant())
+                        var input = inputs[id.GetInt64()];
+                        if (node.Type != (input.Module?.Kind ?? "input." + input.Kind.ToString().ToLowerInvariant()) ||
+                            node.Version != (input.Module?.Version ?? 1))
                         { throw ConfigurationImportDocument.Error("import.protocolMismatch", "$.routes"); }
                     }
                 }

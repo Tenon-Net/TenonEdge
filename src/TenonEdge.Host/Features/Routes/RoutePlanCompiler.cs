@@ -11,14 +11,16 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
 
 internal sealed record RouteCompilationSnapshot(string Version, RouteDraft[] Routes, IReadOnlyDictionary<long, DeviceDraft> Devices,
-    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null)
+    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null, InputModuleCatalog? InputModules = null)
 {
+    public InputModuleCatalog InputsCatalog => InputModules ?? InputModuleCatalog.Empty;
     public TransformCatalog Modules => Transforms ?? TransformCatalog.BuiltIn;
     public RouteCompilationLimits Admission => Limits ?? RouteCompilationLimits.Default;
 }
@@ -44,7 +46,7 @@ internal static partial class RoutePlanCompiler
             token.ThrowIfCancellationRequested();
             RouteGraph graph;
             try
-            { graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules); }
+            { graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules, snapshot.InputsCatalog); }
             catch (Exception error) when (ConfigurationError(error)) { throw Error("graph.format", route.Key); }
             if (!BusinessKeys.IsValid(route.Key) || !normalizedGraphs.TryAdd(route.Key, graph))
             { throw Error("route.key", route.Key); }
@@ -70,7 +72,7 @@ internal static partial class RoutePlanCompiler
                     { throw Error("source.disabled", route.Key, node.Id, id); }
                     CompiledRouteSource source;
                     try
-                    { source = RouteSourceCompiler.Compile(input, device, connection, connection is not null && snapshot.MqttCredentials.Contains(connection.Id)); }
+                    { source = RouteSourceCompiler.Compile(input, device, connection, connection is not null && snapshot.MqttCredentials.Contains(connection.Id), snapshot.InputsCatalog); }
                     catch (Exception error) when (ConfigurationError(error)) { throw Error("source.configuration", route.Key, node.Id, id); }
                     sources.Add(id, source);
                     Add(source.Unit, route.Key, node.Id);
@@ -78,7 +80,7 @@ internal static partial class RoutePlanCompiler
             }
             graphs.Add(new(route.Key, true, graph.SchemaVersion, nodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray()));
         }
-        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits, snapshot.Modules);
+        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits, snapshot.Modules, snapshot.InputsCatalog);
         var compiled = ImmutableArray.CreateBuilder<RouteCompiledPath>(topology.Paths.Length);
         var pathsByRoute = topology.Paths.ToLookup(path => path.RouteKey, StringComparer.Ordinal);
         foreach (var route in routes)
@@ -119,7 +121,7 @@ internal static partial class RoutePlanCompiler
         { throw Error("plan.size", ""); }
         RuntimePlanDocument document;
         try
-        { document = RuntimePlanDocument.Parse(serialized, snapshot.Modules); }
+        { document = RuntimePlanDocument.Parse(serialized, snapshot.Modules, snapshot.InputsCatalog); }
         catch (RuntimePlanDocumentException) { throw Error("plan.configuration", ""); }
         limits.Check(document);
         var paths = compiled.MoveToImmutable();

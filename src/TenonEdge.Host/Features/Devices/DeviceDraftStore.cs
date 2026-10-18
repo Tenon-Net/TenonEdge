@@ -10,11 +10,12 @@ using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
+using TenonEdge.Runtime.Inputs;
 
 namespace TenonEdge.Host.Features.Devices;
 
 /// <summary>设备基础配置草稿；引用校验、版本、实体与审计共用短事务，无运行时副作用。</summary>
-internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time)
+internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, InputModuleCatalog modules)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -28,6 +29,8 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
 
     public DeviceDraftResult Write(long? existingId, DeviceDraftRequest request, AuditAccount account, string? sourceIp)
     {
+        if (request.Kind == DeviceKind.Module && !modules.Modules.Any(module => module.Kind == request.ModuleKind))
+        { throw new ArgumentException("未安装对应输入模块。"); }
         var id = existingId ?? ids.NextId();
         return database.InTransaction(client =>
         {
@@ -137,7 +140,7 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
             try
             {
                 DeviceDraftValidation.Normalize(device.Id, new("check", device.Key, device.Name, device.Kind, device.Group,
-                    device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled), connection);
+                    device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled, device.ModuleKind), connection);
                 InputDraftStore.ValidateDeviceChange(client, device, connection);
             }
             catch (ArgumentException) { throw new DraftWriteException("connection.deviceConflict"); }

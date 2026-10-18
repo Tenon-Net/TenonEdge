@@ -8,6 +8,7 @@ import { api, queryClient, useSession } from '../../lib/session'
 import { ApiError } from '../../api/errors'
 import { ErrorMessage } from '../auth/error-message'
 import { Button } from '../../components/ui/button'
+import { useInputModules } from '../inputs/module-query'
 import {
     changeDeviceKind,
     createDeviceEditor,
@@ -24,6 +25,7 @@ export function DevicesPage() {
     const { t } = useTranslation()
     const role = useSession((s) => s.value?.role)
     const canEdit = role === 'administrator' || role === 'configurator'
+    const modules = useInputModules()
     const query = useQuery({
         queryKey,
         queryFn: async ({ signal }) => {
@@ -115,6 +117,16 @@ export function DevicesPage() {
         },
     })
     const busy = mutation.isPending
+    const moduleKinds = [
+        ...new Map(
+            (modules.data ?? []).map((module) => [module.kind, module]),
+        ).values(),
+    ]
+    const moduleBlocked =
+        form?.kind === 'module' &&
+        (!modules.isSuccess ||
+            modules.isFetching ||
+            !moduleKinds.some((module) => module.kind === form.moduleKind))
     const coherent =
         !!query.data &&
         !!connections.data &&
@@ -259,7 +271,7 @@ export function DevicesPage() {
                         className="space-y-4 rounded border p-4"
                         onSubmit={(e) => {
                             e.preventDefault()
-                            if (canEdit && !busy)
+                            if (canEdit && !busy && !moduleBlocked)
                                 mutation.mutate({
                                     type: 'save',
                                     form: { ...form },
@@ -322,13 +334,83 @@ export function DevicesPage() {
                                         )
                                     }
                                 >
-                                    {deviceKinds.map((kind) => (
-                                        <option key={kind} value={kind}>
-                                            {t('devices.kinds.' + kind)}
-                                        </option>
-                                    ))}
+                                    {deviceKinds
+                                        .filter(
+                                            (kind) =>
+                                                kind !== 'module' ||
+                                                moduleKinds.length > 0 ||
+                                                form.kind === 'module',
+                                        )
+                                        .map((kind) => (
+                                            <option key={kind} value={kind}>
+                                                {t('devices.kinds.' + kind)}
+                                            </option>
+                                        ))}
                                 </select>
                             </label>
+                            {form.kind === 'module' && (
+                                <div className="space-y-2">
+                                    <label className="block">
+                                        {t('devices.moduleKind')}
+                                        <select
+                                            className={fieldClass}
+                                            value={form.moduleKind ?? ''}
+                                            disabled={
+                                                !modules.isSuccess ||
+                                                modules.isFetching
+                                            }
+                                            onChange={(event) =>
+                                                patch({
+                                                    moduleKind:
+                                                        event.target.value ||
+                                                        null,
+                                                })
+                                            }
+                                        >
+                                            <option value="">
+                                                {t('parameters.select')}
+                                            </option>
+                                            {form.moduleKind &&
+                                                !moduleKinds.some(
+                                                    (module) =>
+                                                        module.kind ===
+                                                        form.moduleKind,
+                                                ) && (
+                                                    <option
+                                                        value={form.moduleKind}
+                                                    >
+                                                        {form.moduleKind} —{' '}
+                                                        {t(
+                                                            'parameters.unknown',
+                                                        )}
+                                                    </option>
+                                                )}
+                                            {moduleKinds.map((module) => (
+                                                <option
+                                                    key={module.kind}
+                                                    value={module.kind}
+                                                >
+                                                    {module.displayName} (
+                                                    {module.kind})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    {moduleBlocked && (
+                                        <p role="alert">
+                                            {t('inputs.moduleUnavailable')}
+                                        </p>
+                                    )}
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={modules.isFetching}
+                                        onClick={() => void modules.refetch()}
+                                    >
+                                        {t('inputs.moduleRefresh')}
+                                    </Button>
+                                </div>
+                            )}
                             <label>
                                 {t('devices.group')}
                                 <input
@@ -340,34 +422,43 @@ export function DevicesPage() {
                                     }
                                 />
                             </label>
-                            {form.kind !== 'simulator' && (
-                                <label>
-                                    {t('devices.connection')}
-                                    <select
-                                        className={fieldClass}
-                                        required
-                                        value={form.connectionId ?? ''}
-                                        onChange={(e) =>
-                                            patch({
-                                                connectionId: e.target.value
-                                                    ? Number(e.target.value)
-                                                    : null,
-                                            })
-                                        }
-                                    >
-                                        <option value="">
-                                            {t('devices.chooseConnection')}
-                                        </option>
-                                        {(connections.data?.connections ?? [])
-                                            .filter((c) => c.kind === form.kind)
-                                            .map((c) => (
-                                                <option key={c.id} value={c.id}>
-                                                    {c.name} ({c.key})
-                                                </option>
-                                            ))}
-                                    </select>
-                                </label>
-                            )}
+                            {form.kind !== 'simulator' &&
+                                form.kind !== 'module' && (
+                                    <label>
+                                        {t('devices.connection')}
+                                        <select
+                                            className={fieldClass}
+                                            required
+                                            value={form.connectionId ?? ''}
+                                            onChange={(e) =>
+                                                patch({
+                                                    connectionId: e.target.value
+                                                        ? Number(e.target.value)
+                                                        : null,
+                                                })
+                                            }
+                                        >
+                                            <option value="">
+                                                {t('devices.chooseConnection')}
+                                            </option>
+                                            {(
+                                                connections.data?.connections ??
+                                                []
+                                            )
+                                                .filter(
+                                                    (c) => c.kind === form.kind,
+                                                )
+                                                .map((c) => (
+                                                    <option
+                                                        key={c.id}
+                                                        value={c.id}
+                                                    >
+                                                        {c.name} ({c.key})
+                                                    </option>
+                                                ))}
+                                        </select>
+                                    </label>
+                                )}
                             {form.kind === 'modbus' && (
                                 <>
                                     <label>
@@ -474,7 +565,10 @@ export function DevicesPage() {
                         )}
                         <div className="flex flex-wrap gap-2">
                             {canEdit && (
-                                <Button type="submit" disabled={busy}>
+                                <Button
+                                    type="submit"
+                                    disabled={busy || moduleBlocked}
+                                >
                                     {t('devices.save')}
                                 </Button>
                             )}

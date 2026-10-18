@@ -34,7 +34,7 @@ internal static class RouteSamplePreview
         if (snapshot.Routes.Length != 1)
         { throw new ArgumentException("样本预览只接受当前一张图。"); }
         var route = snapshot.Routes[0];
-        var graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules);
+        var graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules, snapshot.InputsCatalog);
         var sources = new Dictionary<long, CompiledRouteSource>();
         var topologyNodes = new List<RouteTopologyNode>();
         foreach (var node in graph.Nodes)
@@ -53,7 +53,7 @@ internal static class RouteSamplePreview
                 { throw Error("source.missing", node.Id, id); }
                 var connection = device.ConnectionId is { } connectionId ? snapshot.Connections.GetValueOrDefault(connectionId) : null;
                 try
-                { sources.Add(id, RouteSourceCompiler.Compile(input, device, connection, false)); }
+                { sources.Add(id, RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog)); }
                 catch (Exception error) when (ConfigurationError(error))
                 { throw Error("source.configuration", node.Id, id); }
             }
@@ -66,7 +66,7 @@ internal static class RouteSamplePreview
         // Validate/count the entire graph before expansion; then execute only this sample's source paths.
         var topology = RouteTopologyCompiler.Compile([new(route.Key, true, graph.SchemaVersion, topologyNodes.ToImmutableArray(),
             graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())],
-            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission, snapshot.Modules);
+            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission, snapshot.Modules, snapshot.InputsCatalog);
         var paths = topology.Paths.Where(path => path.SourceId == sourceId).ToArray();
         var nodes = graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
         var propagation = new RouteFieldPropagation(nodes, snapshot.Modules);

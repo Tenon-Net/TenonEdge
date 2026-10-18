@@ -22,13 +22,18 @@ export function ReferencePicker({
     const [error, setError] = useState(false)
     const cursor = cursors[cursors.length - 1]
     const query = useQuery({
-        queryKey: ['route-catalog', node.kind, cursor],
+        queryKey: ['route-catalog', node.kind, node.version ?? 1, cursor],
         queryFn: async ({ signal }) => {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/routes/catalog',
                 {
                     params: {
-                        query: { kind: node.kind, afterId: cursor, limit: 100 },
+                        query: {
+                            kind: node.kind,
+                            moduleVersion: node.version ?? 1,
+                            afterId: cursor,
+                            limit: 100,
+                        },
                     },
                     signal,
                 },

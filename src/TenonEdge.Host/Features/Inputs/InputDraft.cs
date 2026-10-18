@@ -3,6 +3,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
+using TenonEdge.Runtime.Inputs;
 
 namespace TenonEdge.Host.Features.Inputs;
 
@@ -11,10 +12,12 @@ internal sealed record ModbusSourceDraft(int PeriodMs, ModbusPointSettings[] Poi
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record InputDraftRequest(string ExpectedVersion, string Key, string Name, bool Enabled = true,
-    ModbusSourceDraft? Modbus = null, MqttSourceDraft? Mqtt = null, HttpSourceDraft? Http = null, SimulatorSourceDraft? Simulator = null);
+    ModbusSourceDraft? Modbus = null, MqttSourceDraft? Mqtt = null, HttpSourceDraft? Http = null, SimulatorSourceDraft? Simulator = null,
+    ModuleSourceDraft? Module = null);
 
 internal sealed record InputDraft(long Id, long DeviceId, string Key, string Name, DeviceKind Kind, bool Enabled,
-    ModbusSourceDraft? Modbus, MqttSourceDraft? Mqtt = null, HttpSourceDraft? Http = null, SimulatorSourceDraft? Simulator = null);
+    ModbusSourceDraft? Modbus, MqttSourceDraft? Mqtt = null, HttpSourceDraft? Http = null, SimulatorSourceDraft? Simulator = null,
+    ModuleSourceDraft? Module = null);
 internal sealed record InputDraftList(string Version, InputDraft[] Inputs);
 internal sealed record InputDraftResult(string Version, InputDraft Input);
 
@@ -27,7 +30,7 @@ internal static class InputDraftValidation
             request.Name.Any(char.IsControl))
         { throw new ArgumentException("来源 key、名称或草稿版本无效。"); }
         if ((request.Modbus is not null ? 1 : 0) + (request.Mqtt is not null ? 1 : 0) +
-            (request.Http is not null ? 1 : 0) + (request.Simulator is not null ? 1 : 0) != 1)
+            (request.Http is not null ? 1 : 0) + (request.Simulator is not null ? 1 : 0) + (request.Module is not null ? 1 : 0) != 1)
         { throw new ArgumentException("须且只能提供设备协议对应的来源参数。"); }
         var input = new InputDraft(id, device.Id, request.Key, request.Name.Trim(), device.Kind, request.Enabled, null);
         switch (device.Kind)
@@ -46,17 +49,20 @@ internal static class InputDraftValidation
                 return input with { Http = JsonSourceValidation.Normalize(http, connection) };
             case DeviceKind.Simulator when request.Simulator is { } simulator:
                 return input with { Simulator = SimulatorSourceValidation.Normalize(simulator, device.Key, request.Key) };
+            case DeviceKind.Module when request.Module is { } module:
+                return input with { Module = module.Normalize(device, request.Key) };
             default:
                 throw new ArgumentException("设备与来源协议不匹配。");
         }
     }
 
-    public static IEnumerable<string> FieldKeys(InputDraft input) => input.Kind switch
+    public static IEnumerable<string> FieldKeys(InputDraft input, InputModuleCatalog? modules = null) => input.Kind switch
     {
         DeviceKind.Modbus => input.Modbus!.Points.Select(point => point.Key),
         DeviceKind.Mqtt => input.Mqtt!.Fields.Select(field => field.Key),
         DeviceKind.Http => input.Http!.Fields.Select(field => field.Key),
         DeviceKind.Simulator => SimulatorSourceValidation.FieldKeys(input.Simulator!),
+        DeviceKind.Module => (modules ?? InputModuleCatalog.Empty).Describe(input.Module!.ToUnit("metadata", input.Key)).Select(field => field.Key),
         _ => throw new ArgumentException("来源类型无效。"),
     };
 

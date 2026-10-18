@@ -1,4 +1,13 @@
 export const inputStrings = {
+    moduleTitle: '扩展输入参数',
+    moduleNotice:
+        '只配置已安装的编译期输入模块，参数不含秘密。选择明确版本；保存草稿不开始采集。必填与范围错误须修正后才能保存。',
+    moduleVersion: '输入模块版本',
+    moduleRefresh: '重新读取输入模块',
+    moduleUnavailable:
+        '输入模块目录或所选版本不可用，暂不能保存；原参数和未保存编辑已保留，不自动替换版本。',
+    moduleChange:
+        '切换输入模块版本并用其声明默认值重新开始编辑？当前参数将被替换。',
     mqttPreview: {
         title: '当前 MQTT 来源实时抓取',
         notice: '使用已保存连接与凭证，以独立随机 ClientId 临时订阅当前主题；不改变正式订阅、不保存或应用。最多等待 30 秒。未映射上游时间时，接收时间不代表设备采样时间。',

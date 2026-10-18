@@ -202,7 +202,8 @@ public sealed class DeviceDraftCopyTests
         }
         // No DI/runtime registration: deterministic IDs only for this isolated store operation.
         var ids = new SnowflakeIdGenerator(floor, DateTimeOffset.UnixEpoch, TimeProvider.System, NullLogger.Instance);
-        var store = new DeviceDraftStore(db, ids, factory.Services.GetRequiredService<AuditTrail>(), TimeProvider.System);
+        var store = new DeviceDraftStore(db, ids, factory.Services.GetRequiredService<AuditTrail>(), TimeProvider.System,
+            factory.Services.GetRequiredService<TenonEdge.Runtime.Inputs.InputModuleCatalog>());
         var result = store.Copy(device.Id, new(version, 1), "fixture", null);
         var copy = Assert.Single(result.Devices);
         Assert.Equal(floor + 2, copy.Id);

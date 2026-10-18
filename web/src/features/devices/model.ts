@@ -4,7 +4,13 @@ import { createStore } from 'zustand/vanilla'
 export type Device = components['schemas']['DeviceDraft']
 export type DeviceRequest = components['schemas']['DeviceDraftRequest']
 export type DeviceForm = DeviceRequest & { id?: number }
-export const deviceKinds = ['modbus', 'mqtt', 'http', 'simulator'] as const
+export const deviceKinds = [
+    'modbus',
+    'mqtt',
+    'http',
+    'simulator',
+    'module',
+] as const
 export function deviceForm(version: string, device?: Device): DeviceForm {
     return {
         id: device ? Number(device.id) : undefined,
@@ -17,6 +23,7 @@ export function deviceForm(version: string, device?: Device): DeviceForm {
         unitId: device?.unitId ?? (device ? null : 1),
         addressNotation: device?.addressNotation ?? 'offset',
         enabled: device?.enabled ?? true,
+        moduleKind: device?.moduleKind ?? null,
     }
 }
 export function changeDeviceKind(
@@ -29,6 +36,7 @@ export function changeDeviceKind(
         connectionId: null,
         unitId: kind === 'modbus' ? 1 : null,
         addressNotation: 'offset',
+        moduleKind: null,
     }
 }
 /** Query data never owns or overwrites the local form and its captured version. */

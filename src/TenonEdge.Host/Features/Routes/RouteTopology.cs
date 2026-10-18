@@ -10,7 +10,7 @@ internal sealed record RouteTopology(string Key, bool Enabled, int SchemaVersion
     ImmutableArray<RouteTopologyEdge> Edges);
 internal sealed record RouteTopologyNode(string Id, string Kind, int Version, ImmutableArray<long> SourceIds);
 internal sealed record RouteTopologyEdge(string Source, string Target);
-internal sealed record RouteTopologySource(long Id, RuntimeUnitId UnitId, bool Enabled, ImmutableArray<MappedFieldSchema> Fields);
+internal sealed record RouteTopologySource(long Id, RuntimeUnitId UnitId, bool Enabled, ImmutableArray<MappedFieldSchema> Fields, int Version = 1);
 internal sealed record RouteTopologyPath(string RouteKey, long SourceId, ImmutableArray<string> Nodes);
 internal sealed record RouteTopologyResult(ImmutableArray<RouteTopologyPath> Paths, ImmutableDictionary<long, int> SourcePathCounts);
 internal sealed record RouteTopologyIssue(string Code, string RouteKey, string? NodeId = null, long? SourceId = null, int? EdgeIndex = null, string? FieldKey = null);

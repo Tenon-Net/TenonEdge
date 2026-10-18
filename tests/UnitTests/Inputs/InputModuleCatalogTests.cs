@@ -123,6 +123,34 @@ public sealed class InputModuleCatalogTests
         Assert.Throws<ArgumentException>(() => InputModuleCatalog.ValidateStoredShape(unit));
     }
 
+    [Fact]
+    public void FrozenFieldMetadataIsReadableWithoutTheModuleAndCannotLieAboutTheInstalledSchema()
+    {
+        var catalog = new InputModuleCatalog([new Factory()]);
+        var compiled = catalog.WithFrozenFields(Plan("{\"value\":9007199254740993}"));
+        InputModuleCatalog.ValidateStoredShape(compiled);
+        var field = Assert.Single(InputModuleCatalog.ReadFrozenFields(compiled)!.Value);
+        Assert.Equal(new InputModuleField("value", FieldType.Integer, "unit"), field);
+        Assert.Equal("9007199254740993", compiled.Configuration.GetProperty("inputModule").GetProperty("parameters").GetProperty("value").GetRawText());
+        Assert.Null(InputModuleCatalog.ReadFrozenFields(Plan("{\"value\":1}")));
+        Assert.Throws<ArgumentException>(() => new InputModuleCatalog([new Factory { FieldType = FieldType.Number }]).Validate(compiled));
+        Assert.Throws<ArgumentException>(() => InputModuleCatalog.Empty.Validate(compiled));
+        Assert.Single(catalog.Describe(compiled));
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[{\"key\":\"bad key\",\"type\":\"integer\",\"unit\":null}]")]
+    [InlineData("[{\"key\":\"value\",\"type\":\"integer\",\"unit\":null,\"extra\":1}]")]
+    [InlineData("[{\"key\":\"value\",\"type\":\"integer\",\"unit\":null},{\"key\":\"value\",\"type\":\"number\",\"unit\":null}]")]
+    public void InvalidFrozenFieldsAreRejectedEvenWithoutInstalledModules(string fields)
+    {
+        var unit = new RuntimeUnitPlan(RuntimeUnitId.Create("input.testscalar", "device/input"),
+            Json("{\"inputModule\":{\"version\":1,\"parameters\":{\"value\":1},\"fields\":" + fields + "}}"));
+        Assert.Throws<ArgumentException>(() => InputModuleCatalog.ValidateStoredShape(unit));
+    }
+
     private static JsonElement Json(string text) => JsonSerializer.Deserialize<JsonElement>(text);
     private static RuntimeUnitPlan Plan(string parameters, int version = 1) => new(RuntimeUnitId.Create("input.testscalar", "device/input"),
         JsonSerializer.SerializeToElement(new { inputModule = new { version, parameters = Json(parameters) } }));
@@ -132,6 +160,7 @@ public sealed class InputModuleCatalogTests
         public string Kind { get; init; } = "input.testscalar";
         public int Version { get; init; } = 1;
         public bool UsesDurableHandoff { get; init; }
+        public FieldType FieldType { get; init; } = FieldType.Integer;
         public string? Failure { get; init; }
         public JsonElement Observed { get; private set; }
         public ParameterSchema Parameters { get; init; } = new("input.scalar", ParameterScope.Input,
@@ -150,7 +179,7 @@ public sealed class InputModuleCatalogTests
                 "duplicate" => [new("value", FieldType.Integer, null), new("value", FieldType.Integer, null)],
                 "type" => [new("value", (FieldType)999, null)],
                 "count" => Enumerable.Repeat(new InputModuleField("value", FieldType.Integer, null), 1001).ToImmutableArray(),
-                _ => [new("value", FieldType.Integer, "unit")],
+                _ => [new("value", FieldType, "unit")],
             };
         }
         public IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context) => throw new InvalidOperationException("Build must not run during metadata validation.");

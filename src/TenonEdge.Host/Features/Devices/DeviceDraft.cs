@@ -2,19 +2,20 @@ using System.Text.Json.Serialization;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Runtime.Inputs;
 
 namespace TenonEdge.Host.Features.Devices;
 
-internal enum DeviceKind { Modbus, Mqtt, Http, Simulator }
+internal enum DeviceKind { Modbus, Mqtt, Http, Simulator, Module }
 internal enum ModbusAddressNotation { Offset, Manual }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record DeviceDraftRequest(string ExpectedVersion, string Key, string Name, DeviceKind Kind,
     string? Group = null, long? ConnectionId = null, int? UnitId = null,
-    ModbusAddressNotation AddressNotation = ModbusAddressNotation.Offset, bool Enabled = true);
+    ModbusAddressNotation AddressNotation = ModbusAddressNotation.Offset, bool Enabled = true, string? ModuleKind = null);
 
 internal sealed record DeviceDraft(long Id, string Key, string Name, DeviceKind Kind, string? Group,
-    long? ConnectionId, int? UnitId, ModbusAddressNotation AddressNotation, bool Enabled);
+    long? ConnectionId, int? UnitId, ModbusAddressNotation AddressNotation, bool Enabled, string? ModuleKind = null);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record DeviceDraftCopyRequest(string ExpectedVersion, int Count);
 internal sealed record DeviceDraftCopyResult(string Version, DeviceDraft[] Devices);
@@ -34,6 +35,8 @@ internal static class DeviceDraftValidation
         { throw new ArgumentException("名称必填且最多 64 个字符；分组为最多 64 个字符的单层文字。"); }
         if (!Enum.IsDefined(request.Kind) || !Enum.IsDefined(request.AddressNotation))
         { throw new ArgumentException("设备类型或地址写法无效。"); }
+        if (request.Kind == DeviceKind.Module ? !InputModuleCatalog.IsModuleKind(request.ModuleKind) : request.ModuleKind is not null)
+        { throw new ArgumentException("扩展设备须指定输入模块类型，内置设备不能指定模块。"); }
         var requiredKind = request.Kind switch
         {
             DeviceKind.Modbus => ConnectionKind.Modbus,
@@ -44,7 +47,7 @@ internal static class DeviceDraftValidation
         if (requiredKind is null)
         {
             if (request.ConnectionId is not null)
-            { throw new ArgumentException("模拟设备不能引用连接。"); }
+            { throw new ArgumentException("此设备不使用内置协议连接；扩展连接须由模块参数声明。"); }
         }
         else if (connection is null || request.ConnectionId != connection.Id || connection.Kind != requiredKind)
         { throw new ArgumentException("设备必须引用相应类型的已保存连接。"); }
@@ -58,6 +61,6 @@ internal static class DeviceDraftValidation
         { throw new ArgumentException("只有 Modbus 设备可以指定 UnitId 与手册地址写法。"); }
         return new(id, request.Key, request.Name.Trim(), request.Kind,
             string.IsNullOrWhiteSpace(request.Group) ? null : request.Group.Trim(),
-            request.ConnectionId, request.UnitId, request.AddressNotation, request.Enabled);
+            request.ConnectionId, request.UnitId, request.AddressNotation, request.Enabled, request.ModuleKind);
     }
 }

@@ -2361,6 +2361,19 @@
               "format": "int32",
               "default": 100
             }
+          },
+          {
+            "name": "moduleVersion",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32",
+              "default": 1
+            }
           }
         ],
         "responses": {
@@ -9775,6 +9788,39 @@
         }
       }
     },
+    "/api/edge-admin/v1/input-modules": {
+      "get": {
+        "tags": [
+          "输入模块"
+        ],
+        "operationId": "getInputModules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InputModuleDefinition"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections": {
       "get": {
         "tags": [
@@ -15383,6 +15429,12 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "moduleKind": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -15494,6 +15546,12 @@
           "enabled": {
             "type": "boolean",
             "default": true
+          },
+          "moduleKind": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         },
         "additionalProperties": false
@@ -15518,7 +15576,8 @@
           "modbus",
           "mqtt",
           "http",
-          "simulator"
+          "simulator",
+          "module"
         ]
       },
       "DiskSpaceInfo": {
@@ -16323,6 +16382,16 @@
                 "$ref": "#/components/schemas/SimulatorSourceDraft"
               }
             ]
+          },
+          "module": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleSourceDraft"
+              }
+            ]
           }
         }
       },
@@ -16404,6 +16473,16 @@
                 "$ref": "#/components/schemas/SimulatorSourceDraft"
               }
             ]
+          },
+          "module": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleSourceDraft"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -16420,6 +16499,34 @@
           },
           "input": {
             "$ref": "#/components/schemas/InputDraft"
+          }
+        }
+      },
+      "InputModuleDefinition": {
+        "required": [
+          "kind",
+          "version",
+          "displayName",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/ParameterSchema"
           }
         }
       },
@@ -17289,6 +17396,31 @@
             "items": {
               "$ref": "#/components/schemas/ModbusPointSettings"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModuleSourceDraft": {
+        "required": [
+          "kind",
+          "version",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/JsonElement"
           }
         },
         "additionalProperties": false
@@ -18826,6 +18958,12 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "moduleKind": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         },
         "additionalProperties": false
@@ -18931,6 +19069,16 @@
               },
               {
                 "$ref": "#/components/schemas/SimulatorSourceDraft"
+              }
+            ]
+          },
+          "module": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleSourceDraft"
               }
             ]
           }
@@ -22759,6 +22907,9 @@
     },
     {
       "name": "转换模块"
+    },
+    {
+      "name": "输入模块"
     },
     {
       "name": "Devices"

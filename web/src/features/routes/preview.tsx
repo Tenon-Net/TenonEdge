@@ -50,9 +50,17 @@ export function RoutePreview({
     const { source, sample } = useStore(store)
     const options = useMemo(() => previewSources(document), [document])
     const selected = options.sources.find((item) => item.key === source)
+    const sourceVersion =
+        document.definition.nodes.find((node) => node.id === selected?.nodeId)
+            ?.version ?? 1
     // One bounded metadata lookup for the selected id; never adopt its version as the editing version.
     const metadata = useQuery({
-        queryKey: ['route-preview-source', selected?.kind, selected?.id],
+        queryKey: [
+            'route-preview-source',
+            selected?.kind,
+            sourceVersion,
+            selected?.id,
+        ],
         enabled: !!selected,
         queryFn: async ({ signal }) => {
             if (!selected) throw new Error('source')
@@ -62,6 +70,7 @@ export function RoutePreview({
                     params: {
                         query: {
                             kind: selected.kind,
+                            moduleVersion: sourceVersion,
                             afterId: selected.id - 1,
                             limit: 1,
                         },
@@ -203,7 +212,9 @@ export function RoutePreview({
                             {options.sources.map((item) => (
                                 <option key={item.key} value={item.key}>
                                     {item.nodeName} · #{item.id} ·{' '}
-                                    {t(`canvas.kinds.${item.kind}`)}
+                                    {t(`canvas.kinds.${item.kind}`, {
+                                        defaultValue: item.kind,
+                                    })}
                                     {item.nodeCount > 1
                                         ? t('routes.preview.shared', {
                                               count: item.nodeCount,

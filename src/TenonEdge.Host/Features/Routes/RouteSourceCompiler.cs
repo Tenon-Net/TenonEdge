@@ -10,6 +10,7 @@ using TenonEdge.Adapters.Simulator;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.Host.Features.Routes;
@@ -24,15 +25,16 @@ internal static class RouteSourceCompiler
 
     internal static readonly JsonSerializerOptions SettingsJson = new(Json) { IgnoreReadOnlyProperties = true };
 
-    public static CompiledRouteSource Compile(InputDraft input, DeviceDraft device, ConnectionDraft? connection, bool mqttRequiresPassword)
+    public static CompiledRouteSource Compile(InputDraft input, DeviceDraft device, ConnectionDraft? connection, bool mqttRequiresPassword, InputModuleCatalog? modules = null)
     {
         if (input.DeviceId != device.Id || input.Kind != device.Kind)
         { throw new ArgumentException("来源与设备不匹配。"); }
         _ = DeviceDraftValidation.Normalize(device.Id, new("compile", device.Key, device.Name, device.Kind, device.Group,
-            device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled), connection);
+            device.ConnectionId, device.UnitId, device.AddressNotation, device.Enabled, device.ModuleKind), connection);
         input = InputDraftValidation.Normalize(input.Id, device, new("compile", input.Key, input.Name, input.Enabled,
-            input.Modbus, input.Mqtt, input.Http, input.Simulator), connection);
-        var id = RuntimeUnitId.Create("input." + input.Kind.ToString().ToLowerInvariant(), device.Key + "/" + input.Key);
+            input.Modbus, input.Mqtt, input.Http, input.Simulator, input.Module), connection);
+        var kind = input.Module?.Kind ?? "input." + input.Kind.ToString().ToLowerInvariant();
+        var id = RuntimeUnitId.Create(kind, device.Key + "/" + input.Key);
         JsonElement configuration;
         ImmutableArray<MappedFieldSchema> fields;
         switch (input.Kind)
@@ -115,10 +117,17 @@ internal static class RouteSourceCompiler
                 fields = SimulatorInputFactory.Describe(new RuntimeUnitPlan(id, configuration), device.Key, input.Key)
                     .Select(field => new MappedFieldSchema(field.Key, field.Value, null)).ToImmutableArray();
                 break;
+            case DeviceKind.Module:
+                var module = input.Module!;
+                var unit = (modules ?? InputModuleCatalog.Empty).WithFrozenFields(module.ToUnit(device.Key, input.Key));
+                configuration = unit.Configuration;
+                fields = InputModuleCatalog.ReadFrozenFields(unit)!.Value
+                    .Select(field => new MappedFieldSchema(field.Key, field.Type, field.Unit)).ToImmutableArray();
+                break;
             default:
                 throw new ArgumentException("未知来源类型。");
         }
-        return new(new(input.Id, id, input.Enabled && device.Enabled && (connection?.Enabled ?? true), fields), new(id, configuration));
+        return new(new(input.Id, id, input.Enabled && device.Enabled && (connection?.Enabled ?? true), fields, input.Module?.Version ?? 1), new(id, configuration));
     }
 
     private static ImmutableArray<MappedFieldSchema> Schema(JsonSourceField[] fields) => fields.Select(field => new MappedFieldSchema(field.Key, field.Type!.Value, field.Unit)).ToImmutableArray();

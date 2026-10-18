@@ -9,7 +9,7 @@ using TenonEdge.IntegrationTests.Runtime;
 
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
-/// <summary>仅测试侧编译期登记第二转换模块，原 Program、管理 API、工厂与运行时全部保留。
+/// <summary>仅测试侧编译期登记转换与输入模块，原 Program、管理 API、工厂与运行时全部保留。
 /// 无产品测试开关，不自动创建配置；用于验证无需改前端即可发现/编辑/运行新的纯转换。</summary>
 internal static class TransformModuleProcessHost
 {
@@ -22,7 +22,8 @@ internal static class TransformModuleProcessHost
         var data = configuration[DataDirectory.ConfigurationKey] ?? throw new ArgumentException("须提供独立测试目录。");
         var settings = configuration.AsEnumerable().Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value!);
         await using var factory = new FixedDataDirectoryApplicationFactory(data, settings,
-            services => services.AddSingleton<IMessageTransformFactory>(new TestOffsetTransformFactory()));
+            services => services.AddSingleton<IMessageTransformFactory>(new TestOffsetTransformFactory())
+                .AddSingleton<IInputModuleFactory>(new TestScalarInputModule()));
         factory.UseKestrel();
         factory.StartServer();
         var lifetime = factory.Services.GetRequiredService<IHostApplicationLifetime>();

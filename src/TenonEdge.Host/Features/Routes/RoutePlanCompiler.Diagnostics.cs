@@ -28,12 +28,12 @@ internal static partial class RoutePlanCompiler
             {
                 if (!devices.TryGetValue(input.DeviceId, out var device))
                 { continue; }
-                var id = RuntimeUnitId.Create("input." + input.Kind.ToString().ToLowerInvariant(), device.Key + "/" + input.Key);
+                var id = RuntimeUnitId.Create(input.Module?.Kind ?? "input." + input.Kind.ToString().ToLowerInvariant(), device.Key + "/" + input.Key);
                 if (known.Contains(id))
                 {
                     // Field compatibility was already checked when this plan was frozen.
                     // Only identities and topology are needed to recover path labels.
-                    sources.Add(input.Id, new(input.Id, id, true, []));
+                    sources.Add(input.Id, new(input.Id, id, true, [], input.Module?.Version ?? 1));
                 }
             }
             var graphs = draft.Routes.Where(route => route.Enabled).Select(route =>

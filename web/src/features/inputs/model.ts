@@ -1,4 +1,11 @@
 import type { components } from '../../api/schema'
+import { routeObject } from '../canvas/codec'
+import {
+    readRouteJson,
+    RouteNumber,
+    writeRouteJson,
+    type RouteJson,
+} from '../canvas/json'
 import {
     changeAddressMode,
     validateRows,
@@ -8,6 +15,42 @@ import {
 
 export type Input = components['schemas']['InputDraft']
 export type InputRequest = components['schemas']['InputDraftRequest']
+type InputList = components['schemas']['InputDraftList']
+/** Metadata uses bounded safe IDs; module parameters retain the original numeric tokens. */
+export function decodeInputList(text: string): InputList {
+    const lexical = routeObject(readRouteJson(text, 16 * 1024 * 1024, 64))
+    const result: InputList = JSON.parse(text)
+    if (
+        !Array.isArray(lexical.inputs) ||
+        !Array.isArray(result.inputs) ||
+        lexical.inputs.length !== result.inputs.length
+    )
+        throw new Error('input-list')
+    for (let index = 0; index < result.inputs.length; index++) {
+        const module = result.inputs[index].module
+        if (module)
+            module.parameters = routeObject(
+                routeObject(lexical.inputs[index]).module,
+            ).parameters
+    }
+    return result
+}
+function moduleText(value: unknown): string {
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('module-parameters')
+    const fields: Record<string, RouteJson> = {}
+    for (const [key, item] of Object.entries(value)) {
+        if (
+            item === null ||
+            typeof item === 'string' ||
+            typeof item === 'boolean' ||
+            item instanceof RouteNumber
+        )
+            fields[key] = item
+        else throw new Error('module-parameters') // Never accept a previously rounded JSON number.
+    }
+    return writeRouteJson(fields)
+}
 export type JsonField = components['schemas']['JsonSourceField']
 export type TimeFormat = NonNullable<
     components['schemas']['UpstreamTimeFormat']
@@ -34,14 +77,23 @@ export type InputForm = {
     name: string
     enabled: boolean
     period: number
+    moduleKind: string
+    moduleVersion: number
+    moduleConfigText: string
 }
 export function inputForm(
     version: string,
     input?: Input,
     kind: Input['kind'] = 'modbus',
+    moduleKind?: string | null,
 ): InputForm {
     return {
         kind: input?.kind ?? kind,
+        moduleKind: input?.module?.kind ?? moduleKind ?? '',
+        moduleVersion: Number(input?.module?.version ?? 0),
+        moduleConfigText: input?.module
+            ? moduleText(input.module.parameters)
+            : '{}',
         fields: (input?.mqtt?.fields ?? input?.http?.fields ?? []).map(
             (field) => ({ ...field }),
         ),
@@ -114,6 +166,17 @@ export function inputRequest(
     const upstreamTime = !form.timeEnabled
         ? null
         : { path: form.timePath, format: form.timeFormat }
+    if (form.kind === 'module')
+        return {
+            ...common,
+            module: {
+                kind: form.moduleKind,
+                version: form.moduleVersion,
+                parameters: routeObject(
+                    readRouteJson(form.moduleConfigText, 128 * 1024),
+                ),
+            },
+        }
     if (form.kind === 'mqtt')
         return {
             ...common,
@@ -178,4 +241,21 @@ export function inputRequest(
             })),
         },
     }
+}
+
+export function inputRequestJson(form: InputForm, body: InputRequest): string {
+    if (form.kind !== 'module') return JSON.stringify(body)
+    return writeRouteJson({
+        expectedVersion: body.expectedVersion,
+        key: body.key,
+        name: body.name,
+        enabled: form.enabled,
+        module: {
+            kind: form.moduleKind,
+            version: form.moduleVersion,
+            parameters: routeObject(
+                readRouteJson(form.moduleConfigText, 128 * 1024),
+            ),
+        },
+    })
 }

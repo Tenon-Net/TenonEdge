@@ -23,8 +23,13 @@ public sealed record ModbusConnectionSettings
         { throw new ArgumentException("Modbus 主机必须为固定主机名或 IP 地址。"); }
         ModbusConnectionParameters.Schema.ThrowIfInvalid(JsonSerializer.SerializeToElement(new
         {
-            host = Host, port = Port, format = Format == ModbusFrameFormat.Tcp ? "tcp" : Format == ModbusFrameFormat.RtuOverTcp ? "rtuOverTcp" : "invalid",
-            connectTimeoutMs = ConnectTimeoutMs, readTimeoutMs = ReadTimeoutMs, requestIntervalMs = RequestIntervalMs, rtuSilenceMs = RtuSilenceMs,
+            host = Host,
+            port = Port,
+            format = Format == ModbusFrameFormat.Tcp ? "tcp" : Format == ModbusFrameFormat.RtuOverTcp ? "rtuOverTcp" : "invalid",
+            connectTimeoutMs = ConnectTimeoutMs,
+            readTimeoutMs = ReadTimeoutMs,
+            requestIntervalMs = RequestIntervalMs,
+            rtuSilenceMs = RtuSilenceMs,
         }));
         return this with { Host = Host.ToLowerInvariant() };
     }

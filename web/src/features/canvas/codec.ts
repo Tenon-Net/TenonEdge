@@ -1,5 +1,6 @@
 import {
     isNodeKind,
+    isInputModuleKind,
     maxNodes,
     checkPosition,
     type GraphDocument,
@@ -79,7 +80,9 @@ export function decodeGraph(text: string): GraphDocument {
         const kind = node.type
         if (
             !isNodeKind(kind) ||
-            (!kind.startsWith('transform.') && version !== 1)
+            (!kind.startsWith('transform.') &&
+                !isInputModuleKind(kind) &&
+                version !== 1)
         )
             throw new Error('graph')
         const name = string(node.name)

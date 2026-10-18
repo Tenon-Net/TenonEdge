@@ -11,7 +11,7 @@ public sealed class ParameterSchema
 {
     public const int MaximumParameters = 128;
     public const int MaximumConfigurationBytes = 128 * 1024;
-    private readonly ImmutableDictionary<string, ParameterDefinition> byName;
+    private readonly ImmutableDictionary<string, ParameterDefinition> _byName;
 
     public string Id { get; }
     public ParameterScope Scope { get; }
@@ -19,10 +19,12 @@ public sealed class ParameterSchema
 
     public ParameterSchema(string id, ParameterScope scope, IEnumerable<ParameterDefinition> parameters)
     {
-        if (!Key(id) || !Enum.IsDefined(scope)) { throw new ArgumentException("参数声明标识或用途无效。"); }
+        if (!Key(id) || !Enum.IsDefined(scope))
+        { throw new ArgumentException("参数声明标识或用途无效。"); }
         ArgumentNullException.ThrowIfNull(parameters);
         var fields = parameters.Take(MaximumParameters + 1).ToImmutableArray();
-        if (fields.Length is 0 or > MaximumParameters) { throw new ArgumentException("参数声明数量无效。"); }
+        if (fields.Length is 0 or > MaximumParameters)
+        { throw new ArgumentException("参数声明数量无效。"); }
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var field in fields)
         {
@@ -53,9 +55,11 @@ public sealed class ParameterSchema
                 { throw new ArgumentException("参数数值范围无效。"); }
                 if (field.DefaultJson is { } raw)
                 {
-                    if (Encoding.UTF8.GetByteCount(raw) > MaximumConfigurationBytes) { throw new ArgumentException("默认值过大。"); }
+                    if (Encoding.UTF8.GetByteCount(raw) > MaximumConfigurationBytes)
+                    { throw new ArgumentException("默认值过大。"); }
                     using var value = JsonDocument.Parse(raw);
-                    if (ValueIssue(field, value.RootElement, null) is not null) { throw new ArgumentException("参数默认值不满足声明。"); }
+                    if (ValueIssue(field, value.RootElement, null) is not null)
+                    { throw new ArgumentException("参数默认值不满足声明。"); }
                 }
             }
             catch (JsonException) { throw new ArgumentException("参数默认值或边界不是有效 JSON。"); }
@@ -63,33 +67,40 @@ public sealed class ParameterSchema
         Id = id;
         Scope = scope;
         Parameters = fields;
-        byName = fields.ToImmutableDictionary(field => field.Name, StringComparer.Ordinal);
+        _byName = fields.ToImmutableDictionary(field => field.Name, StringComparer.Ordinal);
     }
 
     public ImmutableArray<ParameterIssue> Validate(JsonElement values, IReadOnlyDictionary<string, string>? connections = null,
         IReadOnlySet<string>? configuredCredentials = null)
     {
-        if (values.ValueKind != JsonValueKind.Object) { return [new("", "parameters.object")]; }
-        if (Encoding.UTF8.GetByteCount(values.GetRawText()) > MaximumConfigurationBytes) { return [new("", "parameters.size")]; }
+        if (values.ValueKind != JsonValueKind.Object)
+        { return [new("", "parameters.object")]; }
+        if (Encoding.UTF8.GetByteCount(values.GetRawText()) > MaximumConfigurationBytes)
+        { return [new("", "parameters.size")]; }
         var issues = ImmutableArray.CreateBuilder<ParameterIssue>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var count = 0;
         foreach (var property in values.EnumerateObject())
         {
-            if (++count > MaximumParameters * 2) { return [new("", "parameters.size")]; }
-            if (!byName.TryGetValue(property.Name, out var field))
+            if (++count > MaximumParameters * 2)
+            { return [new("", "parameters.size")]; }
+            if (!_byName.TryGetValue(property.Name, out var field))
             { issues.Add(new("", "parameter.unknown")); continue; }
-            if (!seen.Add(property.Name)) { issues.Add(new(field.Name, "parameter.duplicate")); continue; }
+            if (!seen.Add(property.Name))
+            { issues.Add(new(field.Name, "parameter.duplicate")); continue; }
             var error = ValueIssue(field, property.Value, connections);
-            if (error is not null) { issues.Add(new(field.Name, error)); }
+            if (error is not null)
+            { issues.Add(new(field.Name, error)); }
         }
         foreach (var field in Parameters)
         {
             if (field.Type == ParameterType.Credential)
             {
-                if (field.Required && configuredCredentials?.Contains(field.Name) != true) { issues.Add(new(field.Name, "parameter.required")); }
+                if (field.Required && configuredCredentials?.Contains(field.Name) != true)
+                { issues.Add(new(field.Name, "parameter.required")); }
             }
-            else if (field.Required && !seen.Contains(field.Name)) { issues.Add(new(field.Name, "parameter.required")); }
+            else if (field.Required && !seen.Contains(field.Name))
+            { issues.Add(new(field.Name, "parameter.required")); }
         }
         return issues.ToImmutable();
     }
@@ -97,23 +108,29 @@ public sealed class ParameterSchema
     public void ThrowIfInvalid(JsonElement values, IReadOnlyDictionary<string, string>? connections = null,
         IReadOnlySet<string>? configuredCredentials = null)
     {
-        if (!Validate(values, connections, configuredCredentials).IsEmpty) { throw new ArgumentException("参数不满足适配器声明。"); }
+        if (!Validate(values, connections, configuredCredentials).IsEmpty)
+        { throw new ArgumentException("参数不满足适配器声明。"); }
     }
 
     private static string? ValueIssue(ParameterDefinition field, JsonElement value, IReadOnlyDictionary<string, string>? connections)
     {
         // Even null/placeholder values must not be persisted in a public credential field.
-        if (field.Type == ParameterType.Credential) { return "parameter.credentialSeparate"; }
-        if (value.ValueKind == JsonValueKind.Null) { return field.Required ? "parameter.required" : null; }
+        if (field.Type == ParameterType.Credential)
+        { return "parameter.credentialSeparate"; }
+        if (value.ValueKind == JsonValueKind.Null)
+        { return field.Required ? "parameter.required" : null; }
         switch (field.Type)
         {
             case ParameterType.Text:
-                if (value.ValueKind != JsonValueKind.String) { return "parameter.type"; }
+                if (value.ValueKind != JsonValueKind.String)
+                { return "parameter.type"; }
                 var text = value.GetString()!;
                 return text.Length > field.MaximumLength ? "parameter.length" : field.Required && string.IsNullOrWhiteSpace(text) ? "parameter.required" : null;
             case ParameterType.Number:
-                if (!ParameterNumber.TryRead(value, out var number)) { return "parameter.number"; }
-                if (field.WholeNumber && !number.WholeNumber) { return "parameter.integer"; }
+                if (!ParameterNumber.TryRead(value, out var number))
+                { return "parameter.number"; }
+                if (field.WholeNumber && !number.WholeNumber)
+                { return "parameter.integer"; }
                 return field.MinimumJson is { } min && number.CompareTo(ParameterNumber.Read(min)) < 0 ||
                     field.MaximumJson is { } max && number.CompareTo(ParameterNumber.Read(max)) > 0 ? "parameter.range" : null;
             case ParameterType.Switch:
@@ -122,10 +139,12 @@ public sealed class ParameterSchema
                 return value.ValueKind == JsonValueKind.String && field.Options.Any(option => option.Value == value.GetString()) ? null : "parameter.choice";
             case ParameterType.ConnectionReference:
                 if (value.ValueKind != JsonValueKind.String || !long.TryParse(value.GetString(), out var id) || id is < 1 or > 9007199254740991L ||
-                    value.GetString() != id.ToString(System.Globalization.CultureInfo.InvariantCulture)) { return "parameter.connection"; }
+                    value.GetString() != id.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                { return "parameter.connection"; }
                 return connections?.TryGetValue(value.GetString()!, out var kind) == true && field.ConnectionKinds.Contains(kind, StringComparer.Ordinal)
                     ? null : "parameter.connection";
-            default: return "parameter.type";
+            default:
+                return "parameter.type";
         }
     }
 

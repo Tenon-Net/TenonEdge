@@ -58,12 +58,17 @@ public sealed class TransformPipelineTests
     {
         MessageTransformResult Run(EdgeMessage source)
         {
-            if (failure == "exception") { throw new InvalidOperationException("do-not-leak"); }
-            if (failure == "counts") { return new(source, -1); }
+            if (failure == "exception")
+            { throw new InvalidOperationException("do-not-leak"); }
+            if (failure == "counts")
+            { return new(source, -1); }
             var values = source.Values;
-            if (failure == "type") { values = values.SetItem("value", FieldValue.FromBoolean(true)); }
-            if (failure == "field") { values = values.Add("undeclared", FieldValue.FromInt64(1)); }
-            if (failure == "size") { values = values.SetItem("value", FieldValue.FromString(new string('x', 4096))); }
+            if (failure == "type")
+            { values = values.SetItem("value", FieldValue.FromBoolean(true)); }
+            if (failure == "field")
+            { values = values.Add("undeclared", FieldValue.FromInt64(1)); }
+            if (failure == "size")
+            { values = values.SetItem("value", FieldValue.FromString(new string('x', 4096))); }
             return new(new(
                 failure == "id" ? Guid.NewGuid() : source.SourceMessageId,
                 failure == "input" ? "different" : source.InputId,
@@ -78,7 +83,8 @@ public sealed class TransformPipelineTests
                 source.SampleMetadata));
         }
         var transform = new TestTransform { Run = Run };
-        if (failure == "size") { transform = transform with { Schema = [new("value", FieldType.String, null)] }; }
+        if (failure == "size")
+        { transform = transform with { Schema = [new("value", FieldType.String, null)] }; }
         var exception = Assert.Throws<ArgumentException>(() => new TransformPipeline([transform]).Apply(TransformCatalogTests.Message()));
         Assert.DoesNotContain("do-not-leak", exception.ToString(), StringComparison.Ordinal);
         Assert.Null(exception.InnerException);

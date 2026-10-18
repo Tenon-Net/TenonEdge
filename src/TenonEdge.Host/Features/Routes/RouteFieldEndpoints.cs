@@ -23,14 +23,14 @@ internal static class RouteFieldEndpoints
         return api;
     }
     private static Results<Ok<RouteFieldPage>, ValidationProblem, ProblemHttpResult> Read(RouteFieldRequest request,
-        RouteDraftStore drafts, PreviewOperationBudget budget, TenonEdge.Runtime.Transforms.TransformCatalog transforms, HttpContext context)
+        RouteDraftStore drafts, PreviewOperationBudget budget, TenonEdge.Runtime.Transforms.TransformCatalog transforms, TenonEdge.Runtime.Inputs.InputModuleCatalog inputModules, HttpContext context)
     {
         using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
         if (failure is not null)
         { return failure; }
         try
         {
-            var prefix = RouteFieldAnalysis.Prefix(request.Graph, request.NodeId, transforms);
+            var prefix = RouteFieldAnalysis.Prefix(request.Graph, request.NodeId, transforms, inputModules);
             var snapshot = drafts.ReadGraphCompilation(request.ExpectedVersion, prefix, context.RequestAborted);
             return TypedResults.Ok(RouteFieldAnalysis.Analyze(snapshot, request.NodeId, request.AfterKey, request.Search, request.Limit, context.RequestAborted));
         }

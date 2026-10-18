@@ -176,3 +176,38 @@ describe('persisted graph to editor boundary', () => {
         expect(decodeGraph(text).layout.positions.g1).toEqual({ x: 80, y: 80 })
     })
 })
+
+describe('versioned input graph nodes', () => {
+    const input = (kind: string, version: number) =>
+        fixture('{"sourceIds":[123]}')
+            .replace('transform.map', kind)
+            .replace('"version":1', `"version":${version}`)
+    it('roundtrips a precise installed version without needing its directory for history reads', () => {
+        const text = input('input.testscalar', 3)
+        const graph = decodeGraph(text)
+        expect(graph.definition.nodes[0]).toMatchObject({
+            kind: 'input.testscalar',
+            version: 3,
+            configText: '{"sourceIds":[123]}',
+        })
+        expect(decodeGraph(encodeGraph(graph))).toEqual(graph)
+    })
+    it.each([
+        'input.modbus',
+        'input.http',
+        'input.mqtt',
+        'input.simulator',
+        'output.http',
+    ])('retains the v1-only built-in contract for %s', (kind) =>
+        expect(() => decodeGraph(input(kind, 3))).toThrow(),
+    )
+    it.each([
+        'input.bad-name',
+        'input.Test',
+        'input.1test',
+        'input..test',
+        'input.' + 'a'.repeat(60),
+    ])('rejects unsupported module identifiers %s', (kind) =>
+        expect(() => decodeGraph(input(kind, 3))).toThrow(),
+    )
+})

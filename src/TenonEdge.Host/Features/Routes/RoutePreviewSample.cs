@@ -33,7 +33,7 @@ internal static class RoutePreviewSample
         if (!snapshot.Inputs.TryGetValue(sourceId, out var input) || !snapshot.Devices.TryGetValue(input.DeviceId, out var device))
         { throw new RouteTopologyException(new("source.missing", snapshot.Routes[0].Key, SourceId: sourceId)); }
         var connection = device.ConnectionId is { } id ? snapshot.Connections.GetValueOrDefault(id) : null;
-        var compiled = RouteSourceCompiler.Compile(input, device, connection, false);
+        var compiled = RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog);
         using var document = JsonDocument.Parse(sampleJson, new JsonDocumentOptions { MaxDepth = 64 });
         var root = document.RootElement;
         receivedAt = receivedAt.ToUniversalTime();

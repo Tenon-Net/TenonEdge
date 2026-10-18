@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Abstractions.Parameters;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Parameters;
@@ -15,7 +16,16 @@ internal static class ParameterSchemaEndpoints
         api.MapGroup("/transform-modules").WithTags("转换模块")
             .MapGet("/", GetTransforms).WithName("getTransformModules")
             .Produces<ImmutableArray<TransformModuleDefinition>>();
+        api.MapGroup("/input-modules").WithTags("输入模块")
+            .MapGet("/", GetInputs).WithName("getInputModules")
+            .Produces<ImmutableArray<InputModuleDefinition>>();
         return api;
+    }
+
+    private static Ok<ImmutableArray<InputModuleDefinition>> GetInputs(InputModuleCatalog catalog, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        return TypedResults.Ok(catalog.Modules);
     }
 
     private static Ok<ImmutableArray<TransformModuleDefinition>> GetTransforms(TransformCatalog catalog, HttpContext context)

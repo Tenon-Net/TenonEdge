@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
@@ -27,10 +28,10 @@ internal static class RouteGraphFormat
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 16 };
     internal const int MaximumBytes = 1024 * 1024;
 
-    public static RouteGraph Normalize(RouteGraph graph, TransformCatalog? transforms = null) => NormalizeCore(graph, transforms ?? TransformCatalog.BuiltIn);
-    internal static RouteGraph NormalizeStored(RouteGraph graph) => NormalizeCore(graph, null);
+    public static RouteGraph Normalize(RouteGraph graph, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null) => NormalizeCore(graph, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty);
+    internal static RouteGraph NormalizeStored(RouteGraph graph) => NormalizeCore(graph, null, null);
 
-    private static RouteGraph NormalizeCore(RouteGraph graph, TransformCatalog? transforms)
+    private static RouteGraph NormalizeCore(RouteGraph graph, TransformCatalog? transforms, InputModuleCatalog? inputs)
     {
         ArgumentNullException.ThrowIfNull(graph);
         if (graph.SchemaVersion != 1 || graph.Nodes is null || graph.Nodes.Length > RouteTopologyCompiler.MaximumNodes ||
@@ -40,10 +41,10 @@ internal static class RouteGraphFormat
         var nodes = graph.Nodes.Select(node =>
         {
             if (node is null || !BusinessKeys.IsValid(node.Id) || !ids.Add(node.Id) || node.Version < 1 ||
-                !TransformCatalog.ValidKind(node.Type) && node.Version != 1 ||
+                !TransformCatalog.ValidKind(node.Type) && !InputModuleCatalog.IsModuleKind(node.Type) && node.Version != 1 ||
                 node.Name is null || node.Name.Length > 64 || node.Name.Any(char.IsControl))
             { throw new ArgumentException("节点标识、名称或版本无效。"); }
-            return node with { Config = NormalizeConfig(node.Type, node.Version, node.Config, transforms) };
+            return node with { Config = NormalizeConfig(node.Type, node.Version, node.Config, transforms, inputs) };
         }).ToArray();
         foreach (var edge in graph.Edges)
         {
@@ -71,20 +72,23 @@ internal static class RouteGraphFormat
         return Enumerable.Empty<RouteGraphReference>();
     }).Distinct().ToArray();
 
-    private static JsonElement NormalizeConfig(string kind, int version, JsonElement config, TransformCatalog? transforms)
+    private static JsonElement NormalizeConfig(string kind, int version, JsonElement config, TransformCatalog? transforms, InputModuleCatalog? inputs)
     {
         if (config.ValueKind != JsonValueKind.Object)
         { throw new ArgumentException("节点配置须为对象。"); }
+        if (InputModuleCatalog.IsModuleKind(kind))
+        {
+            if (inputs is not null && !inputs.Contains(kind, version))
+            { throw new ArgumentException("未安装对应输入模块或版本。"); }
+            return NormalizeInput(config);
+        }
         switch (kind)
         {
             case "input.modbus":
             case "input.mqtt":
             case "input.http":
             case "input.simulator":
-                var input = Read<RouteInputConfig>(config);
-                if (input.SourceIds is null || input.SourceIds.Length > 500 || input.SourceIds.Any(id => !ValidId(id)))
-                { throw new ArgumentException("来源列表无效。"); }
-                return JsonSerializer.SerializeToElement(input, Json);
+                return NormalizeInput(config);
             case "transform.map" when version == 1:
                 var map = Read<RouteMapConfig>(config);
                 if (map.Rules is null || map.Rules.Length > 1000)
@@ -144,6 +148,14 @@ internal static class RouteGraphFormat
                 { throw new ArgumentException("未知节点类型。"); }
                 return transforms is null ? TransformCatalog.NormalizeStoredConfiguration(config) : transforms.NormalizeDraft(kind, version, config);
         }
+    }
+
+    private static JsonElement NormalizeInput(JsonElement config)
+    {
+        var input = Read<RouteInputConfig>(config);
+        if (input.SourceIds is null || input.SourceIds.Length > 500 || input.SourceIds.Any(id => !ValidId(id)))
+        { throw new ArgumentException("来源列表无效。"); }
+        return JsonSerializer.SerializeToElement(input, Json);
     }
 
     private static void Payload(JsonElement payload)

@@ -22,11 +22,11 @@ internal sealed record PortableCredentialRequirement(string Status, string Accou
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record PortableDevice(string DeviceKey, string Name, DeviceKind Kind, string? Group, string? ConnectionKey,
-    int? UnitId, ModbusAddressNotation AddressNotation, bool Enabled);
+    int? UnitId, ModbusAddressNotation AddressNotation, bool Enabled, string? ModuleKind = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record PortableInput(string DeviceKey, string InputKey, string Name, DeviceKind Kind, bool Enabled,
-    ModbusSourceDraft? Modbus, MqttSourceDraft? Mqtt, HttpSourceDraft? Http, SimulatorSourceDraft? Simulator);
+    ModbusSourceDraft? Modbus, MqttSourceDraft? Mqtt, HttpSourceDraft? Http, SimulatorSourceDraft? Simulator, ModuleSourceDraft? Module = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record PortableRoute(string RouteKey, string Name, string? Description, bool Enabled, PortableGraph Graph);
@@ -66,18 +66,18 @@ internal static class ConfigurationExport
             token.ThrowIfCancellationRequested();
             var connection = value.ConnectionId is { } id ? Connection(id) : null;
             var normalized = DeviceDraftValidation.Normalize(value.Id, new("export", value.Key, value.Name, value.Kind,
-                value.Group, value.ConnectionId, value.UnitId, value.AddressNotation, value.Enabled), connection);
+                value.Group, value.ConnectionId, value.UnitId, value.AddressNotation, value.Enabled, value.ModuleKind), connection);
             return new PortableDevice(normalized.Key, normalized.Name, normalized.Kind, normalized.Group, connection?.Key,
-                normalized.UnitId, normalized.AddressNotation, normalized.Enabled);
+                normalized.UnitId, normalized.AddressNotation, normalized.Enabled, normalized.ModuleKind);
         }).ToArray();
         var exportedInputs = draft.Inputs.Select(value =>
         {
             token.ThrowIfCancellationRequested();
             var device = Device(value.DeviceId);
             var normalized = InputDraftValidation.Normalize(value.Id, device, new("export", value.Key, value.Name,
-                value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator), device.ConnectionId is { } id ? Connection(id) : null);
+                value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator, value.Module), device.ConnectionId is { } id ? Connection(id) : null);
             return new PortableInput(device.Key, normalized.Key, normalized.Name, normalized.Kind, normalized.Enabled,
-                normalized.Modbus, normalized.Mqtt, normalized.Http, normalized.Simulator);
+                normalized.Modbus, normalized.Mqtt, normalized.Http, normalized.Simulator, normalized.Module);
         }).ToArray();
         var exportedRoutes = draft.Routes.Select((route, index) =>
         {

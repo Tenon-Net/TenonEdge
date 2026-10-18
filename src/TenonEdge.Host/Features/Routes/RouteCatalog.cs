@@ -20,10 +20,11 @@ internal sealed class RouteCatalogItem
 internal sealed partial class RouteDraftStore
 {
     // Project metadata in SQLite; do not load point tables, sample JSON or credentials into the catalog.
-    internal RouteCatalogPage ReadCatalog(string kind, long afterId, int limit) => database.InTransaction(client =>
+    internal RouteCatalogPage ReadCatalog(string kind, long afterId, int limit, int moduleVersion = 1) => database.InTransaction(client =>
     {
+        var extension = inputModules.Contains(kind, moduleVersion);
         if (afterId < 0 || afterId > 9007199254740991 || limit is < 1 or > 100 ||
-            kind is not ("input.modbus" or "input.mqtt" or "input.http" or "input.simulator" or "output.mqtt" or "output.http"))
+            !extension && (moduleVersion != 1 || kind is not ("input.modbus" or "input.mqtt" or "input.http" or "input.simulator" or "output.mqtt" or "output.http")))
         { throw new ArgumentException("目录类型或分页参数无效。"); }
         var protocol = kind[(kind.IndexOf('.') + 1)..];
         var sql = kind.StartsWith("input.", StringComparison.Ordinal)
@@ -34,7 +35,11 @@ internal sealed partial class RouteDraftStore
                 d.id AS DeviceId, d.business_key AS DeviceKey, json_extract(d.content, '$.name') AS DeviceName
               FROM input_draft i JOIN device_draft d ON d.id = i.device_id
                 LEFT JOIN connection_draft c ON c.id = d.connection_id
-              WHERE i.id > @after AND json_extract(i.content, '$.kind') = @kind
+              WHERE i.id > @after AND
+                ((@extension = 0 AND json_extract(i.content, '$.kind') = @kind) OR
+                 (@extension = 1 AND json_extract(i.content, '$.kind') = 'module'
+                  AND json_extract(i.content, '$.module.kind') = @kind
+                  AND json_extract(i.content, '$.module.version') = @moduleVersion))
               ORDER BY i.id LIMIT @take
               """
             : """
@@ -45,7 +50,8 @@ internal sealed partial class RouteDraftStore
               """;
         var version = ConfigurationDraft.ReadVersion(client);
         var rows = client.Ado.SqlQuery<RouteCatalogItem>(sql, new SugarParameter("@after", afterId),
-            new SugarParameter("@kind", protocol), new SugarParameter("@take", limit + 1));
+            new SugarParameter("@kind", extension ? kind : protocol), new SugarParameter("@take", limit + 1),
+            new SugarParameter("@extension", extension ? 1 : 0), new SugarParameter("@moduleVersion", moduleVersion));
         var items = rows.Take(limit).ToArray();
         return new RouteCatalogPage(version, items, rows.Count > limit ? items[^1].Id : null);
     });
@@ -59,10 +65,10 @@ internal static class RouteCatalogEndpoints
             .WithSummary("分页读取同版本的来源或输出连接摘要，不返回配置、点表、样本或凭证");
         return api;
     }
-    private static Results<Ok<RouteCatalogPage>, ValidationProblem> Read(string kind, RouteDraftStore drafts, long afterId = 0, int limit = 100)
+    private static Results<Ok<RouteCatalogPage>, ValidationProblem> Read(string kind, RouteDraftStore drafts, long afterId = 0, int limit = 100, int moduleVersion = 1)
     {
         try
-        { return TypedResults.Ok(drafts.ReadCatalog(kind, afterId, limit)); }
-        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["catalog"] = ["类型须为 input.modbus/mqtt/http/simulator 或 output.mqtt/http；页大小 1—100，游标为非负安全整数。"] }); }
+        { return TypedResults.Ok(drafts.ReadCatalog(kind, afterId, limit, moduleVersion)); }
+        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["catalog"] = ["请选择已安装的输入模块版本或内置输入/输出；页大小 1—100，游标为非负安全整数。"] }); }
     }
 }

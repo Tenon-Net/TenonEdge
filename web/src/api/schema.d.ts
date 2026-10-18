@@ -2097,6 +2097,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/input-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getInputModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections": {
         parameters: {
             query?: never;
@@ -3215,6 +3231,7 @@ export interface components {
             unitId: null | number | string;
             addressNotation: components["schemas"]["ModbusAddressNotation"];
             enabled: boolean;
+            moduleKind?: null | string;
         };
         DeviceDraftCopyRequest: {
             expectedVersion: string;
@@ -3242,13 +3259,14 @@ export interface components {
             addressNotation?: components["schemas"]["ModbusAddressNotation"];
             /** @default true */
             enabled: boolean;
+            moduleKind?: null | string;
         };
         DeviceDraftResult: {
             version: string;
             device: components["schemas"]["DeviceDraft"];
         };
         /** @enum {unknown} */
-        DeviceKind: "modbus" | "mqtt" | "http" | "simulator";
+        DeviceKind: "modbus" | "mqtt" | "http" | "simulator" | "module";
         DiskSpaceInfo: {
             /** Format: int64 */
             totalBytes: number | string;
@@ -3426,6 +3444,7 @@ export interface components {
             mqtt?: null | components["schemas"]["MqttSourceDraft"];
             http?: null | components["schemas"]["HttpSourceDraft"];
             simulator?: null | components["schemas"]["SimulatorSourceDraft"];
+            module?: null | components["schemas"]["ModuleSourceDraft"];
         };
         InputDraftList: {
             version: string;
@@ -3441,10 +3460,18 @@ export interface components {
             mqtt?: null | components["schemas"]["MqttSourceDraft"];
             http?: null | components["schemas"]["HttpSourceDraft"];
             simulator?: null | components["schemas"]["SimulatorSourceDraft"];
+            module?: null | components["schemas"]["ModuleSourceDraft"];
         };
         InputDraftResult: {
             version: string;
             input: components["schemas"]["InputDraft"];
+        };
+        InputModuleDefinition: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            displayName: string;
+            parameters: components["schemas"]["ParameterSchema"];
         };
         /** @enum {unknown} */
         InputReadHealth: "notRead" | "normal" | "partialFailure" | "failing" | "offline";
@@ -3655,6 +3682,12 @@ export interface components {
             /** Format: int32 */
             periodMs: number | string;
             points: components["schemas"]["ModbusPointSettings"][];
+        };
+        ModuleSourceDraft: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            parameters: components["schemas"]["JsonElement"];
         };
         MqttConnectionDraft: {
             host: string;
@@ -3984,6 +4017,7 @@ export interface components {
             unitId: null | number | string;
             addressNotation: components["schemas"]["ModbusAddressNotation"];
             enabled: boolean;
+            moduleKind?: null | string;
         };
         PortableGraph: {
             /** Format: int32 */
@@ -4002,6 +4036,7 @@ export interface components {
             mqtt: null | components["schemas"]["MqttSourceDraft"];
             http: null | components["schemas"]["HttpSourceDraft"];
             simulator: null | components["schemas"]["SimulatorSourceDraft"];
+            module?: null | components["schemas"]["ModuleSourceDraft"];
         };
         PortableRoute: {
             routeKey: string;
@@ -6631,6 +6666,7 @@ export interface operations {
                 kind: string;
                 afterId?: number | string;
                 limit?: number | string;
+                moduleVersion?: number | string;
             };
             header?: never;
             path?: never;
@@ -12531,6 +12567,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransformModuleDefinition"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getInputModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputModuleDefinition"][];
                 };
             };
             /** @description Unauthorized */

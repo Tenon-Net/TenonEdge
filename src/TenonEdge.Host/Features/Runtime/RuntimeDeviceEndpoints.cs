@@ -136,17 +136,17 @@ internal static class RuntimeDeviceEndpoints
         if (draft is not null)
         {
             var inputGroups = draft.Inputs.ToLookup(input => input.DeviceId);
-            var scheduled = plan.Units.Select(unit => unit.Id).ToHashSet();
+            var scheduled = plan.Units.ToDictionary(unit => unit.Id);
             foreach (var device in draft.Devices)
             {
                 devices.Add(new(device.Key, device.Name, device.Kind.ToString().ToLowerInvariant(), device.Enabled));
                 foreach (var input in inputGroups[device.Id])
                 {
-                    var id = RuntimeUnitId.Create("input." + device.Kind.ToString().ToLowerInvariant(), device.Key + "/" + input.Key);
+                    var id = RuntimeUnitId.Create(input.Module?.Kind ?? "input." + device.Kind.ToString().ToLowerInvariant(), device.Key + "/" + input.Key);
                     // 启用但不在任何启用路线中的来源没有采集循环，不能标成已运行。
-                    var enabled = device.Enabled && input.Enabled && scheduled.Contains(id);
+                    var enabled = device.Enabled && input.Enabled && scheduled.ContainsKey(id);
                     sources.Add(new(device.Key, id, input.Name, enabled, input.Modbus?.PeriodMs ?? input.Http?.PeriodMs ?? input.Simulator?.PeriodMs,
-                        Fields(input)));
+                        input.Module is not null && scheduled.TryGetValue(id, out var unit) ? ModuleFields(unit) : Fields(input)));
                 }
             }
         }
@@ -176,6 +176,8 @@ internal static class RuntimeDeviceEndpoints
     private static FieldInfo[] JsonFields(JsonSourceField[] fields) => fields.Select(field => new FieldInfo(field.Key, field.Name, field.Unit, true)).ToArray();
     private static (int? Period, FieldInfo[] Fields) LegacyFields(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("inputModule", out _))
+        { return (null, ModuleFields(unit)); }
         if (unit.Id.Kind == "input.modbus")
         {
             var config = ModbusInputSettings.Parse(unit.Configuration);
@@ -191,6 +193,10 @@ internal static class RuntimeDeviceEndpoints
             settings.TryGetProperty("fields", out var fields) && fields.ValueKind == System.Text.Json.JsonValueKind.Array
                 ? fields.EnumerateArray().Select(field => new FieldInfo(field.GetProperty("key").GetString()!, null, null, true)).ToArray() : []);
     }
+
+    private static FieldInfo[] ModuleFields(RuntimeUnitPlan unit) =>
+        (TenonEdge.Runtime.Inputs.InputModuleCatalog.ReadFrozenFields(unit) ?? [])
+            .Select(field => new FieldInfo(field.Key, null, field.Unit, true)).ToArray();
 
     private static ProblemHttpResult Changed() => ApiProblems.Problem(409, "runtime.revisionChanged", "运行版本已切换，请重新选择来源。");
     private static ProblemHttpResult Unavailable() => ApiProblems.Problem(409, "runtime.snapshotUnavailable", "运行快照不可读取，不能用草稿替代。");

@@ -49,7 +49,7 @@ internal sealed partial class RuntimeVersionStore
         { warnings.Add("configuration.legacyComparisonUnavailable"); }
         var snapshot = new RouteCompilationSnapshot(captured.Draft.Version, captured.Draft.Routes,
             captured.Draft.Devices.ToDictionary(value => value.Id), captured.Draft.Inputs.ToDictionary(value => value.Id),
-            captured.Draft.Connections.ToDictionary(value => value.Id), captured.MqttCredentials, captured.Limits, transforms);
+            captured.Draft.Connections.ToDictionary(value => value.Id), captured.MqttCredentials, captured.Limits, transforms, inputModules);
         var issues = new List<RouteTopologyIssue>();
         RuntimePlanDocument? plan = null;
         try

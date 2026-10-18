@@ -9,11 +9,21 @@ export const nodeKinds = [
     'output.http',
     'output.tenon',
 ] as const
-export type NodeKind = (typeof nodeKinds)[number] | `transform.${string}`
+export type NodeKind =
+    (typeof nodeKinds)[number] | `transform.${string}` | `input.${string}`
+export function isInputModuleKind(value: unknown): value is `input.${string}` {
+    return (
+        typeof value === 'string' &&
+        value.length <= 64 &&
+        /^input\.[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/.test(value) &&
+        !nodeKinds.some((kind) => kind === value)
+    )
+}
 export function isNodeKind(value: unknown): value is NodeKind {
     return (
         typeof value === 'string' &&
         (nodeKinds.some((kind) => kind === value) ||
+            isInputModuleKind(value) ||
             (/^transform\.[A-Za-z0-9._-]+$/.test(value) && value.length <= 64))
     )
 }

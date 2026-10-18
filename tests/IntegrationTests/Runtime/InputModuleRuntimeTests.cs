@@ -169,11 +169,15 @@ internal sealed class TestScalarInputModule : IInputModuleFactory
         return unit.Id;
     }
     public bool ThrowDescription { get; init; }
+    public Action? OnDescribe { get; init; }
     public bool ThrowBuild { get; init; }
     public ParameterSchema Parameters { get; } = new("input.testscalar", ParameterScope.Input,
         [new("value", "初值", ParameterType.Number) { Required = true, WholeNumber = true, MinimumJson = "0", MaximumJson = "9223372036854775807" }]);
-    public ImmutableArray<InputModuleField> Describe(JsonElement parameters) => ThrowDescription
-        ? throw new InvalidOperationException("fixture-secret") : [new("value", FieldType.Integer, "count")];
+    public ImmutableArray<InputModuleField> Describe(JsonElement parameters)
+    {
+        OnDescribe?.Invoke();
+        return ThrowDescription ? throw new InvalidOperationException("fixture-secret") : [new("value", FieldType.Integer, "count")];
+    }
     public IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context)
     {
         Assert.False(unit.Configuration.TryGetProperty("inputModule", out _));

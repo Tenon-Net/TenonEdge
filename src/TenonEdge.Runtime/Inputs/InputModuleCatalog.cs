@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Parameters;
@@ -15,6 +16,11 @@ public sealed record InputModuleDefinition(string Kind, int Version, string Disp
 public sealed class InputModuleCatalog
 {
     public static InputModuleCatalog Empty { get; } = new([]);
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
     private readonly ImmutableDictionary<(string Kind, int Version), IInputModuleFactory> _modules;
     public ImmutableArray<InputModuleDefinition> Modules { get; }
     internal ImmutableArray<IInputUnitFactory> Factories { get; }
@@ -25,7 +31,7 @@ public sealed class InputModuleCatalog
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IInputModuleFactory>();
         foreach (var module in modules)
         {
-            if (module is null || !ValidKind(module.Kind) || module.Kind is "input.simulator" or "input.http" or "input.mqtt" or "input.modbus" ||
+            if (module is null || !IsModuleKind(module.Kind) ||
                 module.Version < 1 || string.IsNullOrWhiteSpace(module.DisplayName) || module.DisplayName.Length > 128 || module.DisplayName.Any(char.IsControl) ||
                 module.Parameters is not { Scope: ParameterScope.Input } schema ||
                 schema.Parameters.Any(field => field.Type is ParameterType.Credential or ParameterType.ConnectionReference) ||
@@ -47,13 +53,49 @@ public sealed class InputModuleCatalog
         {
             var (module, parameters) = Resolve(unit);
             var fields = module.Describe(parameters);
-            if (fields.IsDefault || fields.Length > 1000 || fields.Any(field => field is null || !BusinessKeys.IsValid(field.Key) ||
-                !Enum.IsDefined(field.Type) || field.Unit?.Length > 64 || field.Unit?.Any(char.IsControl) == true) ||
-                fields.Select(field => field.Key).Distinct(StringComparer.Ordinal).Count() != fields.Length)
-            { throw new ArgumentException("输入字段描述无效。"); }
+            ValidateFields(fields);
+            var frozen = ReadFrozenFields(unit);
+            if (frozen is { } expected && !expected.OrderBy(field => field.Key, StringComparer.Ordinal).SequenceEqual(fields.OrderBy(field => field.Key, StringComparer.Ordinal)))
+            { throw Invalid(); }
             return fields;
         }
         catch (Exception error) when (error is not OutOfMemoryException)
+        { throw Invalid(); }
+    }
+
+    /// <summary>编译时冻结非秘密字段，供重启后的只读诊断使用；不构建输入或调用网络。</summary>
+    public RuntimeUnitPlan WithFrozenFields(RuntimeUnitPlan unit)
+    {
+        var fields = Describe(unit);
+        var (version, parameters) = Read(unit);
+        return new(unit.Id, JsonSerializer.SerializeToElement(new
+        {
+            inputModule = new { version, parameters, fields = fields.OrderBy(field => field.Key, StringComparer.Ordinal).ToArray() },
+        }, Json));
+    }
+
+    /// <summary>不依赖安装目录、不执行模块；旧种子没有字段描述时返回 null，不从当前草稿回填。</summary>
+    public static ImmutableArray<InputModuleField>? ReadFrozenFields(RuntimeUnitPlan unit)
+    {
+        var envelope = unit.Configuration.GetProperty("inputModule");
+        if (!envelope.TryGetProperty("fields", out var value))
+        { return null; }
+        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() > 1000)
+        { throw Invalid(); }
+        try
+        {
+            var fields = value.Deserialize<ImmutableArray<InputModuleField>>(Json);
+            ValidateFields(fields);
+            return fields;
+        }
+        catch (JsonException) { throw Invalid(); }
+    }
+
+    private static void ValidateFields(ImmutableArray<InputModuleField> fields)
+    {
+        if (fields.IsDefault || fields.Length > 1000 || fields.Any(field => field is null || !BusinessKeys.IsValid(field.Key) ||
+            !Enum.IsDefined(field.Type) || field.Unit?.Length > 64 || field.Unit?.Any(char.IsControl) == true) ||
+            fields.Select(field => field.Key).Distinct(StringComparer.Ordinal).Count() != fields.Length)
         { throw Invalid(); }
     }
 
@@ -83,16 +125,22 @@ public sealed class InputModuleCatalog
     {
         var config = unit.Configuration;
         if (!ValidKind(unit.Id.Kind) || unit.Id.KeySegments.Count != 2 || config.EnumerateObject().Count() != 1 ||
-            !config.TryGetProperty("inputModule", out var envelope) || envelope.ValueKind != JsonValueKind.Object || envelope.EnumerateObject().Count() != 2 ||
+            !config.TryGetProperty("inputModule", out var envelope) || envelope.ValueKind != JsonValueKind.Object ||
+            envelope.EnumerateObject().Count() != (envelope.TryGetProperty("fields", out _) ? 3 : 2) ||
             !envelope.TryGetProperty("version", out var version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var number) || number < 1 ||
             !envelope.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Object ||
             Encoding.UTF8.GetByteCount(parameters.GetRawText()) > ParameterSchema.MaximumConfigurationBytes ||
             parameters.EnumerateObject().Any(property => property.Value.ValueKind is JsonValueKind.Array or JsonValueKind.Object))
         { throw Invalid(); }
+        _ = ReadFrozenFields(unit);
         return (number, parameters);
     }
 
-    private static bool ValidKind(string kind)
+    public bool Contains(string kind, int version) => _modules.ContainsKey((kind, version));
+
+    public static bool IsModuleKind(string? kind) => ValidKind(kind) && kind is not ("input.simulator" or "input.http" or "input.mqtt" or "input.modbus");
+
+    public static bool ValidKind(string? kind)
     {
         if (kind is null || !kind.StartsWith("input.", StringComparison.Ordinal) || kind.Length <= 6)
         { return false; }

@@ -7,6 +7,7 @@ using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
@@ -17,7 +18,7 @@ internal sealed record ConfigurationImportCandidate(ConfigurationCheckpoint Draf
 
 /// <summary>内部导入存储核心。预检只捕获非秘密值；确认在短事务内复核草稿和凭证并原子写草稿/索引/编辑日志/审计。
 /// 不持有活跃事务，不访问运行时或发送队列，不修改当前凭证。</summary>
-internal sealed class ConfigurationImportStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, TransformCatalog transforms)
+internal sealed class ConfigurationImportStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, TransformCatalog transforms, InputModuleCatalog inputModules)
 {
     public ConfigurationImportCandidate Prepare(ReadOnlyMemory<byte> file, ConfigurationImportMode mode, string expectedVersion,
         CancellationToken token)
@@ -31,7 +32,7 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
             return (Before: before, Credentials: ConfigurationCredentialMetadata.Read(client), Reserved: ReservedIdentities(client));
         });
         token.ThrowIfCancellationRequested();
-        var plan = ConfigurationImportPlanner.Prepare(document, captured.Before, mode, ids.NextId, token, transforms);
+        var plan = ConfigurationImportPlanner.Prepare(document, captured.Before, mode, ids.NextId, token, transforms, inputModules);
         var previousIds = captured.Before.Connections.Select(value => value.Id).ToHashSet();
         var added = plan.Draft.Connections.Where(value => !previousIds.Contains(value.Id)).Select(value => value.Id).ToArray();
         CheckReserved(plan.Draft, plan.Changes, captured.Reserved);
