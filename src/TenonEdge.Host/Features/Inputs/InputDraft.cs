@@ -56,13 +56,13 @@ internal static class InputDraftValidation
         }
     }
 
-    public static IEnumerable<string> FieldKeys(InputDraft input, InputModuleCatalog? modules = null) => input.Kind switch
+    public static IEnumerable<string> FieldKeys(InputDraft input, InputModuleCatalog? modules = null, IReadOnlyDictionary<long, ConnectionDraft>? connections = null) => input.Kind switch
     {
         DeviceKind.Modbus => input.Modbus!.Points.Select(point => point.Key),
         DeviceKind.Mqtt => input.Mqtt!.Fields.Select(field => field.Key),
         DeviceKind.Http => input.Http!.Fields.Select(field => field.Key),
         DeviceKind.Simulator => SimulatorSourceValidation.FieldKeys(input.Simulator!),
-        DeviceKind.Module => (modules ?? InputModuleCatalog.Empty).Describe(input.Module!.ToUnit("metadata", input.Key)).Select(field => field.Key),
+        DeviceKind.Module => (modules ?? InputModuleCatalog.Empty).Describe(input.Module!.ToUnit("metadata", input.Key, connections)).Select(field => field.Key),
         _ => throw new ArgumentException("来源类型无效。"),
     };
 

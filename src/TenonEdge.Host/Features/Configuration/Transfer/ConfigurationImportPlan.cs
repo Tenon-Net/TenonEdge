@@ -75,8 +75,12 @@ internal static class ConfigurationImportPlanner
             { throw ConfigurationImportDocument.Error("import.protocolMismatch", path + ".kind"); }
             var key = value.DeviceKey + "/" + value.InputKey;
             var id = oldInputs.TryGetValue(key, out var old) ? old.Id : Allocate();
+            var module = value.Module is { } portable ? new ModuleSourceDraft(portable.Kind, portable.Version, portable.Parameters,
+                portable.Connections?.ToDictionary(pair => pair.Key, pair => pair.Value is { } connectionKey
+                    ? Connection(connectionKey, path + ".module.connections").Id
+                    : throw ConfigurationImportDocument.Error("import.referenceMissing", path + ".module.connections"), StringComparer.Ordinal)) : null;
             inputs[key] = Validate(path, () => InputDraftValidation.Normalize(id, device,
-                new("import", value.InputKey, value.Name, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator, value.Module),
+                new("import", value.InputKey, value.Name, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator, module),
                 device.ConnectionId is { } connectionId ? connectionsById.GetValueOrDefault(connectionId) : null));
         }
         for (var index = 0; index < file.Routes.Length; index++)
@@ -271,7 +275,7 @@ internal static class ConfigurationImportPlanner
                 device.ConnectionId is { } id ? connections.GetValueOrDefault(id) : null));
             if (!fields.TryGetValue(input.DeviceId, out var keys))
             { fields.Add(input.DeviceId, keys = new(StringComparer.Ordinal)); }
-            foreach (var key in Validate("$.inputs", () => InputDraftValidation.FieldKeys(input, inputModules).ToArray()))
+            foreach (var key in Validate("$.inputs", () => InputDraftValidation.FieldKeys(input, inputModules, connections).ToArray()))
             { if (!keys.Add(key)) { throw ConfigurationImportDocument.Error("import.duplicateFieldKey", "$.inputs"); } }
         }
         foreach (var route in draft.Routes)

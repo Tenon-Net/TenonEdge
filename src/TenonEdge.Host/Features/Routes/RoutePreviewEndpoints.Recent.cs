@@ -110,6 +110,6 @@ internal static partial class RoutePreviewEndpoints
             !snapshot.Devices.TryGetValue(input.DeviceId, out var device))
         { throw new ArgumentException("来源不在图内。"); }
         var connection = device.ConnectionId is { } id ? snapshot.Connections.GetValueOrDefault(id) : null;
-        return RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog).Unit.Id;
+        return RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog, snapshot.Connections).Unit.Id;
     }
 }

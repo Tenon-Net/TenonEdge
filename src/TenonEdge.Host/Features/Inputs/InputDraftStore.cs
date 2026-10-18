@@ -42,15 +42,21 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
                 if (existing is null || existing.DeviceId != deviceId)
                 { throw new DraftWriteException("input.notFound"); }
             }
-            return (Device: device,
+            _ = request.Module?.Normalize(device, request.Key); // Pure shape/size guard before reading referenced rows.
+            var siblings = ReadForDevice(client, deviceId).Where(other => other.Id != id).ToArray();
+            var references = siblings.SelectMany(other => other.Module?.ConnectionIds ?? [])
+                .Concat(request.Module?.ConnectionIds ?? []).Distinct().ToArray();
+            var connections = references.Length == 0 ? [] : client.Queryable<ConnectionDraftRecord>()
+                .Where(row => references.Contains(row.Id)).ToList().Select(ConnectionDraftStore.Decode).ToArray();
+            return (Device: device, Connections: connections.ToDictionary(value => value.Id),
                 Connection: device.ConnectionId is { } connectionId ? ConnectionDraftStore.Read(client, connectionId) : null,
-                Siblings: ReadForDevice(client, deviceId).Where(other => other.Id != id).ToArray());
+                Siblings: siblings);
         });
         // Trusted module Describe is pure, but never runs under a configuration DB
         // transaction. Recheck the captured version before publishing its result.
         var input = InputDraftValidation.Normalize(id, snapshot.Device, request, snapshot.Connection);
-        var keys = snapshot.Siblings.SelectMany(other => InputDraftValidation.FieldKeys(other, modules)).ToHashSet(StringComparer.Ordinal);
-        if (InputDraftValidation.FieldKeys(input, modules).Any(keys.Contains))
+        var keys = snapshot.Siblings.SelectMany(other => InputDraftValidation.FieldKeys(other, modules, snapshot.Connections)).ToHashSet(StringComparer.Ordinal);
+        if (InputDraftValidation.FieldKeys(input, modules, snapshot.Connections).Any(keys.Contains))
         { throw new DraftWriteException("input.duplicateDeviceField"); }
         return database.InTransaction(client =>
         {
@@ -102,6 +108,9 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
 
     internal static InputDraft[] ReadForDevice(SqlSugarClient client, long deviceId) =>
         client.Queryable<InputDraftRecord>().Where(row => row.DeviceId == deviceId).OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
+
+    internal static bool ReferencesConnection(SqlSugarClient client, long id) => client.Queryable<InputDraftRecord>().ToList()
+        .Select(Decode).Any(input => input.Module?.ConnectionIds.Contains(id) == true);
 
     // Caller owns the device-copy transaction, version and single batch audit.
     internal static void CopyToDevice(SqlSugarClient client, InputDraft[] sources, long deviceId, SnowflakeIdGenerator ids, AuditAccount account, TimeProvider time)

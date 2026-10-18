@@ -3,6 +3,9 @@ export const inputStrings = {
     moduleNotice:
         '只配置已安装的编译期输入模块，参数不含秘密。选择明确版本；保存草稿不开始采集。必填与范围错误须修正后才能保存。',
     moduleVersion: '输入模块版本',
+    moduleConnectionsRefresh: '重新读取模块连接',
+    moduleConnectionsUnavailable:
+        '连接目录不可用或草稿版本不一致，暂不能保存；未保存编辑已保留。请刷新并核对版本。',
     moduleRefresh: '重新读取输入模块',
     moduleUnavailable:
         '输入模块目录或所选版本不可用，暂不能保存；原参数和未保存编辑已保留，不自动替换版本。',

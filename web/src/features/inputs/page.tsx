@@ -3,7 +3,7 @@ import { HttpPreviewPanel } from './http-preview-panel'
 import { ModbusPreviewPanel } from './modbus-preview-panel'
 import { PointCsvPanel } from './csv-panel'
 import { JsonSourceEditor } from './json-editor'
-import { useInputModules } from './module-query'
+import { useInputModules, useModuleConnections } from './module-query'
 import { ModuleSourceEditor, validModuleForm } from './module-editor'
 import { useState } from 'react'
 import { useStore } from 'zustand'
@@ -65,6 +65,14 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
         },
     })
     const device = devices.data?.devices.find((d) => Number(d.id) === deviceId)
+    const connections = useModuleConnections(device?.kind === 'module')
+    const connectionChoices = (connections.data?.connections ?? []).map(
+        (connection) => ({
+            id: String(connection.id),
+            kind: connection.kind,
+            name: `${connection.name} (${connection.key})`,
+        }),
+    )
     const coherent =
         device && query.data && query.data.version === devices.data?.version
     const [editor] = useState(() =>
@@ -189,11 +197,25 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
     const patch = (value: Partial<InputForm>) => {
         if (form) editor.setState({ form: { ...form, ...value } })
     }
+    const selectedModule = modules.data?.find(
+        (item) =>
+            item.kind === form?.moduleKind &&
+            Number(item.version) === form?.moduleVersion,
+    )
+    const needsConnections =
+        selectedModule?.parameters.parameters?.some(
+            (field) => field.type === 'connectionReference',
+        ) === true
+    const connectionsReady =
+        connections.isSuccess &&
+        !connections.isFetching &&
+        connections.data.version === form?.version
     const moduleBlocked =
         form?.kind === 'module' &&
         (!modules.isSuccess ||
             modules.isFetching ||
-            !validModuleForm(form, modules.data ?? []))
+            (needsConnections && !connectionsReady) ||
+            !validModuleForm(form, modules.data ?? [], connectionChoices))
     return (
         <section className="space-y-4">
             <h1 className="text-2xl font-semibold">{t('inputs.title')}</h1>
@@ -229,6 +251,8 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                     onClick={() => {
                         void query.refetch()
                         void devices.refetch()
+                        if (device?.kind === 'module')
+                            void connections.refetch()
                     }}
                 >
                     {t('inputs.refresh')}
@@ -501,6 +525,11 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                             form={form}
                             patch={patch}
                             catalog={modules}
+                            connections={connectionChoices}
+                            connectionsReady={connectionsReady}
+                            refreshConnections={() =>
+                                void connections.refetch()
+                            }
                             readOnly={!canEdit || mutation.isPending}
                         />
                     ) : (

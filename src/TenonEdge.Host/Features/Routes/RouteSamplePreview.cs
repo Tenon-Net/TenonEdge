@@ -53,7 +53,7 @@ internal static class RouteSamplePreview
                 { throw Error("source.missing", node.Id, id); }
                 var connection = device.ConnectionId is { } connectionId ? snapshot.Connections.GetValueOrDefault(connectionId) : null;
                 try
-                { sources.Add(id, RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog)); }
+                { sources.Add(id, RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog, snapshot.Connections)); }
                 catch (Exception error) when (ConfigurationError(error))
                 { throw Error("source.configuration", node.Id, id); }
             }

@@ -244,12 +244,13 @@ public sealed class InputModuleConnectionTests
         return result;
     }
 
-    private sealed class HttpReferenceModule(HttpInputFactory original) : IInputModuleFactory
+    internal sealed class HttpReferenceModule(HttpInputFactory original) : IInputModuleFactory
     {
         private int _builds;
         private int _disposed;
         public string Kind => "input.testreference";
         public int Version => 1;
+        public int PeriodMs { get; init; } = 60000;
         public bool Inert { get; init; }
         public bool FailFirst { get; init; }
         public int Disposed => Volatile.Read(ref _disposed);
@@ -267,7 +268,7 @@ public sealed class InputModuleConnectionTests
             { return new Idle(this, unit.Id, context, FailFirst && number == 1); }
             var http = connection.Configuration.Deserialize<HttpConnectionDraft>(JsonSerializerOptions.Web)!;
             return original.Build(new(unit.Id, JsonSerializer.SerializeToElement(new
-            { connectionId = connection.ConnectionId, baseAddress = http.BaseAddress, timeoutMs = http.TimeoutMs, headers = http.Headers, path = "module", periodMs = 60000, fields = Fields })), context);
+            { connectionId = connection.ConnectionId, baseAddress = http.BaseAddress, timeoutMs = http.TimeoutMs, headers = http.Headers, path = "module", periodMs = PeriodMs, fields = Fields })), context);
         }
         private sealed class Idle(HttpReferenceModule owner, RuntimeUnitId id, InputUnitContext context, bool fail) : IRuntimeUnit
         {

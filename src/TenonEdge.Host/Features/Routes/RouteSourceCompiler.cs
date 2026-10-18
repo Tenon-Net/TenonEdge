@@ -25,7 +25,8 @@ internal static class RouteSourceCompiler
 
     internal static readonly JsonSerializerOptions SettingsJson = new(Json) { IgnoreReadOnlyProperties = true };
 
-    public static CompiledRouteSource Compile(InputDraft input, DeviceDraft device, ConnectionDraft? connection, bool mqttRequiresPassword, InputModuleCatalog? modules = null)
+    public static CompiledRouteSource Compile(InputDraft input, DeviceDraft device, ConnectionDraft? connection, bool mqttRequiresPassword,
+        InputModuleCatalog? modules = null, IReadOnlyDictionary<long, ConnectionDraft>? connections = null)
     {
         if (input.DeviceId != device.Id || input.Kind != device.Kind)
         { throw new ArgumentException("来源与设备不匹配。"); }
@@ -119,7 +120,7 @@ internal static class RouteSourceCompiler
                 break;
             case DeviceKind.Module:
                 var module = input.Module!;
-                var unit = (modules ?? InputModuleCatalog.Empty).WithFrozenFields(module.ToUnit(device.Key, input.Key));
+                var unit = (modules ?? InputModuleCatalog.Empty).WithFrozenFields(module.ToUnit(device.Key, input.Key, connections));
                 configuration = unit.Configuration;
                 fields = InputModuleCatalog.ReadFrozenFields(unit)!.Value
                     .Select(field => new MappedFieldSchema(field.Key, field.Type, field.Unit)).ToImmutableArray();
@@ -127,7 +128,8 @@ internal static class RouteSourceCompiler
             default:
                 throw new ArgumentException("未知来源类型。");
         }
-        return new(new(input.Id, id, input.Enabled && device.Enabled && (connection?.Enabled ?? true), fields, input.Module?.Version ?? 1), new(id, configuration));
+        var moduleEnabled = input.Module?.ConnectionIds.All(reference => connections?.GetValueOrDefault(reference)?.Enabled == true) ?? true;
+        return new(new(input.Id, id, input.Enabled && device.Enabled && (connection?.Enabled ?? true) && moduleEnabled, fields, input.Module?.Version ?? 1), new(id, configuration));
     }
 
     private static ImmutableArray<MappedFieldSchema> Schema(JsonSourceField[] fields) => fields.Select(field => new MappedFieldSchema(field.Key, field.Type!.Value, field.Unit)).ToImmutableArray();

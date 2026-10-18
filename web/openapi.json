@@ -17421,6 +17421,20 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/JsonElement"
+          },
+          "connections": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
           }
         },
         "additionalProperties": false
@@ -19078,9 +19092,43 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ModuleSourceDraft"
+                "$ref": "#/components/schemas/PortableModuleSource"
               }
             ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableModuleSource": {
+        "required": [
+          "kind",
+          "version",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "connections": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false

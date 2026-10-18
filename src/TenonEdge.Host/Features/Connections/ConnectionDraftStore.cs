@@ -6,6 +6,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
 using TenonEdge.Host.Features.Devices;
+using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
@@ -68,6 +69,8 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         ConfigurationDraft.CheckVersion(client, expectedVersion);
         var row = client.Queryable<ConnectionDraftRecord>().InSingle(id) ?? throw new DraftWriteException("connection.notFound");
         if (client.Queryable<DeviceDraftRecord>().Any(device => device.ConnectionId == id))
+        { throw new DraftWriteException("connection.deviceReferenced"); }
+        if (InputDraftStore.ReferencesConnection(client, id))
         { throw new DraftWriteException("connection.deviceReferenced"); }
         if (RouteDraftStore.HasReference(client, "connection", id))
         { throw new DraftWriteException("connection.routeReferenced"); }

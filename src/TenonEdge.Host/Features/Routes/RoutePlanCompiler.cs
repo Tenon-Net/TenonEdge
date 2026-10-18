@@ -72,7 +72,7 @@ internal static partial class RoutePlanCompiler
                     { throw Error("source.disabled", route.Key, node.Id, id); }
                     CompiledRouteSource source;
                     try
-                    { source = RouteSourceCompiler.Compile(input, device, connection, connection is not null && snapshot.MqttCredentials.Contains(connection.Id), snapshot.InputsCatalog); }
+                    { source = RouteSourceCompiler.Compile(input, device, connection, connection is not null && snapshot.MqttCredentials.Contains(connection.Id), snapshot.InputsCatalog, snapshot.Connections); }
                     catch (Exception error) when (ConfigurationError(error)) { throw Error("source.configuration", route.Key, node.Id, id); }
                     sources.Add(id, source);
                     Add(source.Unit, route.Key, node.Id);

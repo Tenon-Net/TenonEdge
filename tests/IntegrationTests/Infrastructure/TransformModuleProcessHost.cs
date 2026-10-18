@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Adapters.Http;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Runtime;
@@ -23,7 +24,10 @@ internal static class TransformModuleProcessHost
         var settings = configuration.AsEnumerable().Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value!);
         await using var factory = new FixedDataDirectoryApplicationFactory(data, settings,
             services => services.AddSingleton<IMessageTransformFactory>(new TestOffsetTransformFactory())
-                .AddSingleton<IInputModuleFactory>(new TestScalarInputModule()));
+                .AddSingleton<IInputModuleFactory>(new TestScalarInputModule())
+                .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
+                    provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single())
+                { PeriodMs = 1000 }));
         factory.UseKestrel();
         factory.StartServer();
         var lifetime = factory.Services.GetRequiredService<IHostApplicationLifetime>();

@@ -3688,6 +3688,9 @@ export interface components {
             /** Format: int32 */
             version: number | string;
             parameters: components["schemas"]["JsonElement"];
+            connections?: null | {
+                [key: string]: number | string;
+            };
         };
         MqttConnectionDraft: {
             host: string;
@@ -4036,7 +4039,16 @@ export interface components {
             mqtt: null | components["schemas"]["MqttSourceDraft"];
             http: null | components["schemas"]["HttpSourceDraft"];
             simulator: null | components["schemas"]["SimulatorSourceDraft"];
-            module?: null | components["schemas"]["ModuleSourceDraft"];
+            module?: null | components["schemas"]["PortableModuleSource"];
+        };
+        PortableModuleSource: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            parameters: components["schemas"]["JsonElement"];
+            connections?: null | {
+                [key: string]: string;
+            };
         };
         PortableRoute: {
             routeKey: string;

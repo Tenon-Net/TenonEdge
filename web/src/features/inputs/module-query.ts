@@ -26,14 +26,34 @@ export function useInputModules(enabled = true) {
                     !Array.isArray(module.parameters.parameters) ||
                     module.parameters.parameters.some(
                         (field) =>
-                            !['text', 'number', 'switch', 'choice'].includes(
-                                field.type,
-                            ),
+                            ![
+                                'text',
+                                'number',
+                                'switch',
+                                'choice',
+                                'connectionReference',
+                            ].includes(field.type),
                     )
                 )
                     throw new Error('invalid-input-module')
                 seen.add(key)
             }
+            return data
+        },
+    })
+}
+
+export function useModuleConnections(enabled: boolean) {
+    return useQuery({
+        queryKey: ['connection-drafts'],
+        enabled,
+        retry: false,
+        queryFn: async ({ signal }) => {
+            const { data } = await api.GET('/api/edge-admin/v1/connections', {
+                signal,
+            })
+            if (!data || !Array.isArray(data.connections))
+                throw new Error('missing-connections')
             return data
         },
     })

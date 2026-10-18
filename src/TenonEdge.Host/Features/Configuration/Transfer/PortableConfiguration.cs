@@ -26,7 +26,13 @@ internal sealed record PortableDevice(string DeviceKey, string Name, DeviceKind 
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record PortableInput(string DeviceKey, string InputKey, string Name, DeviceKind Kind, bool Enabled,
-    ModbusSourceDraft? Modbus, MqttSourceDraft? Mqtt, HttpSourceDraft? Http, SimulatorSourceDraft? Simulator, ModuleSourceDraft? Module = null);
+    ModbusSourceDraft? Modbus, MqttSourceDraft? Mqtt, HttpSourceDraft? Http, SimulatorSourceDraft? Simulator, PortableModuleSource? Module = null);
+
+// Scalar parameters remain verbatim; connection references are explicit business keys,
+// so exporting an uninstalled module never has to guess which scalar is an internal ID.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record PortableModuleSource(string Kind, int Version, JsonElement Parameters,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Dictionary<string, string>? Connections = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record PortableRoute(string RouteKey, string Name, string? Description, bool Enabled, PortableGraph Graph);
@@ -77,7 +83,10 @@ internal static class ConfigurationExport
             var normalized = InputDraftValidation.Normalize(value.Id, device, new("export", value.Key, value.Name,
                 value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Simulator, value.Module), device.ConnectionId is { } id ? Connection(id) : null);
             return new PortableInput(device.Key, normalized.Key, normalized.Name, normalized.Kind, normalized.Enabled,
-                normalized.Modbus, normalized.Mqtt, normalized.Http, normalized.Simulator, normalized.Module);
+                normalized.Modbus, normalized.Mqtt, normalized.Http, normalized.Simulator, normalized.Module is { } module
+                    ? new(module.Kind, module.Version, module.Parameters, module.Connections?.ToDictionary(pair => pair.Key,
+                        pair => connections.TryGetValue(pair.Value, out var connection) ? connection.Key
+                            : throw new ConfigurationTransferException("configuration.exportReferenceMissing", "$.inputs.module.connections"), StringComparer.Ordinal)) : null);
         }).ToArray();
         var exportedRoutes = draft.Routes.Select((route, index) =>
         {

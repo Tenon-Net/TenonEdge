@@ -64,6 +64,8 @@ internal sealed partial class RouteDraftStore
         var selected = sourceIds.ToArray();
         CheckSelected("input_draft", selected);
         var inputs = selected.Length == 0 ? [] : client.Queryable<InputDraftRecord>().Where(row => selected.Contains(row.Id)).ToList().Select(InputDraftStore.Decode).ToArray();
+        foreach (var id in inputs.SelectMany(input => input.Module?.ConnectionIds ?? []))
+        { connectionIds.Add(id); }
         var deviceIds = inputs.Select(input => input.DeviceId).Distinct().ToArray();
         CheckSelected("device_draft", deviceIds);
         var devices = deviceIds.Length == 0 ? [] : client.Queryable<DeviceDraftRecord>().Where(row => deviceIds.Contains(row.Id)).ToList().Select(DeviceDraftStore.Decode).ToArray();

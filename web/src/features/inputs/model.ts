@@ -80,6 +80,7 @@ export type InputForm = {
     moduleKind: string
     moduleVersion: number
     moduleConfigText: string
+    moduleConnections: Record<string, string>
 }
 export function inputForm(
     version: string,
@@ -94,6 +95,16 @@ export function inputForm(
         moduleConfigText: input?.module
             ? moduleText(input.module.parameters)
             : '{}',
+        moduleConnections: Object.fromEntries(
+            Object.entries(input?.module?.connections ?? {}).map(
+                ([name, id]) => {
+                    const value = Number(id)
+                    if (!Number.isSafeInteger(value) || value < 1)
+                        throw new Error('module-connection')
+                    return [name, String(value)]
+                },
+            ),
+        ),
         fields: (input?.mqtt?.fields ?? input?.http?.fields ?? []).map(
             (field) => ({ ...field }),
         ),
@@ -172,6 +183,7 @@ export function inputRequest(
             module: {
                 kind: form.moduleKind,
                 version: form.moduleVersion,
+                connections: moduleConnectionIds(form),
                 parameters: routeObject(
                     readRouteJson(form.moduleConfigText, 128 * 1024),
                 ),
@@ -253,9 +265,51 @@ export function inputRequestJson(form: InputForm, body: InputRequest): string {
         module: {
             kind: form.moduleKind,
             version: form.moduleVersion,
+            connections: routeObject(
+                readRouteJson(JSON.stringify(moduleConnectionIds(form))),
+            ),
             parameters: routeObject(
                 readRouteJson(form.moduleConfigText, 128 * 1024),
             ),
         },
     })
+}
+
+function moduleConnectionIds(form: InputForm): Record<string, number> {
+    const parameters = routeObject(
+        readRouteJson(form.moduleConfigText, 128 * 1024),
+    )
+    return Object.fromEntries(
+        Object.entries(form.moduleConnections).map(([name, text]) => {
+            const id = Number(text)
+            if (
+                !Number.isSafeInteger(id) ||
+                id < 1 ||
+                String(id) !== text ||
+                Object.hasOwn(parameters, name)
+            )
+                throw new Error('module-connection')
+            return [name, id]
+        }),
+    )
+}
+
+export function moduleConnectionEdit(
+    form: InputForm,
+    name: string,
+    value: string,
+): Partial<InputForm> {
+    const references = { ...form.moduleConnections }
+    const parameters = {
+        ...routeObject(readRouteJson(form.moduleConfigText, 128 * 1024)),
+    }
+    // Explicit selection replaces a legacy optional null, never silently copies
+    // an arbitrary scalar ID into a reference. Other numeric lexemes stay exact.
+    delete parameters[name]
+    if (value) references[name] = value
+    else delete references[name]
+    return {
+        moduleConnections: references,
+        moduleConfigText: writeRouteJson(parameters),
+    }
 }
