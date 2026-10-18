@@ -2200,6 +2200,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/devices/{deviceId}/deletion-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 核对删除设备草稿的路线及保留版本引用，不授权或执行删除 */
+        get: operations["getDeviceDeletionReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/devices/{deviceId}": {
         parameters: {
             query?: never;
@@ -3265,6 +3282,18 @@ export interface components {
             headCreatedAt: null | string;
             headClockAnomaly: boolean;
         };
+        DeviceDeletionReview: {
+            version: string;
+            /** Format: int64 */
+            id: number | string;
+            key: string;
+            name: string;
+            /** Format: int32 */
+            inputCount: number | string;
+            canDelete: boolean;
+            routes: components["schemas"]["DeviceRouteReference"][];
+            versions: components["schemas"]["DeviceVersionReference"][];
+        };
         DeviceDraft: {
             /** Format: int64 */
             id: number | string;
@@ -3314,6 +3343,19 @@ export interface components {
         };
         /** @enum {unknown} */
         DeviceKind: "modbus" | "mqtt" | "http" | "simulator" | "module";
+        DeviceRouteReference: {
+            /** Format: int64 */
+            id?: number | string;
+            key?: string;
+            name?: string;
+            enabled?: boolean;
+        };
+        DeviceVersionReference: {
+            /** Format: int64 */
+            revision: number | string;
+            positions: string[];
+            units: string[];
+        };
         DiskSpaceInfo: {
             /** Format: int64 */
             totalBytes: number | string;
@@ -13052,6 +13094,66 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getDeviceDeletionReview: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                deviceId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceDeletionReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

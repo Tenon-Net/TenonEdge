@@ -80,6 +80,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getDeliveryMigrationOutcome",
         "getDeliveryMigrationPreparation",
         "getDeliveryRecords",
+        "getDeviceDeletionReview",
         "getDeviceDrafts",
         "getHttpCredentialStatus",
         "getInputDrafts",

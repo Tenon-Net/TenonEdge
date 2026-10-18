@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 
 namespace TenonEdge.Host.Features.Devices;
@@ -13,6 +14,9 @@ internal static class DeviceDraftEndpoints
         var group = api.MapGroup("/devices").WithTags("Devices");
         group.MapGet("", (DeviceDraftStore store) => TypedResults.Ok(store.Read()))
             .WithName("getDeviceDrafts").WithSummary("查看设备草稿及全局草稿版本，不代表运行状态");
+        group.MapGet("/{deviceId:long}/deletion-review", ReviewDeletion).WithName("getDeviceDeletionReview")
+            .WithSummary("核对删除设备草稿的路线及保留版本引用，不授权或执行删除")
+            .ProducesProblem(400).ProducesProblem(404).ProducesProblem(409);
         group.MapPost("", (DeviceDraftRequest request, DeviceDraftStore store, HttpContext context) => Write(null, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("createDeviceDraft")
             .WithSummary("新建设备草稿，保存不改变运行配置").ProducesProblem(409).ProducesProblem(403);
@@ -53,6 +57,18 @@ internal static class DeviceDraftEndpoints
         try
         { return TypedResults.Ok(store.Delete(deviceId, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (DraftWriteException exception) { return Failure(exception); }
+    }
+
+    private static Results<Ok<DeviceDeletionReview>, ProblemHttpResult> ReviewDeletion(long deviceId, string expectedVersion,
+        DeviceDraftStore store, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        try
+        { return TypedResults.Ok(store.ReviewDeletion(deviceId, expectedVersion)); }
+        catch (ArgumentException) { return ApiProblems.Problem(400, "device.invalidDeletionReview", "设备编号或草稿版本无效。"); }
+        catch (DraftWriteException exception) { return Failure(exception); }
+        catch (RuntimePlanDocumentException)
+        { return ApiProblems.Problem(409, "device.referencesUnavailable", "保留运行版本不可核对，不能据此判断设备可删除。"); }
     }
 
     private static ProblemHttpResult Failure(DraftWriteException exception) => ApiProblems.Problem(

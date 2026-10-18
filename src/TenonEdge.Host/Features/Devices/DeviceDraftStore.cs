@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlSugar;
+using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
@@ -15,7 +16,7 @@ using TenonEdge.Runtime.Inputs;
 namespace TenonEdge.Host.Features.Devices;
 
 /// <summary>设备基础配置草稿；引用校验、版本、实体与审计共用短事务，无运行时副作用。</summary>
-internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, InputModuleCatalog modules)
+internal sealed partial class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, InputModuleCatalog modules)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -155,14 +156,18 @@ internal sealed class DeviceDraftStore(ConfigDatabase database, SnowflakeIdGener
             var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
                 ?? throw new InvalidOperationException("运行版本引用缺失。");
             var plan = RuntimeSnapshotDocument.ReadPlan(snapshot);
-            if (plan.Units.Any(unit =>
-                unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal) && unit.Id.KeySegments[0] == key ||
-                unit.Configuration.TryGetProperty("inputs", out var inputs) &&
-                    inputs.EnumerateArray().Any(input => input.GetString()!.Split('/')[0] == key)))
+            if (plan.Units.Any(unit => RefersToDevice(unit, key)))
             { return true; }
         }
         return false;
     }
+
+    // Shared by deletion admission and its read-only review; do not reinterpret
+    // disabled draft references as permission to delete a retained runtime key.
+    private static bool RefersToDevice(RuntimeUnitPlan unit, string key) =>
+        unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal) && unit.Id.KeySegments[0] == key ||
+        unit.Configuration.TryGetProperty("inputs", out var inputs) &&
+        inputs.EnumerateArray().Any(input => input.GetString()!.Split('/')[0] == key);
 
     internal static DeviceDraft? Read(SqlSugarClient client, long id) =>
         client.Queryable<DeviceDraftRecord>().InSingle(id) is { } row ? Decode(row) : null;

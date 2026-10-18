@@ -1,3 +1,4 @@
+import { DeviceDeletionPanel } from './deletion-review'
 import { businessKeyPattern } from '../../lib/business-key'
 import { useState } from 'react'
 import { useStore } from 'zustand'
@@ -47,24 +48,32 @@ export function DevicesPage() {
         },
     })
     const [editor] = useState(createDeviceEditor)
-    const { form, original, open, edit } = useStore(editor)
+    const { form, original, open, edit, rename, setKey, suggestKey } =
+        useStore(editor)
     const [search, setSearch] = useState('')
     const [group, setGroup] = useState('')
     const [enabled, setEnabled] = useState('')
     const [notice, setNotice] = useState('')
+    const [deletionReview, setDeletionReview] = useState(false)
     const [copyCount, setCopyCount] = useState(1)
     const dirty = form !== null && JSON.stringify(form) !== original
     useBlocker({
-        disabled: !dirty,
-        enableBeforeUnload: dirty,
-        shouldBlockFn: () => !window.confirm(t('devices.discard')),
+        disabled: !dirty && !deletionReview,
+        enableBeforeUnload: dirty || deletionReview,
+        shouldBlockFn: () =>
+            !window.confirm(
+                t(
+                    deletionReview
+                        ? 'devices.deletion.leaving'
+                        : 'devices.discard',
+                ),
+            ),
     })
     const mutation = useMutation({
         retry: false,
         mutationFn: async (
             action:
                 | { type: 'save'; form: DeviceForm }
-                | { type: 'delete'; device: Device; version: string }
                 | { type: 'copy'; id: number; version: string; count: number },
         ) => {
             if (action.type === 'copy') {
@@ -73,13 +82,6 @@ export function DevicesPage() {
                     body: {
                         expectedVersion: action.version,
                         count: action.count,
-                    },
-                })
-            } else if (action.type === 'delete') {
-                await api.DELETE('/api/edge-admin/v1/devices/{deviceId}', {
-                    params: {
-                        path: { deviceId: Number(action.device.id) },
-                        query: { expectedVersion: action.version },
                     },
                 })
             } else {
@@ -94,29 +96,31 @@ export function DevicesPage() {
             }
             return action.type
         },
-        onSuccess: async (type) => {
-            void queryClient.invalidateQueries({
-                queryKey: ['configuration-summary'],
-            })
-            open(null)
-            setNotice(
-                t(
-                    type === 'save'
-                        ? 'devices.saved'
-                        : type === 'copy'
-                          ? 'devices.copied'
-                          : 'devices.deleted',
-                ),
-            )
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey }),
-                queryClient.invalidateQueries({
-                    queryKey: ['connection-drafts'],
-                }),
-            ])
-        },
+        onSuccess: (type) => changed(type),
     })
-    const busy = mutation.isPending
+    async function changed(type: 'save' | 'copy' | 'delete') {
+        setDeletionReview(false)
+        void queryClient.invalidateQueries({
+            queryKey: ['configuration-summary'],
+        })
+        open(null)
+        setNotice(
+            t(
+                type === 'save'
+                    ? 'devices.saved'
+                    : type === 'copy'
+                      ? 'devices.copied'
+                      : 'devices.deleted',
+            ),
+        )
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey }),
+            queryClient.invalidateQueries({
+                queryKey: ['connection-drafts'],
+            }),
+        ])
+    }
+    const busy = mutation.isPending || deletionReview
     const moduleKinds = [
         ...new Map(
             (modules.data ?? []).map((module) => [module.kind, module]),
@@ -138,6 +142,7 @@ export function DevicesPage() {
             (dirty && !window.confirm(t('devices.discard')))
         )
             return
+        setDeletionReview(false)
         open(deviceForm(query.data!.version, device))
         setNotice('')
         mutation.reset()
@@ -302,9 +307,7 @@ export function DevicesPage() {
                                     maxLength={64}
                                     disabled={form.id !== undefined}
                                     pattern={businessKeyPattern}
-                                    onChange={(e) =>
-                                        patch({ key: e.target.value })
-                                    }
+                                    onChange={(e) => setKey(e.target.value)}
                                 />
                             </label>
                             <label>
@@ -315,10 +318,36 @@ export function DevicesPage() {
                                     required
                                     maxLength={64}
                                     onChange={(e) =>
-                                        patch({ name: e.target.value })
+                                        rename(
+                                            e.target.value,
+                                            query.data?.devices.map(
+                                                (device) => device.key,
+                                            ) ?? [],
+                                        )
                                     }
                                 />
                             </label>
+                            {form.id === undefined && (
+                                <div className="space-y-2 md:col-span-2">
+                                    <p className="text-sm text-muted-foreground">
+                                        {t('devices.keySuggestion')}
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={!form.name.trim()}
+                                        onClick={() =>
+                                            suggestKey(
+                                                query.data?.devices.map(
+                                                    (device) => device.key,
+                                                ) ?? [],
+                                            )
+                                        }
+                                    >
+                                        {t('devices.suggestKey')}
+                                    </Button>
+                                </div>
+                            )}
                             <label>
                                 {t('devices.kind')}
                                 <select
@@ -608,32 +637,12 @@ export function DevicesPage() {
                                         <Button
                                             type="button"
                                             variant="outline"
-                                            disabled={busy}
-                                            onClick={() => {
-                                                const device =
-                                                    query.data?.devices.find(
-                                                        (d) =>
-                                                            Number(d.id) ===
-                                                            form.id,
-                                                    )
-                                                if (
-                                                    device &&
-                                                    window.confirm(
-                                                        t(
-                                                            'devices.confirmDelete',
-                                                            {
-                                                                name: device.name,
-                                                            },
-                                                        ),
-                                                    )
-                                                )
-                                                    mutation.mutate({
-                                                        type: 'delete',
-                                                        device,
-                                                        version:
-                                                            form.expectedVersion,
-                                                    })
-                                            }}
+                                            disabled={
+                                                busy || dirty || !coherent
+                                            }
+                                            onClick={() =>
+                                                setDeletionReview(true)
+                                            }
                                         >
                                             {t('devices.delete')}
                                         </Button>
@@ -641,6 +650,14 @@ export function DevicesPage() {
                                 </>
                             )}
                         </div>
+                        {deletionReview && form.id !== undefined && (
+                            <DeviceDeletionPanel
+                                id={form.id}
+                                version={form.expectedVersion}
+                                onDeleted={() => changed('delete')}
+                                onClose={() => setDeletionReview(false)}
+                            />
+                        )}
                     </form>
                 )}
             </div>

@@ -1025,6 +1025,9 @@ test('device drafts persist real references, preserve conflicted edits, and neve
     expect(runtime.coordinator.activeRevision).toBeNull()
     page.once('dialog', (dialog) => dialog.accept())
     await page.getByRole('button', { name: '删除设备', exact: true }).click()
+    await page
+        .getByRole('button', { name: '确认删除设备草稿', exact: true })
+        .click()
     await expect(page.getByRole('status')).toHaveText(
         '设备草稿已删除；运行配置未改变。',
     )

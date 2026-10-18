@@ -1,4 +1,33 @@
 export const deviceStrings = {
+    keySuggestion:
+        '新设备按名称建议 key：拉丁字符转为小写，非 ASCII 字符以 u 加 Unicode 编号表示；避开当前列表中的重名。手工修改后不再跟随名称，刷新不覆盖编辑。建议不预留标识，保存仍由服务器核对唯一性。',
+    suggestKey: '重新按名称生成 key',
+    deletion: {
+        title: '设备删除核对',
+        notice: '只核对已保存草稿及保留运行版本，不删除或应用配置。确认时服务器仍重新检查版本和引用。存在未保存修改时请先保存或重新载入设备。',
+        target: '设备：{{name}}（{{key}}）；删除时一并删除 {{count}} 个来源草稿。',
+        routes: '引用此设备来源的路线草稿',
+        versions: '仍保留此设备标识的运行版本',
+        positions: {
+            effective: '有效版本',
+            previous: '上一版本',
+            pending: '待生效版本',
+        },
+        retainedHelp:
+            '这些版本仍保护原设备标识，不能通过删草稿绕过。先核对并按正常应用/版本保留流程处理；这里不自动停用、改路线或删除历史。',
+        openRoutes: '查看路线草稿',
+        openConfiguration: '查看配置与版本',
+        blocked: '仍有引用，不能删除。停用路线也必须先移除引用。',
+        confirm: '确认删除设备草稿',
+        refresh: '重新核对删除条件',
+        cancel: '取消删除核对',
+        unavailable:
+            '当前没有可使用的核对结果，不能据此执行删除。版本冲突时请关闭核对并刷新、重新载入设备。',
+        unknown:
+            '删除未取得成功确认，可能已完成。不会自动重放；请先刷新列表核对，或关闭核对后重新载入设备。',
+        leaving:
+            '离开删除核对？如果删除请求已经发送，结果可能尚未确认；返回后须重新读取，不会自动重放。',
+    },
     copy: '复制设备到草稿',
     copyCount: '复制份数',
     copyHelp:
@@ -41,7 +70,8 @@ export const deviceStrings = {
     saved: '设备草稿已保存；尚未应用。',
     deleted: '设备草稿已删除；运行配置未改变。',
     discard: '丢弃尚未保存的设备修改？',
-    confirmDelete: '删除设备草稿 {{name}}？引用检查由网关执行。',
+    confirmDelete:
+        '确认删除设备草稿 {{name}} 及其全部来源？不会撤回外部数据，也不会改变正在运行的配置。',
     conflict:
         '草稿版本或引用冲突，输入已保留。刷新后确认重新载入，不会自动覆盖。',
     versionsDiffer: '设备与连接不是同一个草稿版本，请刷新后再新建或重新载入。',
