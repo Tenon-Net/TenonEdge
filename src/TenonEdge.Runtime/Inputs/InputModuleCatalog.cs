@@ -25,6 +25,10 @@ public sealed class InputModuleCatalog
     public ImmutableArray<InputModuleDefinition> Modules { get; }
     internal ImmutableArray<IInputUnitFactory> Factories { get; }
 
+    internal ImmutableArray<IInputUnitFactory> BindPlanFactories(IReadOnlyDictionary<string, IInputUnitFactory> adapters) =>
+        _modules.Values.GroupBy(module => module.Kind, StringComparer.Ordinal)
+            .Select(group => (IInputUnitFactory)new Factory(this, group.Key, group.First().UsesDurableHandoff, adapters)).ToImmutableArray();
+
     public InputModuleCatalog(IEnumerable<IInputModuleFactory> modules)
     {
         ArgumentNullException.ThrowIfNull(modules);
@@ -76,6 +80,10 @@ public sealed class InputModuleCatalog
         };
         if (unit.Configuration.GetProperty("inputModule").TryGetProperty("connections", out var connections))
         { envelope["connections"] = connections; }
+        var (module, _) = Resolve(unit);
+        var binding = CreateProtocol(module, parameters, unit);
+        if (binding is not null)
+        { envelope["protocol"] = new InputProtocolBinding(binding.Id.Kind, binding.Configuration); }
         return new(unit.Id, JsonSerializer.SerializeToElement(new
         {
             inputModule = envelope,
@@ -111,7 +119,48 @@ public sealed class InputModuleCatalog
     public void Validate(RuntimeUnitPlan unit)
     {
         if (unit.Configuration.TryGetProperty("inputModule", out _) || _modules.Keys.Any(key => key.Kind == unit.Id.Kind))
-        { _ = Describe(unit); }
+        {
+            _ = Describe(unit);
+            var (module, parameters) = Resolve(unit);
+            var expected = CreateProtocol(module, parameters, unit);
+            var frozen = ReadProtocol(unit);
+            if (expected?.Id != frozen?.Id || expected?.ConfigurationHash != frozen?.ConfigurationHash)
+            { throw Invalid(); }
+        }
+    }
+
+    private static RuntimeUnitPlan? CreateProtocol(IInputModuleFactory module, JsonElement parameters, RuntimeUnitPlan unit)
+    {
+        try
+        {
+            var binding = module.BindProtocol(parameters, ReadConnections(unit));
+            if (binding is null && ReadConnections(unit).Values.Any(connection => connection.Kind is "mqtt" or "modbus"))
+            { throw Invalid(); }
+            return binding is null ? null : CheckProtocol(unit, binding.Kind, binding.Configuration);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException) { throw Invalid(); }
+    }
+
+    /// <summary>只读取已冻结的原协议委托，不执行模块；用于历史校验及协议级保护。</summary>
+    public static RuntimeUnitPlan? ReadProtocol(RuntimeUnitPlan unit)
+    {
+        if (!unit.Configuration.TryGetProperty("inputModule", out var envelope) || !envelope.TryGetProperty("protocol", out var value))
+        { return null; }
+        if (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Count() != 2 ||
+            !value.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String ||
+            !value.TryGetProperty("configuration", out var config))
+        { throw Invalid(); }
+        return CheckProtocol(unit, kind.GetString()!, config);
+    }
+
+    private static RuntimeUnitPlan CheckProtocol(RuntimeUnitPlan unit, string kind, JsonElement config)
+    {
+        if (kind is not ("input.http" or "input.mqtt" or "input.modbus") || config.ValueKind != JsonValueKind.Object ||
+            Encoding.UTF8.GetByteCount(config.GetRawText()) > 1024 * 1024 ||
+            !config.TryGetProperty("connectionId", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt64(out var number) ||
+            !ReadConnections(unit).Values.Any(connection => connection.ConnectionId == number && "input." + connection.Kind == kind))
+        { throw Invalid(); }
+        return new(RuntimeUnitId.Create(kind, unit.Id.Key), config);
     }
 
     public static void ValidateStoredShape(RuntimeUnitPlan unit)
@@ -179,7 +228,7 @@ public sealed class InputModuleCatalog
         var config = unit.Configuration;
         if (!ValidKind(unit.Id.Kind) || unit.Id.KeySegments.Count != 2 || config.EnumerateObject().Count() != 1 ||
             !config.TryGetProperty("inputModule", out var envelope) || envelope.ValueKind != JsonValueKind.Object ||
-            envelope.EnumerateObject().Count() != 2 + (envelope.TryGetProperty("fields", out _) ? 1 : 0) + (envelope.TryGetProperty("connections", out _) ? 1 : 0) ||
+            envelope.EnumerateObject().Count() != 2 + (envelope.TryGetProperty("fields", out _) ? 1 : 0) + (envelope.TryGetProperty("connections", out _) ? 1 : 0) + (envelope.TryGetProperty("protocol", out _) ? 1 : 0) ||
             !envelope.TryGetProperty("version", out var version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var number) || number < 1 ||
             !envelope.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Object ||
             Encoding.UTF8.GetByteCount(parameters.GetRawText()) > ParameterSchema.MaximumConfigurationBytes ||
@@ -187,6 +236,7 @@ public sealed class InputModuleCatalog
         { throw Invalid(); }
         _ = ReadFrozenFields(unit);
         _ = ReadConnections(unit);
+        _ = ReadProtocol(unit);
         return (number, parameters);
     }
 
@@ -205,7 +255,8 @@ public sealed class InputModuleCatalog
     }
     private static ArgumentException Invalid() => new("输入模块未安装、版本不支持或参数/字段无效。");
 
-    private sealed class Factory(InputModuleCatalog catalog, string kind, bool handoff) : IInputUnitFactory
+    private sealed class Factory(InputModuleCatalog catalog, string kind, bool handoff,
+        IReadOnlyDictionary<string, IInputUnitFactory>? adapters = null) : IInputUnitFactory
     {
         public string Kind => kind;
         public bool UsesDurableHandoff => handoff;
@@ -214,6 +265,8 @@ public sealed class InputModuleCatalog
             try
             {
                 var (module, parameters) = catalog.Resolve(unit);
+                if (ReadProtocol(unit) is { } protocol)
+                { return ProtocolFactory(protocol).RecoveryGroup(new(unit.Id, protocol.Configuration)); }
                 return module.RecoveryGroup(new(unit.Id, parameters)) ?? throw Invalid();
             }
             catch (Exception error) when (error is not OutOfMemoryException) { throw Invalid(); }
@@ -223,11 +276,20 @@ public sealed class InputModuleCatalog
         {
             try
             {
-                _ = catalog.Describe(unit);
+                catalog.Validate(unit);
                 var (module, parameters) = catalog.Resolve(unit);
+                if (ReadProtocol(unit) is { } protocol)
+                { return ProtocolFactory(protocol).Build(new(unit.Id, protocol.Configuration), context); }
                 return module.Build(new(unit.Id, parameters), context) ?? throw Invalid();
             }
             catch (Exception error) when (error is not OutOfMemoryException) { throw Invalid(); }
+        }
+
+        private IInputUnitFactory ProtocolFactory(RuntimeUnitPlan protocol)
+        {
+            if (adapters is null || !adapters.TryGetValue(protocol.Id.Kind, out var factory) || factory.UsesDurableHandoff != handoff)
+            { throw Invalid(); }
+            return factory;
         }
     }
 }

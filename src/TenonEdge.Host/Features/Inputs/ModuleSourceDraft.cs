@@ -15,9 +15,12 @@ namespace TenonEdge.Host.Features.Inputs;
 internal sealed record ModuleSourceDraft(string Kind, int Version, JsonElement Parameters,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Dictionary<string, long>? Connections = null)
 {
+    private static readonly JsonSerializerOptions SnapshotJson = new(JsonSerializerDefaults.Web)
+    { Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) } };
+
     internal IEnumerable<long> ConnectionIds => Connections?.Values ?? Enumerable.Empty<long>();
 
-    internal RuntimeUnitPlan ToUnit(string deviceKey, string inputKey, IReadOnlyDictionary<long, ConnectionDraft>? available = null)
+    internal RuntimeUnitPlan ToUnit(string deviceKey, string inputKey, IReadOnlyDictionary<long, ConnectionDraft>? available = null, IReadOnlySet<long>? mqttCredentials = null)
     {
         var parameters = CombinedParameters();
         var envelope = new Dictionary<string, object?> { ["version"] = Version, ["parameters"] = parameters };
@@ -26,11 +29,28 @@ internal sealed record ModuleSourceDraft(string Kind, int Version, JsonElement P
             var snapshots = new Dictionary<string, InputConnectionSnapshot>(StringComparer.Ordinal);
             foreach (var (name, id) in Connections)
             {
-                if (available is null || !available.TryGetValue(id, out var connection) || connection.Kind != ConnectionKind.Http || connection.Http is null)
+                if (available is null || !available.TryGetValue(id, out var connection))
                 { throw new ArgumentException("输入模块引用的连接缺失或协议尚不支持。"); }
                 var validated = ConnectionDraftValidation.Normalize(id, new("module", connection.Key, connection.Name, connection.Kind,
                     connection.Enabled, connection.Modbus, connection.Mqtt, connection.Http));
-                snapshots.Add(name, new(id, "http", JsonSerializer.SerializeToElement(validated.Http, JsonSerializerOptions.Web)));
+                var kind = validated.Kind.ToString().ToLowerInvariant();
+                var configuration = validated.Kind switch
+                {
+                    ConnectionKind.Http => JsonSerializer.SerializeToElement(validated.Http, SnapshotJson),
+                    ConnectionKind.Modbus => JsonSerializer.SerializeToElement(validated.Modbus, SnapshotJson),
+                    ConnectionKind.Mqtt => JsonSerializer.SerializeToElement(new
+                    {
+                        validated.Mqtt!.Host,
+                        validated.Mqtt.Port,
+                        validated.Mqtt.Tls,
+                        validated.Mqtt.ClientId,
+                        validated.Mqtt.TimeoutMs,
+                        validated.Mqtt.PingIntervalMs,
+                        usePassword = mqttCredentials?.Contains(id) == true,
+                    }, SnapshotJson),
+                    _ => throw new ArgumentException("输入连接协议不受支持。"),
+                };
+                snapshots.Add(name, new(id, kind, configuration));
             }
             envelope["connections"] = snapshots;
         }

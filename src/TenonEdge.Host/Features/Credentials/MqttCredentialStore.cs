@@ -182,10 +182,8 @@ internal sealed class MqttCredentialStore(
     /// <summary>随新版本提交默认作废不匹配的旧绑定；管理员此前显式保留的绑定已经匹配，不再作废。</summary>
     public void InvalidateChangedRecipients(ISqlSugarClient client, RuntimePlanDocument plan)
     {
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind is "input.mqtt" or "output.mqtt"))
+        foreach (var settings in plan.Units.SelectMany(RuntimeConnectionReferences.ReadMqtt))
         {
-            MqttConnectionSettings settings = unit.Id.Kind == "input.mqtt"
-                ? MqttInputSettings.Parse(unit.Configuration) : MqttOutputSettings.Parse(unit.Configuration);
             var record = client.Queryable<MqttCredentialRecord>().InSingle(settings.ConnectionId);
             if (record is null || record.Recipient == settings.Recipient)
             {

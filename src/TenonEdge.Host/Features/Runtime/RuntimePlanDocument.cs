@@ -158,10 +158,8 @@ internal sealed class RuntimePlanDocument
         }
         var mqttConnections = new Dictionary<long, string>();
         var mqttClients = new Dictionary<(string Recipient, string ClientId), long>();
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind is "input.mqtt" or "output.mqtt"))
+        foreach (var settings in plan.Units.SelectMany(RuntimeConnectionReferences.ReadMqtt))
         {
-            MqttConnectionSettings settings = unit.Id.Kind == "input.mqtt"
-                ? MqttInputSettings.Parse(unit.Configuration) : MqttOutputSettings.Parse(unit.Configuration);
             var identity = settings.ConnectionIdentity(settings.ClientId);
             if (httpConnections.ContainsKey(settings.ConnectionId) ||
                 mqttConnections.TryGetValue(settings.ConnectionId, out var previous) && previous != identity)
@@ -177,7 +175,7 @@ internal sealed class RuntimePlanDocument
         }
         ValidateModbus(plan, httpConnections.Keys.Concat(mqttConnections.Keys).ToHashSet());
         try
-        { MqttFeedbackGuard.Validate(plan.Units); }
+        { MqttFeedbackGuard.Validate(plan.Units.Select(RuntimeConnectionReferences.Protocol)); }
         catch (ArgumentException)
         { throw new RuntimePlanDocumentException("MQTT 输入与输出存在已知反馈闭环，请调整发布主题或订阅过滤器。"); }
         return new RuntimePlanDocument(plan.Units, Serialize(plan.Units));
@@ -188,7 +186,7 @@ internal sealed class RuntimePlanDocument
         var connections = new Dictionary<long, string>();
         var devices = new Dictionary<string, (long Connection, byte Unit)>(StringComparer.Ordinal);
         var keys = new HashSet<(string Device, string Point)>();
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind == "input.modbus"))
+        foreach (var unit in plan.Units.Select(RuntimeConnectionReferences.Protocol).Where(unit => unit.Id.Kind == "input.modbus"))
         {
             var settings = ModbusInputSettings.Parse(unit.Configuration);
             var identity = settings.ConnectionIdentity();
@@ -208,6 +206,13 @@ internal sealed class RuntimePlanDocument
                 if (!keys.Add((parts[0], point.Key)))
                 { throw new RuntimePlanDocumentException("同一 Modbus 设备的点位 key 不可跨组重复。"); }
             }
+        }
+        foreach (var settings in plan.Units.SelectMany(RuntimeConnectionReferences.ReadModbus))
+        {
+            if (otherConnections.Contains(settings.ConnectionId) ||
+                connections.TryGetValue(settings.ConnectionId, out var identity) && identity != settings.Identity)
+            { throw new RuntimePlanDocumentException("同一连接的协议与 Modbus 物理参数必须一致。"); }
+            connections[settings.ConnectionId] = settings.Identity;
         }
         if (connections.Count > 256 || connections.Count + otherConnections.Count > 500)
         { throw new RuntimePlanDocumentException("连接数量超过上限：全部 500 个、Modbus 256 个。"); }
@@ -271,7 +276,15 @@ internal sealed class RuntimePlanDocument
             { inputs.Validate(result); }
             // Reject secret/unknown connection fields even for an uninstalled module.
             // This stays pure: protocol validation does not invoke module or network code.
-            _ = RuntimeConnectionReferences.ReadModuleHttp(result).ToArray();
+            RuntimeConnectionReferences.ValidateModuleConnections(result);
+            if (InputModuleCatalog.ReadProtocol(result) is null && InputModuleCatalog.ReadConnections(result).Values.Any(connection => connection.Kind is "mqtt" or "modbus"))
+            { throw new ArgumentException("MQTT/Modbus 模块引用须经原计划级协议委托。"); }
+            if (InputModuleCatalog.ReadProtocol(result) is { } protocol)
+            {
+                // Same protocol parsers, secret guards and field checks as built-in inputs.
+                _ = ParseUnit(JsonSerializer.SerializeToElement(new
+                { kind = protocol.Id.Kind, key = protocol.Id.Key, configuration = protocol.Configuration }), index, transforms, null);
+            }
             return result;
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)

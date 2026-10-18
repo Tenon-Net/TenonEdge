@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -179,6 +180,12 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 { throw new ArgumentException("计划输出工厂种类无效或重复注册。"); }
             }
         }
+        // Bind module protocol delegates to this Prepare's original factories. No
+        // provider is invoked a second time and supervisor rebuilds retain these views.
+        var protocolFactories = inputFactories.Where(pair => !InputModules.Modules.Any(module => module.Kind == pair.Key))
+            .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        foreach (var factory in InputModules.BindPlanFactories(protocolFactories))
+        { inputFactories[factory.Kind] = factory; }
         var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var units = new List<PreparedUnit>(plan.Units.Length);
         foreach (var unit in plan.Units.Where(unit => !unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { startOwnedHost } from './owned-host'
 
 /** Real socket peers, not management API mocks. Only known Modbus reads are served. */
-export async function startWorkflowGateway() {
+export async function startWorkflowGateway(moduleHost = false) {
     const sockets = new Set<Socket>()
     const protocolErrors: string[] = []
     const reads: { unit: number; address: number; count: number }[] = []
@@ -134,7 +134,7 @@ export async function startWorkflowGateway() {
         const address = new URL(
             process.env.TENONEDGE_TEST_URL ?? 'http://127.0.0.1:18082',
         ).hostname
-        host = await startOwnedHost(data, 0, args, address)
+        host = await startOwnedHost(data, 0, args, address, moduleHost)
         const url = host.url
         return {
             url,
@@ -152,6 +152,7 @@ export async function startWorkflowGateway() {
                     Number(new URL(url).port),
                     args,
                     address,
+                    moduleHost,
                 )
                 if (host.url !== url)
                     throw new Error('Owned Host changed address')

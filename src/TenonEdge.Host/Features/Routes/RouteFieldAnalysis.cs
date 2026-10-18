@@ -70,7 +70,7 @@ internal static class RouteFieldAnalysis
                 { throw Error("source.missing", node.Id, id); }
                 var connection = device.ConnectionId is { } connectionId ? snapshot.Connections.GetValueOrDefault(connectionId) : null;
                 try
-                { sources.Add(id, RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog, snapshot.Connections).Source); }
+                { sources.Add(id, RouteSourceCompiler.Compile(input, device, connection, false, snapshot.InputsCatalog, snapshot.Connections, snapshot.MqttCredentials).Source); }
                 catch (Exception error) when (error is ArgumentException or JsonException or InvalidOperationException or FormatException)
                 { throw Error("source.configuration", node.Id, id); }
             }

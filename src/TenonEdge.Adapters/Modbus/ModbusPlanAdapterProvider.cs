@@ -32,7 +32,7 @@ internal sealed class ModbusPlanInputFactory(ISharedConnections shared, IOutboun
                 { throw new ArgumentException("Modbus 计划工厂不能跨准备计划复用。"); }
                 return new Unit(this, existing);
             }
-            if (_started || plan.Id.Kind != Kind)
+            if (_started || !plan.Id.Kind.StartsWith("input.", StringComparison.Ordinal))
             { throw new ArgumentException("Modbus 计划绑定已冻结或单元种类无效。"); }
             var settings = ModbusInputSettings.Parse(plan.Configuration);
             var table = new ModbusPointTable(settings.Points, settings.MaxRegisters, settings.MaxBits);

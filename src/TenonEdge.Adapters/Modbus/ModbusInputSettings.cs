@@ -43,6 +43,9 @@ public sealed record ModbusInputSettings
 
     public string ConnectionIdentity() => Connection.Identity;
 
+    /// <summary>非秘密物理连接描述，供计划级身份与配额核对；不包含从站或点表。</summary>
+    public ModbusConnectionSettings ToConnectionSettings() => Connection;
+
     public static ModbusInputSettings Parse(JsonElement configuration)
     {
         var settings = configuration.Deserialize<ModbusInputSettings>(Options) ?? throw new ArgumentException("Modbus 输入配置不能为空。");

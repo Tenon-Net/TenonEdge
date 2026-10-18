@@ -25,6 +25,8 @@ internal static class TransformModuleProcessHost
         await using var factory = new FixedDataDirectoryApplicationFactory(data, settings,
             services => services.AddSingleton<IMessageTransformFactory>(new TestOffsetTransformFactory())
                 .AddSingleton<IInputModuleFactory>(new TestScalarInputModule())
+                .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt"))
+                .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("modbus"))
                 .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
                     provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single())
                 { PeriodMs = 1000 }));

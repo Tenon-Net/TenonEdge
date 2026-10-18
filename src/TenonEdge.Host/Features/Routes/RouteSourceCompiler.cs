@@ -26,7 +26,7 @@ internal static class RouteSourceCompiler
     internal static readonly JsonSerializerOptions SettingsJson = new(Json) { IgnoreReadOnlyProperties = true };
 
     public static CompiledRouteSource Compile(InputDraft input, DeviceDraft device, ConnectionDraft? connection, bool mqttRequiresPassword,
-        InputModuleCatalog? modules = null, IReadOnlyDictionary<long, ConnectionDraft>? connections = null)
+        InputModuleCatalog? modules = null, IReadOnlyDictionary<long, ConnectionDraft>? connections = null, IReadOnlySet<long>? mqttCredentials = null)
     {
         if (input.DeviceId != device.Id || input.Kind != device.Kind)
         { throw new ArgumentException("来源与设备不匹配。"); }
@@ -120,7 +120,7 @@ internal static class RouteSourceCompiler
                 break;
             case DeviceKind.Module:
                 var module = input.Module!;
-                var unit = (modules ?? InputModuleCatalog.Empty).WithFrozenFields(module.ToUnit(device.Key, input.Key, connections));
+                var unit = (modules ?? InputModuleCatalog.Empty).WithFrozenFields(module.ToUnit(device.Key, input.Key, connections, mqttCredentials));
                 configuration = unit.Configuration;
                 fields = InputModuleCatalog.ReadFrozenFields(unit)!.Value
                     .Select(field => new MappedFieldSchema(field.Key, field.Type, field.Unit)).ToImmutableArray();

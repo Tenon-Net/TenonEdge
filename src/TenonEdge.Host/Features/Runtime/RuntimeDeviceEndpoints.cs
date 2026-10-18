@@ -53,14 +53,19 @@ internal static class RuntimeDeviceEndpoints
             var draftKeys = draft.Devices.Select(device => device.Key).ToHashSet(StringComparer.Ordinal);
             foreach (var device in catalog.Devices)
             {
-                var sources = sourceGroups[device.Key].Select(source =>
+                var definitions = sourceGroups[device.Key].ToArray();
+                var sources = definitions.Select(source =>
                 {
                     var unit = units.GetValueOrDefault(source.Id);
                     return new RuntimeDeviceSource(source.Id.KeySegments[1], source.Name, source.Id.Kind, source.Enabled,
                         source.PeriodMs, source.Fields.Length, unit?.State, unit?.Reads,
                         status.ActiveRevision is { } revision ? runtime.CurrentValues.LastReceived(source.Id, revision) : null);
                 }).ToArray();
-                result.Add(new(device.Key, device.Name, device.Kind, Health(device.Enabled, sources), false,
+                // Keep the public module kind, but classify transport semantics from the
+                // frozen delegate; MQTT connection health never means sensor online.
+                var healthSources = sources.Select((source, index) => source with
+                { Kind = definitions[index].ProtocolKind ?? source.Kind }).ToArray();
+                result.Add(new(device.Key, device.Name, device.Kind, Health(device.Enabled, healthSources), false,
                     catalog.HasDraft && !draftKeys.Contains(device.Key), sources));
             }
             foreach (var device in draft.Devices.Where(device => !known.ContainsKey(device.Key)))
@@ -145,8 +150,11 @@ internal static class RuntimeDeviceEndpoints
                     var id = RuntimeUnitId.Create(input.Module?.Kind ?? "input." + device.Kind.ToString().ToLowerInvariant(), device.Key + "/" + input.Key);
                     // 启用但不在任何启用路线中的来源没有采集循环，不能标成已运行。
                     var enabled = device.Enabled && input.Enabled && scheduled.ContainsKey(id);
-                    sources.Add(new(device.Key, id, input.Name, enabled, input.Modbus?.PeriodMs ?? input.Http?.PeriodMs ?? input.Simulator?.PeriodMs,
-                        input.Module is not null && scheduled.TryGetValue(id, out var unit) ? ModuleFields(unit) : Fields(input)));
+                    scheduled.TryGetValue(id, out var unit);
+                    sources.Add(new(device.Key, id, input.Name, enabled,
+                        input.Module is not null && unit is not null ? ModulePeriod(unit) : input.Modbus?.PeriodMs ?? input.Http?.PeriodMs ?? input.Simulator?.PeriodMs,
+                        input.Module is not null && unit is not null ? ModuleFields(unit) : Fields(input),
+                        unit is not null ? RuntimeConnectionReferences.Protocol(unit).Id.Kind : null));
                 }
             }
         }
@@ -159,7 +167,7 @@ internal static class RuntimeDeviceEndpoints
                 if (!devices.Any(device => device.Key == key))
                 { devices.Add(new(key, key, unit.Id.Kind[6..], true)); }
                 var (period, fields) = LegacyFields(unit);
-                sources.Add(new(key, unit.Id, unit.Id.KeySegments[1], true, period, fields));
+                sources.Add(new(key, unit.Id, unit.Id.KeySegments[1], true, period, fields, RuntimeConnectionReferences.Protocol(unit).Id.Kind));
             }
         }
         return (devices.ToArray(), sources.ToArray(), draft is not null);
@@ -177,7 +185,7 @@ internal static class RuntimeDeviceEndpoints
     private static (int? Period, FieldInfo[] Fields) LegacyFields(RuntimeUnitPlan unit)
     {
         if (unit.Configuration.TryGetProperty("inputModule", out _))
-        { return (null, ModuleFields(unit)); }
+        { return (ModulePeriod(unit), ModuleFields(unit)); }
         if (unit.Id.Kind == "input.modbus")
         {
             var config = ModbusInputSettings.Parse(unit.Configuration);
@@ -198,9 +206,20 @@ internal static class RuntimeDeviceEndpoints
         (TenonEdge.Runtime.Inputs.InputModuleCatalog.ReadFrozenFields(unit) ?? [])
             .Select(field => new FieldInfo(field.Key, null, field.Unit, true)).ToArray();
 
+    private static int? ModulePeriod(RuntimeUnitPlan unit)
+    {
+        var protocol = RuntimeConnectionReferences.Protocol(unit);
+        return protocol.Id.Kind switch
+        {
+            "input.modbus" => ModbusInputSettings.Parse(protocol.Configuration).PeriodMs,
+            "input.http" => HttpInputSettings.Parse(protocol.Configuration).PeriodMs,
+            _ => null,
+        };
+    }
+
     private static ProblemHttpResult Changed() => ApiProblems.Problem(409, "runtime.revisionChanged", "运行版本已切换，请重新选择来源。");
     private static ProblemHttpResult Unavailable() => ApiProblems.Problem(409, "runtime.snapshotUnavailable", "运行快照不可读取，不能用草稿替代。");
     private sealed record DeviceInfo(string Key, string Name, string Kind, bool Enabled);
-    private sealed record SourceInfo(string DeviceKey, RuntimeUnitId Id, string Name, bool Enabled, int? PeriodMs, FieldInfo[] Fields);
+    private sealed record SourceInfo(string DeviceKey, RuntimeUnitId Id, string Name, bool Enabled, int? PeriodMs, FieldInfo[] Fields, string? ProtocolKind = null);
     private sealed record FieldInfo(string Key, string? Name, string? Unit, bool Enabled);
 }

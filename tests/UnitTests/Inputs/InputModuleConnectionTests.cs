@@ -99,7 +99,7 @@ public sealed class InputModuleConnectionTests
     [InlineData("mqtt")]
     [InlineData("modbus")]
     [InlineData("unknown")]
-    public void ProtocolsWithoutPlanLevelModuleCoordinationAreNotSilentlyEnabled(string kind)
+    public void WronglyShapedOrUnknownProtocolSnapshotsAreRejected(string kind)
     {
         var unit = Unit("{\"primary\":\"11\"}", "{\"primary\":" + Connection(11, kind: kind) + "}");
         Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.ParseStored(Document(unit)));
