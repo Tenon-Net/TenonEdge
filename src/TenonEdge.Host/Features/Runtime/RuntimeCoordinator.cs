@@ -255,16 +255,8 @@ internal sealed partial class RuntimeCoordinator(
             return StartupDecision.Fail($"有效配置 r{effectiveRevision} 已损坏，不启动输入：{problem}。请回滚或从备份恢复。");
         }
 
-        try
-        { document!.ValidateTransforms(runtime.Transforms); }
-        catch (RuntimePlanDocumentException)
-        {
-            await DisposeAsync(seeded);
-            return StartupDecision.Fail("有效配置需要的转换模块不可用或配置无效；请检查编译期模块，不启动输入，也不把历史快照当作空配置。");
-        }
-
-        // 已生效快照的输入模块由原 Prepare 逐单元校验：缺失/不兼容仅降级该输入，
-        // 其余输入与持久报文发送继续。新冻结/回滚仍必须在提交前严格验证所有输入。
+        // 已生效快照由原 Prepare 逐单元校验：输入或转换模块缺失/不兼容，仅降级
+        // 受影响的输入/输出单元，不绕过转换，也不拖停其他单元。新冻结/回滚仍严格准入。
 
         var previous = pointers.PreviousRevision is { } previousRevision ? versions.Load(previousRevision) : null;
         var protection = StartupProtection.Decide(effective, previous);

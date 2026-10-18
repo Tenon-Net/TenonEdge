@@ -4,10 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startOwnedHost } from './support/owned-host'
+import type { Diagnostics } from '../src/features/diagnostics/api'
 const root = '/api/edge-admin/v1'
 // Only the test assembly adds a compiled module. No mocked drafts, preview,
 // application or network outputs; metadata failure below is explicitly injected.
-test('installed transform: automatic form, metadata failure, draft, preview, real HTTP and restart', async ({
+test('installed transform: automatic form, draft, real HTTP, missing-module isolation and restart', async ({
     browser,
 }) => {
     test.setTimeout(120_000)
@@ -92,7 +93,12 @@ test('installed transform: automatic form, metadata failure, draft, preview, rea
             expectedVersion: device.version,
             key: 'values',
             name: 'Values',
-            simulator: { sampleJson: '{"value":9007199254740993}' },
+            // One immediate sample per process start; avoid another sampling cycle
+            // racing the shutdown/no-new-delivery assertions below.
+            simulator: {
+                periodMs: 86_400_000,
+                sampleJson: '{"value":9007199254740993}',
+            },
         })
         const route = await post('/routes', {
             expectedVersion: source.version,
@@ -277,9 +283,84 @@ test('installed transform: automatic form, metadata failure, draft, preview, rea
                 ),
             )
             .toBe(true)
+        await expect
+            .poll(async () => {
+                const response = await page.request.get(
+                    root + '/runtime/status',
+                )
+                expect(response.status()).toBe(200)
+                const status: Diagnostics = await response.json()
+                return {
+                    committed: Number(status.queue.committedRecords),
+                    deleted: Number(status.queue.deletedRecords),
+                }
+            })
+            .toEqual({ committed: 1, deleted: 1 })
         await context.close()
         expect(await host.stop()).toBe(0)
         const beforeRestart = bodies.length
+        // Restart the unmodified product process, which does not register the test
+        // transform. The input stays alive; this path must not send untransformed data.
+        host = await startOwnedHost(data)
+        const missingContext = await browser.newContext({ baseURL: host.url })
+        try {
+            const missingPage = await missingContext.newPage()
+            await missingPage.goto('/')
+            await missingPage
+                .getByLabel('账号', { exact: true })
+                .fill('transform-admin')
+            await missingPage
+                .getByLabel('密码', { exact: true })
+                .fill('Transform-browser-7183!')
+            await missingPage
+                .getByRole('button', { name: '登录', exact: true })
+                .click()
+            await expect(
+                missingPage.getByRole('heading', { name: '总览', exact: true }),
+            ).toBeVisible()
+            await missingPage.goto('/diagnostics')
+            await expect(
+                missingPage.getByRole('heading', {
+                    name: '运行诊断',
+                    exact: true,
+                }),
+            ).toBeVisible()
+            const units = missingPage.getByRole('region', {
+                name: '运行单元',
+                exact: true,
+            })
+            await expect(
+                units
+                    .getByRole('row')
+                    .filter({ hasText: 'input.simulator/meter/values' }),
+            ).toContainText('运行中')
+            await expect(
+                units
+                    .getByRole('row')
+                    .filter({ hasText: 'output.http/extended/' }),
+            ).toContainText('构建失败')
+            await expect
+                .poll(async () => {
+                    const response = await missingPage.request.get(
+                        root + '/runtime/status',
+                    )
+                    expect(response.status()).toBe(200)
+                    const status: Diagnostics = await response.json()
+                    expect(status.coordinator.state).toBe('active')
+                    expect(Number(status.queue.committedRecords)).toBe(0)
+                    return Number(
+                        status.runtime.units.find(
+                            (unit) => unit.id.kind === 'input.simulator',
+                        )?.reads?.readsCompleted ?? 0,
+                    )
+                })
+                .toBeGreaterThanOrEqual(1)
+        } finally {
+            await missingContext.close()
+            expect(await host.stop()).toBe(0)
+        }
+        // Stop/drain is the boundary, not a timed absence check or an arbitrary sleep.
+        expect(bodies).toHaveLength(beforeRestart)
         host = await startOwnedHost(data, 0, [], '127.0.0.1', true)
         await expect
             .poll(() =>

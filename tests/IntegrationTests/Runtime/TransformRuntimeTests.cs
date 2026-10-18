@@ -214,8 +214,11 @@ public sealed class TransformRuntimeTests
         Assert.DoesNotContain("fixture-secret", JsonSerializer.Serialize(error), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task RegisteredHostSeedPersistsAndRestartsButMissingModuleStopsInputsWithoutDamagingHistory()
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("version")]
+    [InlineData("build")]
+    public async Task UnavailableTransformOnlyStopsItsOutputUnitWithoutDamagingHistoryOrNewAdmission(string unavailable)
     {
         using var data = TemporaryDirectory.Create();
         using var seeds = TemporaryDirectory.Create();
@@ -240,12 +243,24 @@ public sealed class TransformRuntimeTests
             body = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 2)).Payload.ToArray();
         }
         var missingInput = new OneShotInputFactory();
-        await using (var host = new FixedDataDirectoryApplicationFactory(data.Path, configureServices: services => services.AddSingleton<IInputUnitFactory>(missingInput)))
+        await using (var host = new FixedDataDirectoryApplicationFactory(data.Path, configureServices: services =>
+        {
+            services.AddSingleton<IInputUnitFactory>(missingInput);
+            if (unavailable != "missing")
+            { services.AddSingleton<IMessageTransformFactory>(new TestOffsetTransformFactory { Version = unavailable == "version" ? 2 : 1, ThrowBuild = unavailable == "build" }); }
+        }))
         {
             var coordinator = host.Services.GetRequiredService<RuntimeCoordinator>();
-            Assert.Equal(RuntimeCoordinatorState.RunFailed, coordinator.Status.State);
-            Assert.Contains("转换模块", coordinator.Status.Reason, StringComparison.Ordinal);
-            Assert.Equal(0, missingInput.Started);
+            Assert.Equal(RuntimeCoordinatorState.Active, coordinator.Status.State);
+            await OutputPipelineTests.UntilAsync(() => missingInput.Started == 1);
+            var runtime = host.Services.GetRequiredService<RuntimeHost>();
+            var failed = Assert.Single(runtime.GetStatus().Units, unit => unit.Id == RuntimeUnitId.Create("output.http", "out"));
+            Assert.Equal(RuntimeUnitState.BuildFailed, failed.State);
+            Assert.DoesNotContain("fixture-secret", JsonSerializer.Serialize(failed), StringComparison.Ordinal);
+            var reported = Assert.Single(new RuntimeStateReader(data.Path).Events(TenonEdge.Runtime.Diagnostics.RuntimeEventTypes.UnitBuildFailed));
+            Assert.Equal("output.http/out", reported.Target);
+            Assert.Equal("error", reported.Level);
+            Assert.DoesNotContain("fixture-secret", reported.Message, StringComparison.Ordinal);
             var snapshot = host.Services.GetRequiredService<RuntimeVersionStore>().Load(1)!;
             Assert.Equal(content, snapshot.Content);
             Assert.Equal(hash, snapshot.ContentHash);
@@ -309,7 +324,7 @@ internal sealed class TestOffsetTransformFactory : IMessageTransformFactory
     private int _calls;
     public string Kind => "transform.test-offset";
     public string DisplayName => "测试增量";
-    public int Version => 1;
+    public int Version { get; init; } = 1;
     public bool ThrowBuild { get; init; }
     public int Calls => Volatile.Read(ref _calls);
     public ParameterSchema? Parameters { get; } = new("test-offset", ParameterScope.Transform,
