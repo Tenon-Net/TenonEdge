@@ -122,8 +122,9 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<IOutboundConnector>(),
             provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<ITlsTrustResolver>()));
         services.AddSingleton(provider => new TransformCatalog(provider.GetServices<IMessageTransformFactory>()));
-        services.AddSingleton(provider => new InputModuleCatalog(provider.GetServices<IInputModuleFactory>()));
-        services.AddSingleton(provider => new OutputModuleCatalog(provider.GetServices<IOutputModuleFactory>()));
+        services.AddSingleton<ConnectionModuleCatalog>();
+        services.AddSingleton(provider => new InputModuleCatalog(provider.GetServices<IInputModuleFactory>(), provider.GetRequiredService<ConnectionModuleCatalog>()));
+        services.AddSingleton(provider => new OutputModuleCatalog(provider.GetServices<IOutputModuleFactory>(), provider.GetRequiredService<ConnectionModuleCatalog>()));
         services.AddSingleton<RuntimeHost>();
         services.AddSingleton<RuntimeVersionStore>();
         services.AddSingleton<RuntimeCoordinator>();

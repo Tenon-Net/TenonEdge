@@ -6,6 +6,7 @@ using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Abstractions.Plans;
+using TenonEdge.Runtime.Connections;
 
 namespace TenonEdge.Runtime.Inputs;
 
@@ -22,6 +23,7 @@ public sealed class InputModuleCatalog
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
     private readonly ImmutableDictionary<(string Kind, int Version), IInputModuleFactory> _modules;
+    private readonly ConnectionModuleCatalog _connections;
     public ImmutableArray<InputModuleDefinition> Modules { get; }
     internal ImmutableArray<IInputUnitFactory> Factories { get; }
 
@@ -29,8 +31,9 @@ public sealed class InputModuleCatalog
         _modules.Values.GroupBy(module => module.Kind, StringComparer.Ordinal)
             .Select(group => (IInputUnitFactory)new Factory(this, group.Key, group.First().UsesDurableHandoff, adapters)).ToImmutableArray();
 
-    public InputModuleCatalog(IEnumerable<IInputModuleFactory> modules)
+    public InputModuleCatalog(IEnumerable<IInputModuleFactory> modules, ConnectionModuleCatalog? connections = null)
     {
+        _connections = connections ?? ConnectionModuleCatalog.Empty;
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IInputModuleFactory>();
         foreach (var module in modules)
@@ -175,6 +178,8 @@ public sealed class InputModuleCatalog
         if (!_modules.TryGetValue((unit.Id.Kind, version), out var module))
         { throw Invalid(); }
         TenonEdge.Runtime.Modules.ModuleConnections.Validate(module.Parameters, parameters, ReadConnections(unit));
+        foreach (var connection in ReadConnections(unit).Values.Where(connection => connection.Kind is not ("http" or "mqtt" or "modbus")))
+        { _connections.Validate(connection); }
         return (module, parameters);
     }
 

@@ -4,6 +4,7 @@ using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Abstractions.Plans;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Modules;
 
 namespace TenonEdge.Runtime.Outputs;
@@ -19,11 +20,13 @@ public sealed class OutputModuleCatalog
         { "outputModule", "connectionId", "inputs", "mapping", "mappingStages", "transformStages" };
     public static OutputModuleCatalog Empty { get; } = new([]);
     private readonly ImmutableDictionary<(string Kind, int Version), IOutputModuleFactory> _modules;
+    private readonly ConnectionModuleCatalog _connections;
     public ImmutableArray<OutputModuleDefinition> Modules { get; }
     internal ImmutableArray<IOutputAdapterFactory> Factories { get; }
 
-    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules)
+    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null)
     {
+        _connections = connections ?? ConnectionModuleCatalog.Empty;
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IOutputModuleFactory>();
         foreach (var module in modules)
@@ -139,6 +142,8 @@ public sealed class OutputModuleCatalog
         { throw Invalid(); }
         var context = ReadContext(unit);
         ModuleConnections.Validate(module.Parameters, parameters, context.Connections);
+        foreach (var connection in context.Connections.Values.Where(connection => connection.Kind is not ("http" or "mqtt" or "modbus")))
+        { _connections.Validate(connection); }
         return (module, parameters, context);
     }
 

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
@@ -187,7 +188,16 @@ internal sealed class RuntimePlanDocument
                 mqttClients[client] = settings.ConnectionId;
             }
         }
-        ValidateModbus(plan, httpConnections.Keys.Concat(mqttConnections.Keys).ToHashSet());
+        var customConnections = new Dictionary<long, string>();
+        foreach (var connection in plan.Units.SelectMany(RuntimeConnectionReferences.ReadCustom))
+        {
+            var identity = ModuleConnectionSnapshot.ModuleConfigurationIdentity(connection);
+            if (httpConnections.ContainsKey(connection.ConnectionId) || mqttConnections.ContainsKey(connection.ConnectionId) ||
+                customConnections.TryGetValue(connection.ConnectionId, out var previous) && previous != identity)
+            { throw new RuntimePlanDocumentException("同一连接的类型、版本与冻结参数必须一致。"); }
+            customConnections[connection.ConnectionId] = identity;
+        }
+        ValidateModbus(plan, httpConnections.Keys.Concat(mqttConnections.Keys).Concat(customConnections.Keys).ToHashSet());
         try
         { MqttFeedbackGuard.Validate(plan.Units.Select(RuntimeConnectionReferences.Protocol)); }
         catch (ArgumentException)

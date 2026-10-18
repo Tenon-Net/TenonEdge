@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
@@ -42,6 +43,12 @@ internal sealed class RuntimeConnectionCatalog
             {
                 var clientId = settings.ClientId ?? $"tenon-{Guid.Parse(nodeId):N}-{settings.ConnectionId}";
                 Add(settings.ConnectionId, "mqtt", settings.Recipient, settings.ConnectionIdentity(clientId), unit);
+            }
+            foreach (var connection in RuntimeConnectionReferences.ReadCustom(unit))
+            {
+                // Generic parameters are not a target address. Do not guess or expose the full configuration here.
+                Add(connection.ConnectionId, connection.Kind, "扩展连接（目标由适配器解析）",
+                    ModuleConnectionSnapshot.ModuleConfigurationIdentity(connection), unit);
             }
         }
         if (entries.Values.Any(entry => entry.Identities.Count > 1))

@@ -53,10 +53,14 @@ internal static class RuntimeConnectionReferences
                     _ = Modbus(connection);
                     break;
                 default:
-                    throw new ArgumentException("输入连接协议不受支持。");
+                    _ = ModuleConnectionSnapshot.ReadModuleConfiguration(connection);
+                    break;
             }
         }
     }
+
+    internal static IEnumerable<ModuleConnectionSnapshot> ReadCustom(RuntimeUnitPlan unit) =>
+        ModuleConnections(unit).Where(connection => connection.Kind is not ("http" or "mqtt" or "modbus"));
 
     internal static IEnumerable<HttpRequestSettings> ReadModuleHttp(RuntimeUnitPlan unit) =>
         ModuleConnections(unit).Where(connection => connection.Kind == "http").Select(Http);
