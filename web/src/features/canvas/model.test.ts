@@ -21,6 +21,7 @@ describe('local graph document and history', () => {
             {
                 id,
                 kind: 'input.modbus',
+                version: 1,
                 name: 'input.modbus',
                 configText: '{"sourceIds":[]}',
             },

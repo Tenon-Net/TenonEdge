@@ -44,6 +44,8 @@ internal static class ConfigurationInterruptionProcessHost
 
     public static async Task<int> Main(string[] args)
     {
+        if (args.FirstOrDefault() == TransformModuleProcessHost.Command)
+        { return await TransformModuleProcessHost.RunAsync(args[1..]); }
         if (args.Length == 0 || args[0] is not (MigrationCommand or Command or PartialStopCommand or PreInputActivationCommand or TransactionWritingCommand or DurableCommitCommand or PreparationCommitCommand or PartialActivationCommand or MqttPartialStopCommand or MqttPartialActivationCommand))
         { return await Xunit.Runner.InProc.SystemConsole.ConsoleRunner.Run(args); }
         if (!OperatingSystem.IsLinux())

@@ -38,7 +38,7 @@ internal static partial class RoutePlanCompiler
             }
             var graphs = draft.Routes.Where(route => route.Enabled).Select(route =>
             {
-                var graph = RouteGraphFormat.Normalize(route.Graph);
+                var graph = RouteGraphFormat.NormalizeStored(route.Graph);
                 return new RouteTopology(route.Key, true, graph.SchemaVersion,
                     graph.Nodes.Select(node => new RouteTopologyNode(node.Id, node.Type, node.Version,
                         node.Type.StartsWith("input.", StringComparison.Ordinal)

@@ -82,7 +82,7 @@ internal static class ConfigurationExport
         var exportedRoutes = draft.Routes.Select((route, index) =>
         {
             token.ThrowIfCancellationRequested();
-            var graph = RouteGraphFormat.Normalize(route.Graph);
+            var graph = RouteGraphFormat.NormalizeStored(route.Graph);
             var nodes = graph.Nodes.Select((node, nodeIndex) => node with
             {
                 Config = Rewrite(node, $"$.routes[{index}].graph.nodes[{nodeIndex}].config")

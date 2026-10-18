@@ -7,7 +7,7 @@ namespace TenonEdge.Abstractions.Plans;
 /// 运行单元配置的规范化 JSON，用于计算配置哈希：对象属性按名称的序号排序，去掉空白，字符串按同一规则重新转义；
 /// 数值保留原文，因此 1、1.0 与 1E0 视为不同的配置。对象中有重名属性时拒绝，避免同一段配置有两种理解。
 /// </summary>
-internal static class CanonicalJson
+public static class CanonicalJson
 {
     public static byte[] Serialize(JsonElement element)
     {

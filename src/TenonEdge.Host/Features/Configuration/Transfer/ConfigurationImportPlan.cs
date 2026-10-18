@@ -4,6 +4,7 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
 
@@ -14,7 +15,7 @@ internal sealed record ConfigurationImportPlan(ConfigurationCheckpoint Draft, Co
 internal static class ConfigurationImportPlanner
 {
     public static ConfigurationImportPlan Prepare(PortableConfiguration file, ConfigurationCheckpoint before,
-        ConfigurationImportMode mode, Func<long> newId, CancellationToken token)
+        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null)
     {
         token.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(mode))
@@ -94,7 +95,7 @@ internal static class ConfigurationImportPlanner
                 { throw ConfigurationImportDocument.Error("import.schema", nodePath); }
                 return node with { Config = Rewrite(node, nodePath) };
             }).ToArray();
-            var normalized = Validate(path + ".graph", () => RouteGraphFormat.Normalize(new(graph.SchemaVersion, nodes, graph.Edges, graph.Layout)));
+            var normalized = Validate(path + ".graph", () => RouteGraphFormat.Normalize(new(graph.SchemaVersion, nodes, graph.Edges, graph.Layout), transforms));
             var id = oldRoutes.TryGetValue(value.RouteKey, out var old) ? old.Id : Allocate();
             routes[value.RouteKey] = new(id, value.RouteKey, value.Name.Trim(), value.Description, value.Enabled, normalized, old?.UpdatedBy, old?.UpdatedAt ?? 0);
         }
@@ -102,7 +103,7 @@ internal static class ConfigurationImportPlanner
             devices.Values.OrderBy(value => value.Id).ToArray(), inputs.Values.OrderBy(value => value.Id).ToArray(),
             routes.Values.OrderBy(value => value.Id).ToArray(), before.CredentialConnections, before.Edits,
             before.RequiredCredentials?.Where(value => connectionsById.ContainsKey(value.ConnectionId)).ToArray());
-        ValidateCombined(candidate, token);
+        ValidateCombined(candidate, transforms, token);
         return new(candidate, ConfigurationDiff.Between(before, candidate));
 
         ConnectionDraft Connection(string key, string path) => connections.TryGetValue(key, out var connection) ? connection
@@ -143,7 +144,7 @@ internal static class ConfigurationImportPlanner
                         else
                         { throw ConfigurationImportDocument.Error("import.schema", path + ".connectionKey"); }
                     }
-                    else if (property.Name is "sourceIds" or "connectionId")
+                    else if (!TransformCatalog.ValidKind(node.Type) && property.Name is ("sourceIds" or "connectionId"))
                     { throw ConfigurationImportDocument.Error("import.internalReference", path + "." + property.Name); }
                     else
                     { property.WriteTo(writer); }
@@ -242,7 +243,7 @@ internal static class ConfigurationImportPlanner
         { throw ConfigurationImportDocument.Error("import.schema", path); }
     }
 
-    private static void ValidateCombined(ConfigurationCheckpoint draft, CancellationToken token)
+    private static void ValidateCombined(ConfigurationCheckpoint draft, TransformCatalog? transforms, CancellationToken token)
     {
         var connections = draft.Connections.ToDictionary(value => value.Id);
         var devices = draft.Devices.ToDictionary(value => value.Id);
@@ -273,7 +274,7 @@ internal static class ConfigurationImportPlanner
         foreach (var route in draft.Routes)
         {
             token.ThrowIfCancellationRequested();
-            var graph = Validate("$.routes", () => RouteGraphFormat.Normalize(route.Graph));
+            var graph = Validate("$.routes", () => RouteGraphFormat.Normalize(route.Graph, transforms));
             var nodeIds = graph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
             if (graph.Edges.Any(edge => !nodeIds.Contains(edge.Source) || !nodeIds.Contains(edge.Target)))
             { throw ConfigurationImportDocument.Error("import.referenceMissing", "$.routes"); }

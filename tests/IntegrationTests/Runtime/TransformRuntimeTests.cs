@@ -308,11 +308,12 @@ internal sealed class TestOffsetTransformFactory : IMessageTransformFactory
 {
     private int _calls;
     public string Kind => "transform.test-offset";
+    public string DisplayName => "测试增量";
     public int Version => 1;
     public bool ThrowBuild { get; init; }
     public int Calls => Volatile.Read(ref _calls);
     public ParameterSchema? Parameters { get; } = new("test-offset", ParameterScope.Transform,
-        [new("offset", "增量", ParameterType.Number) { Required = true, WholeNumber = true, MinimumJson = "-100", MaximumJson = "100" }]);
+        [new("offset", "增量", ParameterType.Number) { Required = true, WholeNumber = true, MinimumJson = "-100", MaximumJson = "100", DefaultJson = "1" }]);
     public IMessageTransform Build(JsonElement configuration) => ThrowBuild ? throw new InvalidOperationException("fixture-secret") : new Offset(this, configuration.GetProperty("offset").GetInt64());
     private sealed class Offset(TestOffsetTransformFactory owner, long offset) : IMessageTransform
     {

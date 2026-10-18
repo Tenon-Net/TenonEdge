@@ -9,11 +9,19 @@ export const nodeKinds = [
     'output.http',
     'output.tenon',
 ] as const
-export type NodeKind = (typeof nodeKinds)[number]
+export type NodeKind = (typeof nodeKinds)[number] | `transform.${string}`
+export function isNodeKind(value: unknown): value is NodeKind {
+    return (
+        typeof value === 'string' &&
+        (nodeKinds.some((kind) => kind === value) ||
+            (/^transform\.[A-Za-z0-9._-]+$/.test(value) && value.length <= 64))
+    )
+}
 export type Position = { x: number; y: number }
 export type GraphNode = {
     id: string
     kind: NodeKind
+    version?: number // Legacy editor documents used version 1 implicitly.
     name: string
     configText: string
 }

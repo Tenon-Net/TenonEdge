@@ -7,7 +7,7 @@ using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.UnitTests.Transforms;
 
-public sealed class TransformCatalogTests
+public sealed partial class TransformCatalogTests
 {
     [Fact]
     public void RegisteredScalarModuleAndBuiltInMappingExecuteInOrderWithoutLosingIntegerPrecision()
@@ -131,7 +131,7 @@ public sealed class TransformCatalogTests
 
     private sealed class OffsetFactory : IMessageTransformFactory
     {
-        public string Kind => "transform.test-offset";
+        public string Kind { get; init; } = "transform.test-offset";
         public int Version { get; init; } = 1;
         public int Builds { get; private set; }
         public Func<long, IMessageTransform> Compile { get; init; } = offset => new Offset(offset);
@@ -149,7 +149,8 @@ public sealed class TransformCatalogTests
         public long WorkingReservationBytes => 8192;
         public MessageTransformResult Apply(EdgeMessage source)
         {
-            if (!source.Values.TryGetValue("value", out var value) || !value.TryGetExactNumber(out var number)) { return new(null, MissingFields: 1); }
+            if (!source.Values.TryGetValue("value", out var value) || !value.TryGetExactNumber(out var number))
+            { return new(null, MissingFields: 1); }
             return new(new(source.SourceMessageId, source.InputId, source.DeviceKey, source.CollectedAt, source.TimeSource, source.ReceivedAt,
                 new Dictionary<string, FieldValue> { ["value"] = FieldValue.FromInt64(checked((long)number + offset)) },
                 rawJson: source.RawJson, diagnosticAccess: source.DiagnosticAccess, sampleMetadata: source.SampleMetadata));

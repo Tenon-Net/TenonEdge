@@ -1,3 +1,12 @@
+import { TransformEditor } from './transform-editor'
+import { useTransformModules } from './transform-query'
+import {
+    builtInMap,
+    moduleKey,
+    transformDefaults,
+    type TransformModule,
+} from './transform-model'
+import { isNodeKind } from './model'
 import { RoutePreview } from '../routes/preview'
 import type { PreviewDraft } from '../routes/preview-model'
 import { FieldAnalysis, useFieldAnalysis } from '../routes/field-analysis'
@@ -31,7 +40,10 @@ import {
 } from './model'
 import { createGraphEditor } from './store'
 
-type CanvasNode = Node<{ name: string; kind: NodeKind }, 'gateway'>
+type CanvasNode = Node<
+    { name: string; kind: NodeKind; label: string },
+    'gateway'
+>
 function GatewayNode({ data, selected }: NodeProps<CanvasNode>) {
     const { t } = useTranslation()
     return (
@@ -42,9 +54,7 @@ function GatewayNode({ data, selected }: NodeProps<CanvasNode>) {
                 <Handle type="target" position={HandlePosition.Left} />
             )}
             <div className="truncate font-medium">{data.name}</div>
-            <div className="text-xs text-muted-foreground">
-                {t(`canvas.kinds.${data.kind}`)}
-            </div>
+            <div className="text-xs text-muted-foreground">{data.label}</div>
             <div className="text-xs text-muted-foreground">
                 {t('canvas.unbound')}
             </div>
@@ -73,6 +83,34 @@ function CanvasWorkspace({
 }: CanvasProps) {
     const { t } = useTranslation()
     const [store] = useState(() => editor ?? createGraphEditor())
+    const modules = useTransformModules(persisted)
+    const available = modules.isSuccess && !modules.isFetching
+    const palette = [
+        ...nodeKinds.map((kind) => ({
+            kind,
+            version: 1,
+            label: t(`canvas.kinds.${kind}`),
+            configText: undefined as string | undefined,
+        })),
+        ...(available ? (modules.data ?? []) : [])
+            .filter(
+                (module) =>
+                    module.canConfigure &&
+                    !builtInMap(module.kind, Number(module.version)),
+            )
+            .flatMap((module) =>
+                isNodeKind(module.kind) && module.parameters
+                    ? [
+                          {
+                              kind: module.kind,
+                              version: Number(module.version),
+                              label: `${module.displayName} (v${module.version})`,
+                              configText: transformDefaults(module.parameters),
+                          },
+                      ]
+                    : [],
+            ),
+    ]
     const state = useStore(store)
     const { document: doc } = state
     const flow = useReactFlow<CanvasNode>()
@@ -83,12 +121,13 @@ function CanvasWorkspace({
     const dragging = useRef(false)
     const [error, setError] = useState('')
     const [pendingOwner, setPendingOwner] = useState<
-        'json' | 'output' | 'mapping' | null
+        'json' | 'output' | 'mapping' | 'transform' | null
     >(null)
+    const [pendingModule, setPendingModule] = useState<TransformModule>()
     const pendingConfig = pendingOwner !== null
     const pending = (
         value: boolean,
-        owner: 'json' | 'output' | 'mapping' = 'json',
+        owner: 'json' | 'output' | 'mapping' | 'transform' = 'json',
     ) => {
         setPendingOwner(value ? owner : null)
         onPendingChange?.(value)
@@ -96,6 +135,15 @@ function CanvasWorkspace({
     const selected = doc.definition.nodes.filter((n) =>
         state.selectedNodes.includes(n.id),
     )
+    const selectedModule =
+        selected.length === 1
+            ? modules.data?.find(
+                  (module) =>
+                      module.kind === selected[0].kind &&
+                      Number(module.version) === (selected[0].version ?? 1),
+              )
+            : undefined
+    const formModule = pendingModule ?? selectedModule
     const analysis = useFieldAnalysis(
         doc,
         selected.length === 1 ? selected[0].id : undefined,
@@ -106,14 +154,22 @@ function CanvasWorkspace({
             doc.definition.nodes.map((n) => ({
                 id: n.id,
                 type: 'gateway',
-                data: { name: n.name, kind: n.kind },
+                data: {
+                    name: n.name,
+                    kind: n.kind,
+                    label:
+                        nodeKinds.some((kind) => kind === n.kind) &&
+                        (n.version ?? 1) === 1
+                            ? t(`canvas.kinds.${n.kind}`)
+                            : `${modules.data?.find((module) => module.kind === n.kind && Number(module.version) === (n.version ?? 1))?.displayName ?? n.kind} (v${n.version ?? 1})`,
+                },
                 measured: dimensions[n.id],
                 position: {
                     ...(transient[n.id] ?? doc.layout.positions[n.id]),
                 },
                 selected: state.selectedNodes.includes(n.id),
             })),
-        [doc, transient, dimensions, state.selectedNodes],
+        [doc, transient, dimensions, state.selectedNodes, modules.data, t],
     )
     const edges = useMemo(
         () =>
@@ -138,9 +194,16 @@ function CanvasWorkspace({
             return false
         }
     }
-    const add = (kind: NodeKind, position: Position) =>
+    const add = (item: (typeof palette)[number], position: Position) =>
         attempt(() => {
-            state.add(kind, t(`canvas.kinds.${kind}`), position)
+            state.add(
+                item.kind,
+                item.label.slice(0, 64),
+                position,
+                item.configText === undefined
+                    ? undefined
+                    : { version: item.version, configText: item.configText },
+            )
         })
     const changes = (items: NodeChange<CanvasNode>[]) => {
         const sizes: Record<string, { width: number; height: number }> = {}
@@ -270,19 +333,38 @@ function CanvasWorkspace({
                     className="space-y-3 rounded-md border p-3"
                     aria-label={t('canvas.palette')}
                 >
+                    {persisted && (
+                        <>
+                            {!available && (
+                                <p role="status">
+                                    {t('parameters.modulesUnavailable')}
+                                </p>
+                            )}
+                            <Button
+                                variant="outline"
+                                disabled={modules.isFetching}
+                                onClick={() => void modules.refetch()}
+                            >
+                                {t('parameters.modulesRefresh')}
+                            </Button>
+                        </>
+                    )}
                     {(['input', 'transform', 'output'] as const).map(
                         (group) => (
                             <div key={group} className="space-y-2">
                                 <h2 className="font-medium">
                                     {t(`canvas.groups.${group}`)}
                                 </h2>
-                                {nodeKinds
-                                    .filter((kind) =>
-                                        kind.startsWith(`${group}.`),
+                                {palette
+                                    .filter((item) =>
+                                        item.kind.startsWith(`${group}.`),
                                     )
-                                    .map((kind) => (
+                                    .map((item) => (
                                         <button
-                                            key={kind}
+                                            key={moduleKey(
+                                                item.kind,
+                                                item.version,
+                                            )}
                                             type="button"
                                             draggable={!readOnly}
                                             disabled={readOnly}
@@ -290,14 +372,17 @@ function CanvasWorkspace({
                                             onDragStart={(event) => {
                                                 event.dataTransfer.setData(
                                                     'application/x-tenon-node',
-                                                    kind,
+                                                    moduleKey(
+                                                        item.kind,
+                                                        item.version,
+                                                    ),
                                                 )
                                                 event.dataTransfer.effectAllowed =
                                                     'copy'
                                             }}
                                             onClick={() =>
                                                 add(
-                                                    kind,
+                                                    item,
                                                     flow.screenToFlowPosition({
                                                         x:
                                                             window.innerWidth /
@@ -312,7 +397,7 @@ function CanvasWorkspace({
                                                 )
                                             }
                                         >
-                                            {t(`canvas.kinds.${kind}`)}
+                                            {item.label}
                                         </button>
                                     ))}
                             </div>
@@ -332,9 +417,14 @@ function CanvasWorkspace({
                         const kind = event.dataTransfer.getData(
                             'application/x-tenon-node',
                         )
-                        if (nodeKinds.includes(kind as NodeKind))
+                        const item = palette.find(
+                            (item) =>
+                                moduleKey(item.kind, item.version) === kind ||
+                                (item.version === 1 && item.kind === kind),
+                        )
+                        if (item)
                             add(
-                                kind as NodeKind,
+                                item,
                                 flow.screenToFlowPosition({
                                     x: event.clientX,
                                     y: event.clientY,
@@ -531,7 +621,7 @@ function CanvasWorkspace({
                         )}
                     {persisted &&
                         selected.length === 1 &&
-                        selected[0].kind === 'transform.map' && (
+                        builtInMap(selected[0].kind, selected[0].version) && (
                             <MappingEditor
                                 key={`mapping:${selected[0].id}:${selected[0].configText}`}
                                 configText={selected[0].configText}
@@ -550,6 +640,47 @@ function CanvasWorkspace({
                                 }
                             />
                         )}
+                    {pendingModule &&
+                        JSON.stringify(pendingModule) !==
+                            JSON.stringify(selectedModule) && (
+                            <p role="alert">{t('parameters.moduleMissing')}</p>
+                        )}
+                    {persisted &&
+                        selected.length === 1 &&
+                        selected[0].kind.startsWith('transform.') &&
+                        !builtInMap(selected[0].kind, selected[0].version) &&
+                        (formModule?.parameters ? (
+                            <TransformEditor
+                                key={`transform:${selected[0].id}:${selected[0].version}:${selected[0].configText}`}
+                                schema={formModule.parameters}
+                                configText={selected[0].configText}
+                                disabled={
+                                    readOnly ||
+                                    !available ||
+                                    JSON.stringify(formModule) !==
+                                        JSON.stringify(selectedModule) ||
+                                    pendingOwner === 'json'
+                                }
+                                dirty={(value) => {
+                                    setPendingModule(
+                                        value ? formModule : undefined,
+                                    )
+                                    pending(value, 'transform')
+                                }}
+                                accept={(text) =>
+                                    attempt(
+                                        () =>
+                                            state.configure(
+                                                selected[0].id,
+                                                text,
+                                            ),
+                                        true,
+                                    )
+                                }
+                            />
+                        ) : (
+                            <p role="alert">{t('parameters.moduleMissing')}</p>
+                        ))}
                     {persisted && selected.length === 1 && (
                         <form
                             key={`json:${selected[0].id}:${selected[0].configText}`}

@@ -22,7 +22,12 @@ type State = {
     load: (document: GraphDocument) => void
     configure: (id: string, text: string) => void
     select: (nodes: string[], edges: string[]) => void
-    add: (kind: NodeKind, name: string, position: Position) => string
+    add: (
+        kind: NodeKind,
+        name: string,
+        position: Position,
+        module?: { version: number; configText: string },
+    ) => string
     connect: (source: string, target: string) => void
     rename: (id: string, name: string) => void
     move: (positions: Record<string, Position>) => void
@@ -96,7 +101,7 @@ export function createGraphEditor() {
             },
             select: (selectedNodes, selectedEdges) =>
                 set({ selectedNodes, selectedEdges }),
-            add: (kind, name, position) => {
+            add: (kind, name, position, module) => {
                 const doc = get().document
                 if (doc.definition.nodes.length >= maxNodes)
                     throw new GraphEditError('limit')
@@ -108,7 +113,15 @@ export function createGraphEditor() {
                         ...doc.definition,
                         nodes: [
                             ...doc.definition.nodes,
-                            { id, kind, name, configText: defaultConfig(kind) },
+                            {
+                                id,
+                                kind,
+                                name,
+                                version: module?.version ?? 1,
+                                configText: normalizeConfigText(
+                                    module?.configText ?? defaultConfig(kind),
+                                ),
+                            },
                         ],
                     },
                     layout: {

@@ -140,7 +140,7 @@ describe('persisted graph to editor boundary', () => {
     })
     it.each([
         ['"schemaVersion":1', '"schemaVersion":2'],
-        ['"version":1', '"version":2'],
+        ['"version":1', '"version":0'],
         ['"type":"transform.map"', '"type":"script"'],
         ['"x":1', '"x":10000001'],
         ['"x":1', '"x":"1"'],

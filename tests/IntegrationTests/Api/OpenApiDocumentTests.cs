@@ -107,6 +107,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getSession",
         "getSetupStatus",
         "getSystemInfo",
+        "getTransformModules",
         "getTrustedProxies",
         "getUserCreatedTokens",
         "importDevicePointCsv",

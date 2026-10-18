@@ -1,5 +1,5 @@
 import {
-    nodeKinds,
+    isNodeKind,
     maxNodes,
     checkPosition,
     type GraphDocument,
@@ -41,9 +41,10 @@ function one(value: RouteJson) {
     if (!(value instanceof RouteNumber) || value.text !== '1')
         throw new Error('version')
 }
-export function defaultConfig(kind: NodeKind): string {
+export function defaultConfig(kind: NodeKind, version = 1): string {
     if (kind.startsWith('input.')) return '{"sourceIds":[]}'
-    if (kind === 'transform.map') return '{"rules":[]}'
+    if (kind === 'transform.map' && version === 1) return '{"rules":[]}'
+    if (kind.startsWith('transform.')) return '{}'
     return '{"connectionId":null}'
 }
 /** Reject ambiguous JSON, not incomplete graph semantics; the server compiles those. */
@@ -66,11 +67,21 @@ export function decodeGraph(text: string): GraphDocument {
     const nodes = graph.nodes.map((value) => {
         const node = routeObject(value)
         keys(node, ['id', 'type', 'version', 'name', 'config'])
-        one(node.version)
+        const version =
+            node.version instanceof RouteNumber
+                ? Number(node.version.text)
+                : NaN
+        if (!Number.isInteger(version) || version < 1 || version > 2147483647)
+            throw new Error('version')
         const nodeId = id(node.id)
         if (seen.has(nodeId)) throw new Error('graph')
         seen.add(nodeId)
-        const kind = nodeKinds.find((kind) => kind === node.type)
+        const kind = node.type
+        if (
+            !isNodeKind(kind) ||
+            (!kind.startsWith('transform.') && version !== 1)
+        )
+            throw new Error('graph')
         const name = string(node.name)
         if (
             !kind ||
@@ -83,6 +94,7 @@ export function decodeGraph(text: string): GraphDocument {
         return {
             id: nodeId,
             kind,
+            version,
             name,
             configText: writeRouteJson(routeObject(node.config)),
         }
@@ -136,7 +148,7 @@ export function graphRequest(doc: GraphDocument) {
         nodes: doc.definition.nodes.map((node) => ({
             id: node.id,
             type: node.kind,
-            version: 1,
+            version: node.version ?? 1,
             name: node.name,
             config: routeObject(readRouteJson(node.configText)),
         })),

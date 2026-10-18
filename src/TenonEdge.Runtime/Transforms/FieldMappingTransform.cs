@@ -16,7 +16,8 @@ internal sealed class FieldMappingTransform(FieldMapping mapping) : IMessageTran
     public MessageTransformResult Apply(EdgeMessage source)
     {
         var result = mapping.Apply(source);
-        return new(result.Message, result.Issues.Count(issue => issue.Reason is not null), result.Issues.Count(issue => issue.Reason is null));
+        return new(result.Message, result.Issues.Count(issue => issue.Reason is not null), result.Issues.Count(issue => issue.Reason is null))
+        { Issues = result.Issues.Select(issue => new TransformIssue(issue.Field, issue.Reason, issue.Required)).ToImmutableArray() };
     }
 }
 
@@ -24,6 +25,7 @@ public sealed class FieldMappingTransformFactory : IMessageTransformFactory
 {
     public string Kind => "transform.map";
     public int Version => 1;
+    public string DisplayName => "字段映射";
     public ParameterSchema? Parameters => null;
     public IMessageTransform Build(JsonElement configuration)
     {

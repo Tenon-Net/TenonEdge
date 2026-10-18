@@ -33,6 +33,7 @@ export async function startOwnedHost(
     port = 0,
     extraArguments: string[] = [],
     httpAddress = '127.0.0.1',
+    moduleHost = false,
 ) {
     const env: NodeJS.ProcessEnv = {
         ...process.env,
@@ -50,8 +51,16 @@ export async function startOwnedHost(
         [
             join(
                 root,
-                'src/TenonEdge.Host/bin/Release/net10.0/TenonEdge.Host.dll',
+                moduleHost
+                    ? 'tests/IntegrationTests/bin/Release/net10.0/TenonEdge.IntegrationTests.dll'
+                    : 'src/TenonEdge.Host/bin/Release/net10.0/TenonEdge.Host.dll',
             ),
+            ...(moduleHost
+                ? [
+                      '--tenonedge-test-transform-host',
+                      `--contentRoot=${join(root, 'src/TenonEdge.Host')}`,
+                  ]
+                : []),
             `--webroot=${join(root, 'web/dist')}`,
             `--TenonEdge:DataDirectory=${data}`,
             `--TenonEdge:Http:Address=${httpAddress}`,

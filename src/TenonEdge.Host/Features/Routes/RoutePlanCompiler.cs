@@ -12,12 +12,14 @@ using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
 
 internal sealed record RouteCompilationSnapshot(string Version, RouteDraft[] Routes, IReadOnlyDictionary<long, DeviceDraft> Devices,
-    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null)
+    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null)
 {
+    public TransformCatalog Modules => Transforms ?? TransformCatalog.BuiltIn;
     public RouteCompilationLimits Admission => Limits ?? RouteCompilationLimits.Default;
 }
 internal sealed record RouteCompiledPath(RouteTopologyPath Path, RuntimeUnitId OutputId, ImmutableArray<MappedFieldSchema> Fields);
@@ -42,7 +44,7 @@ internal static partial class RoutePlanCompiler
             token.ThrowIfCancellationRequested();
             RouteGraph graph;
             try
-            { graph = RouteGraphFormat.Normalize(route.Graph); }
+            { graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules); }
             catch (Exception error) when (ConfigurationError(error)) { throw Error("graph.format", route.Key); }
             if (!BusinessKeys.IsValid(route.Key) || !normalizedGraphs.TryAdd(route.Key, graph))
             { throw Error("route.key", route.Key); }
@@ -76,13 +78,13 @@ internal static partial class RoutePlanCompiler
             }
             graphs.Add(new(route.Key, true, graph.SchemaVersion, nodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray()));
         }
-        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits);
+        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits, snapshot.Modules);
         var compiled = ImmutableArray.CreateBuilder<RouteCompiledPath>(topology.Paths.Length);
         var pathsByRoute = topology.Paths.ToLookup(path => path.RouteKey, StringComparer.Ordinal);
         foreach (var route in routes)
         {
             var nodes = normalizedGraphs[route.Key].Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
-            var propagation = new RouteFieldPropagation(nodes);
+            var propagation = new RouteFieldPropagation(nodes, snapshot.Modules);
             var checkedSchemas = new HashSet<(string Node, string Upstream)>();
             // 同一图节点链的不同来源共用目标定义，但每条来源消息仍独立投递，不做 join。
             foreach (var group in pathsByRoute[route.Key].GroupBy(path => string.Join('/', path.Nodes), StringComparer.Ordinal))
@@ -91,7 +93,9 @@ internal static partial class RoutePlanCompiler
                 var chain = group.First().Nodes;
                 var output = nodes[chain[^1]];
                 var outputId = OutputPathId(output.Type, route.Key, chain);
-                var stages = chain.Skip(1).SkipLast(1).Select(id => nodes[id].Config.GetProperty("rules")).ToArray();
+                var middle = chain.Skip(1).SkipLast(1).Select(id => nodes[id]).ToArray();
+                var extended = middle.Any(node => node.Type != "transform.map" || node.Version != 1);
+                var stages = middle.Select(node => extended ? JsonSerializer.SerializeToElement(new { kind = node.Type, version = node.Version, configuration = node.Config }) : node.Config.GetProperty("rules")).ToArray();
                 foreach (var path in group)
                 {
                     var (upstream, fields) = propagation.Propagate(path, sources[path.SourceId].Source.Fields, token);
@@ -101,7 +105,7 @@ internal static partial class RoutePlanCompiler
                 }
                 try
                 {
-                    var configuration = Output(output, group.Select(path => sources[path.SourceId].Source.UnitId.Key).Order(StringComparer.Ordinal).ToArray(), stages, snapshot, route.Key);
+                    var configuration = Output(output, group.Select(path => sources[path.SourceId].Source.UnitId.Key).Order(StringComparer.Ordinal).ToArray(), stages, snapshot, route.Key, extended);
                     Add(new(outputId, configuration), route.Key, output.Id);
                 }
                 catch (Exception error) when (ConfigurationError(error)) { throw Error("output.configuration", route.Key, output.Id); }
@@ -115,7 +119,7 @@ internal static partial class RoutePlanCompiler
         { throw Error("plan.size", ""); }
         RuntimePlanDocument document;
         try
-        { document = RuntimePlanDocument.Parse(serialized); }
+        { document = RuntimePlanDocument.Parse(serialized, snapshot.Modules); }
         catch (RuntimePlanDocumentException) { throw Error("plan.configuration", ""); }
         limits.Check(document);
         var paths = compiled.MoveToImmutable();
@@ -133,7 +137,7 @@ internal static partial class RoutePlanCompiler
         }
     }
 
-    internal static JsonElement Output(RouteGraphNode node, string[] inputs, JsonElement[] stages, RouteCompilationSnapshot snapshot, string route)
+    internal static JsonElement Output(RouteGraphNode node, string[] inputs, JsonElement[] stages, RouteCompilationSnapshot snapshot, string route, bool extended = false)
     {
         if (node.Type == "output.tenon")
         { throw Error("output.unavailable", route, node.Id); }
@@ -160,7 +164,8 @@ internal static partial class RoutePlanCompiler
                 Topic = config.Topic ?? "tenonedge/{deviceKey}/data",
                 Qos = config.Qos ?? 1,
                 Payload = config.Payload,
-                MappingStages = mapping,
+                MappingStages = extended ? default : mapping,
+                TransformStages = extended ? mapping : default,
             }, RouteSourceCompiler.SettingsJson);
             _ = MqttOutputSettings.Parse(json);
             return json;
@@ -184,7 +189,8 @@ internal static partial class RoutePlanCompiler
                 SuccessPath = config.SuccessPath,
                 SuccessValue = config.SuccessValue,
                 Payload = config.Payload,
-                MappingStages = mapping,
+                MappingStages = extended ? default : mapping,
+                TransformStages = extended ? mapping : default,
             }, RouteSourceCompiler.SettingsJson);
             var settings = HttpOutputSettings.Parse(json);
             if (QueryHelpers.ParseQuery(settings.Endpoint.Query).Keys.Any(ConnectionDraftValidation.IsSecretName))

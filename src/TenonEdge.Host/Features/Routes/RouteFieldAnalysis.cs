@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
 
@@ -13,9 +14,9 @@ internal static class RouteFieldAnalysis
     private const string Key = "field-analysis";
 
     // Restrict inspection to the selected node's ancestors, never fabricate executable output settings.
-    internal static RouteGraph Prefix(RouteGraph graph, string nodeId)
+    internal static RouteGraph Prefix(RouteGraph graph, string nodeId, TransformCatalog? transforms = null)
     {
-        graph = RouteGraphFormat.Normalize(graph);
+        graph = RouteGraphFormat.Normalize(graph, transforms);
         var selected = graph.Nodes.SingleOrDefault(node => node.Id == nodeId) ?? throw Error("node.missing", nodeId);
         var wanted = new HashSet<string>(StringComparer.Ordinal) { nodeId };
         var pending = new Stack<string>();
@@ -41,7 +42,7 @@ internal static class RouteFieldAnalysis
             if (edges.Any(edge => edge.Source == nodeId))
             { throw Error("graph.cycle", nodeId); }
             nodes = nodes.Select(node => node.Id == nodeId
-                ? node with { Type = "output.http", Config = JsonSerializer.SerializeToElement(new { connectionId = (long?)null }) }
+                ? node with { Type = "output.http", Version = 1, Config = JsonSerializer.SerializeToElement(new { connectionId = (long?)null }) }
                 : node).ToArray();
         }
         return new(1, nodes, edges, new([]));
@@ -73,9 +74,9 @@ internal static class RouteFieldAnalysis
                 { throw Error("source.configuration", node.Id, id); }
             }
         }
-        var topology = RouteTopologyCompiler.Compile([new(Key, true, 1, topologyNodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())], sources, token, snapshot.Admission);
+        var topology = RouteTopologyCompiler.Compile([new(Key, true, 1, topologyNodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())], sources, token, snapshot.Admission, snapshot.Modules);
         var schemas = new Dictionary<string, ImmutableArray<MappedFieldSchema>>(StringComparer.Ordinal);
-        var propagation = new RouteFieldPropagation(graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal));
+        var propagation = new RouteFieldPropagation(graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal), snapshot.Modules);
         foreach (var path in topology.Paths)
         {
             var (upstream, fields) = propagation.Propagate(path, sources[path.SourceId].Fields, token);

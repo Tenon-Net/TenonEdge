@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:32771/"
+      "url": "http://127.0.0.1:18081/"
     }
   ],
   "paths": {
@@ -9731,6 +9731,39 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/edge-admin/v1/transform-modules": {
+      "get": {
+        "tags": [
+          "转换模块"
+        ],
+        "operationId": "getTransformModules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TransformModuleDefinition"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22310,6 +22343,45 @@
           "certificateAuthority"
         ]
       },
+      "TransformModuleDefinition": {
+        "required": [
+          "kind",
+          "version",
+          "displayName",
+          "parameters",
+          "canConfigure"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "parameters": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ParameterSchema"
+              }
+            ]
+          },
+          "canConfigure": {
+            "type": "boolean"
+          }
+        }
+      },
       "TrustedProxyRequest": {
         "required": [
           "networks",
@@ -22684,6 +22756,9 @@
     },
     {
       "name": "参数声明"
+    },
+    {
+      "name": "转换模块"
     },
     {
       "name": "Devices"

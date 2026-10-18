@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
 
@@ -26,7 +27,10 @@ internal static class RouteGraphFormat
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 16 };
     internal const int MaximumBytes = 1024 * 1024;
 
-    public static RouteGraph Normalize(RouteGraph graph)
+    public static RouteGraph Normalize(RouteGraph graph, TransformCatalog? transforms = null) => NormalizeCore(graph, transforms ?? TransformCatalog.BuiltIn);
+    internal static RouteGraph NormalizeStored(RouteGraph graph) => NormalizeCore(graph, null);
+
+    private static RouteGraph NormalizeCore(RouteGraph graph, TransformCatalog? transforms)
     {
         ArgumentNullException.ThrowIfNull(graph);
         if (graph.SchemaVersion != 1 || graph.Nodes is null || graph.Nodes.Length > RouteTopologyCompiler.MaximumNodes ||
@@ -35,10 +39,11 @@ internal static class RouteGraphFormat
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var nodes = graph.Nodes.Select(node =>
         {
-            if (node is null || !BusinessKeys.IsValid(node.Id) || !ids.Add(node.Id) || node.Version != 1 ||
+            if (node is null || !BusinessKeys.IsValid(node.Id) || !ids.Add(node.Id) || node.Version < 1 ||
+                !TransformCatalog.ValidKind(node.Type) && node.Version != 1 ||
                 node.Name is null || node.Name.Length > 64 || node.Name.Any(char.IsControl))
             { throw new ArgumentException("节点标识、名称或版本无效。"); }
-            return node with { Config = NormalizeConfig(node.Type, node.Config) };
+            return node with { Config = NormalizeConfig(node.Type, node.Version, node.Config, transforms) };
         }).ToArray();
         foreach (var edge in graph.Edges)
         {
@@ -66,7 +71,7 @@ internal static class RouteGraphFormat
         return Enumerable.Empty<RouteGraphReference>();
     }).Distinct().ToArray();
 
-    private static JsonElement NormalizeConfig(string kind, JsonElement config)
+    private static JsonElement NormalizeConfig(string kind, int version, JsonElement config, TransformCatalog? transforms)
     {
         if (config.ValueKind != JsonValueKind.Object)
         { throw new ArgumentException("节点配置须为对象。"); }
@@ -80,7 +85,7 @@ internal static class RouteGraphFormat
                 if (input.SourceIds is null || input.SourceIds.Length > 500 || input.SourceIds.Any(id => !ValidId(id)))
                 { throw new ArgumentException("来源列表无效。"); }
                 return JsonSerializer.SerializeToElement(input, Json);
-            case "transform.map":
+            case "transform.map" when version == 1:
                 var map = Read<RouteMapConfig>(config);
                 if (map.Rules is null || map.Rules.Length > 1000)
                 { throw new ArgumentException("映射规则数量无效。"); }
@@ -135,7 +140,9 @@ internal static class RouteGraphFormat
                 Connection(tenon.ConnectionId);
                 return JsonSerializer.SerializeToElement(tenon, Json);
             default:
-                throw new ArgumentException("未知节点类型。");
+                if (!TransformCatalog.ValidKind(kind))
+                { throw new ArgumentException("未知节点类型。"); }
+                return transforms is null ? TransformCatalog.NormalizeStoredConfiguration(config) : transforms.NormalizeDraft(kind, version, config);
         }
     }
 

@@ -34,7 +34,7 @@ internal static class RouteSamplePreview
         if (snapshot.Routes.Length != 1)
         { throw new ArgumentException("样本预览只接受当前一张图。"); }
         var route = snapshot.Routes[0];
-        var graph = RouteGraphFormat.Normalize(route.Graph);
+        var graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules);
         var sources = new Dictionary<long, CompiledRouteSource>();
         var topologyNodes = new List<RouteTopologyNode>();
         foreach (var node in graph.Nodes)
@@ -66,11 +66,11 @@ internal static class RouteSamplePreview
         // Validate/count the entire graph before expansion; then execute only this sample's source paths.
         var topology = RouteTopologyCompiler.Compile([new(route.Key, true, graph.SchemaVersion, topologyNodes.ToImmutableArray(),
             graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())],
-            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission);
+            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission, snapshot.Modules);
         var paths = topology.Paths.Where(path => path.SourceId == sourceId).ToArray();
         var nodes = graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
-        var propagation = new RouteFieldPropagation(nodes);
-        var mappings = new Dictionary<string, FieldMapping>(StringComparer.Ordinal);
+        var propagation = new RouteFieldPropagation(nodes, snapshot.Modules);
+        var mappings = new Dictionary<string, IMessageTransform>(StringComparer.Ordinal);
         var display = new RoutePreviewDisplay(snapshot.Version, sourceId, sample, paths.Length);
         display.Source(selected.Source.Fields, sample, token);
         foreach (var path in paths)
@@ -91,12 +91,13 @@ internal static class RouteSamplePreview
                     phase = "mapping.configuration";
                     if (!mappings.TryGetValue(id, out var mapping))
                     {
-                        mapping = FieldMappingConfiguration.Parse(nodes[id].Config.GetProperty("rules"))!;
+                        mapping = snapshot.Modules.Build(nodes[id].Type, nodes[id].Version, nodes[id].Config);
                         mappings.Add(id, mapping);
                     }
                     phase = "mapping.data";
                     var mapped = mapping.Apply(message);
-                    display.Stage(state, id, mapping.Schema, mapped, token);
+                    display.Stage(state, id, mapping.Schema.Select(field => new MappedFieldSchema(field.Key, field.Type, field.Unit)).ToImmutableArray(),
+                        new(mapped.Message, mapped.Issues.Select(issue => new FieldMappingIssue(issue.Field, issue.Reason, issue.Required)).ToImmutableArray()), token);
                     if (mapped.Message is null)
                     { throw Error("mapping.required", id, sourceId); }
                     message = mapped.Message;

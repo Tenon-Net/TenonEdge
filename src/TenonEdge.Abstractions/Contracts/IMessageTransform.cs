@@ -11,6 +11,7 @@ public interface IMessageTransformFactory
 {
     string Kind { get; }
     int Version { get; }
+    string DisplayName => Kind;
     /// <summary>标量自动表单声明；复杂配置（如映射规则）可无标量声明，由专用编辑器与 Build 校验。</summary>
     ParameterSchema? Parameters { get; }
     IMessageTransform Build(JsonElement configuration);
@@ -30,4 +31,8 @@ public interface IMessageTransform
 
 public sealed record TransformField(string Key, FieldType Type, string? Unit);
 /// <summary>Message 为 null 表示必填失败，整条路径拒绝；计数只含本阶段，不能返回半成品。</summary>
-public sealed record MessageTransformResult(EdgeMessage? Message, int InvalidFields = 0, int MissingFields = 0);
+public sealed record MessageTransformResult(EdgeMessage? Message, int InvalidFields = 0, int MissingFields = 0)
+{
+    public ImmutableArray<TransformIssue> Issues { get; init; } = [];
+}
+public sealed record TransformIssue(string Field, QualityCode? Reason, bool Required);

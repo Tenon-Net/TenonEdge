@@ -53,6 +53,7 @@ test('administrator reviews frozen mixed-state recipients, cancels, recovers pre
     ]
     let host: Awaited<ReturnType<typeof startOwnedHost>> | undefined
     let context: BrowserContext | undefined
+    let releaseCancelledRead = () => {}
     async function stop() {
         await context?.close()
         context = undefined
@@ -233,10 +234,20 @@ test('administrator reviews frozen mixed-state recipients, cancels, recovers pre
             .selectOption('12')
         // Controlled response fixture for the disabled confirmation UI, not a server-quota test.
         // The real preparation is cancelled below; the gateway never receives confirmation here.
+        let cancelledReadHeld = false
+        const cancelledReadGate = new Promise<void>((resolve) => {
+            releaseCancelledRead = resolve
+        })
         async function insufficientQuota(route: Route) {
             const response = await route.fetch()
             expect(response.status()).toBe(200)
             const body = await response.json()
+            if (body.preparation === null) {
+                // Hold the real post-cancellation refresh so fixture teardown cannot
+                // accidentally pass merely because this response happened to be fast.
+                cancelledReadHeld = true
+                await cancelledReadGate
+            }
             const proposal = body.preparation ?? body
             proposal.quota = {
                 pendingRecords: 2,
@@ -264,6 +275,15 @@ test('administrator reviews frozen mixed-state recipients, cancels, recovers pre
             page.getByRole('region', { name: '核对冻结迁移清单', exact: true }),
         ).toContainText('当前配额不足')
         await button(page, '取消迁移准备').click()
+        await expect.poll(() => cancelledReadHeld).toBe(true)
+        const refreshPreparation = button(page, '重新读取本会话确认清单')
+        await expect(refreshPreparation).toBeDisabled()
+        releaseCancelledRead()
+        // Cancelling invalidates the query and starts a real refresh. Removing the
+        // last interceptor while its fetch is pending makes Playwright continue it;
+        // the later fulfill then fails with "Route is already handled". Wait for
+        // this refresh to be consumed, not just for the DELETE response or empty UI.
+        await expect(refreshPreparation).toBeEnabled()
         await page.unroute(
             '**/deliveries/migrations/prepare',
             insufficientQuota,
@@ -444,6 +464,7 @@ test('administrator reviews frozen mixed-state recipients, cancels, recovers pre
             ).toBe(403)
         }
     } finally {
+        releaseCancelledRead()
         await stop()
         peer.closeAllConnections()
         await new Promise<void>((resolve) => peer.close(() => resolve()))

@@ -1,4 +1,13 @@
 export const parameterStrings = {
+    transformTitle: '转换参数',
+    transformNotice:
+        '参数采用后可保存未完成草稿；必填、类型或范围错误必须修正后才能应用。',
+    transformUnsupported: '当前配置不能由标量表单编辑，原配置已保留。',
+    modulesRefresh: '重新读取转换模块',
+    modulesUnavailable:
+        '转换模块目录不可用；扩展节点暂不可添加或编辑，当前图与编辑内容保留。',
+    moduleMissing: '此类型或版本未安装可用表单；原配置保留，不会自动替换版本。',
+
     refresh: '重新读取参数声明',
     unavailable: '参数声明不可用，不能保存。重新读取不会覆盖尚未保存的编辑。',
     loading: '正在读取参数声明…',

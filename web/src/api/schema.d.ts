@@ -2081,6 +2081,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/transform-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getTransformModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections": {
         parameters: {
             query?: never;
@@ -4805,6 +4821,14 @@ export interface components {
         TimeSource: "device" | "upstream" | "gateway" | "gateway-unsynced" | null;
         /** @enum {unknown} */
         TlsTrustMode: "pinnedCertificate" | "certificateAuthority";
+        TransformModuleDefinition: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            displayName: string;
+            parameters: null | components["schemas"]["ParameterSchema"];
+            canConfigure: boolean;
+        };
         TrustedProxyRequest: {
             networks: string[];
             expectedVersion: null | string;
@@ -12482,6 +12506,35 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getTransformModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransformModuleDefinition"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
