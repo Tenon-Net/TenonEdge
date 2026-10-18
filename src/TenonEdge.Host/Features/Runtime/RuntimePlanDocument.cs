@@ -2,10 +2,12 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Outputs;
@@ -259,7 +261,11 @@ internal sealed class RuntimePlanDocument
 
             if (kind.GetString() == "output.http")
             {
-                HttpOutputSettings.Parse(configuration);
+                var settings = HttpOutputSettings.Parse(configuration);
+                // Native graphs, module bindings and frozen history share the same non-secret boundary.
+                if (QueryHelpers.ParseQuery(settings.Endpoint.Query).Keys.Any(ConnectionDraftValidation.IsSecretName) ||
+                    settings.Headers.Keys.Any(ConnectionDraftValidation.IsSecretName))
+                { throw new ArgumentException("秘密查询参数与请求头须使用连接凭证。"); }
             }
 
             if (kind.GetString() is "output.http" or "output.mqtt")

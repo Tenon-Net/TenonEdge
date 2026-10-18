@@ -5,6 +5,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Runtime.Mapping;
 
 namespace TenonEdge.Host.Features.Routes;
@@ -34,7 +35,7 @@ internal static class RouteSamplePreview
         if (snapshot.Routes.Length != 1)
         { throw new ArgumentException("样本预览只接受当前一张图。"); }
         var route = snapshot.Routes[0];
-        var graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules, snapshot.InputsCatalog);
+        var graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules, snapshot.InputsCatalog, snapshot.OutputsCatalog);
         var sources = new Dictionary<long, CompiledRouteSource>();
         var topologyNodes = new List<RouteTopologyNode>();
         foreach (var node in graph.Nodes)
@@ -66,7 +67,7 @@ internal static class RouteSamplePreview
         // Validate/count the entire graph before expansion; then execute only this sample's source paths.
         var topology = RouteTopologyCompiler.Compile([new(route.Key, true, graph.SchemaVersion, topologyNodes.ToImmutableArray(),
             graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray())],
-            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission, snapshot.Modules, snapshot.InputsCatalog);
+            sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, snapshot.Admission, snapshot.Modules, snapshot.InputsCatalog, snapshot.OutputsCatalog);
         var paths = topology.Paths.Where(path => path.SourceId == sourceId).ToArray();
         var nodes = graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
         var propagation = new RouteFieldPropagation(nodes, snapshot.Modules);
@@ -110,22 +111,25 @@ internal static class RouteSamplePreview
                 // Shared compiler performs exactly the same connection, header, topic and payload checks.
                 // No mapping stages here: they were already executed above, once per path.
                 var configuration = RoutePlanCompiler.Output(output, [selected.Source.UnitId.Key], [], snapshot, route.Key);
+                var protocol = RuntimeConnectionReferences.Protocol(new(RuntimeUnitId.Create(output.Type, route.Key + "/" + output.Id), configuration));
+                configuration = protocol.Configuration;
+                RoutePlanCompiler.ValidateOutputFields(output with { Config = configuration }, fields, route.Key, sourceId);
                 phase = "output.payload";
                 var deliveryId = Guid.CreateVersion7();
                 Guid? testSendId = capture is null ? null : Guid.NewGuid();
                 byte[] body;
-                if (output.Type == "output.http")
+                if (protocol.Id.Kind == "output.http")
                 {
                     var settings = HttpOutputSettings.Parse(configuration);
                     body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
-                    display.Output(state, activeNode, output.Type, deliveryId, settings.Path, null,
+                    display.Output(state, activeNode, protocol.Id.Kind, deliveryId, settings.Path, null,
                         settings.Headers.SetItem("Idempotency-Key", deliveryId.ToString("D")).SetItem("Content-Type", "application/json"), body, testSendId);
                 }
                 else
                 {
                     var settings = MqttOutputSettings.Parse(configuration);
                     body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
-                    display.Output(state, activeNode, output.Type, deliveryId, settings.TopicFor(message.DeviceKey), settings.Qos,
+                    display.Output(state, activeNode, protocol.Id.Kind, deliveryId, settings.TopicFor(message.DeviceKey), settings.Qos,
                         ImmutableDictionary<string, string>.Empty, body, testSendId);
                 }
                 if (state.Output?.TestSendId is { } capturedId &&

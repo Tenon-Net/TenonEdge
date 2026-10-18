@@ -13,13 +13,15 @@ using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
 
 internal sealed record RouteCompilationSnapshot(string Version, RouteDraft[] Routes, IReadOnlyDictionary<long, DeviceDraft> Devices,
-    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null, InputModuleCatalog? InputModules = null)
+    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null, InputModuleCatalog? InputModules = null, OutputModuleCatalog? OutputModules = null)
 {
+    public OutputModuleCatalog OutputsCatalog => OutputModules ?? OutputModuleCatalog.Empty;
     public InputModuleCatalog InputsCatalog => InputModules ?? InputModuleCatalog.Empty;
     public TransformCatalog Modules => Transforms ?? TransformCatalog.BuiltIn;
     public RouteCompilationLimits Admission => Limits ?? RouteCompilationLimits.Default;
@@ -46,7 +48,7 @@ internal static partial class RoutePlanCompiler
             token.ThrowIfCancellationRequested();
             RouteGraph graph;
             try
-            { graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules, snapshot.InputsCatalog); }
+            { graph = RouteGraphFormat.Normalize(route.Graph, snapshot.Modules, snapshot.InputsCatalog, snapshot.OutputsCatalog); }
             catch (Exception error) when (ConfigurationError(error)) { throw Error("graph.format", route.Key); }
             if (!BusinessKeys.IsValid(route.Key) || !normalizedGraphs.TryAdd(route.Key, graph))
             { throw Error("route.key", route.Key); }
@@ -80,7 +82,7 @@ internal static partial class RoutePlanCompiler
             }
             graphs.Add(new(route.Key, true, graph.SchemaVersion, nodes.ToImmutableArray(), graph.Edges.Select(edge => new RouteTopologyEdge(edge.Source, edge.Target)).ToImmutableArray()));
         }
-        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits, snapshot.Modules, snapshot.InputsCatalog);
+        var topology = RouteTopologyCompiler.Compile(graphs, sources.ToDictionary(pair => pair.Key, pair => pair.Value.Source), token, limits, snapshot.Modules, snapshot.InputsCatalog, snapshot.OutputsCatalog);
         var compiled = ImmutableArray.CreateBuilder<RouteCompiledPath>(topology.Paths.Length);
         var pathsByRoute = topology.Paths.ToLookup(path => path.RouteKey, StringComparer.Ordinal);
         foreach (var route in routes)
@@ -98,16 +100,24 @@ internal static partial class RoutePlanCompiler
                 var middle = chain.Skip(1).SkipLast(1).Select(id => nodes[id]).ToArray();
                 var extended = middle.Any(node => node.Type != "transform.map" || node.Version != 1);
                 var stages = middle.Select(node => extended ? JsonSerializer.SerializeToElement(new { kind = node.Type, version = node.Version, configuration = node.Config }) : node.Config.GetProperty("rules")).ToArray();
+                var outputSchemas = new List<(long SourceId, ImmutableArray<MappedFieldSchema> Fields)>();
                 foreach (var path in group)
                 {
                     var (upstream, fields) = propagation.Propagate(path, sources[path.SourceId].Source.Fields, token);
                     if (checkedSchemas.Add((output.Id, upstream)))
                     { ValidateOutputFields(output, fields, route.Key, path.SourceId); }
+                    outputSchemas.Add((path.SourceId, fields));
                     compiled.Add(new(path, outputId, fields));
                 }
                 try
                 {
                     var configuration = Output(output, group.Select(path => sources[path.SourceId].Source.UnitId.Key).Order(StringComparer.Ordinal).ToArray(), stages, snapshot, route.Key, extended);
+                    if (OutputModuleCatalog.IsModuleKind(output.Type))
+                    {
+                        var protocol = RuntimeConnectionReferences.Protocol(new(outputId, configuration));
+                        foreach (var (sourceId, fields) in outputSchemas)
+                        { ValidateOutputFields(output with { Config = protocol.Configuration }, fields, route.Key, sourceId); }
+                    }
                     Add(new(outputId, configuration), route.Key, output.Id);
                 }
                 catch (Exception error) when (ConfigurationError(error)) { throw Error("output.configuration", route.Key, output.Id); }
@@ -121,7 +131,7 @@ internal static partial class RoutePlanCompiler
         { throw Error("plan.size", ""); }
         RuntimePlanDocument document;
         try
-        { document = RuntimePlanDocument.Parse(serialized, snapshot.Modules, snapshot.InputsCatalog); }
+        { document = RuntimePlanDocument.Parse(serialized, snapshot.Modules, snapshot.InputsCatalog, snapshot.OutputsCatalog); }
         catch (RuntimePlanDocumentException) { throw Error("plan.configuration", ""); }
         limits.Check(document);
         var paths = compiled.MoveToImmutable();
@@ -148,6 +158,8 @@ internal static partial class RoutePlanCompiler
         { throw Error("output.connectionMissing", route, node.Id); }
         if (!connection.Enabled)
         { throw Error("output.connectionDisabled", route, node.Id); }
+        if (OutputModuleCatalog.IsModuleKind(node.Type))
+        { return node.Config.Deserialize<RouteModuleOutputDraft>(RouteGraphFormat.Json)!.Bind(node, route, inputs, stages, extended, snapshot); }
         var mapping = stages.Length == 0 ? default : JsonSerializer.SerializeToElement(stages);
         if (node.Type == "output.mqtt" && connection.Mqtt is { } mqtt && connection.Kind == ConnectionKind.Mqtt)
         {

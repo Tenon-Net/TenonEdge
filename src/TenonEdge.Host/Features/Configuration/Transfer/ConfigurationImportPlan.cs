@@ -5,6 +5,7 @@ using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Runtime.Inputs;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
@@ -16,7 +17,7 @@ internal sealed record ConfigurationImportPlan(ConfigurationCheckpoint Draft, Co
 internal static class ConfigurationImportPlanner
 {
     public static ConfigurationImportPlan Prepare(PortableConfiguration file, ConfigurationCheckpoint before,
-        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null)
+        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null, OutputModuleCatalog? outputModules = null)
     {
         token.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(mode))
@@ -100,7 +101,7 @@ internal static class ConfigurationImportPlanner
                 { throw ConfigurationImportDocument.Error("import.schema", nodePath); }
                 return node with { Config = Rewrite(node, nodePath) };
             }).ToArray();
-            var normalized = Validate(path + ".graph", () => RouteGraphFormat.Normalize(new(graph.SchemaVersion, nodes, graph.Edges, graph.Layout), transforms, inputModules));
+            var normalized = Validate(path + ".graph", () => RouteGraphFormat.Normalize(new(graph.SchemaVersion, nodes, graph.Edges, graph.Layout), transforms, inputModules, outputModules));
             var id = oldRoutes.TryGetValue(value.RouteKey, out var old) ? old.Id : Allocate();
             routes[value.RouteKey] = new(id, value.RouteKey, value.Name.Trim(), value.Description, value.Enabled, normalized, old?.UpdatedBy, old?.UpdatedAt ?? 0);
         }
@@ -108,7 +109,7 @@ internal static class ConfigurationImportPlanner
             devices.Values.OrderBy(value => value.Id).ToArray(), inputs.Values.OrderBy(value => value.Id).ToArray(),
             routes.Values.OrderBy(value => value.Id).ToArray(), before.CredentialConnections, before.Edits,
             before.RequiredCredentials?.Where(value => connectionsById.ContainsKey(value.ConnectionId)).ToArray());
-        ValidateCombined(candidate, transforms, inputModules ?? InputModuleCatalog.Empty, token);
+        ValidateCombined(candidate, transforms, inputModules ?? InputModuleCatalog.Empty, outputModules ?? OutputModuleCatalog.Empty, token);
         return new(candidate, ConfigurationDiff.Between(before, candidate));
 
         ConnectionDraft Connection(string key, string path) => connections.TryGetValue(key, out var connection) ? connection
@@ -139,6 +140,27 @@ internal static class ConfigurationImportPlanner
                         }
                         writer.WriteEndArray();
                     }
+                    else if (OutputModuleCatalog.IsModuleKind(node.Type) && property.NameEquals("connectionKeys"))
+                    {
+                        writer.WritePropertyName("connections");
+                        if (property.Value.ValueKind == JsonValueKind.Null)
+                        { writer.WriteNullValue(); }
+                        else
+                        {
+                            if (property.Value.ValueKind != JsonValueKind.Object)
+                            { throw ConfigurationImportDocument.Error("import.schema", path + ".connectionKeys"); }
+                            writer.WriteStartObject();
+                            foreach (var reference in property.Value.EnumerateObject())
+                            {
+                                if (reference.Value.ValueKind != JsonValueKind.String)
+                                { throw ConfigurationImportDocument.Error("import.internalReference", path + ".connectionKeys"); }
+                                writer.WriteNumber(reference.Name, Connection(reference.Value.GetString()!, path + ".connectionKeys").Id);
+                            }
+                            writer.WriteEndObject();
+                        }
+                    }
+                    else if (OutputModuleCatalog.IsModuleKind(node.Type) && property.Name.Equals("connections", StringComparison.OrdinalIgnoreCase))
+                    { throw ConfigurationImportDocument.Error("import.internalReference", path + ".connections"); }
                     else if (node.Type.StartsWith("output.", StringComparison.Ordinal) && property.NameEquals("connectionKey"))
                     {
                         writer.WritePropertyName("connectionId");
@@ -149,7 +171,7 @@ internal static class ConfigurationImportPlanner
                         else
                         { throw ConfigurationImportDocument.Error("import.schema", path + ".connectionKey"); }
                     }
-                    else if (!TransformCatalog.ValidKind(node.Type) && property.Name is ("sourceIds" or "connectionId"))
+                    else if (!TransformCatalog.ValidKind(node.Type) && (property.Name.Equals("sourceIds", StringComparison.OrdinalIgnoreCase) || property.Name.Equals("connectionId", StringComparison.OrdinalIgnoreCase)))
                     { throw ConfigurationImportDocument.Error("import.internalReference", path + "." + property.Name); }
                     else
                     { property.WriteTo(writer); }
@@ -248,7 +270,7 @@ internal static class ConfigurationImportPlanner
         { throw ConfigurationImportDocument.Error("import.schema", path); }
     }
 
-    private static void ValidateCombined(ConfigurationCheckpoint draft, TransformCatalog? transforms, InputModuleCatalog inputModules, CancellationToken token)
+    private static void ValidateCombined(ConfigurationCheckpoint draft, TransformCatalog? transforms, InputModuleCatalog inputModules, OutputModuleCatalog outputModules, CancellationToken token)
     {
         var connections = draft.Connections.ToDictionary(value => value.Id);
         var devices = draft.Devices.ToDictionary(value => value.Id);
@@ -281,7 +303,7 @@ internal static class ConfigurationImportPlanner
         foreach (var route in draft.Routes)
         {
             token.ThrowIfCancellationRequested();
-            var graph = Validate("$.routes", () => RouteGraphFormat.Normalize(route.Graph, transforms, inputModules));
+            var graph = Validate("$.routes", () => RouteGraphFormat.Normalize(route.Graph, transforms, inputModules, outputModules));
             var nodeIds = graph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
             if (graph.Edges.Any(edge => !nodeIds.Contains(edge.Source) || !nodeIds.Contains(edge.Target)))
             { throw ConfigurationImportDocument.Error("import.referenceMissing", "$.routes"); }
@@ -305,6 +327,19 @@ internal static class ConfigurationImportPlanner
                             node.Version != (input.Module?.Version ?? 1))
                         { throw ConfigurationImportDocument.Error("import.protocolMismatch", "$.routes"); }
                     }
+                }
+                else if (OutputModuleCatalog.IsModuleKind(node.Type))
+                {
+                    var module = node.Config.Deserialize<RouteModuleOutputDraft>(RouteGraphFormat.Json)!;
+                    var schema = outputModules.Modules.Single(value => value.Kind == node.Type && value.Version == node.Version).Parameters;
+                    foreach (var (name, reference) in module.Connections ?? [])
+                    {
+                        var field = schema.Parameters.Single(value => value.Name == name);
+                        if (!field.ConnectionKinds.Contains(connections[reference].Kind.ToString().ToLowerInvariant(), StringComparer.Ordinal))
+                        { throw ConfigurationImportDocument.Error("import.protocolMismatch", "$.routes"); }
+                    }
+                    if (module.ConnectionId is { } target && module.Connections?.ContainsValue(target) != true)
+                    { throw ConfigurationImportDocument.Error("import.referenceMissing", "$.routes"); }
                 }
                 else if (node.Type.StartsWith("output.", StringComparison.Ordinal) && node.Config.TryGetProperty("connectionId", out var id) && id.ValueKind != JsonValueKind.Null &&
                     node.Type != "output." + connections[id.GetInt64()].Kind.ToString().ToLowerInvariant())

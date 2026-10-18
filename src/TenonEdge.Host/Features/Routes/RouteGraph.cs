@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Runtime.Inputs;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
@@ -28,10 +30,10 @@ internal static class RouteGraphFormat
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 16 };
     internal const int MaximumBytes = 1024 * 1024;
 
-    public static RouteGraph Normalize(RouteGraph graph, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null) => NormalizeCore(graph, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty);
-    internal static RouteGraph NormalizeStored(RouteGraph graph) => NormalizeCore(graph, null, null);
+    public static RouteGraph Normalize(RouteGraph graph, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null, OutputModuleCatalog? outputs = null) => NormalizeCore(graph, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty, outputs ?? OutputModuleCatalog.Empty);
+    internal static RouteGraph NormalizeStored(RouteGraph graph) => NormalizeCore(graph, null, null, null);
 
-    private static RouteGraph NormalizeCore(RouteGraph graph, TransformCatalog? transforms, InputModuleCatalog? inputs)
+    private static RouteGraph NormalizeCore(RouteGraph graph, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs)
     {
         ArgumentNullException.ThrowIfNull(graph);
         if (graph.SchemaVersion != 1 || graph.Nodes is null || graph.Nodes.Length > RouteTopologyCompiler.MaximumNodes ||
@@ -41,10 +43,10 @@ internal static class RouteGraphFormat
         var nodes = graph.Nodes.Select(node =>
         {
             if (node is null || !BusinessKeys.IsValid(node.Id) || !ids.Add(node.Id) || node.Version < 1 ||
-                !TransformCatalog.ValidKind(node.Type) && !InputModuleCatalog.IsModuleKind(node.Type) && node.Version != 1 ||
+                !TransformCatalog.ValidKind(node.Type) && !InputModuleCatalog.IsModuleKind(node.Type) && !OutputModuleCatalog.IsModuleKind(node.Type) && node.Version != 1 ||
                 node.Name is null || node.Name.Length > 64 || node.Name.Any(char.IsControl))
             { throw new ArgumentException("节点标识、名称或版本无效。"); }
-            return node with { Config = NormalizeConfig(node.Type, node.Version, node.Config, transforms, inputs) };
+            return node with { Config = NormalizeConfig(node.Type, node.Version, node.Config, transforms, inputs, outputs) };
         }).ToArray();
         foreach (var edge in graph.Edges)
         {
@@ -67,12 +69,14 @@ internal static class RouteGraphFormat
     {
         if (node.Type.StartsWith("input.", StringComparison.Ordinal))
         { return Read<RouteInputConfig>(node.Config).SourceIds.Select(id => new RouteGraphReference("input", id)); }
+        if (OutputModuleCatalog.IsModuleKind(node.Type))
+        { return Read<RouteModuleOutputDraft>(node.Config).ConnectionIds.Select(id => new RouteGraphReference("connection", id)); }
         if (node.Type.StartsWith("output.", StringComparison.Ordinal) && node.Config.TryGetProperty("connectionId", out var id) && id.ValueKind != JsonValueKind.Null)
         { return [new RouteGraphReference("connection", id.GetInt64())]; }
         return Enumerable.Empty<RouteGraphReference>();
     }).Distinct().ToArray();
 
-    private static JsonElement NormalizeConfig(string kind, int version, JsonElement config, TransformCatalog? transforms, InputModuleCatalog? inputs)
+    private static JsonElement NormalizeConfig(string kind, int version, JsonElement config, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs)
     {
         if (config.ValueKind != JsonValueKind.Object)
         { throw new ArgumentException("节点配置须为对象。"); }
@@ -81,6 +85,11 @@ internal static class RouteGraphFormat
             if (inputs is not null && !inputs.Contains(kind, version))
             { throw new ArgumentException("未安装对应输入模块或版本。"); }
             return NormalizeInput(config);
+        }
+        if (OutputModuleCatalog.IsModuleKind(kind))
+        {
+            _ = CanonicalJson.Serialize(config);
+            return JsonSerializer.SerializeToElement(Read<RouteModuleOutputDraft>(config).Normalize(kind, version, outputs), Json);
         }
         switch (kind)
         {

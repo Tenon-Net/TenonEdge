@@ -16,7 +16,7 @@ internal sealed partial class RouteDraftStore
     internal RouteCompilationSnapshot ReadCompilation(string expectedVersion, CancellationToken token) => ReadSnapshot(expectedVersion, null, token);
 
     internal RouteCompilationSnapshot ReadGraphCompilation(string expectedVersion, RouteGraph graph, CancellationToken token) =>
-        ReadSnapshot(expectedVersion, RouteGraphFormat.Normalize(graph, transforms, inputModules), token);
+        ReadSnapshot(expectedVersion, RouteGraphFormat.Normalize(graph, transforms, inputModules, outputModules), token);
 
     private RouteCompilationSnapshot ReadSnapshot(string expectedVersion, RouteGraph? graph, CancellationToken token) => database.InTransaction(client =>
     {
@@ -89,7 +89,7 @@ internal sealed partial class RouteDraftStore
         { throw new RouteTopologyException(new("connections.modbusLimit", "draft-graph")); }
         var credentials = selectedConnections.Length == 0 ? [] : client.Queryable<MqttCredentialRecord>().Where(row => selectedConnections.Contains(row.ConnectionId)).Select(row => row.ConnectionId).ToList();
         return new RouteCompilationSnapshot(expectedVersion, routes, devices.ToDictionary(device => device.Id), inputs.ToDictionary(input => input.Id),
-            connections.ToDictionary(connection => connection.Id), credentials.ToHashSet(), limits, transforms, inputModules);
+            connections.ToDictionary(connection => connection.Id), credentials.ToHashSet(), limits, transforms, inputModules, outputModules);
 
         void CheckSelected(string table, long[] ids)
         {

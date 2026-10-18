@@ -7,12 +7,13 @@ using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
 using TenonEdge.Runtime.Inputs;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
 
 /// <summary>图草稿、引用索引、全局版本与审计原子保存；不持有运行时，也不执行图。</summary>
-internal sealed partial class RouteDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, TransformCatalog transforms, InputModuleCatalog inputModules)
+internal sealed partial class RouteDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, TransformCatalog transforms, InputModuleCatalog inputModules, OutputModuleCatalog outputModules)
 {
     public RouteDraftList Read() => database.InTransaction(client => new RouteDraftList(ConfigurationDraft.ReadVersion(client),
         client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(row =>
@@ -23,7 +24,7 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
     public RouteDraftResult Write(long? existingId, RouteDraftRequest request, AuditAccount account, string? sourceIp)
     {
         Validate(request.ExpectedVersion, request.Key, request.Name, request.Description);
-        var graph = RouteGraphFormat.Normalize(request.Graph, transforms, inputModules);
+        var graph = RouteGraphFormat.Normalize(request.Graph, transforms, inputModules, outputModules);
         var id = existingId ?? ids.NextId();
         return database.InTransaction(client =>
         {
@@ -43,7 +44,7 @@ internal sealed partial class RouteDraftStore(ConfigDatabase database, Snowflake
         var original = Read(sourceId);
         if (original.Version != request.ExpectedVersion)
         { throw new DraftWriteException("configuration.draftConflict"); }
-        var graph = RouteGraphFormat.Normalize(original.Route.Graph, transforms, inputModules);
+        var graph = RouteGraphFormat.Normalize(original.Route.Graph, transforms, inputModules, outputModules);
         var id = ids.NextId();
         return database.InTransaction(client =>
         {

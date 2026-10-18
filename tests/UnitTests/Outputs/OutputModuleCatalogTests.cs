@@ -182,6 +182,29 @@ public sealed class OutputModuleCatalogTests
         }
     }
 
+    [Theory]
+    [InlineData(false, "query")]
+    [InlineData(true, "query")]
+    [InlineData(false, "encodedQuery")]
+    [InlineData(true, "encodedQuery")]
+    [InlineData(false, "header")]
+    [InlineData(true, "header")]
+    public void SecretNamedHttpQueryAndHeadersAreRejectedForNativeAndUninstalledFrozenModules(bool module, string location)
+    {
+        var catalog = new OutputModuleCatalog([new Module("http")]);
+        var frozen = catalog.WithFrozenProtocol(Unit());
+        var changed = Change(module ? frozen : OutputModuleCatalog.ReadProtocol(frozen)!, config =>
+        {
+            var protocol = module ? config["outputModule"]!["protocol"]!["configuration"]! : config;
+            if (location == "header")
+            { protocol["headers"] = JsonNode.Parse("{\"X-Access-Token\":\"fixture-secret\"}"); }
+            else
+            { protocol["path"] = location == "query" ? "send?token=fixture-secret" : "send?%61pi_key=fixture-secret"; }
+        });
+        var error = Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.ParseStored(Document(changed)));
+        Assert.DoesNotContain("fixture-secret", error.ToString(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void BindingChangeMissingFrozenBindingAndConflictingConnectionAreRejected()
     {

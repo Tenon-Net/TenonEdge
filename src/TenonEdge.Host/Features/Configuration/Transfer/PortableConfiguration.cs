@@ -4,6 +4,7 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
+using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
 
@@ -125,6 +126,23 @@ internal static class ConfigurationExport
                             writer.WriteStringValue(key);
                         }
                         writer.WriteEndArray();
+                    }
+                    else if (OutputModuleCatalog.IsModuleKind(node.Type) && property.NameEquals("connections"))
+                    {
+                        writer.WritePropertyName("connectionKeys");
+                        if (property.Value.ValueKind == JsonValueKind.Null)
+                        { writer.WriteNullValue(); }
+                        else
+                        {
+                            writer.WriteStartObject();
+                            foreach (var reference in property.Value.EnumerateObject())
+                            {
+                                if (!connections.TryGetValue(reference.Value.GetInt64(), out var connection))
+                                { throw new ConfigurationTransferException("configuration.exportReferenceMissing", path + ".connectionKeys"); }
+                                writer.WriteString(reference.Name, connection.Key);
+                            }
+                            writer.WriteEndObject();
+                        }
                     }
                     else if (node.Type.StartsWith("output.", StringComparison.Ordinal) && property.NameEquals("connectionId"))
                     {

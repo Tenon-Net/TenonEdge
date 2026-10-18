@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Runtime.Inputs;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Routes;
@@ -18,17 +19,17 @@ internal static class RouteTopologyCompiler
     { "input.modbus", "input.mqtt", "input.http", "input.simulator", "transform.map", "output.mqtt", "output.http", "output.tenon" };
 
     internal static RouteTopologyResult Compile(IReadOnlyList<RouteTopology> routes,
-        IReadOnlyDictionary<long, RouteTopologySource> sources, CancellationToken cancellationToken, RouteCompilationLimits? limits = null, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null) =>
-        CompileCore(routes, sources, limits, checkFields: true, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty, cancellationToken);
+        IReadOnlyDictionary<long, RouteTopologySource> sources, CancellationToken cancellationToken, RouteCompilationLimits? limits = null, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null, OutputModuleCatalog? outputs = null) =>
+        CompileCore(routes, sources, limits, checkFields: true, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty, outputs ?? OutputModuleCatalog.Empty, cancellationToken);
 
     // Only for diagnostic labels of an already frozen execution plan. Retain every
     // identity, graph and expansion bound, without revalidating historical fields.
     internal static RouteTopologyResult RecoverDiagnosticPaths(IReadOnlyList<RouteTopology> routes,
         IReadOnlyDictionary<long, RouteTopologySource> sources) =>
-        CompileCore(routes, sources, null, checkFields: false, null, null, CancellationToken.None);
+        CompileCore(routes, sources, null, checkFields: false, null, null, null, CancellationToken.None);
 
     private static RouteTopologyResult CompileCore(IReadOnlyList<RouteTopology> routes,
-        IReadOnlyDictionary<long, RouteTopologySource> sources, RouteCompilationLimits? limits, bool checkFields, TransformCatalog? transforms, InputModuleCatalog? inputs, CancellationToken cancellationToken)
+        IReadOnlyDictionary<long, RouteTopologySource> sources, RouteCompilationLimits? limits, bool checkFields, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(routes);
         ArgumentNullException.ThrowIfNull(sources);
@@ -59,7 +60,7 @@ internal static class RouteTopologyCompiler
         var total = 0;
         foreach (var route in active)
         {
-            var graph = Validate(route, sources, schemas, identities, limits, checkFields, transforms, inputs, cancellationToken);
+            var graph = Validate(route, sources, schemas, identities, limits, checkFields, transforms, inputs, outputs, cancellationToken);
             graphs.Add(graph);
             var paths = new Dictionary<string, int>(StringComparer.Ordinal);
             for (var index = graph.Order.Count - 1; index >= 0; index--)
@@ -113,7 +114,7 @@ internal static class RouteTopologyCompiler
     }
 
     private static Graph Validate(RouteTopology route, IReadOnlyDictionary<long, RouteTopologySource> sources,
-        Dictionary<long, Dictionary<string, FieldType>> schemas, Dictionary<string, long> identities, RouteCompilationLimits limits, bool checkFields, TransformCatalog? transforms, InputModuleCatalog? inputs, CancellationToken token)
+        Dictionary<long, Dictionary<string, FieldType>> schemas, Dictionary<string, long> identities, RouteCompilationLimits limits, bool checkFields, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs, CancellationToken token)
     {
         if (route.SchemaVersion != 1)
         { Reject("route.version", route.Key); }
@@ -133,9 +134,10 @@ internal static class RouteTopologyCompiler
             { Reject("node.duplicate", route.Key, node.Id); }
             if (!Kinds.Contains(node.Kind) &&
                 !(TransformCatalog.ValidKind(node.Kind) && (transforms is null || transforms.Contains(node.Kind, node.Version))) &&
-                !(InputModuleCatalog.IsModuleKind(node.Kind) && (inputs is null || inputs.Contains(node.Kind, node.Version))))
+                !(InputModuleCatalog.IsModuleKind(node.Kind) && (inputs is null || inputs.Contains(node.Kind, node.Version))) &&
+                !(OutputModuleCatalog.IsModuleKind(node.Kind) && (outputs is null || outputs.Contains(node.Kind, node.Version))))
             { Reject("node.kind", route.Key, node.Id); }
-            if (node.Version < 1 || !TransformCatalog.ValidKind(node.Kind) && !InputModuleCatalog.IsModuleKind(node.Kind) && node.Version != 1 ||
+            if (node.Version < 1 || !TransformCatalog.ValidKind(node.Kind) && !InputModuleCatalog.IsModuleKind(node.Kind) && !OutputModuleCatalog.IsModuleKind(node.Kind) && node.Version != 1 ||
                 TransformCatalog.ValidKind(node.Kind) && transforms is not null && !transforms.Contains(node.Kind, node.Version))
             { Reject("node.version", route.Key, node.Id); }
             next[node.Id] = [];
