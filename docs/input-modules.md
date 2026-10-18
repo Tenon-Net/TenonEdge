@@ -4,6 +4,8 @@
 
 自包含标量输入和 HTTP/MQTT/Modbus 连接引用已接通来源草稿、业务 key 导入重映射、自动表单与冻结运行；MQTT/Modbus 通过原计划级协议委托复用。输出/新连接类型扩展仍未完成。**T3-10 和 T3 仍未完成**；完整扩展示例与开发指南仍属 T5-06。
 
+新连接类型现已接入[版本化非秘密草稿、业务key导入与原共享运行](connection-modules.md)：来源的显式连接引用冻结真实kind/version/参数，卸载连接声明后相关输入降级；这一后端链路尚未接入新类型自动下拉/连接表单及独立凭证，不改上述完整交付边界。
+
 ## 注册与契约
 
 - 实现 `IInputModuleFactory`，沿用原 `IInputUnitFactory` 的实例生命周期。通过 Host 编译期 DI 只注册 `IInputModuleFactory` 一次；`InputModuleCatalog` 为同一种 kind 的所有版本提供一个原工厂视图，不再重复注册为 `IInputUnitFactory`。

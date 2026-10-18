@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest'
 import { connectionForm, connectionRequest, type Connection } from './model'
 
 describe('typed draft connection editor', () => {
+    it('never reinterprets a module draft as a built-in protocol form', () => {
+        const draft: Connection = {
+            id: 1,
+            key: 'wire',
+            name: 'Wire',
+            kind: 'module',
+            enabled: true,
+            modbus: null,
+            mqtt: null,
+            http: null,
+            module: {
+                kind: 'testwire',
+                version: 2,
+                parameters: { host: 'example.test' },
+            },
+        }
+        expect(() => connectionForm('v', draft)).toThrow(
+            'module-editor-unavailable',
+        )
+        expect(draft.module?.version).toBe(2)
+    })
     it('keeps the captured global version and sends only the selected protocol', () => {
         const form = connectionForm('captured-version')
         form.key = 'plc-1'

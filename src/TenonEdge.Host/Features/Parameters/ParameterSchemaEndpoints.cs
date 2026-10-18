@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.AspNetCore.Http.HttpResults;
 using TenonEdge.Abstractions.Parameters;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
@@ -23,7 +24,16 @@ internal static class ParameterSchemaEndpoints
         api.MapGroup("/output-modules").WithTags("输出模块")
             .MapGet("/", GetOutputs).WithName("getOutputModules")
             .Produces<ImmutableArray<OutputModuleDefinition>>();
+        api.MapGroup("/connection-modules").WithTags("连接模块")
+            .MapGet("/", GetConnections).WithName("getConnectionModules")
+            .Produces<ImmutableArray<ConnectionModuleDefinition>>();
         return api;
+    }
+
+    private static Ok<ImmutableArray<ConnectionModuleDefinition>> GetConnections(ConnectionModuleCatalog catalog, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        return TypedResults.Ok(catalog.Modules);
     }
 
     private static Ok<ImmutableArray<OutputModuleDefinition>> GetOutputs(OutputModuleCatalog catalog, HttpContext context)

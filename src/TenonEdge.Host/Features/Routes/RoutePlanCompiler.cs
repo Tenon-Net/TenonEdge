@@ -11,6 +11,7 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Outputs;
@@ -19,8 +20,9 @@ using TenonEdge.Runtime.Transforms;
 namespace TenonEdge.Host.Features.Routes;
 
 internal sealed record RouteCompilationSnapshot(string Version, RouteDraft[] Routes, IReadOnlyDictionary<long, DeviceDraft> Devices,
-    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null, InputModuleCatalog? InputModules = null, OutputModuleCatalog? OutputModules = null)
+    IReadOnlyDictionary<long, InputDraft> Inputs, IReadOnlyDictionary<long, ConnectionDraft> Connections, IReadOnlySet<long> MqttCredentials, RouteCompilationLimits? Limits = null, TransformCatalog? Transforms = null, InputModuleCatalog? InputModules = null, OutputModuleCatalog? OutputModules = null, ConnectionModuleCatalog? ConnectionModules = null)
 {
+    public ConnectionModuleCatalog ConnectionsCatalog => ConnectionModules ?? ConnectionModuleCatalog.Empty;
     public OutputModuleCatalog OutputsCatalog => OutputModules ?? OutputModuleCatalog.Empty;
     public InputModuleCatalog InputsCatalog => InputModules ?? InputModuleCatalog.Empty;
     public TransformCatalog Modules => Transforms ?? TransformCatalog.BuiltIn;
@@ -37,6 +39,13 @@ internal static partial class RoutePlanCompiler
         token.ThrowIfCancellationRequested();
         var limits = snapshot.Admission;
         limits.Validate();
+        foreach (var connection in snapshot.Connections.Values.Where(value => value.Enabled && value.Module is not null))
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            { _ = snapshot.ConnectionsCatalog.Freeze(connection.Id, connection.Module!.Kind, connection.Module.Version, connection.Module.Parameters); }
+            catch (Exception error) when (ConfigurationError(error)) { throw Error("plan.configuration", ""); }
+        }
         var routes = snapshot.Routes.Where(route => route.Enabled).OrderBy(route => route.Key, StringComparer.Ordinal).ToArray();
         var graphs = new List<RouteTopology>();
         var normalizedGraphs = new Dictionary<string, RouteGraph>(StringComparer.Ordinal);

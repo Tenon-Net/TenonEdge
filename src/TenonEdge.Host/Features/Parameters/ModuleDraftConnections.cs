@@ -41,7 +41,14 @@ internal static class ModuleDraftConnections
             if (available is null || !available.TryGetValue(id, out var connection) || requireEnabled && !connection.Enabled)
             { throw new ArgumentException("模块引用的连接缺失或未启用。"); }
             var validated = ConnectionDraftValidation.Normalize(id, new("module", connection.Key, connection.Name, connection.Kind,
-                connection.Enabled, connection.Modbus, connection.Mqtt, connection.Http));
+                connection.Enabled, connection.Modbus, connection.Mqtt, connection.Http, connection.Module));
+            if (validated.Module is { } module)
+            {
+                // Shape only here. The consuming input/output catalog validates against the
+                // current installed declaration before invoking any adapter code.
+                snapshots.Add(name, module.Snapshot(id));
+                continue;
+            }
             var kind = validated.Kind.ToString().ToLowerInvariant();
             var configuration = validated.Kind switch
             {

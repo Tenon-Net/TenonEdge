@@ -178,7 +178,7 @@ export function ConnectionsPage() {
         },
     })
     function open(connection?: Connection) {
-        if (outboundBusy) return
+        if (outboundBusy || connection?.kind === 'module') return
         if (!query.data || (dirty && !window.confirm(t('connections.discard'))))
             return
         setTestGeneration((value) => value + 1)

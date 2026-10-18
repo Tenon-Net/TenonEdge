@@ -11,13 +11,14 @@ using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Deliveries;
 
 namespace TenonEdge.Host.Features.Connections;
 
 /// <summary>非秘密连接草稿。变更、全局版本及审计在同一个短事务中提交；没有运行时或网络副作用。</summary>
 internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit,
-    TimeProvider time, DeliveryCache deliveries)
+    TimeProvider time, DeliveryCache deliveries, ConnectionModuleCatalog modules)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -32,6 +33,8 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
     {
         var id = existingId ?? ids.NextId();
         var draft = ConnectionDraftValidation.Normalize(id, request);
+        if (draft.Module is { } module)
+        { _ = modules.Freeze(id, module.Kind, module.Version, module.Parameters); }
         var content = JsonSerializer.Serialize(draft, Json);
         return database.InTransaction(client =>
         {
@@ -44,7 +47,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             if (existing is not null)
             {
                 var previous = Decode(existing);
-                if (previous.Key != draft.Key || previous.Kind != draft.Kind)
+                if (previous.Key != draft.Key || !previous.SameKind(draft))
                 { throw new DraftWriteException("connection.immutableIdentity"); }
             }
             if (client.Queryable<ConnectionDraftRecord>().Any(row => row.BusinessKey == draft.Key && row.Id != id))
@@ -119,7 +122,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         if (draft.Id != row.Id || draft.Key != row.BusinessKey)
         { throw new JsonException("连接草稿标识不一致。"); }
         return ConnectionDraftValidation.Normalize(draft.Id, new("read", draft.Key, draft.Name, draft.Kind,
-            draft.Enabled, draft.Modbus, draft.Mqtt, draft.Http));
+            draft.Enabled, draft.Modbus, draft.Mqtt, draft.Http, draft.Module));
     }
 }
 

@@ -116,6 +116,64 @@ async function refresh(page: Page) {
         .click()
 }
 
+// UI compatibility guard only: this response fixture is not evidence of a
+// module configuration form or protocol operation through the browser.
+test('module draft response never opens the built-in protocol editor', async ({
+    browser,
+}) => {
+    const f = await fixture(browser)
+    try {
+        await f.page.route(
+            '**/api/edge-admin/v1/connections',
+            async (route) => {
+                const response = await route.fetch()
+                const json = await response.json()
+                await route.fulfill({
+                    response,
+                    json: {
+                        ...json,
+                        connections: [
+                            {
+                                id: 100,
+                                key: 'wire',
+                                name: 'Wire fixture',
+                                kind: 'module',
+                                enabled: true,
+                                modbus: null,
+                                mqtt: null,
+                                http: null,
+                                module: {
+                                    kind: 'testwire',
+                                    version: 2,
+                                    parameters: {
+                                        host: 'not-displayed.invalid',
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                })
+            },
+        )
+        await f.page.goto('/connections')
+        const row = f.page
+            .getByRole('table', { name: '连接列表', exact: true })
+            .getByRole('row')
+            .filter({ hasText: 'Wire fixture' })
+        await expect(row).toContainText('扩展连接 · testwire v2')
+        await expect(row).toContainText('此扩展连接的网页编辑尚未接入')
+        await expect(
+            row.getByRole('button', { name: '编辑连接', exact: true }),
+        ).toBeDisabled()
+        await expect(row).not.toContainText('not-displayed.invalid')
+        await expect(
+            f.page.getByLabel('连接名称', { exact: true }),
+        ).not.toBeVisible()
+    } finally {
+        await f.close()
+    }
+})
+
 // Configuration is an explicit API fixture. Status, references, editing, query
 // failures and role checks use the real product page and original HTTP loop.
 test('connection list separates effective and draft data, observes real HTTP failures, preserves editing and protects viewers', async ({

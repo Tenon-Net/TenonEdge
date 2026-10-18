@@ -4,6 +4,10 @@ export type Connection = components['schemas']['ConnectionDraft']
 export type ConnectionRequest = components['schemas']['ConnectionDraftRequest']
 export type ConnectionForm = ReturnType<typeof connectionForm>
 export function connectionForm(version: string, connection?: Connection) {
+    // Module drafts are preserved by the API, but their editor is not this
+    // built-in protocol form. Never reinterpret one as Modbus or MQTT.
+    if (connection?.kind === 'module')
+        throw new Error('module-editor-unavailable')
     return {
         id: connection?.id,
         version,

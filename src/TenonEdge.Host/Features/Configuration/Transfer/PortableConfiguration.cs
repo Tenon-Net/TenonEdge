@@ -15,7 +15,8 @@ internal sealed record PortableConfiguration(int FormatVersion, PortableConnecti
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record PortableConnection(string ConnectionKey, string Name, ConnectionKind Kind, bool Enabled,
-    ModbusConnectionDraft? Modbus, MqttConnectionDraft? Mqtt, HttpConnectionDraft? Http, PortableCredentialRequirement? Credential);
+    ModbusConnectionDraft? Modbus, MqttConnectionDraft? Mqtt, HttpConnectionDraft? Http, PortableCredentialRequirement? Credential,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ModuleConnectionDraft? Module = null);
 
 /// <summary>非秘密账户比较摘要，不是凭证、内部对象ID或可用于认证的值。跨网关缺少凭证时仍须重新填写。</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -62,12 +63,12 @@ internal static class ConfigurationExport
         CancellationToken token)
     {
         var connections = draft.Connections.Select(value => ConnectionDraftValidation.Normalize(value.Id,
-            new("export", value.Key, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http))).ToDictionary(value => value.Id);
+            new("export", value.Key, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Module))).ToDictionary(value => value.Id);
         var devices = draft.Devices.ToDictionary(value => value.Id);
         var sources = draft.Inputs.ToDictionary(value => value.Id, value => Device(value.DeviceId).Key + "/" + value.Key);
         var exportedConnections = connections.Values.Select(value => new PortableConnection(value.Key, value.Name, value.Kind,
             value.Enabled, value.Modbus, value.Mqtt, value.Http, credentialIdentities.TryGetValue(value.Id, out var identity)
-                ? new("requiresInput", identity) : null)).ToArray();
+                ? new("requiresInput", identity) : null, value.Module)).ToArray();
         var exportedDevices = draft.Devices.Select(value =>
         {
             token.ThrowIfCancellationRequested();

@@ -59,7 +59,7 @@ internal sealed partial class RuntimeVersionStore
         foreach (var connection in draft.Connections)
         {
             var current = ConnectionDraftStore.Read(client, connection.Id);
-            if (current is null || current.Kind != connection.Kind || current.Key != connection.Key)
+            if (current is null || !current.SameKind(connection) || current.Key != connection.Key)
             { throw new DraftWriteException("configuration.rollbackConnectionMissing"); }
             if (!requiredCredentials.Contains(connection.Id))
             { continue; }

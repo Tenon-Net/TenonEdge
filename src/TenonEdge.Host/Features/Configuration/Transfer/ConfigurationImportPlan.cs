@@ -4,6 +4,7 @@ using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Devices;
 using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Routes;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
@@ -17,7 +18,7 @@ internal sealed record ConfigurationImportPlan(ConfigurationCheckpoint Draft, Co
 internal static class ConfigurationImportPlanner
 {
     public static ConfigurationImportPlan Prepare(PortableConfiguration file, ConfigurationCheckpoint before,
-        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null, OutputModuleCatalog? outputModules = null)
+        ConfigurationImportMode mode, Func<long> newId, CancellationToken token, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null, OutputModuleCatalog? outputModules = null, ConnectionModuleCatalog? connectionModules = null)
     {
         token.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(mode))
@@ -48,10 +49,10 @@ internal static class ConfigurationImportPlanner
             token.ThrowIfCancellationRequested();
             var value = file.Connections[index];
             var id = oldConnections.TryGetValue(value.ConnectionKey, out var old) ? old.Id : Allocate();
-            if (old is not null && old.Kind != value.Kind)
+            if (old is not null && (old.Kind != value.Kind || old.Module?.Kind != value.Module?.Kind))
             { throw ConfigurationImportDocument.Error("import.connectionKindImmutable", $"$.connections[{index}].kind"); }
             connections[value.ConnectionKey] = Validate($"$.connections[{index}]", () => ConnectionDraftValidation.Normalize(id,
-                new("import", value.ConnectionKey, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http)));
+                new("import", value.ConnectionKey, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Module)));
         }
         var connectionsById = connections.Values.ToDictionary(value => value.Id);
         for (var index = 0; index < file.Devices.Length; index++)
@@ -109,6 +110,14 @@ internal static class ConfigurationImportPlanner
             devices.Values.OrderBy(value => value.Id).ToArray(), inputs.Values.OrderBy(value => value.Id).ToArray(),
             routes.Values.OrderBy(value => value.Id).ToArray(), before.CredentialConnections, before.Edits,
             before.RequiredCredentials?.Where(value => connectionsById.ContainsKey(value.ConnectionId)).ToArray());
+        // Missing declarations fail the complete import, including unreferenced/disabled
+        // connections retained by merge. History/export remain independent of installation.
+        foreach (var connection in candidate.Connections)
+        {
+            token.ThrowIfCancellationRequested();
+            if (connection.Module is { } module)
+            { Validate("$.connections", () => (connectionModules ?? ConnectionModuleCatalog.Empty).Freeze(connection.Id, module.Kind, module.Version, module.Parameters)); }
+        }
         ValidateCombined(candidate, transforms, inputModules ?? InputModuleCatalog.Empty, outputModules ?? OutputModuleCatalog.Empty, token);
         return new(candidate, ConfigurationDiff.Between(before, candidate));
 
@@ -232,7 +241,7 @@ internal static class ConfigurationImportPlanner
             var value = file.Connections[index];
             if (value?.Credential is not { } credential)
             { continue; }
-            if (value.Kind == ConnectionKind.Modbus || credential.Status != "requiresInput" || credential.AccountIdentity is not { Length: 71 } identity ||
+            if (value.Kind is not (ConnectionKind.Http or ConnectionKind.Mqtt) || credential.Status != "requiresInput" || credential.AccountIdentity is not { Length: 71 } identity ||
                 !identity.StartsWith("sha256:", StringComparison.Ordinal) || identity[7..].Any(character => !char.IsAsciiHexDigitLower(character)))
             { issues.Add("import.credentialHint", $"$.connections[{index}].credential"); }
         }
@@ -335,7 +344,8 @@ internal static class ConfigurationImportPlanner
                     foreach (var (name, reference) in module.Connections ?? [])
                     {
                         var field = schema.Parameters.Single(value => value.Name == name);
-                        if (!field.ConnectionKinds.Contains(connections[reference].Kind.ToString().ToLowerInvariant(), StringComparer.Ordinal))
+                        var connection = connections[reference];
+                        if (!field.ConnectionKinds.Contains(connection.Module?.Kind ?? connection.Kind.ToString().ToLowerInvariant(), StringComparer.Ordinal))
                         { throw ConfigurationImportDocument.Error("import.protocolMismatch", "$.routes"); }
                     }
                     if (module.ConnectionId is { } target && module.Connections?.ContainsValue(target) != true)

@@ -214,7 +214,7 @@ public sealed class DraftCredentialTests
         else
         { db.Client.Insertable(new HttpCredentialRecord { ConnectionId = predicted }).ExecuteCommand(); }
         var store = new ConnectionDraftStore(db, ids, factory.Services.GetRequiredService<AuditTrail>(), time,
-            factory.Services.GetRequiredService<DeliveryCache>());
+            factory.Services.GetRequiredService<DeliveryCache>(), factory.Services.GetRequiredService<TenonEdge.Runtime.Connections.ConnectionModuleCatalog>());
         Assert.Equal("connection.reservedIdentity", Assert.Throws<DraftWriteException>(() => store.Write(null,
             new("0", "new", "New", ConnectionKind.Http, Http: new("http://10.0.0.1/")), "admin", null)).Code);
         Assert.Equal("0", store.Read().Version);

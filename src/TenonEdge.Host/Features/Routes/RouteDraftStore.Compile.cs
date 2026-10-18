@@ -89,7 +89,7 @@ internal sealed partial class RouteDraftStore
         { throw new RouteTopologyException(new("connections.modbusLimit", "draft-graph")); }
         var credentials = selectedConnections.Length == 0 ? [] : client.Queryable<MqttCredentialRecord>().Where(row => selectedConnections.Contains(row.ConnectionId)).Select(row => row.ConnectionId).ToList();
         return new RouteCompilationSnapshot(expectedVersion, routes, devices.ToDictionary(device => device.Id), inputs.ToDictionary(input => input.Id),
-            connections.ToDictionary(connection => connection.Id), credentials.ToHashSet(), limits, transforms, inputModules, outputModules);
+            connections.ToDictionary(connection => connection.Id), credentials.ToHashSet(), limits, transforms, inputModules, outputModules, connectionModules);
 
         void CheckSelected(string table, long[] ids)
         {

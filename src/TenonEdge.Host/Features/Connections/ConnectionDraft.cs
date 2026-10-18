@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
@@ -7,7 +9,24 @@ using TenonEdge.Adapters.Mqtt;
 
 namespace TenonEdge.Host.Features.Connections;
 
-internal enum ConnectionKind { Modbus, Mqtt, Http }
+internal enum ConnectionKind { Modbus, Mqtt, Http, Module }
+
+/// <summary>明确的连接类型/版本与非秘密标量。历史读取只核对结构，新准入另经本机声明目录。</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ModuleConnectionDraft(string Kind, int Version, JsonElement Parameters)
+{
+    internal ModuleConnectionSnapshot Snapshot(long id) => new(id, Kind,
+        JsonSerializer.SerializeToElement(new { connectionModule = new { version = Version, parameters = Parameters } }));
+
+    internal ModuleConnectionDraft Normalize(long id)
+    {
+        if (Parameters.ValueKind != JsonValueKind.Object ||
+            System.Text.Encoding.UTF8.GetByteCount(Parameters.GetRawText()) > TenonEdge.Abstractions.Parameters.ParameterSchema.MaximumConfigurationBytes)
+        { throw new ArgumentException("连接模块参数须为有界的非秘密标量对象。"); }
+        _ = ModuleConnectionSnapshot.ReadModuleConfiguration(Snapshot(id));
+        return this with { Parameters = Parameters.Clone() };
+    }
+}
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ModbusConnectionDraft(string Host, int Port = 502, ModbusFrameFormat Format = ModbusFrameFormat.Tcp,
@@ -22,10 +41,15 @@ internal sealed record HttpConnectionDraft(string BaseAddress, int TimeoutMs = 5
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ConnectionDraftRequest(string ExpectedVersion, string Key, string Name, ConnectionKind Kind,
-    bool Enabled = true, ModbusConnectionDraft? Modbus = null, MqttConnectionDraft? Mqtt = null, HttpConnectionDraft? Http = null);
+    bool Enabled = true, ModbusConnectionDraft? Modbus = null, MqttConnectionDraft? Mqtt = null, HttpConnectionDraft? Http = null,
+    ModuleConnectionDraft? Module = null);
 
 internal sealed record ConnectionDraft(long Id, string Key, string Name, ConnectionKind Kind, bool Enabled,
-    ModbusConnectionDraft? Modbus, MqttConnectionDraft? Mqtt, HttpConnectionDraft? Http);
+    ModbusConnectionDraft? Modbus, MqttConnectionDraft? Mqtt, HttpConnectionDraft? Http,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ModuleConnectionDraft? Module = null)
+{
+    internal bool SameKind(ConnectionDraft other) => Kind == other.Kind && Module?.Kind == other.Module?.Kind;
+}
 internal sealed record ConnectionDraftList(string Version, ConnectionDraft[] Connections);
 internal sealed record ConnectionDraftResult(string Version, ConnectionDraft Connection);
 
@@ -40,11 +64,12 @@ internal static class ConnectionDraftValidation
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 64 || request.Name.Any(char.IsControl))
         { throw new ArgumentException("连接名称须为 1—64 个字符，不能包含控制字符。"); }
         if (!Enum.IsDefined(request.Kind) ||
-            (request.Modbus is not null ? 1 : 0) + (request.Mqtt is not null ? 1 : 0) + (request.Http is not null ? 1 : 0) != 1)
+            (request.Modbus is not null ? 1 : 0) + (request.Mqtt is not null ? 1 : 0) + (request.Http is not null ? 1 : 0) + (request.Module is not null ? 1 : 0) != 1)
         { throw new ArgumentException("须且只能提供所选协议的连接参数。"); }
         ModbusConnectionDraft? modbus = null;
         MqttConnectionDraft? mqtt = null;
         HttpConnectionDraft? http = null;
+        ModuleConnectionDraft? module = null;
         switch (request.Kind)
         {
             case ConnectionKind.Modbus when request.Modbus is { } value:
@@ -88,10 +113,13 @@ internal static class ConnectionDraftValidation
                 }.ValidateRequest();
                 http = value with { BaseAddress = h.BaseAddress, Headers = h.Headers.ToDictionary() };
                 break;
+            case ConnectionKind.Module when request.Module is { } value:
+                module = value.Normalize(id);
+                break;
             default:
                 throw new ArgumentException("协议类型与连接参数不一致。");
         }
-        return new(id, request.Key, request.Name.Trim(), request.Kind, request.Enabled, modbus, mqtt, http);
+        return new(id, request.Key, request.Name.Trim(), request.Kind, request.Enabled, modbus, mqtt, http, module);
     }
 
     internal static bool IsSecretName(string name)

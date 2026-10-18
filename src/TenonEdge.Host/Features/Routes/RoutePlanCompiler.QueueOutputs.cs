@@ -57,7 +57,7 @@ internal static partial class RoutePlanCompiler
         foreach (var connection in all.OrderBy(value => value.Key, StringComparer.Ordinal))
         {
             token.ThrowIfCancellationRequested();
-            if (!connection.Enabled || targets.Contains(connection.Id) || connection.Kind == ConnectionKind.Modbus)
+            if (!connection.Enabled || targets.Contains(connection.Id) || connection.Kind is not (ConnectionKind.Mqtt or ConnectionKind.Http))
             { continue; }
             // 三段标识与正常路线的两段标识不重合；是连接的发送接续单元，不增加路线/来源/路径计数。
             if (!BusinessKeys.IsValid(connection.Key))

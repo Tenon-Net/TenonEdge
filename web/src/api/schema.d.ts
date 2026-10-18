@@ -2146,6 +2146,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connection-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getConnectionModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections": {
         parameters: {
             query?: never;
@@ -2802,6 +2818,7 @@ export interface components {
             modbus: null | components["schemas"]["ModbusConnectionDraft"];
             mqtt: null | components["schemas"]["MqttConnectionDraft"];
             http: null | components["schemas"]["HttpConnectionDraft"];
+            module?: null | components["schemas"]["ModuleConnectionDraft"];
         };
         ConnectionDraftList: {
             version: string;
@@ -2817,13 +2834,14 @@ export interface components {
             modbus?: null | components["schemas"]["ModbusConnectionDraft"];
             mqtt?: null | components["schemas"]["MqttConnectionDraft"];
             http?: null | components["schemas"]["HttpConnectionDraft"];
+            module?: null | components["schemas"]["ModuleConnectionDraft"];
         };
         ConnectionDraftResult: {
             version: string;
             connection: components["schemas"]["ConnectionDraft"];
         };
         /** @enum {unknown} */
-        ConnectionKind: "modbus" | "mqtt" | "http";
+        ConnectionKind: "modbus" | "mqtt" | "http" | "module";
         ConnectionListDefinition: {
             key: null | string;
             name: string;
@@ -2837,6 +2855,13 @@ export interface components {
             name: string;
             enabled: boolean;
             active: boolean;
+        };
+        ConnectionModuleDefinition: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            displayName: string;
+            parameters: components["schemas"]["ParameterSchema"];
         };
         /**
          * @default none
@@ -3772,6 +3797,12 @@ export interface components {
             periodMs: number | string;
             points: components["schemas"]["ModbusPointSettings"][];
         };
+        ModuleConnectionDraft: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            parameters: components["schemas"]["JsonElement"];
+        };
         ModuleSourceDraft: {
             kind: string;
             /** Format: int32 */
@@ -4101,6 +4132,7 @@ export interface components {
             mqtt: null | components["schemas"]["MqttConnectionDraft"];
             http: null | components["schemas"]["HttpConnectionDraft"];
             credential: null | components["schemas"]["PortableCredentialRequirement"];
+            module?: null | components["schemas"]["ModuleConnectionDraft"];
         };
         PortableCredentialRequirement: {
             status: string;
@@ -12790,6 +12822,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OutputModuleDefinition"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConnectionModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionModuleDefinition"][];
                 };
             };
             /** @description Unauthorized */

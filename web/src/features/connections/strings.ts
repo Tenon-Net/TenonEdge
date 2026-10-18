@@ -56,6 +56,8 @@ const mqttTestStrings = {
 }
 
 export const connectionStrings = {
+    moduleEditorPending:
+        '此扩展连接的网页编辑尚未接入，请勿使用内置协议表单修改。',
     title: '连接',
     runtime: {
         table: '连接列表',
@@ -228,7 +230,7 @@ export const connectionStrings = {
     disabled: '草稿停用',
     actions: '操作',
     version: '全局草稿版本：{{version}}',
-    kinds: { modbus: 'Modbus', mqtt: 'MQTT', http: 'HTTP' },
+    kinds: { modbus: 'Modbus', mqtt: 'MQTT', http: 'HTTP', module: '扩展连接' },
     host: '主机或 IP',
     port: '端口',
     format: '帧格式',

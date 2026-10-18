@@ -9894,6 +9894,39 @@
         }
       }
     },
+    "/api/edge-admin/v1/connection-modules": {
+      "get": {
+        "tags": [
+          "连接模块"
+        ],
+        "operationId": "getConnectionModules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionModuleDefinition"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections": {
       "get": {
         "tags": [
@@ -13488,6 +13521,16 @@
                 "$ref": "#/components/schemas/HttpConnectionDraft"
               }
             ]
+          },
+          "module": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleConnectionDraft"
+              }
+            ]
           }
         }
       },
@@ -13563,6 +13606,16 @@
                 "$ref": "#/components/schemas/HttpConnectionDraft"
               }
             ]
+          },
+          "module": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleConnectionDraft"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -13586,7 +13639,8 @@
         "enum": [
           "modbus",
           "mqtt",
-          "http"
+          "http",
+          "module"
         ]
       },
       "ConnectionListDefinition": {
@@ -13643,6 +13697,34 @@
           },
           "active": {
             "type": "boolean"
+          }
+        }
+      },
+      "ConnectionModuleDefinition": {
+        "required": [
+          "kind",
+          "version",
+          "displayName",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/ParameterSchema"
           }
         }
       },
@@ -17718,6 +17800,31 @@
         },
         "additionalProperties": false
       },
+      "ModuleConnectionDraft": {
+        "required": [
+          "kind",
+          "version",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/JsonElement"
+          }
+        },
+        "additionalProperties": false
+      },
       "ModuleSourceDraft": {
         "required": [
           "kind",
@@ -19248,6 +19355,16 @@
               },
               {
                 "$ref": "#/components/schemas/PortableCredentialRequirement"
+              }
+            ]
+          },
+          "module": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleConnectionDraft"
               }
             ]
           }
@@ -23440,6 +23557,9 @@
     },
     {
       "name": "输出模块"
+    },
+    {
+      "name": "连接模块"
     },
     {
       "name": "Devices"

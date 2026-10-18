@@ -120,11 +120,12 @@ internal sealed class RuntimeConnectionCatalog
     }
 
     internal static ConnectionListDefinition Describe(ConnectionDraft connection) => new(connection.Key, connection.Name,
-        connection.Kind.ToString().ToLowerInvariant(), connection.Kind switch
+        connection.Module?.Kind ?? connection.Kind.ToString().ToLowerInvariant(), connection.Kind switch
         {
             ConnectionKind.Modbus => HostPort(connection.Modbus!.Host, connection.Modbus.Port),
             ConnectionKind.Mqtt => (connection.Mqtt!.Tls ? "mqtts://" : "mqtt://") + HostPort(connection.Mqtt.Host, connection.Mqtt.Port),
             ConnectionKind.Http => connection.Http!.BaseAddress,
+            ConnectionKind.Module => "扩展连接（目标由适配器解析）",
             _ => throw new RuntimePlanDocumentException("连接协议不可识别。")
         }, connection.Enabled);
 

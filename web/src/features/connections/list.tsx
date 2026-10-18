@@ -95,6 +95,10 @@ export function ConnectionTable({
                                                 {effective.name} ·{' '}
                                                 {t(
                                                     `connections.kinds.${effective.kind}`,
+                                                    {
+                                                        defaultValue:
+                                                            effective.kind,
+                                                    },
                                                 )}
                                             </p>
                                             <code className="block text-xs">
@@ -115,6 +119,8 @@ export function ConnectionTable({
                                                 {t(
                                                     `connections.kinds.${draft.kind}`,
                                                 )}
+                                                {draft.module &&
+                                                    ` · ${draft.module.kind} v${draft.module.version}`}
                                             </p>
                                             <code className="block text-xs">
                                                 {draft.key}
@@ -243,7 +249,11 @@ export function ConnectionTable({
                                 <td className="space-y-2 border-b p-2">
                                     <Button
                                         variant="outline"
-                                        disabled={busy || !draft}
+                                        disabled={
+                                            busy ||
+                                            !draft ||
+                                            draft.kind === 'module'
+                                        }
                                         onClick={() => draft && onOpen(draft)}
                                     >
                                         {t(
@@ -252,6 +262,13 @@ export function ConnectionTable({
                                                 : 'connections.view',
                                         )}
                                     </Button>
+                                    {draft?.kind === 'module' && (
+                                        <p className="text-xs text-muted-foreground">
+                                            {t(
+                                                'connections.moduleEditorPending',
+                                            )}
+                                        </p>
+                                    )}
                                     {canEdit && (
                                         <Button
                                             variant="outline"
