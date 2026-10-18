@@ -16,6 +16,7 @@ using TenonEdge.Runtime.Diagnostics;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Lifecycle;
 using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Runtime;
@@ -122,6 +123,7 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<ITlsTrustResolver>()));
         services.AddSingleton(provider => new TransformCatalog(provider.GetServices<IMessageTransformFactory>()));
         services.AddSingleton(provider => new InputModuleCatalog(provider.GetServices<IInputModuleFactory>()));
+        services.AddSingleton(provider => new OutputModuleCatalog(provider.GetServices<IOutputModuleFactory>()));
         services.AddSingleton<RuntimeHost>();
         services.AddSingleton<RuntimeVersionStore>();
         services.AddSingleton<RuntimeCoordinator>();

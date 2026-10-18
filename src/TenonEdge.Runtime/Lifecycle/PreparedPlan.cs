@@ -49,10 +49,10 @@ public sealed class PreparedPlan : IAsyncDisposable
             if (_handedOver || Failures.Count != 0)
             { return null; }
             var outputs = Outputs.Where(output => output.Target.ConnectionId == connectionId).ToArray();
-            if (outputs.Length == 0 || outputs.Any(output => output.Target.Id.Kind is not ("output.http" or "output.mqtt")))
+            if (outputs.Length == 0 || outputs.Any(output => output.ProtocolKind is not ("output.http" or "output.mqtt")))
             { return null; }
             var identities = outputs.Select(output => output.Target.CaptureIdentity()).ToArray();
-            return identities[0] is { } first && identities.All(identity => identity == first) ? first : null;
+            return identities[0] is { } first && identities.All(identity => identity == first) && outputs.All(output => output.ProtocolKind == "output." + first.Recipient.Protocol) ? first : null;
         }
     }
 
@@ -109,5 +109,5 @@ internal sealed record PreparedUnit(
     InputReadStatus? Reads,
     RuntimeUnitId? RecoveryGroup = null);
 
-internal sealed record PreparedOutput(IOutputTarget Target, TenonEdge.Runtime.Transforms.TransformPipeline? Mapping, TenonEdge.Runtime.Outputs.OutputSenderState State,
+internal sealed record PreparedOutput(IOutputTarget Target, string ProtocolKind, TenonEdge.Runtime.Transforms.TransformPipeline? Mapping, TenonEdge.Runtime.Outputs.OutputSenderState State,
     RuntimeUnitId? RecoveryGroup, RuntimeUnitId? ConnectionGroup = null);

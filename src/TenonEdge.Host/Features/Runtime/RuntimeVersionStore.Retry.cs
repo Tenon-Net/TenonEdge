@@ -25,6 +25,7 @@ internal sealed partial class RuntimeVersionStore
         { throw new DraftWriteException("configuration.reviewChanged"); }
         plan.ValidateTransforms(transforms);
         plan.ValidateInputs(inputModules);
+        plan.ValidateOutputs(outputModules);
         return new(snapshot, plan);
     }
 

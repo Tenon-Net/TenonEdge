@@ -22,7 +22,7 @@ public sealed class InputUnitContext
         InputMessageWriter messages,
         Task? activation = null,
         IInputBufferBudget? bufferBudget = null,
-        IReadOnlyDictionary<string, InputConnectionSnapshot>? connections = null)
+        IReadOnlyDictionary<string, ModuleConnectionSnapshot>? connections = null)
     {
         BusinessKeys.Validate(deviceKey, nameof(deviceKey));
         BusinessKeys.Validate(inputKey, nameof(inputKey));
@@ -37,7 +37,7 @@ public sealed class InputUnitContext
         Reads = reads;
         Messages = messages;
         BufferBudget = bufferBudget;
-        Connections = connections?.ToImmutableDictionary(StringComparer.Ordinal) ?? ImmutableDictionary<string, InputConnectionSnapshot>.Empty;
+        Connections = connections?.ToImmutableDictionary(StringComparer.Ordinal) ?? ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty;
         _activation = activation ?? Task.CompletedTask;
     }
 
@@ -79,5 +79,5 @@ public sealed class InputUnitContext
 
     /// <summary>按参数名索引的冻结连接。监督重建沿用本上下文，不从当前草稿重新解析。
     /// 凭证仍按 ConnectionId 经原受保护解析器在使用时获取。</summary>
-    public ImmutableDictionary<string, InputConnectionSnapshot> Connections { get; }
+    public ImmutableDictionary<string, ModuleConnectionSnapshot> Connections { get; }
 }

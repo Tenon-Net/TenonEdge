@@ -16,7 +16,7 @@ internal sealed partial class RuntimeCoordinator
         token.ThrowIfCancellationRequested();
         var checkpoint = versions.ReadRecovery(targetRevision, draftVersion);
         await using var prepared = runtime.Prepare(checkpoint.Plan.ToPlan(checked(checkpoint.EffectiveRevision + 1)));
-        var ids = checkpoint.Plan.Units.Select(unit => unit.Id.Kind switch
+        var ids = checkpoint.Plan.Units.Select(RuntimeConnectionReferences.Protocol).Select(unit => unit.Id.Kind switch
         {
             "output.http" => (long?)HttpOutputSettings.Parse(unit.Configuration).ConnectionId,
             "output.mqtt" => MqttOutputSettings.Parse(unit.Configuration).ConnectionId,

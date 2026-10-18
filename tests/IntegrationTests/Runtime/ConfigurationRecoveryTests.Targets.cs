@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
@@ -12,6 +13,7 @@ using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Deliveries;
+using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
@@ -19,15 +21,18 @@ public sealed partial class ConfigurationRecoveryTests
 {
     private static readonly string[] RecoveryInputs = ["meter/sample"];
     [Theory]
-    [InlineData("http", false)]
-    [InlineData("http", true)]
-    [InlineData("mqtt", false)]
-    [InlineData("mqtt", true)]
-    public async Task FrozenIdentityAndExpandedAddressAreCheckedWithoutSendingOrChangingQueuedRecords(string protocol, bool formatted)
+    [InlineData("http", false, false)]
+    [InlineData("http", true, false)]
+    [InlineData("mqtt", false, false)]
+    [InlineData("mqtt", true, false)]
+    [InlineData("http", true, true)]
+    [InlineData("mqtt", true, true)]
+    public async Task FrozenIdentityAndExpandedAddressAreCheckedWithoutSendingOrChangingQueuedRecords(string protocol, bool formatted, bool outputModule)
     {
         using var data = TemporaryDirectory.Create();
-        var id = await InitializeConnection(data.Path, protocol, formatted);
-        await using var factory = new FixedDataDirectoryApplicationFactory(data.Path);
+        var id = await InitializeConnection(data.Path, protocol, formatted, outputModule: outputModule);
+        await using var factory = new FixedDataDirectoryApplicationFactory(data.Path, configureServices: services =>
+        { if (outputModule) { services.AddSingleton<IOutputModuleFactory>(new TestProtocolOutputModule(protocol)); } });
         using var client = await factory.CreateLoggedInClientAsync("operator", Token);
         var review = await Review(factory, client);
         Assert.True(review.GetProperty("canConfirm").GetBoolean());
@@ -164,10 +169,11 @@ public sealed partial class ConfigurationRecoveryTests
         return new(user.Id, user.SecurityStamp, "127.0.0.1");
     }
 
-    private static async Task<long> InitializeConnection(string path, string protocol, bool formatted, bool credential = false)
+    private static async Task<long> InitializeConnection(string path, string protocol, bool formatted, bool credential = false, bool outputModule = false)
     {
         long id;
-        await using (var factory = new FixedDataDirectoryApplicationFactory(path))
+        await using (var factory = new FixedDataDirectoryApplicationFactory(path, configureServices: services =>
+        { if (outputModule) { services.AddSingleton<IOutputModuleFactory>(new TestProtocolOutputModule(protocol)); } }))
         {
             TestAccounts.Create(factory.Services, "operator", ApiRequests.StrongPassword, UserRole.Administrator);
             var connection = factory.Services.GetRequiredService<ConnectionDraftStore>().Write(null, protocol == "http"
@@ -191,6 +197,15 @@ public sealed partial class ConfigurationRecoveryTests
                     new { kind = "input.simulator", key = "meter/sample", configuration = JsonSerializer.SerializeToElement(new { periodMs = 1000, seed = 42 }) },
                     new { kind = "output." + protocol, key = "target", configuration = output } }
                 }));
+            }
+            if (outputModule)
+            {
+                var module = new TestProtocolOutputModule(protocol);
+                var config = protocol == "http" ? JsonSerializer.SerializeToElement(new { baseAddress = "http://192.0.2.1/" })
+                    : JsonSerializer.SerializeToElement(new { host = "192.0.2.1" });
+                var output = module.Unit(config, protocol == "http" ? "events" : "{deviceKey}/events", id, inputs: RecoveryInputs);
+                plan = RuntimePlanDocument.Parse(TestProtocolOutputModule.Document([.. plan.Units.Where(unit => unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal)), output]),
+                    outputs: factory.Services.GetRequiredService<OutputModuleCatalog>());
             }
             var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
             versions.Commit(versions.FreezeDraft(plan, connection.Version, "operator"), null);

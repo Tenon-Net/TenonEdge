@@ -14,10 +14,10 @@ public sealed partial class RuntimeHost
             if (_stopping is not null || _operation is not null || _activeRevision != revision ||
                 (quiet is null ? _quiescenceRequested : !ReferenceEquals(_currentQuiescence, quiet) || quiet.Revision != revision ||
                     !_applicationSenderPauses.ContainsKey(connectionId)) ||
-                !_senders.TryGetValue(connectionId, out var sender) || sender.Target.Id.Kind is not ("output.http" or "output.mqtt"))
+                !_senders.TryGetValue(connectionId, out var sender) || sender.ProtocolKind is not ("output.http" or "output.mqtt"))
             { return null; }
             var identity = sender.Target.CaptureIdentity();
-            return identity is not null && sender.Target.Id.Kind == "output." + identity.Recipient.Protocol ? identity : null;
+            return identity is not null && sender.ProtocolKind == "output." + identity.Recipient.Protocol ? identity : null;
         }
     }
 
@@ -53,8 +53,8 @@ public sealed partial class RuntimeHost
                 _senders.TryGetValue(command.SourceConnectionId, out source);
                 if (source is null && (_supervisor.IsGroupOccupied(SenderGroup(command.SourceConnectionId)) || _senderStates.ContainsKey(command.SourceConnectionId)))
                 { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.Unavailable); }
-                if (target.Target.Id.Kind is not ("output.http" or "output.mqtt") ||
-                    source is not null && source.Target.Id.Kind != target.Target.Id.Kind)
+                if (target.ProtocolKind is not ("output.http" or "output.mqtt") ||
+                    source is not null && source.ProtocolKind != target.ProtocolKind)
                 { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.ProtocolMismatch); }
                 if (!MigrationIdentityMatches(target.Target, command))
                 { return DeliveryWriteResult.Rejected(DeliveryMigrationErrors.TargetChanged); }

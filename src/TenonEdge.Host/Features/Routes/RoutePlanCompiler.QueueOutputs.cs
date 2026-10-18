@@ -24,7 +24,7 @@ internal static partial class RoutePlanCompiler
                 if (credentials is not null)
                 { return credentials.Contains(connectionId); }
                 // 更早的检查点没有凭证引用；已有输入明确记录的认证要求仍可复用。
-                var input = units.FirstOrDefault(unit => unit.Id.Kind == "input.mqtt" &&
+                var input = units.Select(RuntimeConnectionReferences.Protocol).FirstOrDefault(unit => unit.Id.Kind == "input.mqtt" &&
                     unit.Configuration.GetProperty("connectionId").GetInt64() == connectionId);
                 if (input is not null)
                 { return MqttInputSettings.Parse(input.Configuration).UsePassword; }
@@ -52,7 +52,7 @@ internal static partial class RoutePlanCompiler
         var all = connections.ToArray();
         if (all.Length > 500 || all.Any(value => value is null) || all.Select(value => value.Id).Distinct().Count() != all.Length)
         { throw Error("plan.configuration", ""); }
-        var targets = units.Where(unit => unit.Id.Kind is "output.mqtt" or "output.http")
+        var targets = units.Select(RuntimeConnectionReferences.Protocol).Where(unit => unit.Id.Kind is "output.mqtt" or "output.http")
             .Select(unit => unit.Configuration.GetProperty("connectionId").GetInt64()).ToHashSet();
         foreach (var connection in all.OrderBy(value => value.Key, StringComparer.Ordinal))
         {

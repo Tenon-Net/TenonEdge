@@ -41,7 +41,7 @@ internal sealed partial class RuntimeVersionStore
 
     private static IEnumerable<(long ConnectionId, string Protocol, string Recipient, string Address, bool QueueOnly)> MigrationRecipients(RuntimePlanDocument document)
     {
-        foreach (var unit in document.Units)
+        foreach (var unit in document.Units.Select(RuntimeConnectionReferences.Protocol))
         {
             if (unit.Id.Kind == "output.http")
             {

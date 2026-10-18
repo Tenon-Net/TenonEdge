@@ -21,7 +21,7 @@ public interface IInputModuleFactory : IInputUnitFactory
     /// <summary>可选的纯本地协议委托。返回已有输入协议的完整非秘密配置，编译时冻结；
     /// 运行时必须由同一次 Prepare 的原协议工厂构建，不另建 MQTT/Modbus 计划工厂。
     /// 返回 null 时仍调用本模块的 Build。不得访问网络、数据库或保存可变状态。</summary>
-    InputProtocolBinding? BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, InputConnectionSnapshot> connections) => null;
+    InputProtocolBinding? BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections) => null;
 }
 
 public sealed record InputModuleField(string Key, FieldType Type, string? Unit);

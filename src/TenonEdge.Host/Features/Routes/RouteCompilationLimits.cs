@@ -2,6 +2,7 @@ using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.Host.Features.Routes;
 
@@ -62,6 +63,8 @@ internal sealed record RouteCompilationLimits(int Sources = 2000, int Connection
                     { sources = mqtt.Inputs; }
                     break;
             }
+            if (unit.Configuration.TryGetProperty("outputModule", out _))
+            { sources = OutputModuleCatalog.ReadContext(unit).Inputs; }
             if (connections.Count > Connections)
             { Reject("connections.totalLimit"); }
             if (modbus.Count > ModbusConnections)

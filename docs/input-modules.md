@@ -61,7 +61,7 @@
 - 支持多个声明引用；缺绑定、错 ID/协议、未声明绑定均在 Describe/Build 前拒绝。可选引用为空时不需要绑定。最多128项，connections 整体最多128 KiB；原标量参数仍独立受128 KiB限制。
 - `kind` 支持 `http`、`mqtt`、`modbus`。HTTP configuration 只包含已有连接的 `baseAddress`、`timeoutMs`、非秘密 `headers`；MQTT 包含主机/端口/TLS/ClientId/超时/保活及非秘密的 `usePassword` 凭证需求标记；Modbus 包含已有物理连接参数，帧格式用字符串枚举。不保存秘密、可信证书材料或活跃客户端；所有现有地址、请求头与超时校验继续适用。
 - Host 在新计划和历史结构读取时都校验协议快照；按连接 ID 与内置 HTTP/MQTT/Modbus 一起检查协议/身份冲突和全局配额。模块未安装也不能隐藏连接引用或旁路连接数上限。
-- 原 `InputUnitContext.Connections` 提供不可变快照。运行时在逐输入构建失败处理范围内解析一次，原监督者重建沿用同一个 context，不随未应用草稿更新。在 RuntimeHost 构建阶段遇到的引用解析异常只导致对应输入 BuildFailed；这不放宽持久快照的哈希/结构校验，损坏有效快照仍按既有规则阻止运行。
+- 原 `InputUnitContext.Connections` 提供不可变 `ModuleConnectionSnapshot`（原开发中类型名 `InputConnectionSnapshot`，JSON 格式未变）。运行时在逐输入构建失败处理范围内解析一次，原监督者重建沿用同一个 context，不随未应用草稿更新。在 RuntimeHost 构建阶段遇到的引用解析异常只导致对应输入 BuildFailed；这不放宽持久快照的哈希/结构校验，损坏有效快照仍按既有规则阻止运行。
 - 模块联网仍须复用原共享连接、受保护凭证解析、出站与 TLS 机制。测试模块委托 DI 中已有的 `HttpInputFactory`，与内置输入/输出实际共用一个 TCP 客户端；没有新建 Host、HTTP 客户端管理器或发送队列。
 - 保留版本的连接删除/凭证清除保护、导入新 ID 冲突复核、换址后默认作废凭证均包含模块引用；这些检查不执行模块。新引用不会让历史凭证因为扩展已卸载而可被清除。
 

@@ -138,7 +138,7 @@ public sealed class InputModuleProtocolTests
         public ParameterSchema Parameters { get; } = new("input.protocoltest", ParameterScope.Input,
             [new("connection", "连接", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [protocol] }]);
         public ImmutableArray<InputModuleField> Describe(JsonElement parameters) => [new("value", FieldType.Integer, "count")];
-        public InputProtocolBinding? BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, InputConnectionSnapshot> connections)
+        public InputProtocolBinding? BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections)
         { Calls++; return OmitBinding ? null : new(DelegateKind, Config); }
         public IRuntimeUnit Build(RuntimeUnitPlan unit, InputUnitContext context) => throw new InvalidOperationException("Must delegate.");
     }

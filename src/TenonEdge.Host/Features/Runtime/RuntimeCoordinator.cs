@@ -300,6 +300,11 @@ internal sealed partial class RuntimeCoordinator(
         catch (RuntimePlanDocumentException)
         { return StartupDecision.Fail("上一版本需要的输入模块不可用或配置无效，不能自动回滚。"); }
 
+        try
+        { document.ValidateOutputs(runtime.OutputModules); }
+        catch (RuntimePlanDocumentException)
+        { return StartupDecision.Fail("上一版本需要的输出模块不可用或配置无效，不能自动回滚。"); }
+
         var interrupted = versions.CountInterrupted(RuntimeSnapshotOrigins.AutoRollback, target.ContentHash, Target(target.Revision));
         if (interrupted >= StartupProtection.AbnormalExitLimit)
         {
@@ -348,7 +353,7 @@ internal sealed partial class RuntimeCoordinator(
                 throw new RuntimePlanDocumentException($"文件超过 {RuntimePlanDocument.MaximumBytes / 1024 / 1024} MiB。");
             }
 
-            document = RuntimePlanDocument.Parse(await File.ReadAllBytesAsync(path), runtime.Transforms, runtime.InputModules);
+            document = RuntimePlanDocument.Parse(await File.ReadAllBytesAsync(path), runtime.Transforms, runtime.InputModules, runtime.OutputModules);
             if (versions.ReadPointers().SeedHash != document.ContentHash)
             { versions.CheckNewPlanLimits(document); }
         }

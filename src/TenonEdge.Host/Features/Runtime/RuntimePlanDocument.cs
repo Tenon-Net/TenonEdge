@@ -8,6 +8,7 @@ using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
+using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
 namespace TenonEdge.Host.Features.Runtime;
@@ -65,12 +66,12 @@ internal sealed class RuntimePlanDocument
     }
 
     /// <summary>解析运行计划文本；内容无效时抛出 <see cref="RuntimePlanDocumentException"/>，说明面向管理员。</summary>
-    public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null) =>
-        ParseCore(utf8, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty);
+    public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null, OutputModuleCatalog? outputs = null) =>
+        ParseCore(utf8, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty, outputs ?? OutputModuleCatalog.Empty);
 
     // Only the hash-checked persisted snapshot reader (and its queue-only execution view) uses this.
     // A document read this way is NOT admission: every freeze revalidates against the installed catalog.
-    internal static RuntimePlanDocument ParseStored(ReadOnlySpan<byte> utf8) => ParseCore(utf8, null, null);
+    internal static RuntimePlanDocument ParseStored(ReadOnlySpan<byte> utf8) => ParseCore(utf8, null, null, null);
 
     public void ValidateTransforms(TransformCatalog transforms)
     {
@@ -94,12 +95,23 @@ internal sealed class RuntimePlanDocument
         { throw new RuntimePlanDocumentException("输入模块未安装、版本不支持或参数/字段无效。"); }
     }
 
-    private static RuntimePlanDocument ParseCore(ReadOnlySpan<byte> utf8, TransformCatalog? transforms, InputModuleCatalog? inputs)
+    public void ValidateOutputs(OutputModuleCatalog outputs)
+    {
+        try
+        {
+            foreach (var unit in Units)
+            { outputs.Validate(unit); }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { throw new RuntimePlanDocumentException("输出模块未安装、版本不支持或参数/引用/协议无效。"); }
+    }
+
+    private static RuntimePlanDocument ParseCore(ReadOnlySpan<byte> utf8, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs)
     {
         try
         {
             using var document = JsonDocument.Parse(utf8.ToArray(), new JsonDocumentOptions { MaxDepth = 64 });
-            return FromElement(document.RootElement, transforms, inputs);
+            return FromElement(document.RootElement, transforms, inputs, outputs);
         }
         catch (JsonException exception)
         {
@@ -111,7 +123,7 @@ internal sealed class RuntimePlanDocument
     public static string HashOf(string canonicalText) =>
         "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalText)));
 
-    private static RuntimePlanDocument FromElement(JsonElement root, TransformCatalog? transforms, InputModuleCatalog? inputs)
+    private static RuntimePlanDocument FromElement(JsonElement root, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs)
     {
         if (root.ValueKind != JsonValueKind.Object)
         {
@@ -134,7 +146,7 @@ internal sealed class RuntimePlanDocument
         var index = 0;
         foreach (var unit in unitsElement.EnumerateArray())
         {
-            units.Add(ParseUnit(unit, index++, transforms, inputs));
+            units.Add(ParseUnit(unit, index++, transforms, inputs, outputs));
         }
 
         RuntimePlan plan;
@@ -218,7 +230,7 @@ internal sealed class RuntimePlanDocument
         { throw new RuntimePlanDocumentException("连接数量超过上限：全部 500 个、Modbus 256 个。"); }
     }
 
-    private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index, TransformCatalog? transforms, InputModuleCatalog? inputs)
+    private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index, TransformCatalog? transforms, InputModuleCatalog? inputs, OutputModuleCatalog? outputs)
     {
         if (unit.ValueKind != JsonValueKind.Object)
         {
@@ -274,6 +286,24 @@ internal sealed class RuntimePlanDocument
             { InputModuleCatalog.ValidateStoredShape(result); }
             else
             { inputs.Validate(result); }
+            if (outputs is null)
+            { OutputModuleCatalog.ValidateStoredShape(result); }
+            else
+            { outputs.Validate(result); }
+            if (result.Configuration.TryGetProperty("outputModule", out _))
+            {
+                if (transforms is null)
+                { TransformCatalog.ValidateStoredShape(result.Configuration); }
+                else
+                { _ = transforms.ParsePipeline(result.Configuration); }
+                if (OutputModuleCatalog.ReadProtocol(result) is null)
+                { throw new ArgumentException("输出模块必须声明冻结协议。"); }
+                if (OutputModuleCatalog.ReadProtocol(result) is { } outputProtocol)
+                {
+                    _ = ParseUnit(JsonSerializer.SerializeToElement(new
+                    { kind = outputProtocol.Id.Kind, key = outputProtocol.Id.Key, configuration = outputProtocol.Configuration }), index, transforms, null, null);
+                }
+            }
             // Reject secret/unknown connection fields even for an uninstalled module.
             // This stays pure: protocol validation does not invoke module or network code.
             RuntimeConnectionReferences.ValidateModuleConnections(result);
@@ -283,7 +313,7 @@ internal sealed class RuntimePlanDocument
             {
                 // Same protocol parsers, secret guards and field checks as built-in inputs.
                 _ = ParseUnit(JsonSerializer.SerializeToElement(new
-                { kind = protocol.Id.Kind, key = protocol.Id.Key, configuration = protocol.Configuration }), index, transforms, null);
+                { kind = protocol.Id.Kind, key = protocol.Id.Key, configuration = protocol.Configuration }), index, transforms, null, null);
             }
             return result;
         }

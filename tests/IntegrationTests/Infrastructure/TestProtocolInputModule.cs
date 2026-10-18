@@ -27,7 +27,7 @@ internal sealed class TestProtocolInputModule(string protocol) : IInputModuleFac
             protocol == "mqtt" ? new("topic", "主题", ParameterType.Text) { Required = true, MaximumLength = 65535 }
                 : new("unit", "从站", ParameterType.Number) { Required = true, WholeNumber = true, MinimumJson = "0", MaximumJson = "255" }]);
     public ImmutableArray<InputModuleField> Describe(JsonElement parameters) => [new("value", FieldType.Integer, "count")];
-    public InputProtocolBinding BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, InputConnectionSnapshot> connections)
+    public InputProtocolBinding BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections)
     {
         var connection = connections["connection"];
         if (protocol == "mqtt")

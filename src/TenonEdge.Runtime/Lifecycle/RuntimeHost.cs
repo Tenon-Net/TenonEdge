@@ -68,8 +68,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels, transforms, inputModules)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null, OutputModuleCatalog? outputModules = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels, transforms, inputModules, outputModules)
     {
     }
 
@@ -84,10 +84,11 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         ILogger<RuntimeHost> logger,
         Func<double>? random,
         IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null, OutputModuleCatalog? outputModules = null)
     {
         Transforms = transforms ?? TransformCatalog.BuiltIn;
         InputModules = inputModules ?? InputModuleCatalog.Empty;
+        OutputModules = outputModules ?? OutputModuleCatalog.Empty;
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
         _planAdapterProviders = (planAdapterProviders ?? []).ToArray();
@@ -106,7 +107,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             }
         }
 
-        _outputFactories = (outputFactories ?? []).ToDictionary(factory => factory.Kind, StringComparer.Ordinal);
+        _outputFactories = (outputFactories ?? []).Concat(OutputModules.Factories).ToDictionary(factory => factory.Kind, StringComparer.Ordinal);
         _deliveries = deliveries;
         _clock = clock;
         _events = events;
@@ -134,6 +135,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
     public TransformCatalog Transforms { get; }
     public InputModuleCatalog InputModules { get; }
+    public OutputModuleCatalog OutputModules { get; }
     public DeliveryCache Deliveries => _deliveries;
     public InputChannelLimit InputChannels { get; }
 
@@ -186,6 +188,10 @@ public sealed partial class RuntimeHost : IAsyncDisposable
             .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         foreach (var factory in InputModules.BindPlanFactories(protocolFactories))
         { inputFactories[factory.Kind] = factory; }
+        var outputProtocols = outputFactories.Where(pair => !OutputModules.Modules.Any(module => module.Kind == pair.Key))
+            .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        foreach (var factory in OutputModules.BindPlanFactories(outputProtocols))
+        { outputFactories[factory.Kind] = factory; }
         var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var units = new List<PreparedUnit>(plan.Units.Length);
         foreach (var unit in plan.Units.Where(unit => !unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
@@ -228,8 +234,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new PlanValidationException("输出工厂标识与计划不一致。");
                 }
 
+                var protocolKind = OutputModuleCatalog.ReadProtocol(unit)?.Id.Kind ?? unit.Id.Kind;
                 var shared = outputs.FirstOrDefault(output => output.Target.ConnectionId == target.ConnectionId);
-                if (shared is not null && (shared.RecoveryGroup != recoveryGroup || !shared.Target.CanShareSenderWith(target)))
+                if (shared is not null && (shared.ProtocolKind != protocolKind || shared.RecoveryGroup != recoveryGroup || !shared.Target.CanShareSenderWith(target)))
                 {
                     throw new PlanValidationException("同一连接的输出参数不一致或协议尚不支持共享发送者。");
                 }
@@ -255,7 +262,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 var state = shared?.State ?? senderStates?.GetValueOrDefault(target.ConnectionId) ?? new OutputSenderState();
                 IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
                     new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
-                outputs.Add(new PreparedOutput(target, mapping, state, recoveryGroup, candidateGroup));
+                outputs.Add(new PreparedOutput(target, protocolKind, mapping, state, recoveryGroup, candidateGroup));
                 if (shared is null)
                 { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null, recoveryGroup)); }
             }

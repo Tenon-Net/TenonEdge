@@ -8,6 +8,7 @@ using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Runtime.Inputs;
+using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.Host.Features.Runtime;
 
@@ -23,19 +24,22 @@ internal static class RuntimeConnectionReferences
     private static readonly HashSet<string> MqttProperties = new(StringComparer.Ordinal)
         { "host", "port", "tls", "clientId", "timeoutMs", "pingIntervalMs", "usePassword" };
 
-    internal static RuntimeUnitPlan Protocol(RuntimeUnitPlan unit) => InputModuleCatalog.ReadProtocol(unit) ?? unit;
+    internal static RuntimeUnitPlan Protocol(RuntimeUnitPlan unit) => InputModuleCatalog.ReadProtocol(unit) ?? OutputModuleCatalog.ReadProtocol(unit) ?? unit;
+
+    private static IEnumerable<ModuleConnectionSnapshot> ModuleConnections(RuntimeUnitPlan unit) =>
+        InputModuleCatalog.ReadConnections(unit).Values.Concat(OutputModuleCatalog.ReadConnections(unit).Values);
 
     internal static IEnumerable<long> ReadIds(RuntimeUnitPlan unit)
     {
         if (unit.Configuration.TryGetProperty("connectionId", out var value))
         { yield return value.Deserialize<long>(JsonSerializerOptions.Web); }
-        foreach (var connection in InputModuleCatalog.ReadConnections(unit).Values)
+        foreach (var connection in ModuleConnections(unit))
         { yield return connection.ConnectionId; }
     }
 
     internal static void ValidateModuleConnections(RuntimeUnitPlan unit)
     {
-        foreach (var connection in InputModuleCatalog.ReadConnections(unit).Values)
+        foreach (var connection in ModuleConnections(unit))
         {
             switch (connection.Kind)
             {
@@ -55,7 +59,7 @@ internal static class RuntimeConnectionReferences
     }
 
     internal static IEnumerable<HttpRequestSettings> ReadModuleHttp(RuntimeUnitPlan unit) =>
-        InputModuleCatalog.ReadConnections(unit).Values.Where(connection => connection.Kind == "http").Select(Http);
+        ModuleConnections(unit).Where(connection => connection.Kind == "http").Select(Http);
 
     internal static IEnumerable<HttpRequestSettings> ReadHttp(RuntimeUnitPlan unit)
     {
@@ -75,7 +79,7 @@ internal static class RuntimeConnectionReferences
         { yield return MqttInputSettings.Parse(protocol.Configuration); }
         else if (protocol.Id.Kind == "output.mqtt")
         { yield return MqttOutputSettings.Parse(protocol.Configuration); }
-        foreach (var connection in InputModuleCatalog.ReadConnections(unit).Values.Where(connection => connection.Kind == "mqtt"))
+        foreach (var connection in ModuleConnections(unit).Where(connection => connection.Kind == "mqtt"))
         { yield return Mqtt(connection); }
     }
 
@@ -84,11 +88,11 @@ internal static class RuntimeConnectionReferences
         var protocol = Protocol(unit);
         if (protocol.Id.Kind == "input.modbus")
         { yield return ModbusInputSettings.Parse(protocol.Configuration).ToConnectionSettings(); }
-        foreach (var connection in InputModuleCatalog.ReadConnections(unit).Values.Where(connection => connection.Kind == "modbus"))
+        foreach (var connection in ModuleConnections(unit).Where(connection => connection.Kind == "modbus"))
         { yield return Modbus(connection); }
     }
 
-    private static HttpRequestSettings Http(InputConnectionSnapshot connection)
+    private static HttpRequestSettings Http(ModuleConnectionSnapshot connection)
     {
         var value = connection.Configuration.Deserialize<HttpConnectionDraft>(Json) ?? throw new ArgumentException("输入连接快照无效。");
         var validated = ConnectionDraftValidation.Normalize(connection.ConnectionId,
@@ -102,7 +106,7 @@ internal static class RuntimeConnectionReferences
         };
     }
 
-    private static MqttConnectionSettings Mqtt(InputConnectionSnapshot connection)
+    private static MqttConnectionSettings Mqtt(ModuleConnectionSnapshot connection)
     {
         if (connection.Configuration.EnumerateObject().Any(property => !MqttProperties.Contains(property.Name)))
         { throw new ArgumentException("MQTT 连接快照包含未知字段。"); }
@@ -110,7 +114,7 @@ internal static class RuntimeConnectionReferences
         return (value with { ConnectionId = connection.ConnectionId }).ValidateConnection();
     }
 
-    private static ModbusConnectionSettings Modbus(InputConnectionSnapshot connection)
+    private static ModbusConnectionSettings Modbus(ModuleConnectionSnapshot connection)
     {
         var value = connection.Configuration.Deserialize<ModbusConnectionDraft>(Json) ?? throw new ArgumentException("输入连接快照无效。");
         return new ModbusConnectionSettings

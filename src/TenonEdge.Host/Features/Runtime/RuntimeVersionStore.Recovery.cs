@@ -124,7 +124,7 @@ internal sealed partial class RuntimeVersionStore
     {
         var rules = new Dictionary<long, List<Func<string, string?, bool>>>();
         var queueOnly = new HashSet<long>();
-        foreach (var unit in recovery.Checkpoint.Plan.Units)
+        foreach (var unit in recovery.Checkpoint.Plan.Units.Select(RuntimeConnectionReferences.Protocol))
         {
             long id;
             Func<string, string?, bool> accepts;

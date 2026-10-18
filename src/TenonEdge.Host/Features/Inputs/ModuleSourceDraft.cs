@@ -26,7 +26,7 @@ internal sealed record ModuleSourceDraft(string Kind, int Version, JsonElement P
         var envelope = new Dictionary<string, object?> { ["version"] = Version, ["parameters"] = parameters };
         if (Connections is { Count: > 0 })
         {
-            var snapshots = new Dictionary<string, InputConnectionSnapshot>(StringComparer.Ordinal);
+            var snapshots = new Dictionary<string, ModuleConnectionSnapshot>(StringComparer.Ordinal);
             foreach (var (name, id) in Connections)
             {
                 if (available is null || !available.TryGetValue(id, out var connection))

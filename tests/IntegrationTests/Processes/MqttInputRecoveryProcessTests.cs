@@ -73,7 +73,7 @@ public sealed class MqttInputRecoveryProcessTests(MosquittoBrokerFixture fixture
                     using var login = await api.LoginAsync("admin", ApiRequests.StrongPassword, Token);
                     Assert.Equal(HttpStatusCode.OK, login.StatusCode);
                     await api.UseSessionAsync(login, Token);
-                    await OutputPipelineTests.UntilAsync(() => Counter(data.Path, "retainedIgnored") == 1);
+                    await WaitForRetainedAsync(api, data.Path);
                     await PublishAsync(peer, topic, 1);
                     Assert.Equal(1, await NextValueAsync(received));
                     await OutputPipelineTests.UntilAsync(() => Counter(data.Path, "acknowledged") == 2 && Pending(data.Path) == 0);
@@ -105,6 +105,11 @@ public sealed class MqttInputRecoveryProcessTests(MosquittoBrokerFixture fixture
                     else
                     { await first.KillAsync(Token); }
                 }
+                catch
+                {
+                    await WriteFailureDiagnosticsAsync(data.Path, broker, "first-start");
+                    throw;
+                }
                 finally { output.WriteLine(first.Output); }
             }
             Assert.Equal(0, Pending(data.Path));
@@ -126,6 +131,11 @@ public sealed class MqttInputRecoveryProcessTests(MosquittoBrokerFixture fixture
                 await StopAsync(restarted);
                 Assert.DoesNotContain(MosquittoBroker.Password, restarted.Output, StringComparison.Ordinal);
                 Assert.DoesNotContain(ApiRequests.StrongPassword, restarted.Output, StringComparison.Ordinal);
+            }
+            catch
+            {
+                await WriteFailureDiagnosticsAsync(data.Path, broker, "restarted");
+                throw;
             }
             finally { output.WriteLine(restarted.Output); }
         }
@@ -163,6 +173,67 @@ public sealed class MqttInputRecoveryProcessTests(MosquittoBrokerFixture fixture
     private static long Pending(string data) => Scalar(data, "queue.db", "SELECT COUNT(*) FROM delivery");
     private static long Counter(string data, string reason) =>
         Scalar(data, "queue.db", "SELECT COALESCE((SELECT value FROM queue_counters WHERE name=@name),0)", "connection/1/mqtt/" + reason);
+
+    private async Task WaitForRetainedAsync(HttpClient api, string data)
+    {
+        try
+        { await OutputPipelineTests.UntilAsync(() => Counter(data, "retainedIgnored") == 1); }
+        catch
+        {
+            try
+            {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var status = await api.GetJsonAsync("/api/edge-admin/v1/runtime/status", deadline.Token);
+                // 此端点只含公开运行状态和统计，不包含报文或点位值；保留尚未落库的计数以区分写者延迟。
+                output.WriteLine($"MQTT recovery failure (first-start), runtime: {Redact(status.GetRawText())}");
+            }
+            catch (Exception exception)
+            { output.WriteLine($"MQTT recovery failure (first-start), runtime diagnostics unavailable: {exception.GetType().Name}"); }
+            throw;
+        }
+    }
+
+    private async Task WriteFailureDiagnosticsAsync(string data, MosquittoBroker broker, string phase)
+    {
+        // 失败时、目录释放前保留公开状态。不读取凭证、报文或点位值，也不改变原等待期限/断言。
+        WriteRows("queue.db", "SELECT name,value FROM queue_counters WHERE name LIKE 'connection/1/mqtt/%' ORDER BY name");
+        WriteRows("queue.db", "SELECT COUNT(*),COALESCE(SUM(state='pending'),0),COALESCE(SUM(state='failed'),0),COALESCE(SUM(state='quarantined'),0) FROM delivery");
+        WriteRows("config.db", "SELECT confirmed,COUNT(*) FROM mqtt_subscription GROUP BY confirmed");
+        WriteRows("config.db", "SELECT id,type,target,message,occurrence_count FROM runtime_event ORDER BY id DESC LIMIT 20");
+        try
+        {
+            // 独立、有界的诊断期限：原测试令牌可能已取消；诊断失败不能遮蔽原失败。
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var logs = await broker.LogsAsync(deadline.Token);
+            output.WriteLine($"MQTT recovery failure ({phase}), broker tail:\n{Redact(string.Join('\n', logs.Split('\n').TakeLast(80)))}");
+        }
+        catch (Exception exception)
+        { output.WriteLine($"MQTT recovery failure ({phase}), broker diagnostics unavailable: {exception.GetType().Name}"); }
+
+        void WriteRows(string database, string sql)
+        {
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={Path.Combine(data, database)};Mode=ReadOnly;Pooling=False;Default Timeout=1");
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                using var reader = command.ExecuteReader();
+                output.WriteLine($"MQTT recovery failure ({phase}), {database}: {sql}");
+                while (reader.Read())
+                {
+                    var values = new object[reader.FieldCount];
+                    reader.GetValues(values);
+                    output.WriteLine(Redact(JsonSerializer.Serialize(values)));
+                }
+            }
+            catch (Exception exception)
+            { output.WriteLine($"MQTT recovery failure ({phase}), {database} diagnostics unavailable: {exception.GetType().Name}"); }
+        }
+    }
+
+    private static string Redact(string value) => value.Replace(MosquittoBroker.Password, "<REDACTED>", StringComparison.Ordinal)
+        .Replace(ApiRequests.StrongPassword, "<REDACTED>", StringComparison.Ordinal);
 
     private static long Scalar(string data, string database, string sql, string? name = null)
     {

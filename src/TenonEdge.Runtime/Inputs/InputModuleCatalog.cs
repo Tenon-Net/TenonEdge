@@ -174,53 +174,16 @@ public sealed class InputModuleCatalog
         var (version, parameters) = Read(unit);
         if (!_modules.TryGetValue((unit.Id.Kind, version), out var module))
         { throw Invalid(); }
-        var connections = ReadConnections(unit);
-        var kinds = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var pair in connections)
-        {
-            var id = pair.Value.ConnectionId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (!module.Parameters.Parameters.Any(field => field.Name == pair.Key && field.Type == ParameterType.ConnectionReference) ||
-                !parameters.TryGetProperty(pair.Key, out var reference) || reference.ValueKind != JsonValueKind.String || reference.GetString() != id ||
-                kinds.TryGetValue(id, out var previous) && previous != pair.Value.Kind)
-            { throw Invalid(); }
-            kinds[id] = pair.Value.Kind;
-        }
-        foreach (var field in module.Parameters.Parameters.Where(field => field.Type == ParameterType.ConnectionReference))
-        {
-            if (parameters.TryGetProperty(field.Name, out var reference) && reference.ValueKind != JsonValueKind.Null && !connections.ContainsKey(field.Name))
-            { throw Invalid(); }
-        }
-        module.Parameters.ThrowIfInvalid(parameters, kinds);
+        TenonEdge.Runtime.Modules.ModuleConnections.Validate(module.Parameters, parameters, ReadConnections(unit));
         return (module, parameters);
     }
 
     /// <summary>历史和运行时都可结构读取，不执行模块，也不读取当前草稿。具体协议校验属于宿主。</summary>
-    public static ImmutableDictionary<string, InputConnectionSnapshot> ReadConnections(RuntimeUnitPlan unit)
+    public static ImmutableDictionary<string, ModuleConnectionSnapshot> ReadConnections(RuntimeUnitPlan unit)
     {
         if (!unit.Configuration.TryGetProperty("inputModule", out var envelope))
-        { return ImmutableDictionary<string, InputConnectionSnapshot>.Empty; }
-        if (envelope.ValueKind != JsonValueKind.Object)
-        { throw Invalid(); }
-        if (!envelope.TryGetProperty("connections", out var value))
-        { return ImmutableDictionary<string, InputConnectionSnapshot>.Empty; }
-        if (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Count() > ParameterSchema.MaximumParameters ||
-            Encoding.UTF8.GetByteCount(value.GetRawText()) > ParameterSchema.MaximumConfigurationBytes)
-        { throw Invalid(); }
-        var result = ImmutableDictionary.CreateBuilder<string, InputConnectionSnapshot>(StringComparer.Ordinal);
-        foreach (var property in value.EnumerateObject())
-        {
-            var item = property.Value;
-            if (!BusinessKeys.IsValid(property.Name) || item.ValueKind != JsonValueKind.Object || item.EnumerateObject().Count() != 3 ||
-                !item.TryGetProperty("connectionId", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt64(out var number) || number is < 1 or > 9007199254740991L ||
-                !item.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String || !BusinessKeys.IsValid(kind.GetString()) ||
-                !item.TryGetProperty("configuration", out var config) || config.ValueKind != JsonValueKind.Object ||
-                !envelope.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Object ||
-                !parameters.TryGetProperty(property.Name, out var reference) || reference.ValueKind != JsonValueKind.String ||
-                reference.GetString() != number.ToString(System.Globalization.CultureInfo.InvariantCulture))
-            { throw Invalid(); }
-            result.Add(property.Name, new(number, kind.GetString()!, config));
-        }
-        return result.ToImmutable();
+        { return ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty; }
+        return TenonEdge.Runtime.Modules.ModuleConnections.Read(envelope);
     }
 
     private static (int Version, JsonElement Parameters) Read(RuntimeUnitPlan unit)

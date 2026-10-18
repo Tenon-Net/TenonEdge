@@ -131,7 +131,7 @@ internal sealed class DeliveryMigrationPreparation(DeliveryCache cache, RuntimeV
         var (plan, draft) = RuntimeSnapshotDocument.ReadForExecution(snapshot);
         var connection = draft?.Connections.SingleOrDefault(item => item.Id == id);
         if (draft is not null && connection is not { Enabled: true } ||
-            !plan.Units.Any(unit => unit.Id.Kind is "output.http" or "output.mqtt" && unit.Configuration.GetProperty("connectionId").GetInt64() == id))
+            !plan.Units.Select(RuntimeConnectionReferences.Protocol).Any(unit => unit.Id.Kind is "output.http" or "output.mqtt" && unit.Configuration.GetProperty("connectionId").GetInt64() == id))
         { throw Error(409, DeliveryMigrationErrors.Unavailable); }
         var identity = coordinator.Runtime.CaptureMigrationTarget(id, revision) ?? throw Error(409, DeliveryMigrationErrors.Unavailable);
         if (versions.ReadPointers().EffectiveRevision != revision)
