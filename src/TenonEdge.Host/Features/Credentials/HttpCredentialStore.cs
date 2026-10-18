@@ -136,9 +136,8 @@ internal sealed class HttpCredentialStore(
 
     public void InvalidateChangedRecipients(ISqlSugarClient client, RuntimePlanDocument plan)
     {
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind is "output.http" or "input.http"))
+        foreach (var settings in plan.Units.SelectMany(RuntimeConnectionReferences.ReadHttp))
         {
-            HttpRequestSettings settings = unit.Id.Kind == "input.http" ? HttpInputSettings.Parse(unit.Configuration) : HttpOutputSettings.Parse(unit.Configuration);
             var record = client.Queryable<HttpCredentialRecord>().InSingle(settings.ConnectionId);
             if (record is null || record.Recipient == settings.BaseAddress)
             { continue; }

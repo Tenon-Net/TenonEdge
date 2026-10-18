@@ -92,8 +92,6 @@ public sealed class InputModuleCatalogTests
         Assert.Throws<ArgumentException>(() => new InputModuleCatalog([new Factory { Kind = "output.example" }]));
         Assert.Throws<ArgumentException>(() => new InputModuleCatalog([new Factory { Parameters = new("connection.test", ParameterScope.Connection,
             [new("password", "凭证", ParameterType.Credential)]) }]));
-        Assert.Throws<ArgumentException>(() => new InputModuleCatalog([new Factory { Parameters = new("input.reference", ParameterScope.Input,
-            [new("connection", "连接", ParameterType.ConnectionReference) { ConnectionKinds = ["http"] }]) }]));
         Assert.Throws<ArgumentException>(() => new InputModuleCatalog([new Factory(), new Factory { Version = 2, UsesDurableHandoff = true }]));
     }
 

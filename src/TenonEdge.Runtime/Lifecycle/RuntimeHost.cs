@@ -563,21 +563,20 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         }, InputChannels)
         { UsesDurableHandoff = factory.UsesDurableHandoff };
         var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
-        var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer, activation, _options.InputBufferBytes > 0 ? InFlight : null);
-        IRuntimeUnit Build()
-        {
-            var instance = factory.Build(unit, context);
-            if (instance.Id != id)
-            {
-                throw new PlanValidationException("输入工厂标识与计划不一致。");
-            }
-
-            return instance;
-        }
-
         var group = id;
         try
         {
+            // Parse once inside the per-input failure boundary. Every supervisor rebuild
+            // captures the same context and frozen references, never the current draft.
+            var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer,
+                activation, _options.InputBufferBytes > 0 ? InFlight : null, InputModuleCatalog.ReadConnections(unit));
+            IRuntimeUnit Build()
+            {
+                var instance = factory.Build(unit, context);
+                if (instance.Id != id)
+                { throw new PlanValidationException("输入工厂标识与计划不一致。"); }
+                return instance;
+            }
             group = factory.RecoveryGroup(unit) ?? throw new PlanValidationException("输入恢复分组不能为空。");
             return new PreparedUnit(id, Build(), null, Build, channel, reads, group);
         }

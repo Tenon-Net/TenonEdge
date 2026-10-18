@@ -132,7 +132,7 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
                 ?? throw new InvalidOperationException("运行版本引用缺失。");
             foreach (var unit in RuntimeSnapshotDocument.ReadExecutionPlan(snapshot).Units)
             {
-                if (unit.Configuration.TryGetProperty("connectionId", out var value) && value.TryGetInt64(out var id))
+                foreach (var id in RuntimeConnectionReferences.ReadIds(unit))
                 { reserved.Connections.Add(id); }
                 if (unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal))
                 { AddInput(unit.Id.Key); }

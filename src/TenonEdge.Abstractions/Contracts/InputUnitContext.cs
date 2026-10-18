@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using TenonEdge.Abstractions.Messages;
 
 namespace TenonEdge.Abstractions.Contracts;
@@ -5,7 +6,7 @@ namespace TenonEdge.Abstractions.Contracts;
 /// <summary>
 /// 构建输入单元时由运行时提供的上下文。只含进程级、线程安全的对象：不含请求作用域的服务、HttpContext、数据库上下文或事务，
 /// 所以构建出的单元在请求结束、作用域释放之后仍可运行（后端实施规范 §4）。单元故障后重新构建时沿用同一个上下文，
-/// 通道中尚未取走的消息与读取状态不因重启丢失。连接借用、凭证解析等只读接口随 T2 的使用者补充。
+/// 通道中尚未取走的消息、读取状态与冻结连接不因重启丢失。活跃连接和凭证不进入上下文。
 /// </summary>
 public sealed class InputUnitContext
 {
@@ -20,7 +21,8 @@ public sealed class InputUnitContext
         IInputReadReporter reads,
         InputMessageWriter messages,
         Task? activation = null,
-        IInputBufferBudget? bufferBudget = null)
+        IInputBufferBudget? bufferBudget = null,
+        IReadOnlyDictionary<string, InputConnectionSnapshot>? connections = null)
     {
         BusinessKeys.Validate(deviceKey, nameof(deviceKey));
         BusinessKeys.Validate(inputKey, nameof(inputKey));
@@ -35,6 +37,7 @@ public sealed class InputUnitContext
         Reads = reads;
         Messages = messages;
         BufferBudget = bufferBudget;
+        Connections = connections?.ToImmutableDictionary(StringComparer.Ordinal) ?? ImmutableDictionary<string, InputConnectionSnapshot>.Empty;
         _activation = activation ?? Task.CompletedTask;
     }
 
@@ -73,4 +76,8 @@ public sealed class InputUnitContext
 
     /// <summary>协议正文分配前的进程共享缓冲预算；未启用时为 null。</summary>
     public IInputBufferBudget? BufferBudget { get; }
+
+    /// <summary>按参数名索引的冻结连接。监督重建沿用本上下文，不从当前草稿重新解析。
+    /// 凭证仍按 ConnectionId 经原受保护解析器在使用时获取。</summary>
+    public ImmutableDictionary<string, InputConnectionSnapshot> Connections { get; }
 }

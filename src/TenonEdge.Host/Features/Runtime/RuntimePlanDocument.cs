@@ -149,9 +149,8 @@ internal sealed class RuntimePlanDocument
         }
 
         var httpConnections = new Dictionary<long, (string Base, int Timeout)>();
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind is "input.http" or "output.http"))
+        foreach (var settings in plan.Units.SelectMany(RuntimeConnectionReferences.ReadHttp))
         {
-            HttpRequestSettings settings = unit.Id.Kind == "input.http" ? HttpInputSettings.Parse(unit.Configuration) : HttpOutputSettings.Parse(unit.Configuration);
             var identity = (settings.BaseAddress, settings.TimeoutMs);
             if (httpConnections.TryGetValue(settings.ConnectionId, out var previous) && previous != identity)
             { throw new RuntimePlanDocumentException("同一 HTTP 连接的基础地址与超时必须一致。"); }
@@ -270,6 +269,9 @@ internal sealed class RuntimePlanDocument
             { InputModuleCatalog.ValidateStoredShape(result); }
             else
             { inputs.Validate(result); }
+            // Reject secret/unknown connection fields even for an uninstalled module.
+            // This stays pure: protocol validation does not invoke module or network code.
+            _ = RuntimeConnectionReferences.ReadModuleHttp(result).ToArray();
             return result;
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)

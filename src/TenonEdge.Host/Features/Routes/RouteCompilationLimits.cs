@@ -32,6 +32,8 @@ internal sealed record RouteCompilationLimits(int Sources = 2000, int Connection
             if (unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal) && ++inputs > Sources)
             { Reject("sources.totalLimit"); }
             IEnumerable<string> sources = [];
+            foreach (var id in RuntimeConnectionReferences.ReadIds(unit))
+            { connections.Add(id); }
             switch (unit.Id.Kind)
             {
                 case "input.modbus":
