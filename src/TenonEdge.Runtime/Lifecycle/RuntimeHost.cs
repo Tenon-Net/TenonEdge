@@ -6,6 +6,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Runtime.Deliveries;
 using TenonEdge.Runtime.Diagnostics;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Outputs;
 using TenonEdge.Runtime.Transforms;
 
@@ -66,8 +67,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         RuntimeOptions options,
         ILogger<RuntimeHost> logger,
         IEnumerable<IOutputAdapterFactory> outputFactories, IOutputControl controls,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null)
-        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels, transforms)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null)
+        : this(inputFactories, deliveries, clock, events, time, options, logger, random: null, outputFactories, controls, planAdapterProviders, messages, inFlight, inputChannels, transforms, inputModules)
     {
     }
 
@@ -82,15 +83,16 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         ILogger<RuntimeHost> logger,
         Func<double>? random,
         IEnumerable<IOutputAdapterFactory>? outputFactories = null, IOutputControl? controls = null,
-        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null)
+        IEnumerable<IRuntimePlanAdapterProvider>? planAdapterProviders = null, RuntimeMessageCache? messages = null, InFlightBudget? inFlight = null, InputChannelLimit? inputChannels = null, TransformCatalog? transforms = null, InputModuleCatalog? inputModules = null)
     {
         Transforms = transforms ?? TransformCatalog.BuiltIn;
+        InputModules = inputModules ?? InputModuleCatalog.Empty;
         _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
         _planAdapterProviders = (planAdapterProviders ?? []).ToArray();
         ArgumentNullException.ThrowIfNull(inputFactories);
         _inputFactories = new Dictionary<string, IInputUnitFactory>(StringComparer.Ordinal);
-        foreach (var factory in inputFactories)
+        foreach (var factory in inputFactories.Concat(InputModules.Factories))
         {
             if (!factory.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal))
             {
@@ -130,6 +132,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     }
 
     public TransformCatalog Transforms { get; }
+    public InputModuleCatalog InputModules { get; }
     public DeliveryCache Deliveries => _deliveries;
     public InputChannelLimit InputChannels { get; }
 

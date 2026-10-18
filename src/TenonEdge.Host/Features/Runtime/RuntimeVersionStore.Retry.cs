@@ -24,6 +24,7 @@ internal sealed partial class RuntimeVersionStore
         if (plan.ContentHash != expectedPlanHash)
         { throw new DraftWriteException("configuration.reviewChanged"); }
         plan.ValidateTransforms(transforms);
+        plan.ValidateInputs(inputModules);
         return new(snapshot, plan);
     }
 

@@ -6,6 +6,7 @@ using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Runtime.Inputs;
 using TenonEdge.Runtime.Mapping;
 using TenonEdge.Runtime.Transforms;
 
@@ -64,12 +65,12 @@ internal sealed class RuntimePlanDocument
     }
 
     /// <summary>解析运行计划文本；内容无效时抛出 <see cref="RuntimePlanDocumentException"/>，说明面向管理员。</summary>
-    public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8, TransformCatalog? transforms = null) =>
-        ParseCore(utf8, transforms ?? TransformCatalog.BuiltIn);
+    public static RuntimePlanDocument Parse(ReadOnlySpan<byte> utf8, TransformCatalog? transforms = null, InputModuleCatalog? inputs = null) =>
+        ParseCore(utf8, transforms ?? TransformCatalog.BuiltIn, inputs ?? InputModuleCatalog.Empty);
 
     // Only the hash-checked persisted snapshot reader (and its queue-only execution view) uses this.
     // A document read this way is NOT admission: every freeze revalidates against the installed catalog.
-    internal static RuntimePlanDocument ParseStored(ReadOnlySpan<byte> utf8) => ParseCore(utf8, null);
+    internal static RuntimePlanDocument ParseStored(ReadOnlySpan<byte> utf8) => ParseCore(utf8, null, null);
 
     public void ValidateTransforms(TransformCatalog transforms)
     {
@@ -82,12 +83,23 @@ internal sealed class RuntimePlanDocument
         { throw new RuntimePlanDocumentException("转换模块未注册、版本不支持或配置无效。"); }
     }
 
-    private static RuntimePlanDocument ParseCore(ReadOnlySpan<byte> utf8, TransformCatalog? transforms)
+    public void ValidateInputs(InputModuleCatalog inputs)
+    {
+        try
+        {
+            foreach (var unit in Units)
+            { inputs.Validate(unit); }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { throw new RuntimePlanDocumentException("输入模块未安装、版本不支持或参数/字段无效。"); }
+    }
+
+    private static RuntimePlanDocument ParseCore(ReadOnlySpan<byte> utf8, TransformCatalog? transforms, InputModuleCatalog? inputs)
     {
         try
         {
             using var document = JsonDocument.Parse(utf8.ToArray(), new JsonDocumentOptions { MaxDepth = 64 });
-            return FromElement(document.RootElement, transforms);
+            return FromElement(document.RootElement, transforms, inputs);
         }
         catch (JsonException exception)
         {
@@ -99,7 +111,7 @@ internal sealed class RuntimePlanDocument
     public static string HashOf(string canonicalText) =>
         "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalText)));
 
-    private static RuntimePlanDocument FromElement(JsonElement root, TransformCatalog? transforms)
+    private static RuntimePlanDocument FromElement(JsonElement root, TransformCatalog? transforms, InputModuleCatalog? inputs)
     {
         if (root.ValueKind != JsonValueKind.Object)
         {
@@ -122,7 +134,7 @@ internal sealed class RuntimePlanDocument
         var index = 0;
         foreach (var unit in unitsElement.EnumerateArray())
         {
-            units.Add(ParseUnit(unit, index++, transforms));
+            units.Add(ParseUnit(unit, index++, transforms, inputs));
         }
 
         RuntimePlan plan;
@@ -202,7 +214,7 @@ internal sealed class RuntimePlanDocument
         { throw new RuntimePlanDocumentException("连接数量超过上限：全部 500 个、Modbus 256 个。"); }
     }
 
-    private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index, TransformCatalog? transforms)
+    private static RuntimeUnitPlan ParseUnit(JsonElement unit, int index, TransformCatalog? transforms, InputModuleCatalog? inputs)
     {
         if (unit.ValueKind != JsonValueKind.Object)
         {
@@ -253,7 +265,12 @@ internal sealed class RuntimePlanDocument
                 var settings = HttpInputSettings.Parse(configuration);
                 new JsonInputDecoderFactory().Build(settings.Fields, settings.UpstreamTime);
             }
-            return new RuntimeUnitPlan(RuntimeUnitId.Create(kind.GetString()!, key.GetString()!), configuration);
+            var result = new RuntimeUnitPlan(RuntimeUnitId.Create(kind.GetString()!, key.GetString()!), configuration);
+            if (inputs is null)
+            { InputModuleCatalog.ValidateStoredShape(result); }
+            else
+            { inputs.Validate(result); }
+            return result;
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException)
         {
