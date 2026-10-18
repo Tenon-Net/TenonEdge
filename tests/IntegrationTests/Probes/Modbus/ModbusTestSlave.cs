@@ -38,7 +38,7 @@ internal sealed record SlaveReply
     /// <summary>RTU：把应答的 CRC 改错。</summary>
     public bool CorruptCrc { get; init; }
 
-    /// <summary>读到请求后直接关闭连接，不应答。</summary>
+    /// <summary>读到请求后关闭连接，不应答；设置 Delay 时先等待，可模拟读取超时后的断开。</summary>
     public bool CloseConnection { get; init; }
 
     /// <summary>把同一个应答连发两遍（一次写出），模拟重复的应答帧。</summary>
@@ -187,6 +187,8 @@ internal sealed class ModbusTestSlave : IAsyncDisposable
                 var reply = _behavior(request);
                 if (reply.CloseConnection)
                 {
+                    if (reply.Delay > TimeSpan.Zero)
+                    { await Task.Delay(reply.Delay, cancellationToken); }
                     return;
                 }
 

@@ -1,6 +1,6 @@
 namespace TenonEdge.Adapters.Modbus;
 
-internal readonly record struct ModbusRtuDrainResult(bool CanReuseConnection, long DiscardedBytes);
+internal readonly record struct ModbusRtuDrainResult(bool CanReuseConnection, long DiscardedBytes, bool ConnectionClosed = false);
 
 /// <summary>读取超时后的 RTU 接收隔离；调用时不得有其他读取操作，返回前不发送下一个请求。
 /// 为保持其他从站额外等待不超过一次静默间隔，不因新字节无限延长窗口。
@@ -28,7 +28,7 @@ internal static class ModbusRtuDrain
                 var count = await stream.ReadAsync(buffer, operation.Token);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (count == 0)
-                { return new(false, discarded); }
+                { return new(false, discarded, ConnectionClosed: true); }
                 discarded += count;
             }
         }

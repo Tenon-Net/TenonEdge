@@ -33,7 +33,7 @@ internal sealed class HttpInputUnit(RuntimeUnitId id, HttpInputSettings settings
         if (stoppingToken.IsCancellationRequested)
         { return; }
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
-        await using var lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust));
+        await using var lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust, context.Time));
         var period = TimeSpan.FromMilliseconds(settings.PeriodMs);
         var started = context.Time.GetTimestamp();
         long cycle = 0;
@@ -55,7 +55,7 @@ internal sealed class HttpInputUnit(RuntimeUnitId id, HttpInputSettings settings
                         using var requestToken = CancellationTokenSource.CreateLinkedTokenSource(token, requestDeadline.Token);
                         try
                         {
-                            var captured = await lease.ExecuteAsync((session, cancel) => session.ReadDiagnosticInputAsync(settings, credentials, cancel), requestToken.Token);
+                            var captured = await lease.ExecuteAsync((session, cancel) => session.ReadDiagnosticInputAsync(settings, credentials, cancel, stoppingToken), requestToken.Token);
                             using var document = captured.Document;
                             var receivedAt = context.Time.GetUtcNow();
                             var fields = decoder.Decode(document.RootElement, receivedAt, context.ClockState, requestToken.Token);

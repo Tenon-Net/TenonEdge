@@ -13,6 +13,7 @@ public sealed class ModbusRtuDrainTests
         var started = time.GetTimestamp();
         var result = await ModbusRtuDrain.DrainAsync(stream, TimeSpan.FromMilliseconds(500), time, TestContext.Current.CancellationToken);
         Assert.False(result.CanReuseConnection);
+        Assert.False(result.ConnectionClosed);
         Assert.Equal(5 * 256, result.DiscardedBytes);
         Assert.Equal(TimeSpan.FromMilliseconds(500), time.GetElapsedTime(started));
         Assert.Equal(256, stream.MaximumReadSize);
@@ -22,7 +23,9 @@ public sealed class ModbusRtuDrainTests
     public async Task EofRequiresReconnectAndExternalCancellationIsNotSilence()
     {
         using var stream = new MemoryStream();
-        Assert.False((await ModbusRtuDrain.DrainAsync(stream, TimeSpan.FromSeconds(1), TimeProvider.System, TestContext.Current.CancellationToken)).CanReuseConnection);
+        var closed = await ModbusRtuDrain.DrainAsync(stream, TimeSpan.FromSeconds(1), TimeProvider.System, TestContext.Current.CancellationToken);
+        Assert.False(closed.CanReuseConnection);
+        Assert.True(closed.ConnectionClosed);
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ModbusRtuDrain.DrainAsync(stream, TimeSpan.FromSeconds(1), TimeProvider.System, cancelled.Token));

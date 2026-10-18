@@ -46,7 +46,7 @@ public sealed class HttpTestMessageSender(ISharedConnections connections, IOutbo
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust)); }
+        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust, time)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         var entered = false;

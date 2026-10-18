@@ -50,7 +50,7 @@ public sealed class HttpReadPreview(ISharedConnections connections, IOutboundCon
         var identity = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust)); }
+        { lease = connections.Acquire(settings.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust, time)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         try
@@ -96,7 +96,7 @@ public sealed class HttpReadPreview(ISharedConnections connections, IOutboundCon
         var identity = JsonSerializer.Serialize(new { basis.BaseAddress, basis.TimeoutMs });
         IConnectionLease<HttpConnectionSession> lease;
         try
-        { lease = connections.Acquire(basis.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, basis.TimeoutMs, trust)); }
+        { lease = connections.Acquire(basis.ConnectionId, "http", identity, () => new HttpConnectionSession(connector, basis.TimeoutMs, trust, time)); }
         catch (InvalidOperationException) { throw new HttpConnectionUnavailableException(); }
         await using var ownership = lease;
         var results = new List<HttpSourcePreviewResult>();

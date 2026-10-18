@@ -6,6 +6,51 @@ namespace TenonEdge.UnitTests.Runtime;
 public sealed class SharedConnectionsTests
 {
     [Fact]
+    public async Task ObservationMatchesOriginalIdentityAndDoesNotWaitForIoOrCreateASession()
+    {
+        var manager = new SharedConnections();
+        Assert.Null(manager.Observe(1, "http", "effective"));
+        var session = new ObservedSession();
+        await using var lease = manager.Acquire(1, "http", "effective", () => session);
+        await using var diagnostic = manager.AcquireDiagnostic("http", () => new ObservedSession());
+        Assert.Null(manager.Observe(1, "mqtt", "effective"));
+        Assert.Null(manager.Observe(1, "http", "draft"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => manager.Observe(-1, "http", "diagnostic"));
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = lease.ExecuteAsync(async (_, _) => { await release.Task; return true; }, Token);
+        try
+        {
+            var initial = manager.Observe(1, "http", "effective")!;
+            Assert.False(initial.Closing);
+            Assert.Same(session.Observation, initial.Observation);
+            session.Observation = new(ConnectionCommunicationState.Connected, DateTimeOffset.UtcNow);
+            Assert.Equal(ConnectionCommunicationState.Connecting, initial.Observation!.State);
+            Assert.Equal(ConnectionCommunicationState.Connected, manager.Observe(1, "http", "effective")!.Observation!.State);
+            var closing = lease.DisposeAsync().AsTask();
+            Assert.False(closing.IsCompleted);
+            Assert.True(manager.Observe(1, "http", "effective")!.Closing);
+        }
+        finally { release.TrySetResult(); await pending; await lease.DisposeAsync(); }
+        Assert.Null(manager.Observe(1, "http", "effective"));
+        await using var replacement = manager.Acquire(1, "http", "effective", () => new ObservedSession());
+        Assert.Null(manager.Observe(1, "http", "effective")!.Observation!.LastSuccessAt);
+    }
+
+    [Fact]
+    public async Task ExtensionWithoutObservationsDoesNotPretendToBeConnected()
+    {
+        var manager = new SharedConnections();
+        await using var lease = manager.Acquire(1, "extension", "one", () => new Session());
+        Assert.Null(manager.Observe(1, "extension", "one")!.Observation);
+    }
+
+    private sealed class ObservedSession : IAsyncDisposable, IConnectionObservationSource
+    {
+        public ConnectionObservation Observation { get; set; } = new(ConnectionCommunicationState.Connecting);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
     public async Task BorrowersShareOneSessionAndOnlyLastReleaseDisposesIt()
     {
         var manager = new SharedConnections();

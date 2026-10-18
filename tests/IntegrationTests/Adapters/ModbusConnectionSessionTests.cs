@@ -9,6 +9,77 @@ namespace TenonEdge.IntegrationTests.Adapters;
 
 public sealed class ModbusConnectionSessionTests
 {
+    [Fact]
+    public async Task ObservationRequiresActualBusinessReadsAndSingleSlaveTimeoutDoesNotDegradeConnection()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp,
+            request => request.Unit == 2 ? new SlaveReply { Silent = true } : SlaveReply.Normal);
+        await using var session = new ModbusConnectionSession(Settings(slave), [1, 2], Connector(), TimeProvider.System);
+        Assert.Equal(new(ConnectionCommunicationState.Connecting), session.Observation);
+        Assert.True((await session.TestConnectionAsync(Token)).Success);
+        Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadPreviewAsync(1, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(new(ConnectionCommunicationState.Connecting), session.Observation);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(2, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(ConnectionCommunicationState.Connecting, session.Observation.State);
+        Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
+        var healthy = session.Observation;
+        Assert.Equal(ConnectionCommunicationState.Connected, healthy.State);
+        Assert.NotNull(healthy.LastSuccessAt);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(2, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(healthy, session.Observation);
+        Assert.Equal(1, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task AllSlaveTimeoutsDegradeOnlyAfterAllRequestedAndRecoveryRetainsLastError()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp,
+            request => new SlaveReply { Silent = request.Sequence <= 2 });
+        var time = new FakeTimeProvider();
+        await using var session = new ModbusConnectionSession(Settings(slave), [1, 2], Connector(), time);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
+        Assert.Null(session.Observation.LastErrorAt);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(2, 3, 0, 1, Token)).Outcome);
+        var failed = session.Observation;
+        Assert.Equal(ConnectionCommunicationState.Degraded, failed.State);
+        Assert.Equal("modbus.allUnitsTimedOut", failed.LastErrorCode);
+        Assert.Equal(time.GetUtcNow(), failed.LastErrorAt);
+        Assert.False((await session.ReadAsync(1, 3, 0, 1, Token)).WasRequested);
+        Assert.Equal(failed, session.Observation);
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(ConnectionCommunicationState.Connected, session.Observation.State);
+        Assert.Equal(time.GetUtcNow(), session.Observation.LastSuccessAt);
+        Assert.Equal(failed.LastErrorAt, session.Observation.LastErrorAt);
+        Assert.Equal(failed.LastErrorCode, session.Observation.LastErrorCode);
+        Assert.Equal(2, slave.ConnectionCount);
+    }
+
+    [Fact]
+    public async Task RtuEofDuringDrainIsAConnectionFailureNotJustOneSlaveTimeout()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.RtuOverTcp,
+            request => request.Sequence == 1 ? SlaveReply.Normal : new SlaveReply { Delay = TimeSpan.FromMilliseconds(700), CloseConnection = true });
+        await using var session = new ModbusConnectionSession(Settings(slave, true) with { RtuSilenceMs = 1000 }, [1, 2], Connector(), TimeProvider.System);
+        Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(ModbusRequestOutcome.Timeout, (await session.ReadAsync(2, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(ConnectionCommunicationState.Degraded, session.Observation.State);
+        Assert.Equal("modbus.connectionFailed", session.Observation.LastErrorCode);
+        Assert.NotNull(session.Observation.LastSuccessAt);
+    }
+
+    [Fact]
+    public async Task TransportFailureIsConnectionLevelEvenWhenAnotherSlaveHasNotBeenRead()
+    {
+        await using var slave = ModbusTestSlave.Start(ModbusFraming.Tcp, _ => new SlaveReply { CloseConnection = true });
+        await using var session = new ModbusConnectionSession(Settings(slave), [1, 2], Connector(), TimeProvider.System);
+        Assert.Equal(ModbusRequestOutcome.ConnectionError, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
+        Assert.Equal(ConnectionCommunicationState.Degraded, session.Observation.State);
+        Assert.Equal("modbus.connectionFailed", session.Observation.LastErrorCode);
+        Assert.NotNull(session.Observation.LastErrorAt);
+        Assert.Null(session.Observation.LastSuccessAt);
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Theory]
@@ -67,6 +138,7 @@ public sealed class ModbusConnectionSessionTests
         var error = await session.ReadAsync(1, 3, 0, 1, Token);
         Assert.Equal(crc ? ModbusRequestOutcome.ReadError : ModbusRequestOutcome.DeviceException, error.Outcome);
         Assert.Equal(crc ? null : (byte?)6, error.ExceptionCode);
+        Assert.Equal(crc ? ConnectionCommunicationState.Degraded : ConnectionCommunicationState.Connected, session.Observation.State);
         Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
         Assert.Equal(1, slave.ConnectionCount);
     }
@@ -94,6 +166,7 @@ public sealed class ModbusConnectionSessionTests
         await stop.CancelAsync();
         var observed = Record.ExceptionAsync(() => read);
         Assert.IsAssignableFrom<OperationCanceledException>(await observed.AsTask().WaitAsync(TimeSpan.FromSeconds(5), Token));
+        Assert.Null(session.Observation.LastErrorAt);
         Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
         Assert.Equal(2, slave.ConnectionCount);
     }
@@ -111,6 +184,8 @@ public sealed class ModbusConnectionSessionTests
         await stop.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
         Assert.Equal(1, slave.RequestCount);
+        Assert.Equal(ConnectionCommunicationState.Connected, session.Observation.State);
+        Assert.Null(session.Observation.LastErrorCode);
         time.Advance(TimeSpan.FromSeconds(1));
         Assert.Equal(ModbusRequestOutcome.Success, (await session.ReadAsync(1, 3, 0, 1, Token)).Outcome);
         Assert.Equal(1, slave.ConnectionCount);

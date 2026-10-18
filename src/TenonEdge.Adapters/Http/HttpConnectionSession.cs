@@ -8,7 +8,7 @@ using TenonEdge.Adapters.Diagnostics;
 namespace TenonEdge.Adapters.Http;
 
 /// <summary>由共享连接管理拥有的 HTTP 客户端；请求路径、凭证及成功约定逐次提供，不绑死某个输出节点。</summary>
-internal sealed class HttpConnectionSession : IAsyncDisposable
+internal sealed class HttpConnectionSession : IAsyncDisposable, IConnectionObservationSource
 {
     private HttpClient? _client;
     private readonly IOutboundConnector _connector;
@@ -17,11 +17,14 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     private TlsTrustSnapshot? _clientTrust;
     private HttpCredentialIdentity? _clientIdentity;
     private TlsClientCertificate? _clientCertificate;
-    public HttpConnectionSession(IOutboundConnector connector, int timeoutMs, ITlsTrustResolver? trust = null)
+    private readonly ConnectionObservationTracker _observation;
+    public ConnectionObservation Observation => _observation.Snapshot;
+    public HttpConnectionSession(IOutboundConnector connector, int timeoutMs, ITlsTrustResolver? trust = null, TimeProvider? time = null)
     {
         _connector = connector;
         _trust = trust;
         _timeoutMs = timeoutMs;
+        _observation = new(time ?? TimeProvider.System);
         _client = OutboundHttpTransport.CreateClient(connector, TimeSpan.FromMilliseconds(timeoutMs));
     }
 
@@ -38,7 +41,8 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         }
     }
 
-    public async Task<OutputSendResult> SendOutputAsync(HttpOutputSettings settings, IHttpCredentialResolver credentials, TimeProvider time, OutputMessage message, CancellationToken cancellationToken)
+    public async Task<OutputSendResult> SendOutputAsync(HttpOutputSettings settings, IHttpCredentialResolver credentials, TimeProvider time, OutputMessage message, CancellationToken cancellationToken,
+        CancellationToken? stoppingToken = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
@@ -46,7 +50,7 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
             var identity = credentials.DescribeHttp(settings.ConnectionId);
             var credential = identity is null ? null : credentials.ResolveHttp(settings.ConnectionId, settings.BaseAddress);
             if (identity is not null && credential is null)
-            { return new(OutputSendStatus.SuspendTarget, "HTTP 凭证未设置或无法解密。"); }
+            { _observation.Failed("http.credentialsUnavailable"); return new(OutputSendStatus.SuspendTarget, "HTTP 凭证未设置或无法解密。"); }
             if (credential is not null && credential.Identity != identity)
             { return new(OutputSendStatus.Retry, "HTTP 凭证正在变化，将重新读取后发送。"); }
             if (message.Fingerprint != settings.Fingerprint(identity))
@@ -81,11 +85,23 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
             }
             using var response = await Client(settings, credential).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             var evaluator = new HttpOutputResponse(successRule, time);
-            return await evaluator.EvaluateAsync(response, time.GetUtcNow(), cancellationToken, credential);
+            var result = await evaluator.EvaluateAsync(response, time.GetUtcNow(), cancellationToken, credential);
+            if (result.Status == OutputSendStatus.Ack)
+            { _observation.Succeeded(); }
+            else
+            { _observation.Failed(response.IsSuccessStatusCode ? "http.successRuleFailed" : "http.statusRejected"); }
+            return result;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (stoppingToken is { IsCancellationRequested: false })
+            { _observation.Failed("http.timeout"); }
+            throw;
+        }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
+            if (stoppingToken is not { IsCancellationRequested: true })
+            { _observation.Failed(FailureCode(exception)); }
             if (HasCause<OutboundAccessDeniedException>(exception) || HasCause<AuthenticationException>(exception))
             { return new(OutputSendStatus.SuspendTarget, "HTTP 出站策略或 TLS 验证失败。"); }
             var network = exception is HttpRequestException or IOException or OperationCanceledException or TimeoutException;
@@ -100,28 +116,44 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
         return await HttpTestResponseCapture.ReadAsync(response, credential, token);
     }
 
-    public async Task<JsonDocument> ReadInputAsync(HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken)
-    {
-        var (message, credential) = CreateInputRequest(settings, credentials);
-        using var request = message;
-        using var response = await Client(settings, credential).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        return await HttpInputResponse.ReadAsync(response, cancellationToken);
-    }
+    public async Task<JsonDocument> ReadInputAsync(HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken) =>
+        (await ReadRuntimeInputAsync(settings, credentials, false, null, cancellationToken)).Document;
 
-    internal async Task<(JsonDocument Document, DiagnosticSampleAccess Access)> ReadDiagnosticInputAsync(
-        HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken)
+    internal Task<(JsonDocument Document, DiagnosticSampleAccess Access)> ReadDiagnosticInputAsync(
+        HttpInputSettings settings, IHttpCredentialResolver credentials, CancellationToken cancellationToken, CancellationToken? stoppingToken = null) =>
+        ReadRuntimeInputAsync(settings, credentials, true, stoppingToken, cancellationToken);
+
+    private async Task<(JsonDocument Document, DiagnosticSampleAccess Access)> ReadRuntimeInputAsync(
+        HttpInputSettings settings, IHttpCredentialResolver credentials, bool capture, CancellationToken? stoppingToken, CancellationToken cancellationToken)
     {
-        var (message, credential) = CreateInputRequest(settings, credentials);
-        using var request = message;
-        using var response = await Client(settings, credential).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            var access = JsonReadPreview.IsSensitive(document.RootElement, credential, cancellationToken)
-                ? DiagnosticSampleAccess.Redacted : DiagnosticSampleAccess.Safe;
-            return (document, access);
+            var (message, credential) = CreateInputRequest(settings, credentials);
+            using var request = message;
+            using var response = await Client(settings, credential).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var document = await HttpInputResponse.ReadAsync(response, cancellationToken);
+            try
+            {
+                var access = capture && JsonReadPreview.IsSensitive(document.RootElement, credential, cancellationToken)
+                    ? DiagnosticSampleAccess.Redacted : DiagnosticSampleAccess.Safe;
+                _observation.Succeeded();
+                return (document, access);
+            }
+            catch { document.Dispose(); throw; }
         }
-        catch { document.Dispose(); throw; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (stoppingToken is { IsCancellationRequested: false })
+            { _observation.Failed("http.timeout"); }
+            throw;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            if (stoppingToken is not { IsCancellationRequested: true })
+            { _observation.Failed(FailureCode(exception)); }
+            throw;
+        }
     }
 
     internal async Task<JsonReadPreviewResult> ReadPreviewAsync(HttpInputSettings settings, IHttpCredentialResolver credentials,
@@ -264,5 +296,15 @@ internal sealed class HttpConnectionSession : IAsyncDisposable
     }
 
     private static bool HasCause<T>(Exception exception) where T : Exception => exception is T || exception.InnerException is { } inner && HasCause<T>(inner);
+    private static string FailureCode(Exception exception) => exception switch
+    {
+        _ when HasCause<OutboundAccessDeniedException>(exception) => "outbound.denied",
+        _ when HasCause<AuthenticationException>(exception) => "http.tlsFailed",
+        HttpCredentialUnavailableException => "http.credentialsUnavailable",
+        HttpInputResponseException value => PreviewFailure(value),
+        OperationCanceledException or TimeoutException => "http.timeout",
+        HttpRequestException or IOException => "http.networkFailed",
+        _ => "http.localFailure"
+    };
     public ValueTask DisposeAsync() { CloseClient(); return ValueTask.CompletedTask; }
 }

@@ -11,7 +11,7 @@ internal sealed class MqttOutputAdapter(IConnectionLease<MqttSession> connection
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, cancellationToken);
         try
         {
-            return await connection.ExecuteAsync((session, token) => session.SendAsync(message, token), operation.Token);
+            return await connection.ExecuteAsync((session, token) => session.SendAsync(message, token, cancellationToken), operation.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

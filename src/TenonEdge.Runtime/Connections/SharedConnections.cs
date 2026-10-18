@@ -9,6 +9,17 @@ public sealed class SharedConnections : ISharedConnections
     private readonly Dictionary<long, Entry> _entries = [];
     public const int MaximumConnections = 500;
 
+    public SharedConnectionObservation? Observe(long connectionId, string protocol, string configurationIdentity)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(connectionId, 1);
+        lock (_lock)
+        {
+            if (!_entries.TryGetValue(connectionId, out var entry) || entry.Protocol != protocol || entry.Identity != configurationIdentity)
+            { return null; }
+            return new(entry.Closing, (entry.Session as IConnectionObservationSource)?.Observation);
+        }
+    }
+
     public IConnectionLease<T> Acquire<T>(long connectionId, string protocol, string configurationIdentity, Func<T> create)
         where T : class, IAsyncDisposable
     {

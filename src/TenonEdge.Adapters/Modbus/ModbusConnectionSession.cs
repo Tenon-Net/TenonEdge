@@ -10,13 +10,15 @@ internal sealed record ModbusReadResult(ModbusRequestOutcome Outcome, bool WasRe
 /// <summary>一个物理连接的会话；所有读取须经同一 IConnectionLease 串行准入。
 /// 拥有一条同步 I/O 工作线程，最后租约等待实际 I/O 完成后才销毁。构造不联网。
 /// UnitId 整体周期失败/离线退避属于采集调度层，不从跳过的请求推断设备超时。</summary>
-internal sealed class ModbusConnectionSession : IAsyncDisposable
+internal sealed class ModbusConnectionSession : IAsyncDisposable, IConnectionObservationSource
 {
     private readonly ModbusConnectionSettings _settings;
     private HashSet<byte>? _units;
     private ModbusConnectionHealth? _health;
     private readonly IOutboundConnector _connector;
     private readonly TimeProvider _time;
+    private readonly ConnectionObservationTracker _observation;
+    public ConnectionObservation Observation => _observation.Snapshot;
     private readonly ModbusRequestExecutor _executor;
     private Stream? _stream;
     private ModbusReadClient? _client;
@@ -37,6 +39,7 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
         { ConfigureUnits(enabledUnits); }
         _connector = connector;
         _time = time;
+        _observation = new(time);
         _executor = new ModbusRequestExecutor();
     }
 
@@ -152,9 +155,19 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
                 _retryStarted = null;
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
-            { Reset(backoff: true); return new(ModbusRequestOutcome.ConnectionError, false, ConnectionAttempted: true); }
+            {
+                if (!preview)
+                { _observation.Failed("modbus.connectTimeout"); }
+                Reset(backoff: true);
+                return new(ModbusRequestOutcome.ConnectionError, false, ConnectionAttempted: true);
+            }
             catch (Exception exception) when (exception is IOException or SocketException)
-            { Reset(backoff: true); return new(ModbusRequestOutcome.ConnectionError, false, ConnectionAttempted: true); }
+            {
+                if (!preview)
+                { _observation.Failed(exception is OutboundAccessDeniedException ? "outbound.denied" : "modbus.connectionFailed"); }
+                Reset(backoff: true);
+                return new(ModbusRequestOutcome.ConnectionError, false, ConnectionAttempted: true);
+            }
             catch
             { Reset(backoff: false); throw; }
         }
@@ -190,20 +203,38 @@ internal sealed class ModbusConnectionSession : IAsyncDisposable
 
         if (result.Outcome == ModbusRequestOutcome.Success)
         { _reconnectSeconds = 1; }
-        if (preview ? result.Outcome == ModbusRequestOutcome.ConnectionError : _health!.Record(unit, result.Outcome))
+        var reconnect = preview ? result.Outcome == ModbusRequestOutcome.ConnectionError : _health!.Record(unit, result.Outcome);
+        if (!preview)
+        {
+            // 合法异常应答也证明从站能够响应；单个从站超时不污染共享连接。
+            // 预览/纯建连、跳过、排队取消均不冒充正式采集的成功或失败。
+            if (result.Outcome is ModbusRequestOutcome.Success or ModbusRequestOutcome.DeviceException)
+            { _observation.Succeeded(); }
+            else if (reconnect)
+            { _observation.Failed(result.Outcome == ModbusRequestOutcome.Timeout ? "modbus.allUnitsTimedOut" : "modbus.connectionFailed"); }
+            else if (result.Outcome == ModbusRequestOutcome.ReadError)
+            { _observation.Failed("modbus.invalidResponse"); }
+        }
+        if (reconnect)
         { Reset(backoff: true); }
         else if (result.Outcome == ModbusRequestOutcome.Timeout && _settings.Format == ModbusFrameFormat.RtuOverTcp)
         {
             try
             {
                 var drained = await ModbusRtuDrain.DrainAsync(_stream!, TimeSpan.FromMilliseconds(_settings.RtuSilenceMs), _time, token);
+                if (!preview && drained.ConnectionClosed)
+                { _observation.Failed("modbus.connectionFailed"); }
                 if (!drained.CanReuseConnection)
                 { Reset(backoff: false); }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             { Reset(backoff: false); throw; }
             catch (Exception exception) when (exception is IOException or SocketException)
-            { Reset(backoff: true); }
+            {
+                if (!preview)
+                { _observation.Failed("modbus.connectionFailed"); }
+                Reset(backoff: true);
+            }
         }
         return result;
     }

@@ -61,7 +61,7 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
     {
         // 会话只按连接参数共享；路径、静态头和业务成功规则属于每次请求，秘密与轮换版本也不创建第二个客户端。
         var key = JsonSerializer.Serialize(new { settings.BaseAddress, settings.TimeoutMs });
-        var lease = connections.Acquire(ConnectionId, "http", key, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust));
+        var lease = connections.Acquire(ConnectionId, "http", key, () => new HttpConnectionSession(connector, settings.TimeoutMs, trust, time));
         return new HttpOutputAdapter(lease, settings, credentials, time);
     }
 }
@@ -73,7 +73,7 @@ internal sealed class HttpOutputAdapter(IConnectionLease<HttpConnectionSession> 
         using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(settings.TimeoutMs), time);
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, cancellationToken);
         try
-        { return await connection.ExecuteAsync((session, token) => session.SendOutputAsync(settings, credentials, time, message, token), operation.Token); }
+        { return await connection.ExecuteAsync((session, token) => session.SendOutputAsync(settings, credentials, time, message, token, cancellationToken), operation.Token); }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         { return new(OutputSendStatus.Retry, "HTTP 排队或网络操作超时，记录保持待发。"); }
     }

@@ -160,7 +160,7 @@ internal sealed class MqttPlanAdapters
                     using var operation = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token, stoppingToken);
                     OutputSendResult result;
                     try
-                    { result = await lease.ExecuteAsync((session, token) => session.MaintainAsync(token), operation.Token); }
+                    { result = await lease.ExecuteAsync((session, token) => session.MaintainAsync(token, stoppingToken), operation.Token); }
                     catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
                     { result = new(OutputSendStatus.Retry); }
                     if (result.Status != OutputSendStatus.Ack)

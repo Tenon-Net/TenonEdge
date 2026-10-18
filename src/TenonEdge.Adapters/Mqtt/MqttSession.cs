@@ -10,8 +10,10 @@ namespace TenonEdge.Adapters.Mqtt;
 
 /// <summary>由运行时共享连接管理拥有客户端，经借用的串行执行器调用，无回调重连。所有外部 I/O 有显式期限；异常文本不向运行事件泄露秘密。</summary>
 internal sealed class MqttSession(MqttConnectionSettings settings, string clientId, ICredentialResolver credentials, TimeProvider time, IOutboundConnector connector, MqttInputReceiver? input = null,
-    Func<CancellationToken, Task>? waitForActivation = null, ITlsTrustResolver? trust = null) : IOutputAdapter
+    Func<CancellationToken, Task>? waitForActivation = null, ITlsTrustResolver? trust = null) : IOutputAdapter, IConnectionObservationSource
 {
+    private readonly ConnectionObservationTracker _observation = new(time);
+    public ConnectionObservation Observation => _observation.Snapshot;
     private IMqttClient? _client;
     private TlsClientCertificate? _clientCertificate;
     private MqttReceiveBuffer? _receiveBuffer;
@@ -21,18 +23,21 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
     private long _lastPing;
     private CancellationTokenSource? _receiveCancellation;
     private int _inputFailed;
+    private CancellationToken _operationCancellation;
     private readonly Lock _receiveLock = new();
     internal bool IsConnected => Volatile.Read(ref _inputFailed) == 0 && _client?.IsConnected == true;
 
-    public Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken) => ExecuteAsync(message, cancellationToken);
+    public Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken) => ExecuteAsync(message, null, cancellationToken);
+    internal Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken, CancellationToken stoppingToken) =>
+        ExecuteAsync(message, stoppingToken, cancellationToken);
 
     /// <summary>输入拥有者经共享执行器定期调用；连接/订阅/保活有调用方提供的总期限，不从回调重连。</summary>
-    public Task<OutputSendResult> MaintainAsync(CancellationToken cancellationToken) => ExecuteAsync(null, cancellationToken);
+    public Task<OutputSendResult> MaintainAsync(CancellationToken cancellationToken, CancellationToken? stoppingToken = null) => ExecuteAsync(null, stoppingToken, cancellationToken);
 
     internal Task CancelOutboundForDrainAsync() => _outboundStop.CancelAsync();
     internal void DisconnectAfterDrain() => Reset();
 
-    private async Task<OutputSendResult> ExecuteAsync(OutputMessage? message, CancellationToken cancellationToken)
+    private async Task<OutputSendResult> ExecuteAsync(OutputMessage? message, CancellationToken? stoppingToken, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (input?.IsQuiescing == true)
@@ -46,6 +51,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
         cancellationToken.ThrowIfCancellationRequested();
         if (Volatile.Read(ref _inputFailed) != 0)
         { Reset(); }
+        lock (_receiveLock)
+        { _operationCancellation = cancellationToken; }
         try
         {
             var credential = Credential();
@@ -82,7 +89,14 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                         await input.ReceiveAsync(args, () =>
                         {
                             lock (_receiveLock)
-                            { if (ReferenceEquals(_receiveCancellation, generation)) { Volatile.Write(ref _inputFailed, 1); } }
+                            {
+                                if (ReferenceEquals(_receiveCancellation, generation))
+                                {
+                                    Volatile.Write(ref _inputFailed, 1);
+                                    if (input.IsQuiescing != true)
+                                    { _observation.Failed("mqtt.inputTakeoverFailed"); }
+                                }
+                            }
                             try
                             { generation.Cancel(); }
                             catch (ObjectDisposedException) { }
@@ -94,7 +108,19 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 }
                 client = new MqttClientFactory().CreateMqttClient(new MqttBoundedAdapterFactory(
                     () => input?.RecordWireOversized(), admit: input is null ? AdmitOutputFrame : null, receiveBuffer: _receiveBuffer, clientCertificate: _clientCertificate));
-                _client = client;
+                lock (_receiveLock)
+                { _client = client; }
+                client.DisconnectedAsync += _ =>
+                {
+                    lock (_receiveLock)
+                    {
+                        // 旧代次的迟到回调不能覆盖新连接；主动排空/释放不伪造网络故障。
+                        if (ReferenceEquals(_client, client) && Volatile.Read(ref _inputFailed) == 0 && input?.IsQuiescing != true &&
+                            !_outboundStop.IsCancellationRequested && !_operationCancellation.IsCancellationRequested)
+                        { _observation.Failed("mqtt.disconnected"); }
+                    }
+                    return Task.CompletedTask;
+                };
                 if (_receiveBuffer is null && receive is not null)
                 { client.ApplicationMessageReceivedAsync += args => receive(args, CancellationToken.None); }
                 var builder = new MqttClientOptionsBuilder()
@@ -120,6 +146,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 if (connected.ResultCode != MqttClientConnectResultCode.Success)
                 {
                     Reset();
+                    _observation.Failed("mqtt.connectionRejected");
                     return new(connected.ResultCode == MqttClientConnectResultCode.ServerUnavailable ? OutputSendStatus.Retry : OutputSendStatus.SuspendTarget, "MQTT Broker 拒绝连接，请检查身份或协议配置。");
                 }
 
@@ -128,6 +155,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 _connectedVersion = version;
                 _connectedTrust = snapshot;
                 _lastPing = time.GetTimestamp();
+                ObserveSuccess();
             }
 
             _clientCertificate?.ValidateForUse(time.GetUtcNow());
@@ -136,6 +164,7 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             {
                 await _client.PingAsync(cancellationToken);
                 _lastPing = time.GetTimestamp();
+                ObserveSuccess();
             }
 
             if ((Credential()?.Version ?? "anonymous") != version || ResolveTrust() != snapshot)
@@ -150,6 +179,10 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                 .WithTopic(message.Address).WithPayload(message.Payload.ToArray())
                 .WithQualityOfServiceLevel(message.QualityOfService == 1 ? MqttQualityOfServiceLevel.AtLeastOnce : MqttQualityOfServiceLevel.AtMostOnce)
                 .WithRetainFlag(false).Build(), cancellationToken);
+            if (result.IsSuccess)
+            { ObserveSuccess(); }
+            else
+            { _observation.Failed("mqtt.publishUnconfirmed"); }
             return result.IsSuccess ? new(OutputSendStatus.Ack) : new(OutputSendStatus.Retry, "MQTT 发布未获得成功确认。", CountsTowardPoison: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -157,11 +190,14 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             // 静默中的输出/维护取消不能抢先取消仍在等待存储提交的接收代次。
             if (input?.IsQuiescing != true)
             { Reset(); }
+            if (stoppingToken is { IsCancellationRequested: false } && !_outboundStop.IsCancellationRequested && input?.IsQuiescing != true)
+            { _observation.Failed("mqtt.timeout"); }
             throw;
         }
         catch (ArgumentException)
         {
             Reset();
+            _observation.Failed("mqtt.credentialsInvalid");
             return new(OutputSendStatus.SuspendTarget, "MQTT 凭证或客户端证书无效，请核对材料、有效期和 TLS 设置。");
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -169,6 +205,11 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             var inputFailure = Volatile.Read(ref _inputFailed) != 0 || input?.IsQuiescing == true;
             if (input?.IsQuiescing != true)
             { Reset(); }
+            if (input?.IsQuiescing != true && !_outboundStop.IsCancellationRequested && stoppingToken is not { IsCancellationRequested: true })
+            {
+                _observation.Failed(HasAccessDenial(exception) ? "outbound.denied" : HasAuthenticationFailure(exception) ? "mqtt.authenticationFailed"
+                    : inputFailure ? "mqtt.inputTakeoverFailed" : cancellationToken.IsCancellationRequested ? "mqtt.timeout" : "mqtt.communicationFailed");
+            }
             if (HasAccessDenial(exception))
             {
                 return new(OutputSendStatus.SuspendTarget, "目标被出站访问规则拦截，请联系管理员。");
@@ -181,6 +222,8 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
                     : transient ? "MQTT 网络中断或操作超时，记录保持待发。" : "MQTT 本地未知异常或无法识别的响应。",
                 CountsTowardPoison: !suspend && !transient);
         }
+        finally
+        { lock (_receiveLock) { _operationCancellation = default; } }
     }
 
     private static bool AdmitOutputFrame(byte header, int remainingLength)
@@ -201,14 +244,27 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
     private static bool HasAuthenticationFailure(Exception exception) =>
         exception is AuthenticationException || exception.InnerException is { } inner && HasAuthenticationFailure(inner);
 
+    private void ObserveSuccess()
+    {
+        lock (_receiveLock)
+        {
+            if (Volatile.Read(ref _inputFailed) == 0 && _client?.IsConnected == true)
+            { _observation.Succeeded(); }
+        }
+    }
+
     private void Reset()
     {
         CancellationTokenSource? generation;
+        IMqttClient? client;
         lock (_receiveLock)
         {
+            client = _client;
+            _client = null;
             generation = _receiveCancellation;
             _receiveCancellation = null;
             Volatile.Write(ref _inputFailed, 0);
+            _observation.Disconnected();
         }
         if (generation is not null)
         {
@@ -216,13 +272,12 @@ internal sealed class MqttSession(MqttConnectionSettings settings, string client
             generation.Dispose();
         }
         try
-        { _client?.Dispose(); }
+        { client?.Dispose(); }
         catch (ObjectDisposedException)
         {
             // MQTTnet 5.2.0 的后台 Cleanup 与 Dispose 可同时回收内部取消源：源已释放、字段未清空时 Cancel 抛此异常。
             // 库仍在 finally 中释放传输/分派器；只在客户端回收边界接住重复释放，不把原来的网络超时改成毒消息或停机失败。
         }
-        _client = null;
         _clientCertificate?.Dispose();
         _clientCertificate = null;
         _receiveBuffer?.Dispose();
