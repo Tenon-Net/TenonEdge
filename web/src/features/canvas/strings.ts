@@ -29,6 +29,7 @@ export const canvasStrings = {
     paste: '粘贴副本',
     remove: '删除所选',
     graph: '路线画布',
+    runtimeStatus: '有效运行状态',
     summary: '{{nodes}} / 50 节点 · {{edges}} 条边 · {{steps}} 步可撤销',
     hints: '结构提示与预览',
     empty: '从节点库添加输入、处理和输出节点。',

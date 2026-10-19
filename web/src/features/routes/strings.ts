@@ -18,6 +18,10 @@ export const routeStrings = {
         none: '无',
         effective: '与有效运行配置一致',
         notEffective: '当前草稿未在有效运行配置中',
+        canvasEffective:
+            '此画布对应当前有效路线；协调状态：{{state}}，有效版本：{{revision}}。节点草稿编辑不会改变运行态。',
+        canvasDraft:
+            '当前画布尚未对应有效路线；以下运行状态属于其他有效配置，不代表此草稿。',
         states: {
             starting: '启动中',
             blocked: '启动条件阻止',

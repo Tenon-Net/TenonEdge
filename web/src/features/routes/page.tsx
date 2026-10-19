@@ -53,6 +53,23 @@ export function RoutesPage() {
     const dirty =
         form !== null &&
         (pendingConfig || JSON.stringify({ ...form, document }) !== original)
+    const selectedRoute = query.data?.routes.find(
+        (route) => route.id === form?.id,
+    )
+    const canvasRuntimeSummary = !form
+        ? undefined
+        : runtime.isError || !runtime.data
+          ? t('routes.runtime.unknown')
+          : selectedRoute?.effective
+            ? t('routes.runtime.canvasEffective', {
+                  state: t(
+                      `routes.runtime.states.${runtime.data.coordinator.state}`,
+                  ),
+                  revision:
+                      runtime.data.coordinator.activeRevision ??
+                      t('routes.runtime.none'),
+              })
+            : t('routes.runtime.canvasDraft')
     useBlocker({
         disabled: !dirty,
         enableBeforeUnload: dirty,
@@ -418,6 +435,7 @@ export function RoutesPage() {
                         version={form.version}
                         previewDraft={previewDraft}
                         onPendingChange={setPendingConfig}
+                        runtimeSummary={canvasRuntimeSummary}
                         readOnly={!canEdit || busy}
                         onCreateReference={
                             canEdit

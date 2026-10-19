@@ -77,6 +77,7 @@ type CanvasProps = {
     previewDraft?: PreviewDraft
     onPendingChange?: (pending: boolean) => void
     onCreateReference?: (kind: 'connection' | 'device') => void
+    runtimeSummary?: string
 }
 function CanvasWorkspace({
     editor,
@@ -86,6 +87,7 @@ function CanvasWorkspace({
     previewDraft,
     onPendingChange,
     onCreateReference,
+    runtimeSummary,
 }: CanvasProps) {
     const { t } = useTranslation()
     const [store] = useState(() => editor ?? createGraphEditor())
@@ -338,6 +340,11 @@ function CanvasWorkspace({
             <p className="text-sm text-muted-foreground">
                 {t(persisted ? 'routes.canvasNotice' : 'canvas.notice')}
             </p>
+            {persisted && runtimeSummary && (
+                <p role="status" aria-label={t('canvas.runtimeStatus')}>
+                    {runtimeSummary}
+                </p>
+            )}
             <p className="text-sm">{t('canvas.help')}</p>
             <div className="flex flex-wrap gap-2">
                 <Button

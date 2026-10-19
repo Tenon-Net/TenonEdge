@@ -285,10 +285,23 @@ test('no JSON workflow: administrator configures live MQTT to HTTP; browser exit
         await createConnections(page, broker.port, gateway.httpPort)
         await createDeviceAndSource(page)
         await drawRoute(page)
+        await expect(
+            page.getByRole('status', { name: '有效运行状态' }),
+        ).toContainText('当前画布尚未对应有效路线')
         expect(gateway.deliveries).toHaveLength(0)
         await previewFromBroker(page, broker.publish, '9007199254740993')
         expect(gateway.deliveries).toHaveLength(0)
         await applyRoute(page)
+        await page.goto('/routes')
+        await page
+            .getByRole('button', {
+                name: '打开 实时 MQTT 转发',
+                exact: true,
+            })
+            .click()
+        await expect(
+            page.getByRole('status', { name: '有效运行状态' }),
+        ).toContainText('此画布对应当前有效路线')
 
         const draft = await (
             await page.request.get(root + '/configuration/draft')
