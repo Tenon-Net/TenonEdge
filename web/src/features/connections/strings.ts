@@ -236,6 +236,7 @@ export const connectionStrings = {
         quarantined: '隔离 {{count}}',
         blocked: '仍有引用或积存记录，不能删除。',
         confirm: '确认删除',
+        prompt: '确认删除连接草稿 {{name}}？服务端将再次核对全部条件。',
         refresh: '重新核对',
         cancel: '取消',
     },

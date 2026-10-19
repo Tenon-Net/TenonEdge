@@ -164,57 +164,27 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
         shouldBlockFn: () => !window.confirm(t('connections.discard')),
     })
     const mutation = useMutation({
-        mutationFn: async (
-            action:
-                | { type: 'save'; form: ConnectionForm }
-                | { type: 'delete'; connection: Connection; version: string },
-        ) => {
-            if (action.type === 'delete') {
-                await api.DELETE(
-                    '/api/edge-admin/v1/connections/{connectionId}',
-                    {
-                        params: {
-                            path: {
-                                connectionId: Number(action.connection.id),
-                            },
-                            query: { expectedVersion: action.version },
-                        },
+        mutationFn: async (form: ConnectionForm) => {
+            const body = connectionRequest(form)
+            if (form.id !== undefined)
+                await api.PUT('/api/edge-admin/v1/connections/{connectionId}', {
+                    params: {
+                        path: { connectionId: Number(form.id) },
                     },
-                )
-            } else {
-                const body = connectionRequest(action.form)
-                if (action.form.id !== undefined)
-                    await api.PUT(
-                        '/api/edge-admin/v1/connections/{connectionId}',
-                        {
-                            params: {
-                                path: { connectionId: Number(action.form.id) },
-                            },
-                            body,
-                        },
-                    )
-                else await api.POST('/api/edge-admin/v1/connections', { body })
-            }
-            return action.type
+                    body,
+                })
+            else await api.POST('/api/edge-admin/v1/connections', { body })
         },
-        onSuccess: async (type, action) => {
+        onSuccess: async (_, form) => {
             void queryClient.invalidateQueries({
                 queryKey: ['configuration-summary'],
             })
-            setNotice(
-                t(
-                    type === 'save'
-                        ? 'connections.saved'
-                        : 'connections.deleted',
-                ),
-            )
+            setNotice(t('connections.saved'))
             setForm(null)
             setModuleForm(null)
             setOriginal('')
             // Inspect only after the draft was saved; no automatic target connection or policy write.
-            setSavedTarget(
-                action.type === 'save' ? outboundTarget(action.form) : null,
-            )
+            setSavedTarget(outboundTarget(form))
             await queryClient.invalidateQueries({
                 queryKey: ['connection-drafts'],
             })
@@ -515,11 +485,20 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                     connection={deleting}
                     version={query.data.version}
                     onDeleted={async () => {
+                        // The review owns the single DELETE. This callback only
+                        // refreshes local/query state after its confirmed success.
                         setDeleting(null)
-                        await mutation.mutateAsync({
-                            type: 'delete',
-                            connection: deleting,
-                            version: query.data!.version,
+                        mutation.reset()
+                        setNotice(t('connections.deleted'))
+                        setForm(null)
+                        setModuleForm(null)
+                        setOriginal('')
+                        setSavedTarget(null)
+                        void queryClient.invalidateQueries({
+                            queryKey: ['configuration-summary'],
+                        })
+                        await queryClient.invalidateQueries({
+                            queryKey: ['connection-drafts'],
                         })
                     }}
                     onClose={() => setDeleting(null)}
@@ -624,7 +603,7 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                         try {
                             connectionRequest(form)
                             setLocalError('')
-                            mutation.mutate({ type: 'save', form })
+                            mutation.mutate(form)
                         } catch {
                             setLocalError(t('connections.duplicateHeaders'))
                         }
