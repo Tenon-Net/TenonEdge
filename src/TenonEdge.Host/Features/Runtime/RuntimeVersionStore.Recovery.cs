@@ -152,6 +152,13 @@ internal sealed partial class RuntimeVersionStore
                 { queueOnly.Add(id); continue; }
                 accepts = (_, address) => address == settings.Path;
             }
+            else if (OutputTransportRoute.Read(unit.Configuration, unit.Id.Kind) is { } route)
+            {
+                id = unit.Configuration.GetProperty("connectionId").GetInt64();
+                if (unit.Configuration.TryGetProperty("queueOnly", out var only) && only.ValueKind == JsonValueKind.True)
+                { queueOnly.Add(id); continue; }
+                accepts = (device, address) => address == route.AddressFor(device);
+            }
             else
             { continue; }
             if (!rules.TryGetValue(id, out var list))

@@ -223,6 +223,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                 if (mapping?.WorkingReservationBytes > _options.InFlightBytes)
                 { throw new PlanValidationException("转换工作预算超过全局在途预算。"); }
                 var target = factory.Build(unit);
+                var protocol = OutputModuleCatalog.ReadProtocol(unit) ?? unit;
+                if (OutputTransportRoute.Read(protocol.Configuration, protocol.Id.Kind) is { } route)
+                { target = new FrozenTransportTarget(target, route, protocol.Id.Kind[7..]); }
                 if (target.QuiesceWithInputs && recoveryGroup is null)
                 { throw new PlanValidationException("共用输入会话的输出必须声明对应的恢复分组。"); }
                 if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
@@ -234,7 +237,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new PlanValidationException("输出工厂标识与计划不一致。");
                 }
 
-                var protocolKind = OutputModuleCatalog.ReadProtocol(unit)?.Id.Kind ?? unit.Id.Kind;
+                var protocolKind = protocol.Id.Kind;
                 var shared = outputs.FirstOrDefault(output => output.Target.ConnectionId == target.ConnectionId);
                 if (shared is not null && (shared.ProtocolKind != protocolKind || shared.RecoveryGroup != recoveryGroup || !shared.Target.CanShareSenderWith(target)))
                 {

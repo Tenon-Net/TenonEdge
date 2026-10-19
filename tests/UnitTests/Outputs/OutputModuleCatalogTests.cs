@@ -75,7 +75,7 @@ public sealed class OutputModuleCatalogTests
     {
         var module = new Module("wire")
         {
-            Config = Json("""{"connectionId":11,"inputs":["meter/source"],"address":"wire://localhost:19001"}"""),
+            Config = Json("""{"connectionId":11,"inputs":["meter/source"],"address":"wire://localhost:19001","transportRoute":{"recipient":"wire://localhost:19001","addressTemplate":"events/{deviceKey}"}}"""),
         };
         var connectionSchema = new ParameterSchema("connection.wire", ParameterScope.Connection,
         [
@@ -91,6 +91,11 @@ public sealed class OutputModuleCatalogTests
         Assert.Equal(11, protocol.Configuration.GetProperty("connectionId").GetInt64());
         Assert.Equal("meter/source", protocol.Configuration.GetProperty("inputs")[0].GetString());
         Assert.Equal("wire://localhost:19001", protocol.Configuration.GetProperty("address").GetString());
+        module.Config = Json(module.Config.GetRawText().Replace("events/{deviceKey}", "other/{deviceKey}", StringComparison.Ordinal));
+        Assert.Throws<ArgumentException>(() => catalog.Validate(frozen));
+        module.Config = Json("""{"connectionId":11,"inputs":["meter/source"]}""");
+        Assert.Throws<ArgumentException>(() => catalog.WithFrozenProtocol(Unit("wire")));
+        Assert.Equal("events/{deviceKey}", OutputTransportRoute.Read(OutputModuleCatalog.ReadProtocol(frozen)!.Configuration, "output.wire")!.AddressTemplate);
     }
 
     [Fact]

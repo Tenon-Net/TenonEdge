@@ -7,12 +7,29 @@
 实现 `IOutputModuleFactory` 并在宿主 DI 注册该接口；不要再把同 kind 注册为 `IOutputAdapterFactory`。目录自动接入原 RuntimeHost，没有第二套运行时、发送队列或后台任务。kind/version 明确且不可重复，不覆盖内置 `output.http`、`output.mqtt`、`output.tenon`。
 
 - `Parameters` 使用原 `ParameterSchema`，scope 为 Output，不允许 Credential 字段。非秘密标量与连接引用仍按同一声明校验。
-- `BindProtocol(parameters, context)` 只做纯本地、并发安全计算，返回原 HTTP/MQTT 输出的完整非秘密配置。不得联网、访问配置写事务或创建客户端/后台循环。
+- `BindProtocol(parameters, context)` 只做纯本地、并发安全计算，返回原 HTTP/MQTT 或已注册扩展传输的完整非秘密配置。不得联网、访问配置写事务或创建客户端/后台循环。
 - `OutputModuleContext` 固定目标 ConnectionId、1—2000 个不同的 `deviceKey/inputKey` 来源及按参数名绑定的不可变 `ModuleConnectionSnapshot`。目标必须属于显式引用；委托不得改变目标 ID、协议或来源顺序，也不得递归委托模块。
 - 委托不带 mapping、mappingStages 或 transformStages。转换在外层运行单元中，仍由原分发器执行一次；队列接续不是模块路线，不能声明 queueOnly=true。
-- 当前子项只支持委托已有 HTTP/MQTT 协议。新传输/连接类型仍是待完成的扩展能力，不能把这个阶段性接口当成最终范围，也不能用未描述的自建发送器绕过原目标保护。
+- 已接入扩展传输的冻结路由、原目标保护与原发送者运行基础（下节）。没有路线的扩展目标接续、完整网页配置及凭证组合仍未完成；不能用自建发送器绕过原目标保护。
 
 模块是受信任的编译期代码，不是沙箱。没有上传 DLL、热加载或前端插件。
+
+### 新传输的冻结路由
+
+非 HTTP/MQTT 绑定必须在协议配置中声明 `transportRoute`，恰有以下两个字符串字段：
+
+```json
+{"transportRoute":{"recipient":"wire://127.0.0.1:19001","addressTemplate":"events/{deviceKey}"}}
+```
+
+`wire` 仅为测试侧传输例子，不是产品新增的内置协议。`recipient` 须与已声明连接 kind 和 `output.<kind>` 传输一致，明确端口，不带用户名、查询或片段。地址模板可以是常量或只含 `{deviceKey}`；不接受其他表达式、花括号或控制字符，按所有占位符各展开为最长业务 key 后核对 UTF-8 不超过 4096 字节。
+
+- 冻结历史、待发/失败保护、同连接换址迁移及损坏快照恢复读取这个描述，不在配置事务中调用扩展代码。没有描述的旧历史仍可读取，但不能重新准入，也不能忽略其旧队列。
+- 准备时原 RuntimeHost 包装扩展目标，核对实际接收方、捕获的协议/非秘密身份与冻结描述一致。生成报文时检查展开地址、非空指纹及可解析且匹配的身份摘要；不匹配经原分发器拒绝，不接管入库。
+- 同一连接的多个输出仍由原共享判断合并为一个发送者。适配器发送每条记录已冻结的地址与字节；**不得在发送时要求旧地址等于当前模板**，否则会破坏管理员显式迁移的保留规则。
+- 恢复预检通过原准备入口捕获新传输的真实身份，再检查每条待发/失败记录的指纹和展开地址；不匹配阻止确认，隔离区不被隐式恢复或重写。
+
+实际 TCP 双路径/确认、出站拒绝、正常 Host 重建时缺模块/连接声明/传输工厂/绑定失败，以及恢复模块后原记录补发的测试位于 `ExtensionOutputRuntimeTests`。迁移测试调用原运行时双发送者协调入口，恢复测试使用真实管理 API；不冒充网页迁移或进程强杀验收。完整证据和未完成项统一见实施状态。
 
 ## 发现声明
 

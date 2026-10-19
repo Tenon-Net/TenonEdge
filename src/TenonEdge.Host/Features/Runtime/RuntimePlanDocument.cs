@@ -263,6 +263,7 @@ internal sealed class RuntimePlanDocument
 
         try
         {
+            _ = OutputTransportRoute.Read(configuration, kind.GetString()!);
             if (kind.GetString() == "output.mqtt")
             {
                 // 冻结前拒绝未知属性（尤其密码等旁路），不把被拒的秘密配置写进未生效快照。

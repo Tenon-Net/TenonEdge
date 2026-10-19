@@ -120,6 +120,8 @@ public sealed class OutputModuleCatalog
         var binding = module.BindProtocol(parameters, context);
         if (binding is null)
         { throw Invalid(); }
+        if (binding.Kind is not ("output.http" or "output.mqtt"))
+        { _ = OutputTransportRoute.Read(binding.Configuration, binding.Kind, required: true); }
         return CheckProtocol(unit, binding.Kind, binding.Configuration, context);
     }
 
@@ -134,6 +136,7 @@ public sealed class OutputModuleCatalog
             config.TryGetProperty("mapping", out _) || config.TryGetProperty("mappingStages", out _) || config.TryGetProperty("transformStages", out _) ||
             config.TryGetProperty("queueOnly", out var queueOnly) && queueOnly.ValueKind != JsonValueKind.False)
         { throw Invalid(); }
+        _ = OutputTransportRoute.Read(config, kind);
         return new(RuntimeUnitId.Create(kind, unit.Id.Key), config);
     }
 

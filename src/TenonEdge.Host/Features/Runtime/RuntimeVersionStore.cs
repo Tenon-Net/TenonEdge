@@ -1,4 +1,6 @@
+using System.Text.Json;
 using SqlSugar;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
@@ -223,6 +225,18 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
             {
                 var settings = HttpOutputSettings.Parse(unit.Configuration);
                 yield return (settings.ConnectionId, unit.Id.Kind, settings.BaseAddress, settings.QueueOnly ? "" : settings.Endpoint.AbsoluteUri, settings.QueueOnly);
+            }
+            else if (OutputTransportRoute.Read(unit.Configuration, unit.Id.Kind) is { } route)
+            {
+                yield return (unit.Configuration.GetProperty("connectionId").GetInt64(), unit.Id.Kind, route.Recipient, route.AddressTemplate,
+                    unit.Configuration.TryGetProperty("queueOnly", out var queueOnly) && queueOnly.ValueKind == JsonValueKind.True);
+            }
+            else if (unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal) && unit.Id.Kind != "output.tenon" &&
+                unit.Configuration.TryGetProperty("connectionId", out var legacyId) && legacyId.TryGetInt64(out var legacyConnection))
+            {
+                // Old extension snapshots without verified routing remain readable;
+                // do not silently ignore their queue or guess an address from fields.
+                yield return (legacyConnection, unit.Id.Kind, "unverified:" + unit.ConfigurationHash, "", false);
             }
         }
     }
