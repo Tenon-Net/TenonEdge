@@ -1,8 +1,6 @@
 using System.Collections.Immutable;
-using System.Text;
 using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
-using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Parameters;
 
 namespace TenonEdge.Runtime.Modules;
@@ -10,7 +8,8 @@ namespace TenonEdge.Runtime.Modules;
 /// <summary>输入与输出使用同一冻结引用格式；历史结构读取不执行模块。</summary>
 internal static class ModuleConnections
 {
-    internal static void Validate(ParameterSchema schema, JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections)
+    internal static void Validate(ParameterSchema schema, JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections,
+        IReadOnlySet<string>? configuredCredentials = null)
     {
         var kinds = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var pair in connections)
@@ -27,34 +26,11 @@ internal static class ModuleConnections
             if (parameters.TryGetProperty(field.Name, out var reference) && reference.ValueKind != JsonValueKind.Null && !connections.ContainsKey(field.Name))
             { throw Invalid(); }
         }
-        schema.ThrowIfInvalid(parameters, kinds);
+        schema.ThrowIfInvalid(parameters, kinds, configuredCredentials);
     }
 
-    internal static ImmutableDictionary<string, ModuleConnectionSnapshot> Read(JsonElement envelope)
-    {
-        if (envelope.ValueKind != JsonValueKind.Object)
-        { throw Invalid(); }
-        if (!envelope.TryGetProperty("connections", out var value))
-        { return ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty; }
-        if (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Count() > ParameterSchema.MaximumParameters ||
-            Encoding.UTF8.GetByteCount(value.GetRawText()) > ParameterSchema.MaximumConfigurationBytes)
-        { throw Invalid(); }
-        var result = ImmutableDictionary.CreateBuilder<string, ModuleConnectionSnapshot>(StringComparer.Ordinal);
-        foreach (var property in value.EnumerateObject())
-        {
-            var item = property.Value;
-            if (!BusinessKeys.IsValid(property.Name) || item.ValueKind != JsonValueKind.Object || item.EnumerateObject().Count() != 3 ||
-                !item.TryGetProperty("connectionId", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt64(out var number) || number is < 1 or > 9007199254740991L ||
-                !item.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String || !BusinessKeys.IsValid(kind.GetString()) ||
-                !item.TryGetProperty("configuration", out var config) || config.ValueKind != JsonValueKind.Object ||
-                !envelope.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Object ||
-                !parameters.TryGetProperty(property.Name, out var reference) || reference.ValueKind != JsonValueKind.String ||
-                reference.GetString() != number.ToString(System.Globalization.CultureInfo.InvariantCulture))
-            { throw Invalid(); }
-            result.Add(property.Name, new(number, kind.GetString()!, config));
-        }
-        return result.ToImmutable();
-    }
+    internal static ImmutableDictionary<string, ModuleConnectionSnapshot> Read(JsonElement envelope) =>
+        ModuleConnectionReferences.Read(envelope);
 
     private static ArgumentException Invalid() => new("模块连接引用无效。");
 }

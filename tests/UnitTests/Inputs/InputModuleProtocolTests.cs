@@ -6,6 +6,7 @@ using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Inputs;
 
 namespace TenonEdge.UnitTests.Inputs;
@@ -126,7 +127,62 @@ public sealed class InputModuleProtocolTests
         Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.ParseStored(Document(catalog.WithFrozenFields(Source("modbus")))));
     }
 
-    private sealed class Module(string protocol) : IInputModuleFactory
+    [Theory]
+    [InlineData("http")]
+    [InlineData("mqtt")]
+    [InlineData("modbus")]
+    public void NestedReferencesDelegateToTheOriginalProtocolAndKeepFrozenHistory(string protocol)
+    {
+        var module = new Module(protocol, "wrapper");
+        var catalog = new InputModuleCatalog([module], WrapperCatalog(protocol));
+        var frozen = catalog.WithFrozenFields(NestedSource(protocol));
+        catalog.Validate(frozen);
+        Assert.Equal("input." + protocol, InputModuleCatalog.ReadProtocol(frozen)!.Id.Kind);
+        var admitted = RuntimePlanDocument.Parse(Document(frozen), inputs: catalog);
+        Assert.Equal(admitted.Canonical, RuntimePlanDocument.ParseStored(admitted.Canonical).Canonical);
+        Assert.Equal([11L, 12L], RuntimeConnectionReferences.ReadIds(frozen).Order());
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(admitted.Canonical,
+            inputs: new InputModuleCatalog([module])));
+    }
+
+    [Theory]
+    [InlineData("mqtt")]
+    [InlineData("modbus")]
+    public void NestedCoupledProtocolsCannotBypassOriginalPlanCoordinationEvenInHistory(string protocol)
+    {
+        var source = NestedSource(protocol);
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.ParseStored(Document(source)));
+        var catalog = new InputModuleCatalog([new Module(protocol, "wrapper") { OmitBinding = true }], WrapperCatalog(protocol));
+        Assert.Throws<ArgumentException>(() => catalog.WithFrozenFields(source));
+    }
+
+    private static ConnectionModuleCatalog WrapperCatalog(string protocol) => new([new("wrapper", 1, "Wrapper",
+        new("connection.wrapper", ParameterScope.Connection,
+            [new("upstream", "Upstream", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [protocol] }]))]);
+
+    private static RuntimeUnitPlan NestedSource(string protocol)
+    {
+        var connection = new ModuleConnectionSnapshot(12, "wrapper", JsonSerializer.SerializeToElement(new
+        {
+            connectionModule = new
+            {
+                version = 1,
+                parameters = new { upstream = "11" },
+                connections = new { upstream = new { connectionId = 11, kind = protocol, configuration = Connection(protocol) } }
+            }
+        }));
+        return new(RuntimeUnitId.Create("input.protocoltest", "meter/source"), JsonSerializer.SerializeToElement(new
+        {
+            inputModule = new
+            {
+                version = 1,
+                parameters = new { connection = "12" },
+                connections = new { connection }
+            }
+        }, JsonSerializerOptions.Web));
+    }
+
+    private sealed class Module(string protocol, string? referenceKind = null) : IInputModuleFactory
     {
         public string Kind => "input.protocoltest";
         public int Version => 1;
@@ -136,7 +192,7 @@ public sealed class InputModuleProtocolTests
         public bool OmitBinding { get; init; }
         public int Calls { get; private set; }
         public ParameterSchema Parameters { get; } = new("input.protocoltest", ParameterScope.Input,
-            [new("connection", "连接", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [protocol] }]);
+            [new("connection", "连接", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [referenceKind ?? protocol] }]);
         public ImmutableArray<InputModuleField> Describe(JsonElement parameters) => [new("value", FieldType.Integer, "count")];
         public InputProtocolBinding? BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections)
         { Calls++; return OmitBinding ? null : new(DelegateKind, Config); }

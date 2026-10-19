@@ -28,11 +28,18 @@ public sealed class ModuleConnectionSnapshot
     /// 这不是新配置准入，冻结/构建仍须用当前目录 Validate。</summary>
     public static (int Version, JsonElement Parameters) ReadModuleConfiguration(ModuleConnectionSnapshot connection)
     {
+        _ = ModuleConnectionReferences.Flatten([connection]);
+        return ReadModuleParameters(connection);
+    }
+
+    // Structural parsing only; the common reference reader validates the entire closure.
+    internal static (int Version, JsonElement Parameters) ReadModuleParameters(ModuleConnectionSnapshot connection)
+    {
         ArgumentNullException.ThrowIfNull(connection);
         var config = connection.Configuration;
         if (!ConnectionModuleDefinition.IsModuleKind(connection.Kind) || config.ValueKind != JsonValueKind.Object ||
             config.EnumerateObject().Count() != 1 || !config.TryGetProperty("connectionModule", out var envelope) || envelope.ValueKind != JsonValueKind.Object ||
-            envelope.EnumerateObject().Count() != 2 || !envelope.TryGetProperty("version", out var version) || version.ValueKind != JsonValueKind.Number ||
+            envelope.EnumerateObject().Count() != 2 + (envelope.TryGetProperty("connections", out _) ? 1 : 0) || !envelope.TryGetProperty("version", out var version) || version.ValueKind != JsonValueKind.Number ||
             !version.TryGetInt32(out var number) || number < 1 || !envelope.TryGetProperty("parameters", out var parameters) ||
             parameters.ValueKind != JsonValueKind.Object || Encoding.UTF8.GetByteCount(parameters.GetRawText()) > ParameterSchema.MaximumConfigurationBytes)
         { throw InvalidModuleConfiguration(); }

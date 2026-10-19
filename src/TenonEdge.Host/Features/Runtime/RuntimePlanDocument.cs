@@ -324,7 +324,7 @@ internal sealed class RuntimePlanDocument
             // Reject secret/unknown connection fields even for an uninstalled module.
             // This stays pure: protocol validation does not invoke module or network code.
             RuntimeConnectionReferences.ValidateModuleConnections(result);
-            if (InputModuleCatalog.ReadProtocol(result) is null && InputModuleCatalog.ReadConnections(result).Values.Any(connection => connection.Kind is "mqtt" or "modbus"))
+            if (InputModuleCatalog.ReadProtocol(result) is null && ModuleConnectionReferences.Flatten(InputModuleCatalog.ReadConnections(result).Values).Any(connection => connection.Kind is "mqtt" or "modbus"))
             { throw new ArgumentException("MQTT/Modbus 模块引用须经原计划级协议委托。"); }
             if (InputModuleCatalog.ReadProtocol(result) is { } protocol)
             {

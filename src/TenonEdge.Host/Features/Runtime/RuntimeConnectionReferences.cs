@@ -26,8 +26,8 @@ internal static class RuntimeConnectionReferences
 
     internal static RuntimeUnitPlan Protocol(RuntimeUnitPlan unit) => InputModuleCatalog.ReadProtocol(unit) ?? OutputModuleCatalog.ReadProtocol(unit) ?? unit;
 
-    private static IEnumerable<ModuleConnectionSnapshot> ModuleConnections(RuntimeUnitPlan unit) =>
-        InputModuleCatalog.ReadConnections(unit).Values.Concat(OutputModuleCatalog.ReadConnections(unit).Values);
+    private static ImmutableArray<ModuleConnectionSnapshot> ModuleConnections(RuntimeUnitPlan unit) =>
+        ModuleConnectionReferences.Flatten(InputModuleCatalog.ReadConnections(unit).Values.Concat(OutputModuleCatalog.ReadConnections(unit).Values));
 
     internal static IEnumerable<long> ReadIds(RuntimeUnitPlan unit)
     {

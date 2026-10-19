@@ -34,6 +34,27 @@ public sealed class ConnectionModuleCatalogTests
         Assert.Equal(read, ModuleConnectionSnapshot.ReadModuleConfiguration(snapshot));
     }
 
+    [Fact]
+    public void HistoricalConnectionReferencesPreserveExactParametersAndIncludeDescendantsInProtection()
+    {
+        var parent = new ModuleConnectionSnapshot(1, "testwire", Json("""
+            {"connectionModule":{"version":1,"parameters":{"offset":9007199254740993,"upstream":"2"},
+              "connections":{"upstream":{"connectionId":2,"kind":"http","configuration":{"baseAddress":"http://localhost/"}}}}}
+            """));
+        var read = ModuleConnectionSnapshot.ReadModuleConfiguration(parent);
+        Assert.Equal("9007199254740993", read.Parameters.GetProperty("offset").GetRawText());
+        var unit = Source("meter/input", parent);
+        var stored = RuntimePlanDocument.ParseStored(Document(unit));
+        Assert.Equal([1L, 2L], RuntimeConnectionReferences.ReadIds(stored.Units[0]).Order());
+        Assert.Throws<RouteTopologyException>(() => new RouteCompilationLimits(Connections: 1).Check(stored));
+        new RouteCompilationLimits(Connections: 2).Check(stored);
+        Assert.Equal(stored.Canonical, RuntimePlanDocument.ParseStored(stored.Canonical).Canonical);
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(stored.Canonical));
+        var catalog = RuntimeConnectionCatalog.Read(stored, null, Guid.Empty.ToString());
+        Assert.Equal("http", catalog[2].Definition.Kind);
+        Assert.Equal("meter/input", Assert.Single(catalog[2].Users).Key);
+    }
+
     [Theory]
     [InlineData("http")]
     [InlineData("mqtt")]
