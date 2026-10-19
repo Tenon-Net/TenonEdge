@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os'
 import { startOwnedHost } from './owned-host'
 
 /** Real socket peers, not management API mocks. Only known Modbus reads are served. */
-export async function startWorkflowGateway(moduleHost = false) {
+export async function startWorkflowGateway(
+    moduleHost = false,
+    extraLocalPorts: number[] = [],
+) {
     const sockets = new Set<Socket>()
     const protocolErrors: string[] = []
     const reads: { unit: number; address: number; count: number }[] = []
@@ -130,6 +133,10 @@ export async function startWorkflowGateway(moduleHost = false) {
         const args = [
             `--TenonEdge:Outbound:LocalPorts:0=${modbusPort}`,
             `--TenonEdge:Outbound:LocalPorts:1=${httpPort}`,
+            ...extraLocalPorts.map(
+                (port, index) =>
+                    `--TenonEdge:Outbound:LocalPorts:${index + 2}=${port}`,
+            ),
         ]
         const address = new URL(
             process.env.TENONEDGE_TEST_URL ?? 'http://127.0.0.1:18082',

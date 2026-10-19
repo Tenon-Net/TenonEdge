@@ -8242,3 +8242,11 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 ### 本地提交整理（2026-10-08，`a67bfc9`）
 
 维护者授权“整理提交一下未提交的，然后继续”。将截至 §2.23 的 T1-05—T1-08、T2-01 子项及 T2-05 固定字段定位整理为本地检查点；因共享存储、注册和测试改动交织，保留为一个已整体回归的提交，不人为拆出不可构建的中间态。验证基线为 890 项通过；本地 Agent 会话文件不入库，未获推送授权，不推送。后续继续实现不等于本检查点宣称 T2 或网页验收完成。
+
+### 2.298 T3-11 MQTT→HTTP 完整无 JSON 用户链路（2026-10-19）
+
+新增独立真实浏览器流程：系统管理员在页面首次设置后创建连接、MQTT 设备和来源、字段点表、路线图与 HTTP 输出；在画布用真实 MQTT Broker 抓取样本预览（保留报文避免订阅竞态），应用配置后向真实 Broker 发布大整数 JSON，真实 Host 经 HTTP 输出 socket 转发并核对正文与 DeliveryId；关闭整个浏览器后继续转发；Host 正常重启后再次订阅并续发。辅助 Broker 为测试专用 Docker Mosquitto，Host 的受限出站仅显式放行其动态映射端口与测试 HTTP 接收端，非 API/协议模拟。最终单管理员用例在 `web/` 执行 `npx playwright test tests/gateway-mqtt-workflow.spec.ts --workers=1`：1/1 通过，Headless Chromium `156.0.8078.4`，Linux，本地 Docker；`npm run typecheck` 通过。测试见 `web/tests/gateway-mqtt-workflow.spec.ts` 与支持文件。
+
+失败记录：初始实现首轮两角色测试 2/2 失败（字段按钮实际文案为“添加 JSON 字段”、新账号临时密码必须先变更、MQTT 预览发布存在订阅竞态）；修正后又暴露浏览器关闭后复用已关闭 Playwright API context、临时密码登录未完成变更等待、Viewer 登录/路线列表选择器不符等失败。另一次最终收敛前执行的单管理员测试因Viewer登录检查失败而失败；该非目标的额外断言已删除，本项实际只验证管理员流程，不据此宣称Viewer/配置人员 MQTT 闭环通过。首次失败 trace 与 error-context 保存在 `web/test-results/`（被 gitignore，不作为长期证据）；失败定位记录在本节。测试确认证据不掩盖这些失败。
+
+未执行：本测试最低 Chromium 111、真实 Chrome/Edge、跨角色 MQTT 流程；MQTT 预览按保留消息验证订阅接管，后续发布为非保留报文。T3-11 仍需完成全矩阵与其余协议、异常分支；本项不替代完整 T3 浏览器回归。既有 MQTT 计数偶发超时 §2.274/§2.275 根因仍未定位。
