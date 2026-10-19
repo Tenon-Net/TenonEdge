@@ -12,6 +12,7 @@ import { startWorkflowGateway } from './support/gateway-workflow'
 const root = '/api/edge-admin/v1'
 const adminPassword = 'Mqtt-workflow-admin-6317!'
 const temporaryPassword = 'Mqtt-workflow-temporary-4826!'
+const userPassword = 'Mqtt-workflow-user-7829!'
 
 async function createUser(page: Page, username: string, role: string) {
     await page.goto('/users')
@@ -217,182 +218,219 @@ async function applyRoute(page: Page) {
     ).toBeVisible()
 }
 
-test('no JSON workflow: administrator configures live MQTT to HTTP; browser exit and Host restart', async ({
-    browser,
-}, testInfo) => {
-    test.setTimeout(180_000)
-    const broker = await startMqttWorkflowBroker()
-    const gateway = await startWorkflowGateway(false, [broker.port])
-    let owned: Browser | undefined
-    let page: Page | undefined
-    let statusClient: APIRequestContext | undefined
-    let browserUserAgent = ''
-    const pageErrors: string[] = []
-    const externalRequests: string[] = []
-    const launch = async () => {
-        owned = await browser.browserType().launch({
-            executablePath: process.env.TENONEDGE_TEST_EXECUTABLE,
-        })
-        const next = await owned.newPage({
-            baseURL: gateway.url,
-            viewport: { width: 1800, height: 1200 },
-        })
-        await next.context().route('**/*', (route) => {
-            const url = route.request().url()
-            if (new URL(url).origin === gateway.url) return route.continue()
-            externalRequests.push(url)
-            return route.abort('blockedbyclient')
-        })
-        next.setDefaultTimeout(15_000)
-        next.on('pageerror', (error) => pageErrors.push(error.message))
-        return next
-    }
-    try {
-        page = await launch()
-        await page.goto('/')
-        browserUserAgent = await page.evaluate(() => navigator.userAgent)
-        await page
-            .getByLabel('账号', { exact: true })
-            .fill('mqtt-workflow-admin')
-        for (const label of ['密码', '确认密码'])
-            await page.getByLabel(label, { exact: true }).fill(adminPassword)
-        await page
-            .getByRole('button', { name: '创建管理员并登录', exact: true })
-            .click()
-        await expect(
-            page.getByRole('heading', { name: '总览', exact: true }),
-        ).toBeVisible()
-        console.log(
-            'MQTT no-JSON workflow browser:',
-            await page.evaluate(() => navigator.userAgent),
-            'origin:',
-            gateway.url,
-            'creator:',
-            'administrator',
-        )
-        if (new URL(gateway.url).hostname !== '127.0.0.1')
-            expect(await page.evaluate(() => isSecureContext)).toBe(false)
-        await createUser(page, 'mqtt-workflow-viewer', 'viewer')
-        const cookies = await page.context().cookies(gateway.url)
-        statusClient = await request.newContext({
-            baseURL: gateway.url,
-            extraHTTPHeaders: {
-                Cookie: cookies
-                    .map(({ name, value }) => `${name}=${value}`)
-                    .join('; '),
-            },
-        })
-        await createConnections(page, broker.port, gateway.httpPort)
-        await createDeviceAndSource(page)
-        await drawRoute(page)
-        await expect(
-            page.getByRole('status', { name: '有效运行状态' }),
-        ).toContainText('当前画布尚未对应有效路线')
-        expect(gateway.deliveries).toHaveLength(0)
-        await previewFromBroker(page, broker.publish, '9007199254740993')
-        expect(gateway.deliveries).toHaveLength(0)
-        await applyRoute(page)
-        await page.goto('/routes')
-        await page
-            .getByRole('button', {
-                name: '打开 实时 MQTT 转发',
-                exact: true,
+for (const creator of ['administrator', 'configurator'] as const) {
+    test(`no JSON workflow: ${creator} configures live MQTT to HTTP; browser exit and Host restart`, async ({
+        browser,
+    }, testInfo) => {
+        test.setTimeout(180_000)
+        const broker = await startMqttWorkflowBroker()
+        const gateway = await startWorkflowGateway(false, [broker.port])
+        let owned: Browser | undefined
+        let page: Page | undefined
+        let statusClient: APIRequestContext | undefined
+        let browserUserAgent = ''
+        const pageErrors: string[] = []
+        const externalRequests: string[] = []
+        const launch = async () => {
+            owned = await browser.browserType().launch({
+                executablePath: process.env.TENONEDGE_TEST_EXECUTABLE,
             })
-            .click()
-        await expect(
-            page.getByRole('status', { name: '有效运行状态' }),
-        ).toContainText('此画布对应当前有效路线')
-
-        const draft = await (
-            await page.request.get(root + '/configuration/draft')
-        ).json()
-        expect(draft.effectiveRevision).toBe(1)
-        const configured = await (
-            await page.request.get(root + '/connections')
-        ).json()
-        const mqtt = configured.connections.find(
-            (connection: { key: string }) => connection.key === 'plant-broker',
-        )
-        const waitForSubscriptions = async (count: number) =>
-            expect
-                .poll(
-                    async () => {
-                        const status = await (
-                            await statusClient!.get(root + '/runtime/status')
-                        ).json()
-                        return status.persistentCounters[
-                            `connection/${mqtt.id}/mqtt/subscribed`
-                        ]
-                    },
-                    { timeout: 20_000 },
-                )
-                .toBe(count)
-        const publishAndCheck = async (value: string) => {
-            const before = gateway.deliveries.length
-            await broker.publish(
-                'plant/meter',
-                JSON.stringify({ energy: value }),
-            )
-            await expect
-                .poll(() => gateway.deliveries.length, { timeout: 20_000 })
-                .toBe(before + 1)
-            const delivery = gateway.deliveries.at(-1)!
-            expect(delivery.path).toBe('/mqtt-capture')
-            expect(delivery.body).toContain(`"energyTotal":${value}`)
-            expect(JSON.parse(delivery.body).messageId).toBe(delivery.id)
+            const next = await owned.newPage({
+                baseURL: gateway.url,
+                viewport: { width: 1800, height: 1200 },
+            })
+            await next.context().route('**/*', (route) => {
+                const url = route.request().url()
+                if (new URL(url).origin === gateway.url) return route.continue()
+                externalRequests.push(url)
+                return route.abort('blockedbyclient')
+            })
+            next.setDefaultTimeout(15_000)
+            next.on('pageerror', (error) => pageErrors.push(error.message))
+            return next
         }
-
-        await waitForSubscriptions(1)
-        await publishAndCheck('9007199254740993')
-        await page.goto('/runtime/devices')
-        await expect(
-            page.getByRole('row').filter({ hasText: 'MQTT 电表' }),
-        ).toBeVisible()
-        await page.goto('/runtime/outputs')
-        await expect(
-            page.getByRole('row').filter({ hasText: '真实 HTTP 接收端' }),
-        ).toBeVisible()
-
-        const beforeBrowserExit = gateway.deliveries.length
-        const ownedBrowser = owned
-        expect(ownedBrowser).toBeDefined()
-        await ownedBrowser!.close()
-        expect(ownedBrowser!.isConnected()).toBe(false)
-        owned = undefined
-        await publishAndCheck('9007199254740994')
-        expect(gateway.deliveries.length).toBeGreaterThan(beforeBrowserExit)
-
-        const beforeRestart = gateway.deliveries.length
-        await gateway.restart()
-        await waitForSubscriptions(2)
-        await publishAndCheck('9007199254740995')
-        expect(gateway.deliveries.length).toBeGreaterThan(beforeRestart)
-
-        expect(externalRequests).toEqual([])
-        expect(pageErrors).toEqual([])
-        expect(gateway.protocolErrors).toEqual([])
-        await testInfo.attach('mqtt-no-json-workflow', {
-            body: Buffer.from(
-                JSON.stringify({
-                    creator: 'administrator',
-                    deliveries: gateway.deliveries.length,
-                    subscriptions: 2,
-                    externalRequests,
-                    browser: browserUserAgent,
-                }),
-            ),
-            contentType: 'application/json',
-        })
-    } finally {
         try {
-            await owned?.close()
+            page = await launch()
+            await page.goto('/')
+            browserUserAgent = await page.evaluate(() => navigator.userAgent)
+            await page
+                .getByLabel('账号', { exact: true })
+                .fill('mqtt-workflow-admin')
+            for (const label of ['密码', '确认密码'])
+                await page
+                    .getByLabel(label, { exact: true })
+                    .fill(adminPassword)
+            await page
+                .getByRole('button', { name: '创建管理员并登录', exact: true })
+                .click()
+            await expect(
+                page.getByRole('heading', { name: '总览', exact: true }),
+            ).toBeVisible()
+            console.log(
+                'MQTT no-JSON workflow browser:',
+                await page.evaluate(() => navigator.userAgent),
+                'origin:',
+                gateway.url,
+                'creator:',
+                creator,
+            )
+            if (new URL(gateway.url).hostname !== '127.0.0.1')
+                expect(await page.evaluate(() => isSecureContext)).toBe(false)
+            await createUser(page, 'mqtt-workflow-viewer', 'viewer')
+            if (creator === 'configurator') {
+                await createUser(
+                    page,
+                    'mqtt-workflow-configurator',
+                    'configurator',
+                )
+                await page
+                    .getByRole('button', { name: '退出登录', exact: true })
+                    .click()
+                await page.goto('/')
+                await page
+                    .getByLabel('账号', { exact: true })
+                    .fill('mqtt-workflow-configurator')
+                await page
+                    .getByLabel('密码', { exact: true })
+                    .fill(temporaryPassword)
+                await page
+                    .getByRole('button', { name: '登录', exact: true })
+                    .click()
+                await page
+                    .getByLabel('原密码', { exact: true })
+                    .fill(temporaryPassword)
+                await page
+                    .getByLabel('新密码', { exact: true })
+                    .fill(userPassword)
+                await page
+                    .getByRole('button', { name: '保存新密码', exact: true })
+                    .click()
+                await expect(page.getByRole('navigation')).toBeVisible()
+            }
+            const cookies = await page.context().cookies(gateway.url)
+            statusClient = await request.newContext({
+                baseURL: gateway.url,
+                extraHTTPHeaders: {
+                    Cookie: cookies
+                        .map(({ name, value }) => `${name}=${value}`)
+                        .join('; '),
+                },
+            })
+            await createConnections(page, broker.port, gateway.httpPort)
+            await createDeviceAndSource(page)
+            await drawRoute(page)
+            await expect(
+                page.getByRole('status', { name: '有效运行状态' }),
+            ).toContainText('当前画布尚未对应有效路线')
+            expect(gateway.deliveries).toHaveLength(0)
+            await previewFromBroker(page, broker.publish, '9007199254740993')
+            expect(gateway.deliveries).toHaveLength(0)
+            await applyRoute(page)
+            await page.goto('/routes')
+            await page
+                .getByRole('button', {
+                    name: '打开 实时 MQTT 转发',
+                    exact: true,
+                })
+                .click()
+            await expect(
+                page.getByRole('status', { name: '有效运行状态' }),
+            ).toContainText('此画布对应当前有效路线')
+
+            const draft = await (
+                await page.request.get(root + '/configuration/draft')
+            ).json()
+            expect(draft.effectiveRevision).toBe(1)
+            const configured = await (
+                await page.request.get(root + '/connections')
+            ).json()
+            const mqtt = configured.connections.find(
+                (connection: { key: string }) =>
+                    connection.key === 'plant-broker',
+            )
+            const waitForSubscriptions = async (count: number) =>
+                expect
+                    .poll(
+                        async () => {
+                            const status = await (
+                                await statusClient!.get(
+                                    root + '/runtime/status',
+                                )
+                            ).json()
+                            return status.persistentCounters[
+                                `connection/${mqtt.id}/mqtt/subscribed`
+                            ]
+                        },
+                        { timeout: 20_000 },
+                    )
+                    .toBe(count)
+            const publishAndCheck = async (value: string) => {
+                const before = gateway.deliveries.length
+                await broker.publish(
+                    'plant/meter',
+                    JSON.stringify({ energy: value }),
+                )
+                await expect
+                    .poll(() => gateway.deliveries.length, { timeout: 20_000 })
+                    .toBe(before + 1)
+                const delivery = gateway.deliveries.at(-1)!
+                expect(delivery.path).toBe('/mqtt-capture')
+                expect(delivery.body).toContain(`"energyTotal":${value}`)
+                expect(JSON.parse(delivery.body).messageId).toBe(delivery.id)
+            }
+
+            await waitForSubscriptions(1)
+            await publishAndCheck('9007199254740993')
+            await page.goto('/runtime/devices')
+            await expect(
+                page.getByRole('row').filter({ hasText: 'MQTT 电表' }),
+            ).toBeVisible()
+            await page.goto('/runtime/outputs')
+            await expect(
+                page.getByRole('row').filter({ hasText: '真实 HTTP 接收端' }),
+            ).toBeVisible()
+
+            const beforeBrowserExit = gateway.deliveries.length
+            const ownedBrowser = owned
+            expect(ownedBrowser).toBeDefined()
+            await ownedBrowser!.close()
+            expect(ownedBrowser!.isConnected()).toBe(false)
+            owned = undefined
+            await publishAndCheck('9007199254740994')
+            expect(gateway.deliveries.length).toBeGreaterThan(beforeBrowserExit)
+
+            const beforeRestart = gateway.deliveries.length
+            await gateway.restart()
+            await waitForSubscriptions(2)
+            await publishAndCheck('9007199254740995')
+            expect(gateway.deliveries.length).toBeGreaterThan(beforeRestart)
+
+            expect(externalRequests).toEqual([])
+            expect(pageErrors).toEqual([])
+            expect(gateway.protocolErrors).toEqual([])
+            await testInfo.attach('mqtt-no-json-workflow', {
+                body: Buffer.from(
+                    JSON.stringify({
+                        creator,
+                        deliveries: gateway.deliveries.length,
+                        subscriptions: 2,
+                        externalRequests,
+                        browser: browserUserAgent,
+                    }),
+                ),
+                contentType: 'application/json',
+            })
         } finally {
             try {
-                await statusClient?.dispose()
+                await owned?.close()
             } finally {
-                await gateway.close()
-                await broker.close()
+                try {
+                    await statusClient?.dispose()
+                } finally {
+                    await gateway.close()
+                    await broker.close()
+                }
             }
         }
-    }
-})
+    })
+}

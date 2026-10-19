@@ -8299,3 +8299,23 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 本轮没有因该失败更改产品代码或放宽断言。§2.300的历史当前版156.0.8078.4与Chromium111全量147/147仍是当时147项代码快照的结果；本次新增HTTP流程之后的最低浏览器完整结果改以本节148/149记录，不将两轮拼接成通过。当前Chromium156对最新149项的完整套件尚未复验。该证据不关闭T3-11；另有§2.283所列未覆盖的全流程/角色矩阵、§2.274/§2.275 MQTT计数偶发超时根因，以及T3-10的新输出传输待决策。真实Chrome/Edge/Safari、Windows、实物/断电和远端CI仍未验证。
 
 补充：紧接最低版回归后，使用相同源码、单worker串行执行当前浏览器`npm run test:e2e -- --workers=1`，HeadlessChromium `156.0.8078.4`，Linux本地产品Host/Docker测试Broker，**149/149通过，0失败/跳过，21.8分钟**。第130项即上述最低版失败的“last enabled administrator…”场景，本轮通过（4.5秒），但这是另一轮完整套件中的通过；不能抹除最低版失败或解释其原因。两次执行严格串行；未重跑最低版套件。
+
+### 2.305 T3-11 MQTT→HTTP 无 JSON 配置人员流程及最低浏览器失败诊断（2026-10-19）
+
+扩展§2.298的真实 MQTT→HTTP 流程为管理员及配置人员两个独立首次设置/用户会话场景。配置人员场景由管理员通过页面创建 viewer 与 configurator，退出后用临时密码在网页完成强制改密，再独立完成 MQTT/HTTP 连接、设备来源点表、路线画布、真实 Broker 样本预览、应用、精确大整数输出、关闭浏览器继续发送及 Host 重启后继续发送；没有管理API写入夹具。现有Viewer权限由管理员流程保留。实际串行验证：当前Chromium156 `npx playwright test tests/gateway-mqtt-workflow.spec.ts --workers=1` **2/2通过**（约1.3分钟），最低Chromium111同命令加`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome` **2/2通过**（约1.1分钟）；`npm run typecheck`、`npm run lint`、Prettier通过，Linux本地Host与Docker Mosquitto。
+
+为诊断§2.304最低浏览器全量套件中的唯一失败，另在最低Chromium111用`npx playwright test tests/users.spec.ts:186 --workers=1 --trace=on --reporter=line`单独运行一次，**1/1通过，10.3秒**。该诊断证明失败未在孤立用例重现，不能推断全量套件失败根因已找出或将全量失败归咎于资源压力。诊断trace保存在仓库外`/tmp/tenonedge-t3/minimum-browser/users-last-enabled-admin-trace.zip`，SHA-256 `d63062ccecb18fb197d2c096db140d7cc8ef301c30db5d363e17e7ecd6c2ce62`；它是孤立成功trace，不是失败trace。原失败全量运行trace已清理，仅Playwright输出保留失败位置/超时。没有再次运行失败全量套件。
+
+该项仍不覆盖MQTT输入→HTTP输出的viewer全流程，也不覆盖所有输入×输出×角色笛卡尔组合。此新增测试之后的150项全量当前/最低Chromium套件结果见§2.306。
+
+### 2.306 T3-11 加角色闭环后的 150 项全量浏览器回归（2026-10-19）
+
+配置人员 MQTT→HTTP 新流程已纳入套件后，依次串行运行完整150项：当前HeadlessChromium `156.0.8078.4` `npm run test:e2e -- --workers=1` **150/150通过，0失败/跳过，22.6分钟**；随后最低HeadlessChromium `111.0.5563.0` `TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npm run test:e2e -- --workers=1` **148通过、2失败、0跳过，26.9分钟**。Linux、本地产品Host与Docker辅助Broker；两套全量浏览器验证前后串行，未并行运行后端网络集成。
+
+最低版失败现场均已复制至仓库外`/tmp/tenonedge-t3/minimum-browser/`并保存SHA-256：
+- `clear-pending-clear-all-pe-6a005-counts-lost-reply-and-roles-trace.zip`：`b5009ba6923c6b98a3fe48c8508114aa298edbfd91464339089d0fe6acff1d7f`。该长场景达到150秒用例超时；报告栈在`browserContext.close()`清理阶段，不是原业务断言位置。Trace在最后导航`/runtime/outputs`附近记录多次浏览器`net::ERR_NETWORK_CHANGED`，未能定位最初卡住的具体步骤。
+- `client-certificate-certifi-34160-write-response-never-replay-trace.zip`：`2895680b4790ee33cc5b0c0cfd9e641131a527e467dc5c3cd4c21b6d135eb826`。证书边界用例的首次设置页面等待“账号”标签15秒超时；trace显示页面导航后多个`net::ERR_NETWORK_CHANGED`。该spec前后的其他mTLS场景通过。
+
+另有最低Chromium111单独运行`tests/users.spec.ts:186` **1/1通过**（§2.305），且当前版150项全量通过；这不能证明上述两项是浏览器版本缺陷、网络环境缺陷或已修复。全量trace是失败时实际捕获证据；未通过重跑、跳过或放宽断言清除失败。当前单机`docker ps -a`仅观察到多个持续运行数小时/数天的`tenonedge-probe-mqtt-*`默认bridge容器，但本次没有它们的启动/网络变更时间线，不能据此归因为这些容器；未擅自停止或删除。需以失败trace进一步定位网络重置与长超时的因果，最低版全套仍非绿色。
+
+新增MQTT→HTTP配置人员用户流程当前/最低专项均2/2通过，且含在上述150项套件。其余矩阵和平台边界仍按§2.305及§2.283记录；全套软件绿色不替代T3-10协议范围决策、未覆盖组合和真实Chrome/Edge/Safari、Windows、实物/断电、远端CI验证。原MQTT计数偶发超时风险§2.274/2.275保持未解决。
