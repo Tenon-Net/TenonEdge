@@ -25,6 +25,8 @@ HTTP / MQTT 的[客户端证书表单](../docs/client-certificates.md)支持有�
 
 ### 最低版本浏览器复验
 
+人工执行入口见[最低浏览器与 Excel 外部验收步骤](../docs/t3-browser-acceptance.md)，包含独立 Host、HTTP/HTTPS、真实 Excel 复制和证据要求。步骤文档不代表验证通过；实际状态统一见实施状态 §1.1。
+
 默认回归仍使用锁定 Playwright 随附的 Chromium。可显式指定本机已核对来源的归档浏览器，无需修改前端依赖或替换系统浏览器：
 
 ```sh
