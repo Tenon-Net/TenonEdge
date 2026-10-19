@@ -35,6 +35,9 @@ internal static class TransformModuleProcessHost
                 { Automatic = true })
                 .AddSingleton<IOutputModuleFactory>(BrowserOutput("http"))
                 .AddSingleton<IOutputModuleFactory>(BrowserOutput("mqtt"))
+                .AddSingleton(TestWireOutputModule.Definition)
+                .AddSingleton<IOutputModuleFactory, TestWireOutputModule>()
+                .AddSingleton<IOutputAdapterFactory, TestWireOutputTransport>()
                 .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
                     provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single())
                 { PeriodMs = 1000 }));

@@ -4155,6 +4155,7 @@ export interface components {
             version: number | string;
             displayName: string;
             parameters: components["schemas"]["ParameterSchema"];
+            targetConnectionKinds: string[];
         };
         OutputQueueLimits: {
             /** Format: int32 */

@@ -9,7 +9,8 @@ using TenonEdge.Runtime.Modules;
 
 namespace TenonEdge.Runtime.Outputs;
 
-public sealed record OutputModuleDefinition(string Kind, int Version, string DisplayName, ParameterSchema Parameters);
+public sealed record OutputModuleDefinition(string Kind, int Version, string DisplayName, ParameterSchema Parameters,
+    ImmutableArray<string> TargetConnectionKinds);
 
 /// <summary>版本化输出声明、准入和原工厂视图；历史读取不运行已安装或已卸载的模块。
 /// 发送/重试/隔离仍由原输出目标、注册的传输工厂和队列实现，本目录不创建后台任务。</summary>
@@ -27,12 +28,17 @@ public sealed partial class OutputModuleCatalog
     internal ImmutableArray<IOutputAdapterFactory> Factories { get; }
 
     public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null,
-        IEnumerable<IOutputAdapterFactory>? transports = null)
+        IEnumerable<IOutputAdapterFactory>? transports = null, IEnumerable<string>? planTransportKinds = null)
     {
         _credentials = credentials;
         _connections = connections ?? ConnectionModuleCatalog.Empty;
-        _transports = (transports ?? []).Where(factory => IsModuleKind(factory.Kind))
+        var directTransports = (transports ?? []).ToArray();
+        _transports = directTransports.Where(factory => IsModuleKind(factory.Kind))
             .ToImmutableDictionary(factory => factory.Kind, StringComparer.Ordinal);
+        var available = directTransports.Select(factory => factory.Kind).Concat(planTransportKinds ?? [])
+            .Where(kind => kind is "output.http" or "output.mqtt" || IsModuleKind(kind))
+            .Select(kind => kind[7..]).ToHashSet(StringComparer.Ordinal);
+        available.IntersectWith(_connections.Modules.Select(module => module.Kind).Concat(["http", "mqtt"]));
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IOutputModuleFactory>();
         foreach (var module in modules)
@@ -45,7 +51,10 @@ public sealed partial class OutputModuleCatalog
         }
         _modules = entries.ToImmutable();
         Modules = _modules.Values.OrderBy(module => module.Kind, StringComparer.Ordinal).ThenBy(module => module.Version)
-            .Select(module => new OutputModuleDefinition(module.Kind, module.Version, module.DisplayName, module.Parameters)).ToImmutableArray();
+            .Select(module => new OutputModuleDefinition(module.Kind, module.Version, module.DisplayName, module.Parameters,
+                module.Parameters.Parameters.Where(field => field.Type == ParameterType.ConnectionReference)
+                    .SelectMany(field => field.ConnectionKinds).Where(available.Contains).Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal).ToImmutableArray())).ToImmutableArray();
         Factories = BindPlanFactories(ImmutableDictionary<string, IOutputAdapterFactory>.Empty);
     }
 

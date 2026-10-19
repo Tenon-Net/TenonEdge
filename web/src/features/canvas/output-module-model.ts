@@ -151,6 +151,21 @@ export function validateOutputModules(data: OutputModule[]): OutputModule[] {
             )
         )
             throw new Error('invalid-output-module')
+        const references = new Set(
+            module.parameters.parameters
+                .filter((field) => field.type === 'connectionReference')
+                .flatMap((field) => field.connectionKinds ?? []),
+        )
+        if (
+            !Array.isArray(module.targetConnectionKinds) ||
+            new Set(module.targetConnectionKinds).size !==
+                module.targetConnectionKinds.length ||
+            module.targetConnectionKinds.some(
+                (kind) =>
+                    typeof kind !== 'string' || !kind || !references.has(kind),
+            )
+        )
+            throw new Error('invalid-output-module-targets')
         seen.add(key)
     }
     return data

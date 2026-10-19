@@ -51,7 +51,7 @@ function OutputModuleForm({
         catalog.data.version === props.version
     const connections = (catalog.data?.connections ?? []).map((item) => ({
         id: String(item.id),
-        kind: item.kind,
+        kind: item.kind === 'module' ? (item.module?.kind ?? '') : item.kind,
         name: `${item.name} (${item.key})${item.enabled ? '' : ` — ${t('routes.catalogDisabled')}`}`,
     }))
     const values = { ...initial.values, ...initial.connections, ...edits }
@@ -74,7 +74,7 @@ function OutputModuleForm({
     const targets = connections.filter(
         (connection) =>
             referenceIds.has(connection.id) &&
-            ['http', 'mqtt'].includes(connection.kind),
+            props.module.targetConnectionKinds.includes(connection.kind),
     )
     const issues = parameterIssues(props.module.parameters, values, connections)
     const targetValid = targets.some((connection) => connection.id === target)

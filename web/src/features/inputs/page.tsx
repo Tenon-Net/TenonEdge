@@ -76,7 +76,10 @@ export function DeviceInputsPage({
     const connectionChoices = (connections.data?.connections ?? []).map(
         (connection) => ({
             id: String(connection.id),
-            kind: connection.kind,
+            kind:
+                connection.kind === 'module'
+                    ? (connection.module?.kind ?? '')
+                    : connection.kind,
             name: `${connection.name} (${connection.key})`,
         }),
     )

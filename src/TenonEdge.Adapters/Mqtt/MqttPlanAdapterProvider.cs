@@ -7,6 +7,8 @@ public sealed class MqttPlanAdapterProvider(ICredentialResolver credentials, IJs
     ISharedConnections connections, IOutboundConnector connector, TimeProvider time, string gatewayNodeId,
     Action<long, string> report, IMqttSubscriptionStore? subscriptions = null, ITlsTrustResolver? trust = null) : IRuntimePlanAdapterProvider
 {
+    public IReadOnlyList<string> OutputKinds => ["output.mqtt"];
+
     public RuntimePlanAdapters Create()
     {
         var adapters = new MqttPlanAdapters(credentials, decoders, connections, connector, time, gatewayNodeId, report, subscriptions, trust);

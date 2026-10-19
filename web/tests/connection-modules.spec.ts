@@ -218,6 +218,61 @@ async function fixture(browser: Browser) {
     }
 }
 
+test('extension input reference: actual connection kind is selectable without a JSON editor', async ({
+    browser,
+}) => {
+    const f = await fixture(browser)
+    const { page } = f
+    try {
+        const created = await f.create()
+        await page.goto('/devices')
+        await page
+            .getByRole('button', { name: '新建设备', exact: true })
+            .click()
+        await page.getByLabel('设备 key', { exact: true }).fill('wire-device')
+        await page
+            .getByLabel('设备名称', { exact: true })
+            .fill('Wire input device')
+        await page
+            .getByRole('combobox', { name: '设备类型', exact: true })
+            .selectOption('module')
+        await page
+            .getByRole('combobox', { name: '输入模块类型', exact: true })
+            .selectOption('input.authwire')
+        await page
+            .getByRole('button', { name: '保存设备草稿', exact: true })
+            .click()
+        await page.getByRole('button', { name: /Wire input device/ }).click()
+        await page
+            .getByRole('link', { name: '数据来源与点位', exact: true })
+            .click()
+        await page
+            .getByRole('button', { name: '新建数据来源', exact: true })
+            .click()
+        await page.getByLabel('来源 key', { exact: true }).fill('sample')
+        await page.getByLabel('来源名称', { exact: true }).fill('Wire sample')
+        await page
+            .getByRole('combobox', { name: '输入模块版本', exact: true })
+            .selectOption('1')
+        await page
+            .getByLabel('Wire', { exact: true })
+            .selectOption({ label: 'Web wire (web-wire)' })
+        const saved = page.waitForResponse(
+            (r) => r.request().method() === 'POST' && /\/inputs$/.test(r.url()),
+        )
+        await page
+            .getByRole('button', { name: '保存来源草稿', exact: true })
+            .click()
+        const response = await saved
+        expect(response.status(), await response.text()).toBe(200)
+        const body = await response.json()
+        expect(body.input.module.connections.wire).toBe(created.id)
+        expect(f.received).toEqual([]) // Editing a reference must not connect or sample.
+    } finally {
+        await f.close()
+    }
+})
+
 // Only the test assembly knows authwire. Connections and credentials are real UI;
 // device/source/route creation and apply below are explicit API fixtures, not a no-JSON E2E claim.
 test('connection module automatic form, independent credentials, real TCP rotation and restart', async ({

@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:36503/"
+      "url": "http://127.0.0.1:37681/"
     }
   ],
   "paths": {
@@ -19522,7 +19522,8 @@
           "kind",
           "version",
           "displayName",
-          "parameters"
+          "parameters",
+          "targetConnectionKinds"
         ],
         "type": "object",
         "properties": {
@@ -19542,6 +19543,12 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/ParameterSchema"
+          },
+          "targetConnectionKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
