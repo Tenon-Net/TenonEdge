@@ -12,7 +12,9 @@ permissions:
 jobs:
   web:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The 170-test browser baseline alone took 26m36s; retain bounded room for
+    # locked installs, host build and reports. Individual test deadlines/retries stay unchanged.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -40,6 +42,8 @@ jobs:
       - name: Unit tests
         working-directory: web
         run: npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json
+      - name: Prepare MQTT browser test broker image
+        run: docker pull eclipse-mosquitto:2.1.2-alpine
       - name: Browser on HTTP and trusted TLS against actual host
         working-directory: web
         env:
