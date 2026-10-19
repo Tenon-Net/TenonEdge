@@ -12,6 +12,22 @@ export const routeStrings = {
         versionChanged:
             '引用目录与当前画布保存版本不同，请核对后重新载入；不自动替换当前编辑。',
     },
+    runtime: {
+        unknown: '无法读取当前运行状态；不会据草稿推断为已生效。',
+        state: '运行协调状态：{{state}}；当前有效版本：{{revision}}；本路线：{{route}}。',
+        none: '无',
+        effective: '与有效运行配置一致',
+        notEffective: '当前草稿未在有效运行配置中',
+        states: {
+            starting: '启动中',
+            blocked: '启动条件阻止',
+            idle: '空闲',
+            active: '运行中',
+            runFailed: '运行失败',
+            stopping: '停止中',
+            stopped: '已停止',
+        },
+    },
     outputModule: {
         title: '扩展输出参数',
         notice: '参数与连接引用分开保存，不填写秘密。投递目标须显式选自本模块引用的 HTTP/MQTT 连接；停用连接或不完整参数可留在草稿，但不能应用。确认节点配置不会发送。',

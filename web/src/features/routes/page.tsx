@@ -1,6 +1,6 @@
 import { businessKeyPattern } from '../../lib/business-key'
 import { createPreviewDraft } from './preview-model'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import { useBlocker } from '@tanstack/react-router'
@@ -11,6 +11,7 @@ import { ApiError } from '../../api/errors'
 import { ErrorMessage } from '../auth/error-message'
 import { Button } from '../../components/ui/button'
 import { CanvasEditor } from '../canvas/editor'
+import { useRuntimeStatus } from '../diagnostics/queries'
 import { createGraphEditor } from '../canvas/store'
 import { createRouteApi, newRoute, type RouteForm } from './api'
 import { ReferenceDrawer } from './reference-drawer'
@@ -26,7 +27,9 @@ export function RoutesPage() {
     const query = useQuery({
         queryKey,
         queryFn: ({ signal }) => routes.list(signal),
+        refetchInterval: 5000,
     })
+    const runtime = useRuntimeStatus()
     const [canvas] = useState(createGraphEditor)
     const [previewDraft] = useState(createPreviewDraft)
     const document = useStore(canvas, (state) => state.document)
@@ -46,6 +49,7 @@ export function RoutesPage() {
         'connection' | 'device'
     >()
     const [referenceConflict, setReferenceConflict] = useState(false)
+    const referenceOpener = useRef<HTMLElement | null>(null)
     const dirty =
         form !== null &&
         (pendingConfig || JSON.stringify({ ...form, document }) !== original)
@@ -141,20 +145,31 @@ export function RoutesPage() {
                     form: rebased.form,
                     original: JSON.stringify(rebased.baseline),
                 })
-            await Promise.all([
+        },
+        // The sidebar may have committed even if this route read failed.
+        // Refresh catalogs on both outcomes; their versions gate selection.
+        onSettled: () =>
+            Promise.all([
                 queryClient.invalidateQueries({ queryKey }),
                 queryClient.invalidateQueries({ queryKey: ['route-catalog'] }),
                 queryClient.invalidateQueries({
                     queryKey: ['connection-drafts'],
                 }),
-            ])
-        },
+            ]),
     })
     const busy =
         mutation.isPending ||
         compile.isPending ||
         referenceReview.isPending ||
         referenceDrawer !== undefined
+    useEffect(() => {
+        // The opener stays disabled until version review settles. Native dialog
+        // focus restoration alone runs too early, while that button is disabled.
+        if (!busy && referenceOpener.current) {
+            referenceOpener.current.focus()
+            referenceOpener.current = null
+        }
+    }, [busy])
     function open(id?: number) {
         if (
             !query.data ||
@@ -283,6 +298,39 @@ export function RoutesPage() {
             {notice && <p role="status">{notice}</p>}
             {form && (
                 <>
+                    {(() => {
+                        const selectedRoute = query.data?.routes.find(
+                            (item) => item.id === form.id,
+                        )
+                        const coordinator = runtime.data?.coordinator
+                        if (runtime.isError || !coordinator)
+                            return (
+                                <p
+                                    role="status"
+                                    className="text-sm text-muted-foreground"
+                                >
+                                    {t('routes.runtime.unknown')}
+                                </p>
+                            )
+                        return (
+                            <p
+                                role="status"
+                                className="text-sm text-muted-foreground"
+                            >
+                                {t('routes.runtime.state', {
+                                    state: t(
+                                        `routes.runtime.states.${coordinator.state}`,
+                                    ),
+                                    revision:
+                                        coordinator.activeRevision ??
+                                        t('routes.runtime.none'),
+                                    route: selectedRoute?.effective
+                                        ? t('routes.runtime.effective')
+                                        : t('routes.runtime.notEffective'),
+                                })}
+                            </p>
+                        )
+                    })()}
                     {dirty && <p role="status">{t('routes.dirty')}</p>}
                     <form
                         onSubmit={(event) => {
@@ -373,7 +421,14 @@ export function RoutesPage() {
                         readOnly={!canEdit || busy}
                         onCreateReference={
                             canEdit
-                                ? (kind) => setReferenceDrawer(kind)
+                                ? (kind) => {
+                                      const active = globalThis.document.activeElement
+                                      referenceOpener.current =
+                                          active instanceof HTMLElement
+                                              ? active
+                                              : null
+                                      setReferenceDrawer(kind)
+                                  }
                                 : undefined
                         }
                     />
