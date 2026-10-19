@@ -54,6 +54,23 @@ node scripts/minimum-firefox-smoke.mjs
 
 该用例经真实页面完成首次设置/退出/登录、深链刷新、1000/10000行点表、真实指针连线/拒绝环路及50步撤销重做。Firefox不接受构造的未信任ClipboardEvent所带文本；测试通过Gecko自动化上下文填充隔离的Linux无头浏览器剪贴板，再由WebDriver发送真实Ctrl+V，并断言paste事件受信任且收到全部文本。不直接调用应用store，不代表Windows/Excel或人工粘贴验收。报告记录原版浏览器/驱动版本、阶段耗时、采样的浏览器进程树RSS（不是JS堆或峰值），失败截图和自有Host日志；任何失败退出非零。脚本关闭自己的浏览器会话及Host，不关闭外部驱动服务；用后由启动者停止驱动。
 
+将 `TENONEDGE_TEST_URL` 换为 `https://<本机网卡IP>:<空闲端口>`，并使用另一个结果目录，可以执行同样六阶段的 HTTPS 验证。脚本通过本机 `openssl` 只读取自有 Host 的公开证书，核对其控制台 SHA-256 指纹；先证明未信任会话被拒绝，再通过 Firefox 自有 `nsIX509CertDB` 将该证书登记为临时 profile 的 TLS 信任锚，并回读指纹与实际信任状态。全程显式 `acceptInsecureCerts:false`，不忽略证书错误、不修改系统信任；HTTPS 断言安全上下文，HTTP 仍断言非安全上下文。本机曾观察到外部 `certutil` 列出的信任记录未被 Firefox 128 实际采用，因此改由浏览器自身登记与回读；具体兼容原因未确定，不归因为某个 NSS 版本，也不修改浏览器或驱动代码。
+
+### 最新 Google Chrome 的默认 HTTP 策略
+
+V-03 的这条检查不能由普通 Playwright 启动代替：当前锁定版本的默认启动参数关闭了 `HttpsUpgrades`。使用已经核对来源的实际 Google Chrome 154 或以上安装包（可以仅解包，不安装或替换系统浏览器），在 `web/` 执行：
+
+```sh
+TENONEDGE_TEST_URL=http://<本机网卡IPv4>:<空闲端口> \
+TENONEDGE_TEST_EXECUTABLE=/absolute/path/to/google-chrome \
+TENONEDGE_SMOKE_RESULTS=/absolute/path/to/results \
+node scripts/current-chrome-http-smoke.mjs
+```
+
+脚本直接启动自有 Chrome 和临时 Host，Playwright 只通过 CDP 附着到默认 profile，不创建无痕上下文。启动参数仅用于无头模式、回环调试端口、临时 profile 和跳过首次运行/默认浏览器提示；不关闭 HTTPS 升级、不豁免证书或非安全源、不禁用沙箱。有主机 Chrome 策略文件时拒绝将结果当作默认设置。临时 HOME/profile 不访问开发者的桌面会话总线或密钥服务；本机继承会话总线时，曾在独立 HTTP 页面上复现请求前阻塞，隔离总线后正常，不使用 `--password-store` 改写浏览器设置。报告包含这一环境边界、实际版本与进程参数、HTTP 首次设置/登录、深链刷新和画布建点结果；此项不替代最低版本、完整画布/点表或 Windows/Excel 验收。
+
+浏览器须具备可用的原生沙箱。只解包的 Linux deb 中，`chrome-sandbox` 可能因不是 root 所有而无法使用；不能用 `--no-sandbox` 绕过。此次验证仅临时移开自有缓存中的解包 helper，使 Chrome 按官方选择规则采用系统已安装、root 所有且权限为 4755 的 helper（`CHROME_DEVEL_SANDBOX`），结束后恢复缓存文件；没有修改系统 helper。实际路径、版本、失败与通过证据见实施状态 §2.313。
+
 ## 类型生成
 
 用独立临时数据目录启动 Development Host（HTTP 127.0.0.1:18081，HTTPS 端口 0），执行 `npm run api:generate`。

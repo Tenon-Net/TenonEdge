@@ -21,6 +21,91 @@ public sealed class RuntimeRollbackTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task TwentyFirstApplicationPrunesOldestThenRollbackToFifthRestoresDraftAndNewMessages()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        // Use the real coordinator, simulator, formatter and file-backed queue.
+        // The default outbound policy denies localhost, so no external receiver
+        // is contacted and the frozen deliveries remain available for comparison.
+        var saved = await SeedAsync(factory, credential: true, enabledRoute: true);
+        var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
+        var versions = factory.Services.GetRequiredService<RuntimeVersionStore>();
+        var devices = factory.Services.GetRequiredService<DeviceDraftStore>();
+        var inputs = factory.Services.GetRequiredService<InputDraftStore>();
+        var source = Assert.Single(inputs.Read(saved.DeviceId).Inputs);
+        var version = saved.Version;
+        for (var revision = 3; revision <= 21; revision++)
+        {
+            var device = devices.Write(saved.DeviceId,
+                new(version, "meter", $"Revision {revision}", DeviceKind.Simulator), "operator", null);
+            var input = inputs.Write(saved.DeviceId, source.Id,
+                new(device.Version, source.Key, source.Name,
+                    Simulator: new(SampleJson: JsonSerializer.Serialize(new { value = revision }))), "operator", null);
+            version = input.Version;
+            var applied = await coordinator.ApplyDraftAsync(version, "operator", null, Token);
+            Assert.True(applied.Committed && applied.Activated);
+            Assert.Equal(revision, applied.Revision);
+            await OutputPipelineTests.UntilAsync(() => coordinator.Runtime.Deliveries
+                .ReadPending(saved.ConnectionId, 0, 100).Any(row => row.Revision == revision));
+        }
+
+        Assert.Null(versions.Load(1));
+        Assert.Equal(Enumerable.Range(2, 20).Select(value => (long)value).Reverse(),
+            versions.ReadHistory(limit: 100).Select(row => row.Revision));
+        Assert.Equal(21, versions.ReadPointers().EffectiveRevision);
+        var fifth = versions.Load(5)!;
+        Assert.NotEmpty(RuntimeSnapshotDocument.ReadPlan(fifth).Units);
+        var frozen = coordinator.Runtime.Deliveries.ReadPending(saved.ConnectionId, 0, 100).ToArray();
+        Assert.Contains(frozen, row => row.Revision == 5);
+        var review = versions.ReviewRollback(5, version, Token);
+        Assert.True(review.PreflightPassed);
+        Assert.Equal(21, review.EffectiveRevision);
+        Assert.Equal(5, review.TargetRevision);
+        Assert.NotEmpty(review.Changes);
+        var result = await coordinator.RollbackAsync(5, version, "operator", "127.0.0.1", Token);
+        Assert.True(result.Committed && result.Activated && result.DraftReplaced == true);
+        Assert.Equal(22, result.Revision);
+        Assert.Equal(fifth.Content, versions.Load(22)!.Content);
+        Assert.Equal(RuntimeSnapshotOrigins.Rollback, versions.Load(22)!.Origin);
+        Assert.Equal(22, versions.ReadPointers().EffectiveRevision);
+        Assert.Equal(21, versions.ReadPointers().PreviousRevision);
+        Assert.Equal(22, coordinator.Runtime.ActiveRevision);
+        Assert.Null(versions.Load(2));
+        Assert.Equal(20, versions.ReadHistory(limit: 100).Length);
+        var draft = devices.Read();
+        Assert.Equal("Revision 5", Assert.Single(draft.Devices).Name);
+        Assert.Empty(versions.CompareDraft(22, draft.Version));
+        Assert.Equal("{\"value\":5}", Assert.Single(inputs.Read(saved.DeviceId).Inputs).Simulator!.SampleJson);
+        await OutputPipelineTests.UntilAsync(() => coordinator.Runtime.Deliveries
+            .ReadPending(saved.ConnectionId, 0, 100).Any(row => row.Revision == 22));
+        var after = coordinator.Runtime.Deliveries.ReadPending(saved.ConnectionId, 0, 100).ToArray();
+        Assert.All(after.Where(row => row.Revision == 22), row =>
+        {
+            using var payload = JsonDocument.Parse(row.Payload);
+            Assert.Equal(5, payload.RootElement.GetProperty("values").GetProperty("value").GetInt32());
+        });
+        foreach (var old in frozen)
+        {
+            var retained = Assert.Single(after, row => row.DeliveryId == old.DeliveryId);
+            Assert.Equal(old.Seq, retained.Seq);
+            Assert.Equal(old.Revision, retained.Revision);
+            Assert.Equal(old.Payload.ToArray(), retained.Payload.ToArray());
+        }
+
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        var audit = Assert.Single(database.Client.Queryable<AuditLogRecord>()
+            .Where(row => row.Action == AuditActions.SnapshotRolledBack).ToList());
+        Assert.Equal("operator", audit.AccountName);
+        Assert.Equal("r22", audit.Target);
+        // The retained version is still subject to current credential checks.
+        database.Client.Ado.ExecuteCommand("DELETE FROM http_credential");
+        Assert.Equal("configuration.rollbackCredentialMissing",
+            Assert.Throws<DraftWriteException>(() => versions.ReviewRollback(5, draft.Version, Token)).Code);
+        Assert.Null(versions.Load(23));
+        Assert.Equal(22, versions.ReadPointers().EffectiveRevision);
+    }
+
+    [Fact]
     public async Task RollbackCreatesNewVersionRestoresAllDraftTablesAndKeepsCurrentCredential()
     {
         await using var factory = new TenonEdgeApplicationFactory();
@@ -235,7 +320,7 @@ public sealed class RuntimeRollbackTests
         Assert.Equal(3, rollback.Revision);
     }
 
-    private static async Task<Saved> SeedAsync(TenonEdgeApplicationFactory factory, bool credential = false)
+    private static async Task<Saved> SeedAsync(TenonEdgeApplicationFactory factory, bool credential = false, bool enabledRoute = false)
     {
         using var client = factory.CreateClient();
         var devices = factory.Services.GetRequiredService<DeviceDraftStore>();
@@ -254,7 +339,7 @@ public sealed class RuntimeRollbackTests
              new("output", "output.http", 1, "Output", JsonSerializer.SerializeToElement(new { connectionId = connection.Connection.Id }))],
             [new("source", "output")], new([]));
         var route = factory.Services.GetRequiredService<RouteDraftStore>().Write(null,
-            new(connection.Version, "route", "Route", false, graph), "operator", null);
+            new(connection.Version, "route", "Route", enabledRoute, graph), "operator", null);
         var coordinator = factory.Services.GetRequiredService<RuntimeCoordinator>();
         Assert.True((await coordinator.ApplyDraftAsync(route.Version, "operator", null, Token)).Activated);
         var edited = devices.Write(device.Device.Id, new(route.Version, "meter", "Updated", DeviceKind.Simulator), "operator", null);

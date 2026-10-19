@@ -3,7 +3,9 @@
 // An external, loopback WebDriver is required; this script owns a fresh temporary Host.
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
-import { writeFile, mkdir } from 'node:fs/promises'
+import { X509Certificate } from 'node:crypto'
+import { writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { networkInterfaces, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -16,10 +18,18 @@ assert.equal(
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const origin = new URL(process.env.TENONEDGE_TEST_URL ?? '')
 const driver = new URL(process.env.TENONEDGE_WEBDRIVER_URL ?? '')
-assert.equal(origin.protocol, 'http:', 'Use non-secure HTTP for this check')
+assert(['http:', 'https:'].includes(origin.protocol))
+const secure = origin.protocol === 'https:'
+assert(origin.port, 'Choose an explicit, unused test port')
 assert(
-    !['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname),
-    'Use a real NIC address',
+    Object.values(networkInterfaces())
+        .flat()
+        .some(
+            (nic) =>
+                !nic.internal &&
+                nic.address === origin.hostname.replace(/^\[|\]$/g, ''),
+        ),
+    'Use a real local NIC address; this script must not target another Host',
 )
 assert(
     ['localhost', '127.0.0.1', '[::1]'].includes(driver.hostname),
@@ -36,15 +46,26 @@ const report = {
     passed: false,
 }
 const started = performance.now()
+const temporary = await mkdtemp(join(tmpdir(), 'tenonedge-firefox-smoke-'))
+await mkdir(join(temporary, 'data'), { mode: 0o700 })
 let session
 let hostLog = ''
 let hostReady = false
+let hostError
 const host = spawn(
-    process.execPath,
-    [join(root, 'web/scripts/test-host.mjs')],
+    'dotnet',
+    [
+        join(root, 'src/TenonEdge.Host/bin/Release/net10.0/TenonEdge.Host.dll'),
+        `--webroot=${join(root, 'web/dist')}`,
+        `--TenonEdge:DataDirectory=${join(temporary, 'data')}`,
+        `--TenonEdge:Http:Address=${secure ? '127.0.0.1' : '0.0.0.0'}`,
+        `--TenonEdge:Http:Port=${secure ? 0 : origin.port}`,
+        `--TenonEdge:Https:Address=${secure ? '0.0.0.0' : '127.0.0.1'}`,
+        `--TenonEdge:Https:Port=${secure ? origin.port : 0}`,
+    ],
     {
         cwd: root,
-        env: { ...process.env, TENONEDGE_TEST_URL: origin.origin },
+        env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Production' },
         stdio: ['ignore', 'pipe', 'pipe'],
     },
 )
@@ -54,6 +75,9 @@ const collect = (chunk) => {
 }
 host.stdout.on('data', collect)
 host.stderr.on('data', collect)
+host.once('error', (error) => {
+    hostError = error
+})
 const hostExited = new Promise((res) => host.once('close', res))
 const stopOnExit = () => host.kill('SIGTERM')
 process.once('exit', stopOnExit)
@@ -207,6 +231,7 @@ async function screenshot(name) {
 try {
     await until(
         () => {
+            if (hostError) throw hostError
             assert.equal(
                 host.exitCode,
                 null,
@@ -217,10 +242,10 @@ try {
         'owned Host startup',
         30000,
     )
-    const browserName = 'firefox'
-    const capabilities = { browserName }
-    if (browserName === 'firefox')
-        capabilities['moz:firefoxOptions'] = {
+    const capabilities = {
+        browserName: 'firefox',
+        acceptInsecureCerts: false,
+        'moz:firefoxOptions': {
             args: ['-headless'],
             ...(process.env.TENONEDGE_TEST_EXECUTABLE
                 ? { binary: process.env.TENONEDGE_TEST_EXECUTABLE }
@@ -229,12 +254,74 @@ try {
                 'datareporting.healthreport.uploadEnabled': false,
                 'toolkit.telemetry.enabled': false,
             },
-        }
+        },
+    }
+    let trustedCertificate
+    if (secure) {
+        // Retrieve only the public certificate; no HTTP request or secret is sent.
+        // Trust is anchored in our owned Host's console fingerprint, not the peer.
+        const handshake = execFileSync(
+            'openssl',
+            ['s_client', '-connect', origin.host, '-showcerts'],
+            {
+                input: '',
+                encoding: 'utf8',
+                timeout: 10000,
+                stdio: ['pipe', 'pipe', 'pipe'],
+            },
+        )
+        const pem = handshake.match(
+            /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/,
+        )?.[0]
+        assert(pem, 'Owned Host must present a certificate')
+        const expected = hostLog.match(/SHA-256 指纹 ([0-9A-F]{64})/)?.[1]
+        assert(expected, 'Owned Host must report its certificate fingerprint')
+        report.certificateFingerprint = new X509Certificate(
+            pem,
+        ).fingerprint256.replaceAll(':', '')
+        assert.equal(report.certificateFingerprint, expected)
+
+        const untrusted = await command('/session', {
+            capabilities: { alwaysMatch: capabilities },
+        })
+        session = untrusted.sessionId
+        assert.equal(untrusted.capabilities.acceptInsecureCerts, false)
+        await assert.rejects(() => navigate('/account'), /insecure certificate/)
+        report.untrustedCertificateRejected = true
+        await command(`/session/${session}`, undefined, 'DELETE')
+        session = undefined
+
+        trustedCertificate = new X509Certificate(pem).raw.toString('base64')
+    }
     const created = await command('/session', {
         capabilities: { alwaysMatch: capabilities },
     })
     session = created.sessionId
     report.capabilities = created.capabilities
+    assert.equal(report.capabilities.acceptInsecureCerts, false)
+    if (secure) {
+        // Import the fingerprint-checked public certificate using Firefox's own
+        // certificate database (nsIX509CertDB, Firefox 128 IDL), avoiding an NSS
+        // database produced by a different system version. C is its trust-anchor
+        // bit; no acceptInsecureCerts, error exceptions, or verifier overrides.
+        // This privileged fixture touches only the driver's disposable profile.
+        await run('moz/context', { context: 'chrome' })
+        try {
+            report.profileTrust = await js(
+                `const db=Components.classes['@mozilla.org/security/x509certdb;1'].getService(Components.interfaces.nsIX509CertDB);
+                const cert=db.addCertFromBase64(arguments[0], 'C,,');
+                return { fingerprint:cert.sha256Fingerprint, trustedForTls:db.isCertTrusted(cert,Components.interfaces.nsIX509Cert.CA_CERT,Components.interfaces.nsIX509CertDB.TRUSTED_SSL) };`,
+                trustedCertificate,
+            )
+        } finally {
+            await run('moz/context', { context: 'content' })
+        }
+        assert.equal(
+            report.profileTrust.fingerprint.replaceAll(':', ''),
+            report.certificateFingerprint,
+        )
+        assert.equal(report.profileTrust.trustedForTls, true)
+    }
     assert(
         report.capabilities.browserVersion,
         'Driver must report its actual version',
@@ -246,7 +333,7 @@ try {
     await run('window/rect', { width: 1700, height: 1200 })
     await phase('real setup, logout and login', async () => {
         await navigate('/account')
-        assert.equal(await js('return window.isSecureContext;'), false)
+        assert.equal(await js('return window.isSecureContext;'), secure)
         report.userAgent = await js('return navigator.userAgent;')
         await fill(label('账号'), 'minimum-admin')
         await fill(label('密码'), 'Minimum-browser-5938!')
@@ -268,7 +355,7 @@ try {
         await heading('点表交互原型')
         await run('refresh', {})
         await heading('点表交互原型')
-        assert.equal(await js('return window.isSecureContext;'), false)
+        assert.equal(await js('return window.isSecureContext;'), secure)
     })
     const paste = async (count, start, bad = false) => {
         const text = Array.from({ length: count }, (_, offset) => {
@@ -456,24 +543,43 @@ try {
     report.passed = true
 } catch (error) {
     report.error = error.message
+    if (session && secure)
+        report.certificateError = await js(
+            'return document.getElementById("errorCode")?.textContent;',
+        ).catch(() => null)
     if (session) await screenshot('failure').catch(() => {})
     process.exitCode = 1
 } finally {
+    const cleanupFailed = (error) => {
+        report.cleanupError = error.message
+        report.passed = false
+        process.exitCode = 1
+    }
     if (session)
         await command(`/session/${session}`, undefined, 'DELETE').catch(
-            () => {},
+            cleanupFailed,
         )
     host.kill('SIGTERM')
-    await Promise.race([
-        hostExited,
-        delay(15000, undefined, { ref: false }),
-    ]).then(() => {
-        if (host.exitCode === null) {
-            host.kill('SIGKILL')
-            process.exitCode = 1
-            report.passed = false
-        }
-    })
+    let exited = await Promise.race([
+        hostExited.then(() => true),
+        delay(15000, false, { ref: false }),
+    ])
+    if (!exited) {
+        cleanupFailed(new Error('Owned Host did not stop gracefully'))
+        host.kill('SIGKILL')
+        exited = await Promise.race([
+            hostExited.then(() => true),
+            delay(5000, false, { ref: false }),
+        ])
+    }
+    if (exited)
+        await rm(temporary, { recursive: true, force: true }).catch(
+            cleanupFailed,
+        )
+    else
+        cleanupFailed(
+            new Error(`Owned Host exit unconfirmed; preserve ${temporary}`),
+        )
     process.removeListener('exit', stopOnExit)
     report.durationMs = Math.round(performance.now() - started)
     await writeFile(

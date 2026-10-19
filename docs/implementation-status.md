@@ -69,23 +69,23 @@
 
 ### 1.1 T3 有限退出核对矩阵（2026-10-19 接续）
 
-范围固定为 PLAN-01 §6 的十一项及其明确引用的验收，不再以没有定义的“所有组合”追加门槛。下表是当前退出核对入口，**不是十一项已经通过的声明**：历史证据保留原提交/环境边界，本轮新增后的完整回归尚未完成。任何新缺口须指出具体需求及可观察的反例。
+范围固定为 PLAN-01 §6 的十一项及其明确引用的验收，不再以没有定义的“所有组合”追加门槛。下表是当前退出核对入口，**不是十一项已经通过的声明**：历史证据保留原提交/环境边界，本轮 `39e8de1` 完整回归已通过（§2.311），专项浏览器及逐条验收核对仍未收口。任何新缺口须指出具体需求及可观察的反例。
 
 | 任务 | 必须核对的边界 | 已定位的实现/历史证据入口 | 退出前还须核实 |
 |---|---|---|---|
 | T3-01 | 固定来源裁剪、单一路由/客户端、真实登录、离线与深链（V-02、FE-AT-01/02/07） | `web/THIRD_PARTY.md`、`auth.spec.ts`；§2.241、§2.306；CI 修正§2.309 | 当前源码固定安装/构建、完整认证及离线/路由回归；远端 CI 未执行单列 |
-| T3-02 | 点表编辑、批量、逐行错误、1000行粘贴/10000行虚拟化及最低浏览器（V-03/10、FE-AT-05/06） | `auth.spec.ts`、`device-workflow.spec.ts`、`minimum-firefox-smoke.mjs`；§2.241 | 当前回归；实际 Chrome111/Edge111/Safari16.4 环境缺失，Firefox128尚缺HTTPS关键操作证据 |
+| T3-02 | 点表编辑、批量、逐行错误、1000行粘贴/10000行虚拟化及最低浏览器（V-03/10、FE-AT-05/06） | `auth.spec.ts`、`device-workflow.spec.ts`、`minimum-firefox-smoke.mjs`；§2.241 | 当前回归；实际 Chrome111/Edge111/Safari16.4 环境及真实Excel100行粘贴仍缺；Firefox128 HTTP/HTTPS六阶段已通过（§2.312） |
 | T3-03 | 拖放、连线/拒绝非法图、复制删除、50步撤销重做、自有格式与布局分离 | `auth.spec.ts`、`canvas-placement.spec.ts`；§2.302 | 当前完整画布回归，不以API建图代替交互 |
 | T3-04 | 草稿不改运行、key/复制/CSV、凭证不回显/接收方规则、测试及信任（AT-18） | `business-keys`、`device-workflow`、`credential-review`、`connection-trust`、`client-certificate`浏览器用例；§2.257—§2.263、§2.282 | 当前三角色、失败/冲突不重放、凭证轮换关联回归 |
 | T3-05 | 有界图计数、多来源身份与字段、版本/引用检查、预览不出站不入队（AT-07/13/29） | `RouteTopologyCompilerTests`；十来源真实画布/软件从站§2.307；扩展纯预览§2.300 | 当前回归；十来源夹具不能冒充全流程无JSON |
-| T3-06 | 准备失败不中断、停止超时单实例、COMMIT前后恢复、并发草稿、历史/回滚/启动保护（FS-01—06、AT-10/13/28） | `RuntimeApplicationLifecycleTests`、`RuntimeQuiescenceTests`、`RuntimeHistoryTests`及进程中断测试；受限恢复§2.238—§2.239 | FS-01真实HTTP解密失败缺陷已修正，§2.310定向/关联通过；当前完整中断与生命周期回归仍须核对 |
+| T3-06 | 准备失败不中断、停止超时单实例、COMMIT前后恢复、并发草稿、历史/回滚/启动保护（FS-01—06、AT-10/13/28） | `RuntimeApplicationLifecycleTests`、`RuntimeQuiescenceTests`、`RuntimeHistoryTests`及进程中断测试；受限恢复§2.238—§2.239 | FS-01真实HTTP解密失败已修正，完整中断与生命周期回归见§2.311；功能§6.6的第21次应用后回滚第5版及缺凭证拒绝已补真实协调者/队列实证（§2.314） |
 | T3-07 | 原连接读取、测试发送、有界正文/字节预算、当前值/趋势/事件与权限（FS-08、AT-29/30、FE-AT-03/04） | §2.252、§2.303、§2.306、§2.308；`runtime-messages`、`current-values`、`outputs`、`diagnostics`浏览器用例 | 当前完整回归；持续1MiB软件压力不是整机RSS或长期容量承诺 |
 | T3-08 | 队列操作权限、冻结编号/原文、两种迁移、原子性及审计（FS-23、AT-14/26） | §2.201—§2.217；`delivery-*`、`configuration-migration`、`clear-pending`、`output-controls`用例 | 当前操作与中断回归；平台身份分支留T4，实物断电不当软件已验证 |
 | T3-09 | 用户/临时密码/下线/最后管理员、HTTPS Token、审计、参数与白名单（AT-18/32） | §2.219—§2.240；`users`、`tokens`、`audit`、`system`、`runtime-parameters`、`queue-parameters`用例 | 当前完整权限及参数生效回归；宿主管理证书替换/HTTPS-only属T5 |
 | T3-10 | 跨Host业务key/ID、合并替换预检与原子草稿、秘密排除、六类参数同源校验、缺失模块拒绝（FS-27、AT-17） | §2.253、§2.273—§2.287、§2.300—§2.305；`configuration-import`、`parameter-schemas`及输入/转换/输出/连接模块用例 | 当前扩展/导入回归；不以模拟响应证明真实接入，不提前交付T5的extension-guide |
-| T3-11 | 无平台、无JSON页面闭环，浏览器关闭仍运行，Host重启、离线/路由/权限及最低浏览器 | Modbus闭环与总览§2.306，HTTP/MQTT闭环§2.302；`gateway-workflow`、`json-protocol-workflow` | 新增后完整后端/Web/浏览器套件；最低实际浏览器缺口；MQTT历史偶发尚无根因，不能把全绿当修复 |
+| T3-11 | 无平台、无JSON页面闭环，浏览器关闭仍运行，Host重启、离线/路由/权限及最低浏览器 | Modbus闭环与总览§2.306，HTTP/MQTT闭环§2.302；`gateway-workflow`、`json-protocol-workflow` | 新增后完整后端/Web/171项浏览器通过（§2.311）；Firefox128双协议见§2.312、Chrome155默认HTTP见§2.313；其余最低实际浏览器/Excel缺口；MQTT历史偶发尚无根因 |
 
-**剩余项分开处理：** 可以自主完成的是 FS-01 修正、逐项证据核对及当前源码完整回归；外部条件是实际 Chrome111/Edge111/Safari16.4 环境或可核查报告，既有询问未答复，不重复提问、不阻止独立工作。Firefox128 HTTPS 可继续在本机调查，不能直接归为外部阻塞。T4平台联调、T5备份/部署/完整诊断包/手动升级、G1升级和条件性实物断电均不提前纳入本次实现。只有本表各项的实际必需证据齐备，才标记整个T3完成。
+**剩余项分开处理：** FS-01修正和本轮产品源码完整回归已完成（§2.310—§2.311），Firefox128双协议及Chrome155默认HTTP专项已通过（§2.312—§2.313），功能§6.6历史/回滚组合及本批静态检查已通过（§2.314）；继续逐项证据核对。外部条件为实际Chrome111/Edge111/Safari16.4环境或可核查报告，以及功能§3.7真实Excel100行粘贴；既有浏览器询问未答复，不重复提问、不阻止独立工作。T4平台联调、T5备份/部署/完整诊断包/手动升级、G1升级和条件性实物断电均不提前纳入本次实现。只有本表各项的实际必需证据齐备，才标记整个T3完成。
 
 ### 2.288 T3 连续收口接续：连接删除复核与路线列表状态（2026-10-19）
 
@@ -7859,6 +7859,82 @@ python3 .github/scripts/verify-test-results.py <associated-final> --require Teno
 结果：定向 **2/2**；最终完整单元 **2081/2081**、关联集成 **630/630**（包含同两项，不重复累计），均0失败/跳过。最终两项分别9.62/9.77秒；关联集成1分14秒。Release0警告/错误，变更文件格式/分析检查及 `git diff --check` 通过，964个后端源码文件前后哈希一致。最终报告/日志/哈希在 `associated-final/`；首次复现、首次编译CA1859、测试误用画布节点ID及误预期适配器原始错误文本、旧HTTP身份夹具拒绝准备读取导致的4项单元失败均保留在原目录，不把失败报告覆写为通过。
 
 **边界与下一步：** FS-01 的真实HTTP软件集成子场景通过，不是物理设备、浏览器故障页面或整个T3验收。新增后完整集成、完整Web与171项浏览器尚未运行；§1.1按十一任务列出有限退出矩阵。实际最低品牌浏览器与历史MQTT偶发根因仍未收口，不推送、不进入T4/T5/G1。
+
+### 2.311 T3-11 冻结源码后的完整回归（2026-10-19）
+
+基线为隔离树提交 `39e8de11b6df3a8dae3fe2b944f9c9711b7c4a74`，开始和结束工作区均干净。接续同一个执行会话4113，未重复启动或在运行中改动源码/测试/程序集；该进程于 **2026-10-19T14:46:16Z 正常退出0**。证据根 `/home/shiny/.cache/tenonedge-t3-exit-audit/full-39e8de1/`；实际完整命令保存在其上级 `verify-full.sh`。环境为Ubuntu26.04 x64、Linux7.0.0-31-generic、SDK10.0.401/.NET10.0.12、Node22.23.2、固定npm11.21.0、Playwright1.64.0；原始版本输出见 `environment.log`。
+
+| 验证 | 实际结果 | 证据 |
+|---|---|---|
+| locked restore、Release、完整dotnet format | 全部退出0 | `restore.log`、`build.log`、`format.log` |
+| 固定npm ci、完整格式/lint、Web构建 | 全部退出0；保留既有构建分块及lint提示，不改锁文件 | `web/install.log`、`web/format.log`、`web/lint.log`、`web/build.log` |
+| 后端完整单元 | **2081/2081**，0失败/未执行 | `backend/unit.trx` |
+| 后端完整集成 | **2801/2801**，0失败/未执行；13分27秒 | `backend/integration.trx`、`backend/verification.log` |
+| Web完整单元 | **797/797**，0失败/pending/todo | `web/unit.json` |
+| 完整浏览器 | **171/171**，0失败/跳过/flaky，retries=0、1 worker，1609.771秒 | `browser/report.json`、`browser/run.log`、`web/verification.log` |
+| 冻结证据 | 1299个源码/配置文件及19个程序集SHA256前后一致 | `source.sha256`、`source-verified.log`、`assemblies.sha256`、`assemblies-verified.log`、`completion.txt` |
+
+实际顺序为：`dotnet restore TenonEdge.sln --locked-mode` → `dotnet build TenonEdge.sln -c Release --no-restore -m:1 /nodeReuse:false -p:UseSharedCompilation=false` → `dotnet format TenonEdge.sln --verify-no-changes --no-restore` → web目录固定 `npx --yes npm@11.21.0 ci/run format:check/run lint/run build/test`（单元输出JSON）→两个项目分别 `dotnet test -c Release --no-build --no-restore`（集成带 `--blame-hang-timeout 5m --blame-hang-dump-type none`）→ 网卡URL `http://192.168.0.88:18892` 下完整 `npm run test:e2e -- --reporter=line,json` → 两个项目的现有报告验证器及SHA256核对。真实Broker镜像在集成前已拉取，命令与digest在 `broker-pull.log`。
+
+新FS-01两个真实解密失败场景、FS-08持续1MiB场景、MQTT两个进程恢复场景均在本轮完整集成中执行并Passed。MQTT历史偶发此次未重现，**不是根因已修复**；完整绿色也不能替代V-03最低实际浏览器与有限矩阵逐条覆盖核对。远端CI未执行，无推送/发布。后续只补独立浏览器专项脚本时，这一结果仍对应本提交的产品源码，不改称以后新增用例也已经全量执行。
+
+### 2.312 T3-02/03/11、V-03/10：原版 Firefox 128 的 HTTP 与 HTTPS 冒烟（2026-10-19）
+
+产品源码/程序集沿用§2.311，仅修改独立 `web/scripts/minimum-firefox-smoke.mjs`：直接启动原产品Host DLL和隔离数据目录，不使用种子API；两种协议均经真实网卡地址。HTTPS先用openssl只读取公开证书，与自有Host控制台SHA-256指纹比较，再证明未信任会话被拒；随后创建新会话，通过Firefox自身`nsIX509CertDB`登记临时profile信任锚并回读指纹和实际信任。全程`acceptInsecureCerts:false`，不忽略错误、不修改系统信任或浏览器/驱动代码。
+
+环境：同§2.311的Linux x64，原版Firefox **128.0**、geckodriver **0.35.0**。证据根 `/home/shiny/.cache/tenonedge-t3-exit-audit/firefox128-native-trust/`，`http/result.json`、`https/result.json`、截图、日志和脚本SHA256已核对。HTTP **6/6，57313 ms**；HTTPS **6/6，59605 ms**，无跳过。两者均真实完成设置/退出/登录、深链刷新、1000行Ctrl+V逐行报错/修正、10000行虚拟表末行编辑、真实指针连线/拒环、50步撤销重做。HTTPS报告同时断言`untrustedCertificateRejected:true`、`profileTrust.trustedForTls:true`；HTTP非安全上下文、HTTPS安全上下文断言均通过。10000行阶段采样进程树RSS分别1645150208/1592008704字节，不是JS堆或峰值；耗时和各阶段RSS见原报告，不外推容量保证。
+
+实际在web目录启动本机驱动后串行执行：
+
+```sh
+G=/home/shiny/.cache/tenonedge-t3-exit-audit/minimum-firefox-tools
+"$G/geckodriver" --host 127.0.0.1 --port 18485
+TENONEDGE_WEBDRIVER_URL=http://127.0.0.1:18485 TENONEDGE_TEST_EXECUTABLE="$G/firefox/firefox" TENONEDGE_TEST_URL=https://192.168.0.88:18483 TENONEDGE_SMOKE_RESULTS=<证据根>/https node scripts/minimum-firefox-smoke.mjs
+# 同一驱动，再以 http://192.168.0.88:18484 和 <证据根>/http 执行。
+```
+
+失败证据保留：`firefox128-http-https/`首次缺data目录导致Host退出2；补创建目录后，外部certutil/ZIP profile方案在`firefox128-http-https-final/`、`firefox128-trusted-anchor/`仍拒绝HTTPS。`firefox128-trust-diagnostic/`中外部工具列出正确指纹及C,,，但Firefox自身回读CA/server信任均false，页面为`MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT`。改用浏览器自身登记后通过；未证明具体NSS版本是根因。最终自有Host、浏览器会话和本次启动的驱动已退出。没有真实Excel来源，不替代Chrome111、Edge111、Safari16.4或整个T3验收。
+
+### 2.313 T3-11、V-03/S-21：Google Chrome 155 默认局域网 HTTP 专项（2026-10-19）
+
+新增独立 `web/scripts/current-chrome-http-smoke.mjs`，使用原产品Host、隔离数据目录/HOME/profile和实际 **Google Chrome155.0.8059.84**（官方deb仅解包，未替换系统Chrome152）。Playwright1.64.0仅通过CDP附着，不采用其关闭`HttpsUpgrades`的默认启动参数。未配置主机Chrome策略；不创建无痕上下文、不忽略证书、不将非安全源升级为安全上下文、不禁用沙箱。记录实际启动参数、版本、阶段结果和失败日志，清理失败也不能标通过。
+
+**诊断而非盲目重试：** `chrome155-default-http/`与`chrome155-existing-sandbox/`先因解包helper非root所有而无法启动；按官方`setuid_sandbox_host.cc`的选择顺序，只临时移开自有缓存helper，使用系统已有`/opt/google/chrome/chrome-sandbox`（root:root/4755，SHA256 `18391bf9d217ddbde9956347cbb1346d2808a73ade4baa3f88a610447cf946b4`），浏览器能启动，未修改系统文件。`chrome155-sandbox-selection/`随后在首次导航30秒超时，不能据此认定HTTP询问或产品故障。
+
+本轮最小诊断在 `chrome155-renderer-diagnostic/` 证明空白脚本及data文档渲染正常；`chrome155-http-diagnostic/`在独立Node HTTP页复现；`chrome155-native-cdp-diagnostic/`去掉Playwright仍复现；`chrome155-netlog-diagnostic/`显示DIRECT、局域网TCP已成功、`should_upgrade_to_ssl:false`，但主文档尚未发出HTTP请求。原生Chrome访问继承的桌面会话密钥服务；只将测试进程`DBUS_SESSION_BUS_ADDRESS`隔离到临时不存在的总线后，`chrome155-isolated-bus-diagnostic/`的同一原生CDP HTTP探针通过。证据支持“继承会话总线造成此无头环境阻塞”，不声称已定位密钥服务内部根因。最终脚本隔离该总线，避免接触开发者密钥服务；不使用`--password-store`或更改HTTP/TLS策略。
+
+最终产品专项在 `/home/shiny/.cache/tenonedge-t3-exit-audit/chrome155-default-http-isolated-bus/`：**3/3通过，4979 ms，退出0**。真实设置/退出/登录、深链/刷新和画布建点均200并保持HTTP origin及非安全上下文，没有询问页、没有页面脚本错误。`result.json`、两张截图、Host/Chrome日志及脚本SHA256在该目录。浏览器进程的总线错误日志保留，与产品页面错误分开。实际命令（web目录；测试结束trap恢复自有缓存helper）：
+
+```sh
+B=/home/shiny/.cache/tenonedge-t3-exit-audit/current-chrome-tools/extracted/opt/google/chrome
+mv "$B/chrome-sandbox" "$B/chrome-sandbox.extracted"
+trap 'mv "$B/chrome-sandbox.extracted" "$B/chrome-sandbox"' EXIT
+TENONEDGE_TEST_URL=http://192.168.0.88:18486 CHROME_DEVEL_SANDBOX=/opt/google/chrome/chrome-sandbox TENONEDGE_TEST_EXECUTABLE="$B/google-chrome" TENONEDGE_SMOKE_RESULTS=<证据目录> node scripts/current-chrome-http-smoke.mjs
+```
+
+所有本次自有浏览器/Host已退出、缓存helper已恢复。此项只证明该原版Chrome在隔离Linux无头环境下的默认局域网HTTP策略及所列关键操作，不替代最低版本、完整画布/点表、桌面密钥服务兼容或Excel验收。不改产品源码，不重跑无关整套后端和171项浏览器套件；脚本/文档静态验证结果见§2.314。
+
+### 2.314 T3-06 功能§6.6历史保留/回滚组合与本批最终检查（2026-10-19）
+
+新增 `RuntimeRollbackTests.TwentyFirstApplicationPrunesOldestThenRollbackToFifthRestoresDraftAndNewMessages`，经原协调者真实应用21次，非直接插入历史行：前两次由原SeedAsync完成，r3—r21逐版修改设备名和模拟输入值，等待原模拟器/组装器/文件队列产生相应版本的投递。第21次后r1被清理，只保留r2—r21；预检回滚r5后生成r22，其完整快照内容与r5逐字一致，草稿、运行指针和新采样值均恢复为5。旧投递编号、seq、版本和报文不变；审计记录operator/r22。最后仅在测试库删除凭证，再次预检r5明确拒绝为`configuration.rollbackCredentialMissing`，未分配r23。
+
+证据根 `/home/shiny/.cache/tenonedge-t3-exit-audit/history-21-to-5/`。环境沿用§2.311；`history-rollback.trx`实读为**24/24通过，0失败/未执行**（RuntimeRollbackTests及RuntimeHistoryTests），新增用例3.843秒。此测试使用真实SQLite和原运行单元，但默认出站规则拒绝localhost，故证明新版本实际生成冻结投递，不声称已向外部接收方发送；完整页面和外部转发证据仍见对应用例。没有修改产品源码，没有把此新增用例算入§2.311旧的2801项。
+
+实际命令（隔离工作树）：
+
+```sh
+dotnet format whitespace TenonEdge.sln --include tests/IntegrationTests/Runtime/RuntimeRollbackTests.cs --no-restore
+dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-restore -m:1 /nodeReuse:false -p:UseSharedCompilation=false --filter 'FullyQualifiedName~RuntimeRollbackTests|FullyQualifiedName~RuntimeHistoryTests' --blame-hang-timeout 5m --blame-hang-dump-type none --logger 'trx;LogFileName=history-rollback.trx' --results-directory /home/shiny/.cache/tenonedge-t3-exit-audit/history-21-to-5
+```
+
+本批最终检查沿用原会话16117，接续轮询确认于**2026-10-19T15:33:21Z退出0**，没有重启同一验证。证据根 `/home/shiny/.cache/tenonedge-t3-exit-audit/t3-specialized-final-checks/`：
+
+- `dotnet format TenonEdge.sln --verify-no-changes --no-restore --include tests/IntegrationTests/Runtime/RuntimeRollbackTests.cs`、两份浏览器脚本`node --check`通过。
+- web目录固定`npx --yes npm@11.21.0 run format:check`、`run lint`、`run typecheck`通过；lint仍有两条既存`prefer-string-starts-ends-with`警告，没有改规则或宣称零警告。
+- `npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=<证据根>/web-unit.json`：**56文件、797/797用例通过**，0失败/pending/todo；JSON与控制台分别核对。
+- Firefox、Chrome和历史回滚测试的三份`source.sha256`均核对一致；`git diff --check`通过。日志及`completion.txt`保留于证据目录。
+
+本批只有测试、独立验证脚本和文档变更。最低实际浏览器、真实Excel来源及整个T3的验收状态不因本节局部通过而改变。
 
 ## 3. 验收编号登记
 
