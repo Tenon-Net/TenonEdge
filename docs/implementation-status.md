@@ -8291,3 +8291,11 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 浏览器验证串行执行：当前HeadlessChromium156 `npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` 2/2通过（HTTP→HTTP、HTTP→MQTT）；最低Chromium111 `TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` 同为2/2通过。`npm run typecheck`、`npm run lint`通过；Prettier已执行。运行环境Linux、本地产品Host、真实HTTP peer/Docker Mosquitto；网卡/远端部署和实际Chrome/Edge/Safari未在本子项实测。当前/最低完整套件§2.300发生在本两项加入之前；本批尚未重跑全量，不能把整套计数写成149。
 
 这补齐了HTTP输入→MQTT输出标准用户闭环；与§2.298的MQTT→HTTP管理员流程和§2.264/2.295的Modbus→HTTP管理员/配置人员流程共同覆盖三种标准输入、两种标准输出的代表性无JSON路线，不等于全部输入×输出组合或各角色笛卡尔积。T3-11其余异常恢复/矩阵复核与T3-10扩展传输仍未关闭。
+
+### 2.304 T3-11 最低 Chromium 111 全量套件接续回归（2026-10-19）
+
+在§2.303之后按用户要求串行执行最低浏览器的**完整**Playwright套件，命令为`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npm run test:e2e -- --workers=1`，Linux、本地产品Host与测试Docker Broker、HeadlessChromium `111.0.5563.0`。共149项：**148通过、1失败、0跳过**，运行24.5分钟。失败为`tests/users.spec.ts:186`“last enabled administrator protection is real, and stale user edit does not overwrite a newer change”：在`setup()`调用`page.goto(url + '/users')`后，`getByLabel('账号', { exact: true })`等待30秒超时；该用例随后同文件的其他首次设置/用户管理场景仍通过。完整套件后续项目执行至149/149结束。失败时Playwright报告曾给出`test-results/users-last-enabled-adminis-77100-ot-overwrite-a-newer-change/error-context.md`与trace路径，但该运行目录在结束后已被清理，现无可复核trace附件。现有证据不能判明是页面/宿主启动状态、共享测试环境还是单用例产品问题；**不推定为环境偶发，不重跑掩盖失败**，需后续定向诊断并保留新证据。
+
+本轮没有因该失败更改产品代码或放宽断言。§2.300的历史当前版156.0.8078.4与Chromium111全量147/147仍是当时147项代码快照的结果；本次新增HTTP流程之后的最低浏览器完整结果改以本节148/149记录，不将两轮拼接成通过。当前Chromium156对最新149项的完整套件尚未复验。该证据不关闭T3-11；另有§2.283所列未覆盖的全流程/角色矩阵、§2.274/§2.275 MQTT计数偶发超时根因，以及T3-10的新输出传输待决策。真实Chrome/Edge/Safari、Windows、实物/断电和远端CI仍未验证。
+
+补充：紧接最低版回归后，使用相同源码、单worker串行执行当前浏览器`npm run test:e2e -- --workers=1`，HeadlessChromium `156.0.8078.4`，Linux本地产品Host/Docker测试Broker，**149/149通过，0失败/跳过，21.8分钟**。第130项即上述最低版失败的“last enabled administrator…”场景，本轮通过（4.5秒），但这是另一轮完整套件中的通过；不能抹除最低版失败或解释其原因。两次执行严格串行；未重跑最低版套件。
