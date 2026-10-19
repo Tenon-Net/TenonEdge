@@ -9,13 +9,14 @@ import { startOwnedHost } from './support/owned-host'
 
 test('runtime messages show real HTTP input and queued output, preserve raw values, pause, protect bodies and clear on restart', async ({
     browser,
-}) => {
+}, testInfo) => {
     test.setTimeout(120_000)
     const data = await mkdtemp(join(tmpdir(), 'tenonedge-browser-messages-'))
     let secret = false
     let large = false
     let failed = false
     let reads = 0
+    let largeReads = 0
     let posts = 0
     const peer = createServer((request, response) => {
         if (request.method === 'POST') {
@@ -28,14 +29,22 @@ test('runtime messages show real HTTP input and queued output, preserve raw valu
         response.writeHead(failed ? 503 : 200, {
             'Content-Type': 'application/json',
         })
-        response.end(
-            failed
-                ? '{}'
-                : '{"v":9223372036854775807' +
-                      (large ? ',"text":"' + 'x'.repeat(70000) + '"' : '') +
-                      (secret ? ',"password":"fixture-private"' : '') +
-                      '}',
-        )
+        const prefix =
+            '{"v":9223372036854775807' +
+            (secret ? ',"password":"fixture-private"' : '')
+        const text = large
+            ? ',"text":"' +
+              'x'.repeat(
+                  1024 * 1024 - Buffer.byteLength(prefix + ',"text":""}'),
+              ) +
+              '"'
+            : ''
+        const payload = failed ? '{}' : prefix + text + '}'
+        if (large && !failed) {
+            expect(Buffer.byteLength(payload)).toBe(1024 * 1024)
+            largeReads++
+        }
+        response.end(payload)
     })
     peer.listen(0, '127.0.0.1')
     await once(peer, 'listening')
@@ -193,12 +202,40 @@ test('runtime messages show real HTTP input and queued output, preserve raw valu
         await expect(records.getByRole('row').nth(1)).toContainText('已截断', {
             timeout: 15_000,
         })
+        await expect.poll(() => largeReads).toBeGreaterThanOrEqual(3)
+        const size = await records
+            .getByRole('row')
+            .nth(1)
+            .getByRole('cell')
+            .nth(4)
+            .innerText()
+        const sizes = /^(\d+) \/ (\d+) B/.exec(size)
+        expect(sizes).not.toBeNull()
+        expect(Number(sizes![1])).toBe(64 * 1024)
+        // OriginalBytes is the full diagnostic snapshot (including raw JSON), not only the wire body.
+        expect(Number(sizes![2])).toBeGreaterThan(1024 * 1024)
         await records
             .getByRole('button', { name: /^查看正文 / })
             .first()
             .click()
         await expect(body).toContainText('已截断；以下可能不是完整 JSON。')
         await expect(body.locator('pre')).toContainText('9223372036854775807')
+        expect(Buffer.byteLength(await body.locator('pre').innerText())).toBe(
+            64 * 1024,
+        )
+        await expect(body).toContainText(`${sizes![1]} / ${sizes![2]} B`)
+        await testInfo.attach('one-mib-diagnostic-evidence', {
+            body: Buffer.from(
+                JSON.stringify({
+                    wireBytes: 1024 * 1024,
+                    largeReads,
+                    storedBytes: Number(sizes![1]),
+                    originalBytes: Number(sizes![2]),
+                    browser: await page.evaluate(() => navigator.userAgent),
+                }),
+            ),
+            contentType: 'application/json',
+        })
         await page
             .getByRole('button', { name: '关闭正文', exact: true })
             .click()
