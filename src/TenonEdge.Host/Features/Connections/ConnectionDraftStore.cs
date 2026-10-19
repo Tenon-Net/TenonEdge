@@ -41,9 +41,16 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             var inputDrafts = client.Queryable<InputDraftRecord>().ToList().Select(InputDraftStore.Decode).ToArray();
             var devices = deviceDrafts.Where(device => device.ConnectionId == id || inputDrafts.Any(input =>
                 input.DeviceId == device.Id && input.Module?.ConnectionIds.Contains(id) == true))
-                .SelectMany(device => new[] { new ConnectionDeviceReference { Id = device.Id, Key = device.Key, Name = device.Name } }
-                    .Concat(inputDrafts.Where(input => input.DeviceId == device.Id && input.Module?.ConnectionIds.Contains(id) == true)
-                        .Select(input => new ConnectionDeviceReference { Id = device.Id, Key = device.Key, Name = device.Name, InputKey = input.Key })))
+                .SelectMany(device =>
+                {
+                    var ownsConnection = device.ConnectionId == id;
+                    var inputs = inputDrafts.Where(input => input.DeviceId == device.Id &&
+                        (ownsConnection || input.Module?.ConnectionIds.Contains(id) == true)).ToArray();
+                    return new[] { new ConnectionDeviceReference { Id = device.Id, Key = device.Key, Name = device.Name } }
+                        .Concat(inputs.Select(input => new ConnectionDeviceReference
+                        { Id = device.Id, Key = device.Key, Name = device.Name, InputKey = input.Key }));
+                })
+                .DistinctBy(item => (item.Id, item.InputKey))
                 .ToArray();
             var routes = client.Ado.SqlQuery<ConnectionRouteReference>("""
                 SELECT DISTINCT r.id AS Id, r.business_key AS Key, r.name AS Name, r.enabled AS Enabled

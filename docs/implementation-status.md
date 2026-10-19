@@ -120,7 +120,7 @@ Web验证：`npm run typecheck`、`npm run lint`、`npm test -- --run`通过，5
 | T3-01/FE-AT-01，V-02；FS-01首次设置/登录 | 认证与同源离线资产在当前Chromium和Chromium111完整147项回归见§2.300；FE-AT-01锁文件重装历史证据 | 当前/最低Chromium软件矩阵通过；锁文件完整重装本轮未重做，实际Chrome/Edge/Safari仍未验证 |
 | T3-02/FE-AT-05，V-10；FS-03点表 | 1,000行粘贴、逐行错误、批量编辑、10,000行虚拟化在当前Chromium及Chromium111完整147项回归见§2.300 | 两版浏览器的软件场景通过；数值只是浏览器观测、非性能阈值，不能外推所有输入协议/规模 |
 | T3-03/FE-AT-05；FS-05画布 | 撤销重做/复杂编辑场景及画布状态，在当前Chromium和Chromium111完整套件与抽屉流程见§2.290/2.299/2.300 | 基础/指定复合流程通过；复杂路线各编译错误类型仍未组成完整验证矩阵 |
-| T3-04；FS-02连接、FS-03设备点位 | 删除前完整引用/队列核对及服务端事务复核见§2.282/2.288；新建连接/设备/点位抽屉完整真实HTTP发送见§2.290/§2.300；连接、TLS、凭证专测见§2.254—2.287 | 当前/最低Chromium完整回归通过；不等于每种凭证/协议/异常分支的笛卡尔组合全覆盖 |
+| T3-04；FS-02连接、FS-03设备点位 | 删除前完整引用/队列页面和服务端复核见§2.282/2.288/2.301；新建连接/设备/点位抽屉完整真实HTTP发送见§2.290/§2.300；连接、TLS、凭证专测见§2.254—2.287 | 页面真实显示设备、关联来源（含停用）、路线、保留版本单元及待发/失败/隔离数；当前/最低Chromium验证通过。不等于每种凭证/协议/异常分支的笛卡尔组合全覆盖 |
 | T3-05；FS-05路线 | 列表元数据/有效状态§2.288、画布草稿与有效运行状态§2.299、未保存编辑抽屉§2.290；当前/最低Chromium全量147项§2.300 | 指定两种路线状态、抽屉编辑保护与最低Chromium通过；每类编译错误/并发更新分支仍未逐项组合 |
 | T3-06/AT-28；FS-06应用/回滚 | 多持久窗口强杀、正常重启、积存/草稿保留和损坏快照受控恢复见§2.165—2.192、§2.238—2.239 | 软件注入矩阵有既有证据；不是实物断电；本轮2685全量通过，但不等同重新审查全部中断点与业务流程 |
 | T3-07/AT-29/30；FS-04/07 | 调试预算、真实样本/预览/发送见§2.247—2.252；磁盘系数实测与容量公式§2.289；当前 E2E 全量 | Linux/ext4两尺寸有限样本，边界见§2.289；非Modbus诊断闭环及最低浏览器容量页面尚未统一矩阵验收 |
@@ -8264,3 +8264,14 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 当前代码另已通过`npm run typecheck`、`npm run lint`、Prettier变更文件检查、`npm run build`（保留既有>500kB chunk警告）。环境为Linux/本地产品Host、Docker测试Broker和真实浏览器进程。本组确认的是Chromium最低版本的软件兼容性；不替代Google Chrome/Edge实际安装版、Safari、Windows、实体设备/断电、真实网络部署或远端CI。
 
 矩阵更新：当前与最低Chromium的完整浏览器套件均已全量运行；Modbus→HTTP无JSON流程已有管理员与配置人员真实流程证据，MQTT→HTTP新增管理员完整流程见§2.298/2.299；尚未据此宣称T3整体验收。T3-10指定输出扩展传输仍待维护者确认；其他协议用户闭环、跨角色异常/编译错误组合、既有MQTT计数偶发超时根因和实际Chrome/Edge/Safari仍需单列处理。不得以全量浏览器通过替代后端网络集成全量或实物条件验收。
+
+### 2.301 T3-04 连接删除复核补齐直接设备来源（2026-10-19）
+
+复核§2.288页面与API时发现：`ConnectionDeletionReview`原列连接所引用的设备、路线、保留版本和三种积存数；若连接由设备级配置引用，列表只显示设备父项，没有将该设备下启用/停用来源逐一列出，容易把“设备引用”误读为完整来源清单。现在同一服务端复核响应会对直接连接设备枚举其所有来源key，同时继续单列模块来源引用并按设备/来源键去重；页面重用同一只读确认面板展示来源，不新增CRUD或弱化原删除写事务复核。停用来源也列出，便于看见当前未运行但仍保存在草稿/有效版本中的引用。
+
+测试与验证按网络/浏览器串行：
+- `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-restore --filter 'FullyQualifiedName~ConnectionDraftTests' --logger 'trx;LogFileName=connection-delete-source-review.trx' --results-directory /tmp/tenonedge-t3/connection-delete-source-review` **17/17通过**，覆盖既有引用/保留版本/队列分区API契约。
+- `dotnet format whitespace TenonEdge.sln --verify-no-changes --no-restore --include src/TenonEdge.Host/Features/Connections/ConnectionDraftStore.cs`通过；Release构建0警告/错误；完整单元 **1943/1943**；网络集成 **2686/2686**、0失败/跳过，约13分02秒，TRX=`/tmp/tenonedge-t3/final-integration4/t3-integration-final4.trx`。
+- 页面E2E扩展为对真实设备、启用/停用来源、路线、有效版本内运行单元及API返回的待发/失败/隔离实际计数逐项核对，并确认有引用时删除确认禁用。第一次断言误用草稿节点名`route/out`作为运行单元标识，页面正确返回`output.http/route/<hash>`，该**测试期望错误**保留；未改生产规则，随后用真实完整运行单元标识修正。当前Chromium执行`npx playwright test tests/connection-list.spec.ts --workers=1` 3/3通过；最低Chromium111执行`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npx playwright test tests/connection-list.spec.ts --workers=1` 3/3通过，均Linux、本地Host/真实HTTP socket。
+
+依据此前完整浏览器套件§2.300，该面板本批全页面/current与minimum专项均通过；其它真实Chrome/Edge/Safari未验证。连接删除仍只在服务端原写事务复核后执行，本UI预检不能替代服务端授权。T3-04及T3-11未整体关闭。

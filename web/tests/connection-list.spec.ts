@@ -357,6 +357,44 @@ test('connection list separates effective and draft data, observes real HTTP fai
             timeout: 20_000,
         })
         await expect(row).toContainText('http.status') // last error survives recovery
+        const deletion = await (
+            await page.request.get(
+                root +
+                    `/connections/${id}/deletion-review?expectedVersion=${off.version}`,
+            )
+        ).json()
+        await row.getByRole('button', { name: '删除连接', exact: true }).click()
+        const deletionPanel = page.getByRole('region', {
+            name: '删除前核对',
+            exact: true,
+        })
+        await expect(deletionPanel).toBeVisible()
+        await expect(deletionPanel).toContainText('Meter')
+        await expect(deletionPanel).toContainText('来源 read')
+        await expect(deletionPanel).toContainText('来源 disabled')
+        await expect(deletionPanel).toContainText('output.http/route/')
+        await expect(deletionPanel).toContainText('保留运行版本')
+        await expect(deletionPanel).toContainText(
+            `待发 ${deletion.pendingCount}`,
+        )
+        await expect(deletionPanel).toContainText(
+            `失败 ${deletion.failedCount}`,
+        )
+        await expect(deletionPanel).toContainText(
+            `隔离 ${deletion.quarantinedCount}`,
+        )
+        await expect(deletionPanel).toContainText(
+            '仍有引用或积存记录，不能删除。',
+        )
+        await expect(
+            deletionPanel.getByRole('button', {
+                name: '确认删除',
+                exact: true,
+            }),
+        ).toBeDisabled()
+        await deletionPanel
+            .getByRole('button', { name: '取消', exact: true })
+            .click()
         const changed = await write('put', `/connections/${id}`, {
             expectedVersion: off.version,
             key: 'shared-http',
