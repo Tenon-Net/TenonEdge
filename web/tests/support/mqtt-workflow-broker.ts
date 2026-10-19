@@ -58,6 +58,47 @@ export async function startMqttWorkflowBroker() {
                 '1',
                 ...(retained ? ['-r'] : []),
             ])
+        const subscribeForReadinessAndOneMessage = async (topic: string) => {
+            if (!/^[A-Za-z0-9/_-]{1,128}$/.test(topic))
+                throw new Error('invalid workflow MQTT topic')
+            const log = `/tmp/tenonedge-sub-${randomUUID()}.log`
+            await docker([
+                'exec',
+                '-d',
+                name,
+                'sh',
+                '-c',
+                `mosquitto_sub -h 127.0.0.1 -t '${topic}' -q 1 -v -W 90 -C 2 > '${log}' 2>&1`,
+            ])
+            const read = async () => {
+                try {
+                    return (
+                        await docker(['exec', name, 'sh', '-c', `cat '${log}'`])
+                    ).stdout
+                } catch {
+                    return ''
+                }
+            }
+            return {
+                read,
+                async waitForRetained(marker: string) {
+                    await expect
+                        .poll(read, { timeout: 10_000 })
+                        .toContain(marker)
+                },
+                async waitForMessages(count: number) {
+                    await expect
+                        .poll(
+                            async () =>
+                                (await read()).split('\n').filter(Boolean)
+                                    .length,
+                            { timeout: 30_000 },
+                        )
+                        .toBe(count)
+                    return read()
+                },
+            }
+        }
         await expect
             .poll(
                 async () => {
@@ -71,7 +112,7 @@ export async function startMqttWorkflowBroker() {
                 { timeout: 10_000 },
             )
             .toBe(true)
-        return { port, publish, close }
+        return { port, publish, subscribeForReadinessAndOneMessage, close }
     } catch (error) {
         await close()
         throw error

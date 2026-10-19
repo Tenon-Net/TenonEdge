@@ -8275,3 +8275,19 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 - 页面E2E扩展为对真实设备、启用/停用来源、路线、有效版本内运行单元及API返回的待发/失败/隔离实际计数逐项核对，并确认有引用时删除确认禁用。第一次断言误用草稿节点名`route/out`作为运行单元标识，页面正确返回`output.http/route/<hash>`，该**测试期望错误**保留；未改生产规则，随后用真实完整运行单元标识修正。当前Chromium执行`npx playwright test tests/connection-list.spec.ts --workers=1` 3/3通过；最低Chromium111执行`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npx playwright test tests/connection-list.spec.ts --workers=1` 3/3通过，均Linux、本地Host/真实HTTP socket。
 
 依据此前完整浏览器套件§2.300，该面板本批全页面/current与minimum专项均通过；其它真实Chrome/Edge/Safari未验证。连接删除仍只在服务端原写事务复核后执行，本UI预检不能替代服务端授权。T3-04及T3-11未整体关闭。
+
+### 2.302 T3-11 HTTP拉取→HTTP输出无JSON页面闭环（2026-10-19）
+
+新增纯页面配置路线，补齐标准HTTP输入来源的端到端流程：管理员首次设置后在网页建HTTP连接、设备、每秒采样来源及字段、路线映射和HTTP输出；真实HTTP peer在`/source`返回大整数JSON，页面显式采样预览并应用；产品Host真实定时GET、按映射转换后POST到`/capture`，断开整个浏览器仍继续采集/转发，Host正常重启后再次采样/发送。测试使用产品Owned Host、受限loopback出站、真实Node HTTP socket和浏览器页面，没有管理API夹具、手工路线JSON或模拟输入。浏览器外部请求被拦截并断言为零。支持peer在`gateway-workflow.ts`只为精确`GET /source`返回固定样本，不改变既有POST记录协议行为。
+
+验证：Chromium156执行`npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` 1/1通过；最低Chromium111执行`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` 1/1通过。两次均为Linux本地Host/HTTP peer，分别HeadlessChromium156.0.8078.4和111.0.5563.0，串行。新增代码`npm run typecheck`、`npm run lint`通过、Prettier已执行。
+
+失败/修正：首轮类型检查发现浏览器句柄闭包后的可空类型，改为局部句柄非空检查；首次lint警告指出无用常量并移除。无产品断言失败，没有重试产品网络测试。该流程只覆盖管理员HTTP→HTTP路线；配置人员HTTP路线、HTTP输入到MQTT输出、其他输入/输出协议组、浏览器完整矩阵在新增此项之后尚未针对性复跑。当前/最低整套回归各147项见§2.300（未含此新spec），不能把旧全量计数改写为148项。
+
+### 2.303 T3-11 HTTP输入到MQTT输出无JSON闭环（2026-10-19）
+
+扩展真实HTTP拉取用户流程支持MQTT输出目标，网页分别建HTTP连接、MQTT Broker连接、HTTP设备/来源/字段、路线输入/映射/MQTT输出，预览读取真实HTTP JSON后显式应用。真实Broker是Docker Mosquitto；测试订阅先接收唯一 retained readiness 标记，确认已订阅后再应用/等待真实产品MQTT投递，避免使用固定延时或重试隐藏订阅竞态。核对非保留产品报文包含精确大整数及messageId，并验证整个浏览器退出、Host重启后继续拉取和发布；HTTP输出依旧用相同HTTP socket链路。测试侧Broker为当前Host只放行的显式loopback端口，无管理API夹具、手写路线JSON或虚拟Broker。
+
+浏览器验证串行执行：当前HeadlessChromium156 `npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` 2/2通过（HTTP→HTTP、HTTP→MQTT）；最低Chromium111 `TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` 同为2/2通过。`npm run typecheck`、`npm run lint`通过；Prettier已执行。运行环境Linux、本地产品Host、真实HTTP peer/Docker Mosquitto；网卡/远端部署和实际Chrome/Edge/Safari未在本子项实测。当前/最低完整套件§2.300发生在本两项加入之前；本批尚未重跑全量，不能把整套计数写成149。
+
+这补齐了HTTP输入→MQTT输出标准用户闭环；与§2.298的MQTT→HTTP管理员流程和§2.264/2.295的Modbus→HTTP管理员/配置人员流程共同覆盖三种标准输入、两种标准输出的代表性无JSON路线，不等于全部输入×输出组合或各角色笛卡尔积。T3-11其余异常恢复/矩阵复核与T3-10扩展传输仍未关闭。

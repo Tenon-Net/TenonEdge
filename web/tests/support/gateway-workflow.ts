@@ -13,6 +13,7 @@ export async function startWorkflowGateway(
     const sockets = new Set<Socket>()
     const protocolErrors: string[] = []
     const reads: { unit: number; address: number; count: number }[] = []
+    const httpReads: { path: string; at: number }[] = []
     const deliveries: {
         body: string
         authorization?: string
@@ -81,6 +82,13 @@ export async function startWorkflowGateway(
             }
             chunks.push(Buffer.from(chunk))
         }
+        if (request.method === 'GET' && request.url === '/source') {
+            httpReads.push({ path: request.url, at: Date.now() })
+            response
+                .writeHead(200, { 'Content-Type': 'application/json' })
+                .end('{"energy":9007199254740993}')
+            return
+        }
         if (request.method !== 'POST')
             protocolErrors.push('unexpected HTTP method')
         deliveries.push({
@@ -148,6 +156,7 @@ export async function startWorkflowGateway(
             modbusPort,
             httpPort,
             reads,
+            httpReads,
             deliveries,
             protocolErrors,
             close,
