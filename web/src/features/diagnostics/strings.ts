@@ -4,6 +4,13 @@ export const diagnosticsStrings = {
     state: '运行状态',
     revision: '当前运行版本',
     noRevision: '尚无运行版本',
+    effectiveRevision: '持久有效版本',
+    noEffectiveRevision: '尚无有效配置',
+    appliedBy: '有效版本应用人',
+    appliedAt: '有效版本应用时间',
+    versionNotice:
+        '应用信息对应已持久提交的有效版本；切换或运行失败时，当前运行版本可能不同，不表示全部运行单元已启动。',
+    statusUnknown: '无法刷新，当前运行状态与有效版本未知；请重新读取核对。',
     refresh: '刷新本区域',
     lastRefresh: '上次成功刷新：{{time}}',
     empty: '暂无记录',
@@ -118,5 +125,5 @@ export const diagnosticsStrings = {
     route: '画数据路线',
     apply: '确认应用',
     partialNotice:
-        '此处显示真实运行单元与已有诊断数据；设备汇总与当前值已接入，输出目标队列详情仍在补齐，不以运行单元数量代替设备数。',
+        '总览只读展示，不会触发采集、测试发送或应用配置；查看报文及故障操作请进入相应页面。',
 }

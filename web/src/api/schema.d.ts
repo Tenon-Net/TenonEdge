@@ -212,7 +212,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 查看运行状态、存储保护和累计计数 */
+        /** 查看运行状态、持久有效版本的应用人/时间、存储保护和累计计数 */
         get: operations["getRuntimeStatus"];
         put?: never;
         post?: never;
@@ -4929,6 +4929,14 @@ export interface components {
             unpersistedCounters: {
                 [key: string]: number | string;
             };
+            configuration: null | components["schemas"]["RuntimeEffectiveConfiguration"];
+        };
+        RuntimeEffectiveConfiguration: {
+            /** Format: int64 */
+            effectiveRevision: null | number | string;
+            appliedBy: null | string;
+            /** Format: date-time */
+            appliedAt: null | string;
         };
         RuntimeEventItem: {
             /** Format: int64 */

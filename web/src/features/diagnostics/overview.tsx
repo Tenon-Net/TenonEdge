@@ -1,3 +1,5 @@
+import { RuntimeEvents } from './events'
+import { RuntimeTrends } from './trends'
 import { LossCounters } from './loss-counters'
 import { OutputSummary } from './outputs'
 import { DeviceSummary } from './current-values'
@@ -16,7 +18,8 @@ export function OverviewPage() {
     const info = useSystemInfo()
     const session = useSession((state) => state.value)
     const [dismissed, dismiss] = useState(false)
-    const status = runtime.data
+    const status = runtime.error ? undefined : runtime.data
+    const configuration = status?.configuration
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-semibold">
@@ -34,6 +37,35 @@ export function OverviewPage() {
                             value={t(
                                 `diagnostics.states.${runtimeHealth(status)}`,
                             )}
+                        />
+                        <Fact
+                            label={t('diagnostics.effectiveRevision')}
+                            value={
+                                !configuration
+                                    ? t('diagnostics.unknown')
+                                    : configuration.effectiveRevision === null
+                                      ? t('diagnostics.noEffectiveRevision')
+                                      : `r${configuration.effectiveRevision}`
+                            }
+                        />
+                        <Fact
+                            label={t('diagnostics.appliedBy')}
+                            value={
+                                configuration?.effectiveRevision === null
+                                    ? '—'
+                                    : (configuration?.appliedBy ??
+                                      t('diagnostics.unknown'))
+                            }
+                        />
+                        <Fact
+                            label={t('diagnostics.appliedAt')}
+                            value={
+                                configuration?.effectiveRevision === null
+                                    ? '—'
+                                    : configuration?.appliedAt
+                                      ? dateText(configuration.appliedAt)
+                                      : t('diagnostics.unknown')
+                            }
                         />
                         <Fact
                             label={t('diagnostics.revision')}
@@ -70,6 +102,12 @@ export function OverviewPage() {
                             value={`${status.inFlight.reservedBytes} / ${status.inFlight.capacityBytes}`}
                         />
                     </dl>
+                )}
+                <p className="text-sm text-muted-foreground">
+                    {t('diagnostics.versionNotice')}
+                </p>
+                {runtime.error && (
+                    <p role="status">{t('diagnostics.statusUnknown')}</p>
                 )}
                 {status?.coordinator.reason && (
                     <p role="alert">{status.coordinator.reason}</p>
@@ -121,6 +159,8 @@ export function OverviewPage() {
                         </Button>
                     </section>
                 )}
+            <RuntimeTrends />
+            <RuntimeEvents />
             <DiagnosticPanel title={t('diagnostics.system')} query={info}>
                 {info.data && (
                     <>

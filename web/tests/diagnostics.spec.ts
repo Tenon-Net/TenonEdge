@@ -8,7 +8,7 @@ import { startOwnedHost } from './support/owned-host'
 test('real diagnostics show runtime, trends and persistent events; query errors preserve filters and navigation stops polling', async ({
     browser,
 }) => {
-    test.setTimeout(90_000)
+    test.setTimeout(120_000)
     const data = await mkdtemp(join(tmpdir(), 'tenonedge-browser-diagnostics-'))
     let host: Awaited<ReturnType<typeof startOwnedHost>> | undefined
     let context: BrowserContext | undefined
@@ -68,6 +68,72 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
                 request.method() + ' ' + new URL(request.url()).pathname,
             ),
         )
+        const durable = await (
+            await page.request.get('/api/edge-admin/v1/runtime/status')
+        ).json()
+        const historyVersions = await (
+            await page.request.get('/api/edge-admin/v1/configuration/versions')
+        ).json()
+        expect(durable.configuration.effectiveRevision).toBe(1)
+        expect(durable.configuration.appliedBy).toBe('系统')
+        expect(Date.parse(durable.configuration.appliedAt)).toBe(
+            historyVersions[0].activatedAt,
+        )
+
+        const state = page.getByRole('region', {
+            name: '运行状态',
+            exact: true,
+        })
+        await expect(state.getByText('系统', { exact: true })).toBeVisible()
+        await expect(
+            state.getByText('持久有效版本', { exact: true }),
+        ).toBeVisible()
+        await expect(
+            page.getByRole('img', { name: '最近一小时趋势' }),
+        ).toBeVisible({ timeout: 25_000 })
+        const overviewEvents = page.getByRole('region', {
+            name: '运行事件',
+            exact: true,
+        })
+        await expect(
+            overviewEvents.getByRole('cell', {
+                name: 'runtime.seedApplied',
+                exact: true,
+            }),
+        ).toBeVisible()
+        await overviewEvents
+            .getByLabel('类型代码', { exact: true })
+            .fill('unsaved-overview-filter')
+        await page.route('**/runtime/status', (route) =>
+            route.fulfill({
+                status: 500,
+                contentType: 'application/problem+json',
+                body: '{"status":500}',
+            }),
+        )
+        await state.getByRole('button', { name: '刷新本区域' }).click()
+        await expect(state.getByRole('alert')).toContainText('请求失败')
+        await expect(state).toContainText('当前运行状态与有效版本未知')
+        await expect(state.getByText('系统', { exact: true })).toHaveCount(0)
+        await expect(
+            overviewEvents.getByLabel('类型代码', { exact: true }),
+        ).toHaveValue('unsaved-overview-filter')
+        await expect(
+            page.getByRole('img', { name: '最近一小时趋势' }),
+        ).toBeVisible()
+        await page.unroute('**/runtime/status')
+        await state.getByRole('button', { name: '刷新本区域' }).click()
+        await expect(state.getByRole('alert')).toHaveCount(0)
+        await expect(state.getByText('系统', { exact: true })).toBeVisible()
+        expect(
+            requests.filter((value) =>
+                /\/configuration\/(versions|runtime)/.test(value),
+            ),
+        ).toEqual([])
+        await page.screenshot({
+            path: 'test-results/overview.png',
+            fullPage: true,
+        })
         await page
             .getByRole('navigation')
             .getByRole('link', { name: '运行诊断' })
@@ -142,9 +208,11 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
             page.getByRole('heading', { name: '修改密码', exact: true }),
         ).toBeVisible()
         const reads = () =>
-            requests.filter((value) => value.endsWith('/runtime/status')).length
+            requests.filter((value) =>
+                /\/runtime\/(status|trends|events)$/.test(value),
+            ).length
         const count = reads()
-        await page.waitForTimeout(2500)
+        await page.waitForTimeout(10_500)
         expect(reads()).toBe(count)
         expect(
             requests.filter((value) => /^(POST|PUT|DELETE) /.test(value)),
@@ -253,6 +321,20 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
         await expect(
             viewer.getByRole('region', { name: '运行单元', exact: true }),
         ).toContainText('diagnostic-meter/sample')
+        await viewer.goto('/')
+        const restarted = await (
+            await viewer.request.get('/api/edge-admin/v1/runtime/status')
+        ).json()
+        expect(restarted.configuration).toEqual(durable.configuration)
+        await expect(
+            viewer.getByRole('region', { name: '运行状态', exact: true }),
+        ).toContainText('系统')
+        await expect(
+            viewer.getByRole('region', { name: '最近一小时趋势', exact: true }),
+        ).toBeVisible()
+        await expect(
+            viewer.getByRole('region', { name: '运行事件', exact: true }),
+        ).toContainText('pagination-row-55')
     } finally {
         try {
             await context?.close()

@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:38183/"
+      "url": "http://127.0.0.1:34615/"
     }
   ],
   "paths": {
@@ -635,7 +635,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u770b\u8fd0\u884c\u72b6\u6001\u3001\u5b58\u50a8\u4fdd\u62a4\u548c\u7d2f\u8ba1\u8ba1\u6570",
+        "summary": "\u67e5\u770b\u8fd0\u884c\u72b6\u6001\u3001\u6301\u4e45\u6709\u6548\u7248\u672c\u7684\u5e94\u7528\u4eba/\u65f6\u95f4\u3001\u5b58\u50a8\u4fdd\u62a4\u548c\u7d2f\u8ba1\u8ba1\u6570",
         "operationId": "getRuntimeStatus",
         "responses": {
           "200": {
@@ -22931,7 +22931,8 @@
           "clockSyncState",
           "persistentCounters",
           "inFlight",
-          "unpersistedCounters"
+          "unpersistedCounters",
+          "configuration"
         ],
         "type": "object",
         "properties": {
@@ -22977,6 +22978,48 @@
               ],
               "format": "int64"
             }
+          },
+          "configuration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RuntimeEffectiveConfiguration"
+              }
+            ]
+          }
+        }
+      },
+      "RuntimeEffectiveConfiguration": {
+        "required": [
+          "effectiveRevision",
+          "appliedBy",
+          "appliedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "effectiveRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "appliedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "appliedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },

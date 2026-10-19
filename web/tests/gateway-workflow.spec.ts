@@ -11,6 +11,35 @@ import {
 const root = '/api/edge-admin/v1'
 const receiverSecret = 'Workflow-receiver-fixture-3187!'
 
+async function expectAppliedOverview(
+    page: Page,
+    configuration: {
+        effectiveRevision: number
+        appliedBy: string
+        appliedAt: string
+    },
+) {
+    await page.goto('/')
+    const state = page.getByRole('region', { name: '运行状态', exact: true })
+    const fact = (name: string) =>
+        state.getByText(name, { exact: true }).locator('..').locator('dd')
+    await expect(fact('持久有效版本')).toHaveText(
+        `r${configuration.effectiveRevision}`,
+    )
+    await expect(fact('有效版本应用人')).toHaveText(configuration.appliedBy)
+    const at = await page.evaluate(
+        (value) => new Date(value).toLocaleString('zh-CN', { hour12: false }),
+        configuration.appliedAt,
+    )
+    await expect(fact('有效版本应用时间')).toHaveText(at)
+    await expect(
+        page.getByRole('region', { name: '最近一小时趋势', exact: true }),
+    ).toBeVisible()
+    await expect(
+        page.getByRole('region', { name: '运行事件', exact: true }),
+    ).toBeVisible()
+}
+
 async function createConnections(
     page: Page,
     modbusPort: number,
@@ -313,6 +342,22 @@ for (const creator of ['administrator', 'configurator'] as const) {
                 await page.request.get(root + '/configuration/draft')
             ).json()
             expect(applied.effectiveRevision).toBe(1)
+            const configuration = (
+                await (await page.request.get(root + '/runtime/status')).json()
+            ).configuration
+            expect(configuration.effectiveRevision).toBe(1)
+            expect(configuration.appliedBy).toBe(
+                creator === 'configurator'
+                    ? 'workflow-editor'
+                    : 'workflow-admin',
+            )
+            const versions = await (
+                await page.request.get(root + '/configuration/versions')
+            ).json()
+            expect(Date.parse(configuration.appliedAt)).toBe(
+                versions[0].activatedAt,
+            )
+            await expectAppliedOverview(page, configuration)
             await page.goto('/routes')
             await page
                 .getByRole('button', { name: '打开 电表采集转发', exact: true })
@@ -394,6 +439,14 @@ for (const creator of ['administrator', 'configurator'] as const) {
             expect(gateway.reads.length).toBeGreaterThan(readsBeforeRestart)
             page = await launch()
             await login(page, 'workflow-viewer', temporaryPassword, true)
+            expect(
+                (
+                    await (
+                        await page.request.get(root + '/runtime/status')
+                    ).json()
+                ).configuration,
+            ).toEqual(configuration)
+            await expectAppliedOverview(page, configuration)
             await page.goto('/connections')
             await expect(
                 page.getByRole('button', { name: '新建连接', exact: true }),

@@ -14,7 +14,7 @@ internal static class RuntimeStatusEndpoints
         api.MapGet("/runtime/status", Get)
             .WithTags("Runtime")
             .WithName("getRuntimeStatus")
-            .WithSummary("查看运行状态、存储保护和累计计数");
+            .WithSummary("查看运行状态、持久有效版本的应用人/时间、存储保护和累计计数");
         api.MapGet("/runtime/trends", (RuntimeTrendHistory history) => TypedResults.Ok(history.Snapshot()))
             .WithTags("Runtime")
             .WithName("getRuntimeTrends")
@@ -22,7 +22,7 @@ internal static class RuntimeStatusEndpoints
         return api;
     }
 
-    private static Ok<RuntimeDiagnosticsResponse> Get(RuntimeCoordinator coordinator, DeliveryCache deliveries, IClockSyncStatus clock, HttpContext context)
+    private static Ok<RuntimeDiagnosticsResponse> Get(RuntimeCoordinator coordinator, DeliveryCache deliveries, IClockSyncStatus clock, RuntimeVersionStore versions, HttpContext context)
     {
         context.Response.Headers.CacheControl = "no-store";
         IReadOnlyDictionary<string, long>? counters = null;
@@ -39,13 +39,21 @@ internal static class RuntimeStatusEndpoints
             }
         }
 
+        RuntimeEffectiveConfiguration? configuration = null;
+        try
+        { configuration = versions.ReadEffectiveConfiguration(); }
+        catch (Exception exception) when (exception is SqliteException or IOException or UnauthorizedAccessException)
+        {
+            // 读取失败与尚无有效版本分开；仍提供可读取的内存运行状态，不回传数据库异常或旧元数据。
+        }
+
         return TypedResults.Ok(new RuntimeDiagnosticsResponse(coordinator.Status, coordinator.Runtime.GetStatus(),
             cache, deliveries.StorageProtection.Status, clock.State, counters, coordinator.Runtime.InFlight.Status,
-            deliveries.GetUnpersistedCounters()));
+            deliveries.GetUnpersistedCounters(), configuration));
     }
 }
 
 internal sealed record RuntimeDiagnosticsResponse(RuntimeCoordinatorStatus Coordinator, RuntimeStatusReport Runtime,
     DeliveryCacheStatus Queue, StorageProtectionStatus StorageProtection, ClockSyncState ClockSyncState,
     IReadOnlyDictionary<string, long>? PersistentCounters, InFlightBudgetStatus InFlight,
-    IReadOnlyDictionary<string, long> UnpersistedCounters);
+    IReadOnlyDictionary<string, long> UnpersistedCounters, RuntimeEffectiveConfiguration? Configuration);
