@@ -132,6 +132,29 @@ function fixture(body: unknown, status = 200) {
     }
 }
 describe('configuration migration reviews and explicit intent retry', () => {
+    it('accepts an extension protocol in the real form-A review envelope', () => {
+        const value = review()
+        value.targets[0] = {
+            ...value.targets[0],
+            source: {
+                ...source,
+                protocol: 'authwire',
+                address: 'authwire://old.test:9000',
+                authentication: 'module',
+            },
+            target: {
+                ...target,
+                protocol: 'authwire',
+                address: 'authwire://new.test:9000',
+                authentication: 'module',
+            },
+        }
+        const parsed = decodeConfigurationMigration(JSON.stringify(value))
+        expect(parsed.canConfirm).toBe(true)
+        expect(parsed.targets[0].target.protocol).toBe('authwire')
+        expect(parsed.targets[0].source.accountRecorded).toBe(false)
+        expect(parsed.targets[0].source.account).toBeNull()
+    })
     it('keeps embedded configuration JSON numeric lexemes and Int64 metadata exact', () => {
         const body = JSON.stringify(review())
             .replace('"EXACT"', '9223372036854775807')

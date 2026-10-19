@@ -38,6 +38,11 @@ internal static class TransformModuleProcessHost
                 .AddSingleton(TestWireOutputModule.Definition)
                 .AddSingleton<IOutputModuleFactory, TestWireOutputModule>()
                 .AddSingleton<IOutputAdapterFactory, TestWireOutputTransport>()
+                .AddSingleton<IOutputModuleFactory, TestAuthenticatedWireOutputModule>()
+                .AddSingleton<IOutputAdapterFactory>(provider => new TestWireOutputTransport(
+                    provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<IOutboundConnector>(),
+                    provider.GetRequiredService<IModuleCredentialResolver>())
+                { Protocol = "authwire", CredentialField = "auth" })
                 .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
                     provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single())
                 { PeriodMs = 1000 }));

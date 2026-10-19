@@ -4,15 +4,19 @@ using System.Text;
 using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
+using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Abstractions.Plans;
 
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
 /// <summary>测试侧有界 TCP 帧传输。只提供原输出接口，不创建发送循环或队列。</summary>
-internal sealed class TestWireOutputTransport(ISharedConnections connections, IOutboundConnector outbound) : IOutputAdapterFactory
+internal sealed class TestWireOutputTransport(ISharedConnections connections, IOutboundConnector outbound, IModuleCredentialResolver? credentials = null) : IOutputAdapterFactory
 {
     private readonly ISharedConnections _connections = connections;
     private readonly IOutboundConnector _outbound = outbound;
+    private readonly IModuleCredentialResolver? _credentials = credentials;
+    public string Protocol { get; init; } = "wire";
+    public string? CredentialField { get; init; }
     private int _builds;
     private int _adapters;
     private int _sessions;
@@ -29,7 +33,7 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
     public string? MessageFingerprintOverride { get; set; }
     public long? TargetConnectionIdOverride { get; set; }
     public string[]? TargetInputsOverride { get; set; }
-    public string Kind => "output.wire";
+    public string Kind => "output." + Protocol;
     public int QueueBindings { get; private set; }
     public bool QueueBindingThrows { get; set; }
 
@@ -47,7 +51,7 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
             connection,
             transportRoute = new
             {
-                recipient = $"wire://{settings.GetProperty("host").GetString()}:{settings.GetProperty("port").GetInt32()}",
+                recipient = $"{Protocol}://{settings.GetProperty("host").GetString()}:{settings.GetProperty("port").GetInt32()}",
                 addressTemplate = "",
             },
         }, JsonSerializerOptions.Web);
@@ -75,24 +79,31 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
         var settings = connection.GetProperty("configuration").GetProperty("connectionModule").GetProperty("parameters");
         return new Target(this, plan.Id, TargetConnectionIdOverride ?? plan.Configuration.GetProperty("connectionId").GetInt64(),
             TargetInputsOverride ?? plan.Configuration.GetProperty("inputs").EnumerateArray().Select(value => value.GetString()!).ToArray(),
-            settings.GetProperty("host").GetString()!, settings.GetProperty("port").GetInt32(), route);
+            settings.GetProperty("host").GetString()!, settings.GetProperty("port").GetInt32(), route,
+            connection.Deserialize<ModuleConnectionSnapshot>(JsonSerializerOptions.Web)!);
+    }
+
+    private OutputTargetIdentity Identity(string recipient, ModuleCredentialIdentity? credential)
+    {
+        if (CredentialField is not null && credential is null)
+        { throw new ArgumentException("Test transport requires a recorded credential identity."); }
+        var identity = OutputRecipientIdentity.Extension(Protocol, recipient, CredentialField is null ? "none" : "module", credential?.Account);
+        var description = CredentialField is null ? identity.Freeze() : JsonSerializer.Serialize(new { recipient = identity.Freeze(), credential!.AccountMarker });
+        return new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(description))), identity);
     }
 
     private sealed class Target(TestWireOutputTransport owner, RuntimeUnitId id, long connectionId, string[] inputs,
-        string host, int port, OutputTransportRoute route) : IOutputTarget
+        string host, int port, OutputTransportRoute route, ModuleConnectionSnapshot frozen) : IOutputTarget
     {
         public RuntimeUnitId Id => id;
         public long ConnectionId => connectionId;
         public IReadOnlyList<string> Inputs => inputs;
         public string? ClientId => null;
-        public string Recipient => owner.RecipientOverride ?? $"wire://{host}:{port}";
-        public string CredentialVersion => "anonymous";
+        public string Recipient => owner.RecipientOverride ?? $"{owner.Protocol}://{host}:{port}";
+        public string CredentialVersion => owner.CredentialField is null ? "anonymous" : owner._credentials?.DescribeModule(ConnectionId)?.Version ?? "missing";
         public string CurrentFingerprint => CaptureIdentity().Fingerprint;
-        public OutputTargetIdentity CaptureIdentity()
-        {
-            var identity = OutputRecipientIdentity.Extension("wire", Recipient, "none", null);
-            return new(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity.Freeze()))), identity);
-        }
+        public OutputTargetIdentity CaptureIdentity() => owner.Identity(Recipient,
+            owner.CredentialField is null ? null : owner._credentials?.DescribeModule(ConnectionId));
         public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
         {
             var identity = CaptureIdentity();
@@ -105,10 +116,10 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
         public IOutputAdapter CreateAdapter()
         {
             Interlocked.Increment(ref owner._adapters);
-            return new Adapter(owner._connections.Acquire(ConnectionId, "wire", Recipient, () =>
+            return new Adapter(owner._connections.Acquire(ConnectionId, owner.Protocol, ModuleConnectionSnapshot.ModuleConfigurationIdentity(frozen), () =>
             {
                 Interlocked.Increment(ref owner._sessions);
-                return new Session(owner, host, port);
+                return new Session(owner, frozen, host, port);
             }));
         }
     }
@@ -129,15 +140,37 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
         public ValueTask DisposeAsync() => lease.DisposeAsync();
     }
 
-    private sealed class Session(TestWireOutputTransport owner, string host, int port) : IAsyncDisposable
+    private sealed class Session(TestWireOutputTransport owner, ModuleConnectionSnapshot frozen, string host, int port) : IAsyncDisposable
     {
         private Stream? _stream;
         public async Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken token)
         {
             try
             {
+                // Test authwire authenticates each frame: resolve current material against the frozen recipient,
+                // and recheck identity immediately before putting any credential or message on the wire.
+                byte[]? secret = null;
+                if (owner.CredentialField is { } field)
+                {
+                    var credential = owner._credentials?.ResolveModule(frozen);
+                    if (credential is null)
+                    { return new(OutputSendStatus.SuspendTarget, "wire.credentialsUnavailable"); }
+                    var identity = owner.Identity($"{owner.Protocol}://{host}:{port}", credential.Identity);
+                    if (message.Fingerprint != identity.Fingerprint)
+                    { return new(OutputSendStatus.SuspendTarget, "wire.identityChanged", FingerprintMismatch: true); }
+                    secret = Encoding.UTF8.GetBytes(credential.GetSecret(field));
+                    if (secret.Length is < 1 or > ParameterSchema.MaximumConfigurationBytes)
+                    { return new(OutputSendStatus.SuspendTarget, "wire.credentialsInvalid"); }
+                }
                 // Each real TCP open resolves and checks the actual IP through the product connector.
                 _stream ??= await owner._outbound.ConnectAsync(host, port, token);
+                if (secret is not null)
+                {
+                    var length = new byte[4];
+                    BinaryPrimitives.WriteInt32BigEndian(length, secret.Length);
+                    await _stream.WriteAsync(length, token);
+                    await _stream.WriteAsync(secret, token);
+                }
                 var address = Encoding.UTF8.GetBytes(message.Address);
                 if (address.Length > OutputTransportRoute.MaximumAddressBytes || message.Payload.Length > StandardEnvelope.MaximumPayloadBytes)
                 { throw new IOException("wire.frameTooLarge"); }

@@ -52,7 +52,10 @@ function count(value: number | string) {
 function identity(value: MigrationIdentity) {
     if (
         !value ||
-        !['http', 'mqtt'].includes(value.protocol) ||
+        typeof value.protocol !== 'string' ||
+        value.protocol.length > 64 ||
+        !/^[a-z]/.test(value.protocol) ||
+        /[^a-z0-9.-]/.test(value.protocol) ||
         typeof value.address !== 'string' ||
         typeof value.authentication !== 'string' ||
         typeof value.accountRecorded !== 'boolean' ||
