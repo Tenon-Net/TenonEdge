@@ -1,3 +1,4 @@
+import { moduleConnectionStrings } from '../features/connections/module-strings'
 import { parameterStrings } from '../features/parameters/strings'
 import { clientCertificateStrings } from '../features/connections/client-certificate-strings'
 import { messageStrings } from '../features/diagnostics/message-strings'
@@ -76,6 +77,7 @@ void i18n.use(initReactI18next).init({
                 points: pointStrings,
                 canvas: canvasStrings,
                 connections: connectionStrings,
+                moduleConnections: moduleConnectionStrings,
                 credentials: credentialStrings,
                 clientCertificate: clientCertificateStrings,
                 trust: trustStrings,

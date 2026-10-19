@@ -1,3 +1,6 @@
+import { ModuleCredentialPanel } from './module-credential-panel'
+import { ModuleConnectionEditor } from './module-editor'
+import { moduleConnectionForm, readConnectionList } from './module-model'
 import { ConnectionTable } from './list'
 import { connectionRows, connectionSnapshotCurrent } from './list-model'
 import { ParameterFields } from '../parameters/fields'
@@ -53,7 +56,8 @@ function useParameterSchema(kind: 'modbus' | 'mqtt') {
         },
     })
 }
-const queryKey = ['connection-drafts']
+// This cache includes lexical module parameters; do not share the plain DTO query shape.
+const queryKey = ['connection-drafts', 'exact']
 const fieldClass =
     'mt-1 w-full rounded-md border bg-background p-2 disabled:opacity-60'
 export function ConnectionsPage() {
@@ -66,8 +70,22 @@ export function ConnectionsPage() {
         queryFn: async ({ signal }) => {
             const { data } = await api.GET('/api/edge-admin/v1/connections', {
                 signal,
+                parseAs: 'text',
             })
             if (!data) throw new Error('missing-connections')
+            return readConnectionList(data)
+        },
+    })
+    const modules = useQuery({
+        queryKey: ['connection-modules'],
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        queryFn: async ({ signal }) => {
+            const { data } = await api.GET(
+                '/api/edge-admin/v1/connection-modules',
+                { signal },
+            )
+            if (!data) throw new Error('missing-connection-modules')
             return data
         },
     })
@@ -96,7 +114,8 @@ export function ConnectionsPage() {
         !!runtime.error || !!query.error,
     )
     const [editor] = useState(createConnectionEditor)
-    const { form, setForm, original, setOriginal } = useStore(editor)
+    const { form, setForm, moduleForm, setModuleForm, original, setOriginal } =
+        useStore(editor)
     const modbusSchema = useParameterSchema('modbus')
     const mqttSchema = useParameterSchema('mqtt')
     const schemaQuery = form?.kind === 'mqtt' ? mqttSchema : modbusSchema
@@ -117,7 +136,22 @@ export function ConnectionsPage() {
     const [localError, setLocalError] = useState('')
     const [savedTarget, setSavedTarget] = useState<OutboundTarget | null>(null)
     const [outboundBusy, setOutboundBusy] = useState(false)
-    const dirty = form !== null && JSON.stringify(form) !== original
+    const [moduleBusy, setModuleBusy] = useState(false)
+    const [credentialBusy, setCredentialBusy] = useState(false)
+    const [credentialDirty, setCredentialDirty] = useState(false)
+    const moduleDirty =
+        moduleForm !== null && JSON.stringify(moduleForm) !== original
+    const dirty =
+        (form !== null && JSON.stringify(form) !== original) ||
+        moduleDirty ||
+        credentialDirty
+    const moduleDefinition = modules.data?.find(
+        (item) =>
+            item.kind === moduleForm?.kind &&
+            Number(item.version) === moduleForm?.moduleVersion,
+    )
+    const moduleReady = !!modules.data && !modules.error && !modules.isFetching
+    const editorBusy = moduleBusy || credentialBusy
     useBlocker({
         disabled: !dirty,
         enableBeforeUnload: dirty,
@@ -169,20 +203,45 @@ export function ConnectionsPage() {
                 ),
             )
             setForm(null)
+            setModuleForm(null)
             setOriginal('')
             // Inspect only after the draft was saved; no automatic target connection or policy write.
             setSavedTarget(
                 action.type === 'save' ? outboundTarget(action.form) : null,
             )
-            await queryClient.invalidateQueries({ queryKey })
+            await queryClient.invalidateQueries({
+                queryKey: ['connection-drafts'],
+            })
         },
     })
-    function open(connection?: Connection) {
-        if (outboundBusy || connection?.kind === 'module') return
+    function open(connection?: Connection, extended = false) {
+        if (outboundBusy || editorBusy) return
         if (!query.data || (dirty && !window.confirm(t('connections.discard'))))
             return
         setTestGeneration((value) => value + 1)
         setSavedTarget(null)
+        if (connection?.kind === 'module' || extended) {
+            const parameters = connection
+                ? query.data.exactParameters[connection.id]
+                : '{}'
+            if (parameters === undefined) {
+                setLocalError(t('moduleConnections.exactMissing'))
+                return
+            }
+            const next = moduleConnectionForm(
+                query.data.version,
+                connection,
+                parameters,
+            )
+            setForm(null)
+            setModuleForm(next)
+            setOriginal(JSON.stringify(next))
+            setNotice('')
+            setLocalError('')
+            mutation.reset()
+            return
+        }
+        setModuleForm(null)
         if (
             !connection &&
             (!modbusSchema.data ||
@@ -289,16 +348,20 @@ export function ConnectionsPage() {
                         onChange={(event) => setKind(event.target.value)}
                     >
                         <option value="">{t('connections.all')}</option>
-                        {(['modbus', 'mqtt', 'http'] as const).map((value) => (
-                            <option key={value} value={value}>
-                                {t(`connections.kinds.${value}`)}
-                            </option>
-                        ))}
+                        {(['modbus', 'mqtt', 'http', 'module'] as const).map(
+                            (value) => (
+                                <option key={value} value={value}>
+                                    {t(`connections.kinds.${value}`)}
+                                </option>
+                            ),
+                        )}
                     </select>
                 </label>
                 <Button
                     variant="outline"
-                    disabled={query.isFetching || mutation.isPending}
+                    disabled={
+                        query.isFetching || mutation.isPending || editorBusy
+                    }
                     onClick={() => {
                         void query.refetch()
                         void runtime.refetch()
@@ -312,6 +375,7 @@ export function ConnectionsPage() {
                             !query.data ||
                             mutation.isPending ||
                             outboundBusy ||
+                            editorBusy ||
                             !modbusSchema.data ||
                             !!modbusSchema.error ||
                             modbusSchema.isFetching
@@ -322,6 +386,31 @@ export function ConnectionsPage() {
                     </Button>
                 )}
             </div>
+            {canEdit && (
+                <Button
+                    disabled={
+                        !query.data ||
+                        !!query.error ||
+                        mutation.isPending ||
+                        outboundBusy ||
+                        editorBusy ||
+                        !moduleReady
+                    }
+                    onClick={() => open(undefined, true)}
+                >
+                    {t('moduleConnections.add')}
+                </Button>
+            )}
+            <ErrorMessage error={modules.error} />
+            {modules.error && (
+                <Button
+                    variant="outline"
+                    disabled={modules.isFetching}
+                    onClick={() => void modules.refetch()}
+                >
+                    {t('moduleConnections.definitions')}
+                </Button>
+            )}
             <ErrorMessage error={query.error ?? mutation.error} />
             <ErrorMessage error={runtime.error} />
             {!current && (
@@ -388,7 +477,7 @@ export function ConnectionsPage() {
                     rows={entries}
                     current={current}
                     canEdit={canEdit}
-                    busy={mutation.isPending || outboundBusy}
+                    busy={mutation.isPending || outboundBusy || editorBusy}
                     onOpen={open}
                     onDelete={(connection) => {
                         if (
@@ -403,6 +492,91 @@ export function ConnectionsPage() {
                             })
                     }}
                 />
+            )}
+            {moduleForm && (
+                <>
+                    <ModuleConnectionEditor
+                        key={testGeneration}
+                        form={moduleForm}
+                        definitions={modules.data ?? []}
+                        ready={moduleReady && !query.error}
+                        canEdit={canEdit}
+                        blocked={
+                            credentialBusy ||
+                            credentialDirty ||
+                            mutation.isPending
+                        }
+                        onChange={setModuleForm}
+                        onBusy={setModuleBusy}
+                        onSaved={async () => {
+                            setModuleForm(null)
+                            setOriginal('')
+                            setNotice(t('connections.saved'))
+                            await queryClient.invalidateQueries({
+                                queryKey: ['connection-drafts'],
+                            })
+                        }}
+                        onClose={() => {
+                            if (
+                                !dirty ||
+                                window.confirm(t('connections.discard'))
+                            ) {
+                                setModuleForm(null)
+                                setOriginal('')
+                            }
+                        }}
+                        onReload={async () => {
+                            if (
+                                dirty &&
+                                !window.confirm(t('connections.discard'))
+                            )
+                                return
+                            const result = await query.refetch()
+                            if (!result.data || result.error) return
+                            const connection = result.data.connections.find(
+                                (item) => item.id === moduleForm.id,
+                            )
+                            const parameters = connection
+                                ? result.data.exactParameters[connection.id]
+                                : '{}'
+                            if (
+                                (moduleForm.id && !connection) ||
+                                parameters === undefined
+                            ) {
+                                setLocalError(
+                                    t('moduleConnections.exactMissing'),
+                                )
+                                return
+                            }
+                            const next = moduleConnectionForm(
+                                result.data.version,
+                                connection,
+                                parameters,
+                            )
+                            setModuleForm(next)
+                            setOriginal(JSON.stringify(next))
+                            setTestGeneration((value) => value + 1)
+                        }}
+                    />
+                    {moduleForm.id &&
+                        moduleDefinition?.parameters.parameters?.some(
+                            (field) => field.type === 'credential',
+                        ) &&
+                        (!moduleDirty &&
+                        moduleForm.version === query.data?.version ? (
+                            <ModuleCredentialPanel
+                                key={`${testGeneration}:${moduleForm.id}:${moduleForm.version}`}
+                                id={Number(moduleForm.id)}
+                                draftVersion={moduleForm.version}
+                                blocked={!moduleReady || !!query.error}
+                                definition={moduleDefinition}
+                                onBusy={setCredentialBusy}
+                                onDirty={setCredentialDirty}
+                            />
+                        ) : (
+                            <p>{t('moduleConnections.saveFirst')}</p>
+                        ))}
+                </>
             )}
             {form && (
                 <form

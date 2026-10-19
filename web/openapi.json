@@ -8472,6 +8472,100 @@
         }
       }
     },
+    "/api/edge-admin/v1/connections/{connectionId}/module-credential/review": {
+      "post": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "核对扩展凭证的非秘密接收方、账户及动态积存，不接收秘密、不保存或联网",
+        "description": "核对不冻结队列或授权保存，确认仍由原写入事务重新检查版本及账户声明。",
+        "operationId": "reviewModuleCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModuleCredentialReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleCredentialReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/tls-trust": {
       "get": {
         "tags": [
@@ -18152,6 +18246,136 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "retainExisting": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModuleCredentialReview": {
+        "required": [
+          "connectionId",
+          "expectedDraftVersion",
+          "expectedVersion",
+          "kind",
+          "moduleVersion",
+          "recipient",
+          "recipientParameters",
+          "account",
+          "current",
+          "currentConfigured",
+          "identityChanged",
+          "accountDeclarationRequired",
+          "retainExisting",
+          "pendingCount",
+          "failedCount",
+          "capturedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "moduleVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "recipientParameters": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "account": {
+            "type": "string"
+          },
+          "current": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModuleCredentialIdentity"
+              }
+            ]
+          },
+          "currentConfigured": {
+            "type": "boolean"
+          },
+          "identityChanged": {
+            "type": "boolean"
+          },
+          "accountDeclarationRequired": {
+            "type": "boolean"
+          },
+          "retainExisting": {
+            "type": "boolean"
+          },
+          "pendingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ModuleCredentialReviewRequest": {
+        "required": [
+          "expectedDraftVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "account": {
+            "type": [
+              "null",
+              "string"
             ]
           },
           "retainExisting": {

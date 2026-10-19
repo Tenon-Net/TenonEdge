@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using TenonEdge.Adapters.Diagnostics;
 using TenonEdge.Host.Bootstrap;
+using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Security;
+using TenonEdge.Runtime.Diagnostics;
 
 namespace TenonEdge.Host.Features.Credentials;
 
@@ -15,7 +18,23 @@ internal static class ModuleCredentialEndpoints
             .ProducesProblem(403).ProducesProblem(409).ProducesProblem(413);
         group.MapDelete("/", Clear).RequireAuthorization(AuthorizationPolicies.Configurator).WithName("clearModuleCredential")
             .WithSummary("清除未被运行版本引用且无投递的扩展连接凭证").ProducesProblem(403).ProducesProblem(409);
+        group.MapPost("/review", Review).RequireAuthorization(AuthorizationPolicies.Configurator).WithName("reviewModuleCredential")
+            .WithSummary("核对扩展凭证的非秘密接收方、账户及动态积存，不接收秘密、不保存或联网")
+            .WithDescription("核对不冻结队列或授权保存，确认仍由原写入事务重新检查版本及账户声明。")
+            .WithMetadata(new RequestBodyLimit(16 * 1024)).ProducesProblem(403).ProducesProblem(409).ProducesProblem(429);
         return api;
+    }
+    private static Results<Ok<ModuleCredentialReview>, ValidationProblem, ProblemHttpResult> Review(long connectionId,
+        ModuleCredentialReviewRequest request, ModuleCredentialStore store, PreviewOperationBudget budget, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        using var admission = ConnectionTestAdmission.TryAcquire(context.User, budget, out var failure);
+        if (failure is not null)
+        { return failure; }
+        try
+        { return TypedResults.Ok(store.Review(connectionId, request, context.User.IsInRole(nameof(UserRole.Administrator)))); }
+        catch (ArgumentException) { return ApiProblems.Validation(new Dictionary<string, string[]> { ["credential"] = ["请核对账户、绑定声明和保留操作；核对入口不接收秘密。"] }); }
+        catch (CredentialWriteException error) { return Failure(error); }
     }
     private static Results<Ok<ModuleCredentialMetadata>, NotFound> Get(long connectionId, ModuleCredentialStore store, HttpContext context)
     {

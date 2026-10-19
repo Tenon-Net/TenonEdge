@@ -28,6 +28,11 @@ internal static class TransformModuleProcessHost
                 .AddSingleton<IInputModuleFactory>(new TestScalarInputModule())
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt"))
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("modbus"))
+                .AddSingleton(BrowserConnection())
+                .AddSingleton<IInputModuleFactory>(provider => new CredentialWireModule(
+                    provider.GetRequiredService<IModuleCredentialResolver>(), provider.GetRequiredService<ISharedConnections>(),
+                    provider.GetRequiredService<IOutboundConnector>())
+                { Automatic = true })
                 .AddSingleton<IOutputModuleFactory>(BrowserOutput("http"))
                 .AddSingleton<IOutputModuleFactory>(BrowserOutput("mqtt"))
                 .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
@@ -44,6 +49,17 @@ internal static class TransformModuleProcessHost
         await stopped.Task;
         return HostExitCodes.AfterShutdown(factory.Services.GetServices<IHostedService>());
     }
+
+    private static ConnectionModuleDefinition BrowserConnection() => new("authwire", 1, "测试凭证连接",
+        new("connection.authwire", ParameterScope.Connection,
+        [
+            new("host", "主机", ParameterType.Text) { Required = true, MaximumLength = 255 },
+            new("port", "端口", ParameterType.Number) { Required = true, WholeNumber = true, MinimumJson = "1", MaximumJson = "65535" },
+            new("precision", "精确参数", ParameterType.Number) { Required = true, WholeNumber = true, DefaultJson = "9007199254740993", MinimumJson = "9007199254740990", MaximumJson = "9007199254740999" },
+            new("flag", "测试开关", ParameterType.Switch) { DefaultJson = "true" },
+            new("mode", "测试选项", ParameterType.Choice) { DefaultJson = "\"one\"", Options = [new("one", "选项一"), new("two", "选项二")] },
+            new("auth", "认证秘密", ParameterType.Credential) { Required = true },
+        ]), ["host", "port"]);
 
     private static TestProtocolOutputModule BrowserOutput(string protocol) => new(protocol)
     {

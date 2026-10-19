@@ -1766,6 +1766,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/module-credential/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 核对扩展凭证的非秘密接收方、账户及动态积存，不接收秘密、不保存或联网
+         * @description 核对不冻结队列或授权保存，确认仍由原写入事务重新检查版本及账户声明。
+         */
+        post: operations["reviewModuleCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/tls-trust": {
         parameters: {
             query?: never;
@@ -3851,6 +3871,36 @@ export interface components {
             };
             account?: null | string;
             accountChanged?: null | boolean;
+            /** @default false */
+            retainExisting: boolean;
+        };
+        ModuleCredentialReview: {
+            /** Format: int64 */
+            connectionId: number | string;
+            expectedDraftVersion: string;
+            expectedVersion: null | string;
+            kind: string;
+            /** Format: int32 */
+            moduleVersion: number | string;
+            recipient: string;
+            recipientParameters: components["schemas"]["JsonElement"];
+            account: string;
+            current: null | components["schemas"]["ModuleCredentialIdentity"];
+            currentConfigured: boolean;
+            identityChanged: boolean;
+            accountDeclarationRequired: boolean;
+            retainExisting: boolean;
+            /** Format: int64 */
+            pendingCount: number | string;
+            /** Format: int64 */
+            failedCount: number | string;
+            /** Format: date-time */
+            capturedAt: string;
+        };
+        ModuleCredentialReviewRequest: {
+            expectedDraftVersion: string;
+            expectedVersion?: null | string;
+            account?: null | string;
             /** @default false */
             retainExisting: boolean;
         };
@@ -11791,6 +11841,77 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    reviewModuleCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleCredentialReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleCredentialReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

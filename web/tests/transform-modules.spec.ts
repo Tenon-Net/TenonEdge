@@ -212,6 +212,11 @@ test('installed transform: automatic form, draft, real HTTP, missing-module isol
         await form
             .getByRole('button', { name: '确认节点配置', exact: true })
             .click()
+        // Added module declarations can enlarge the palette and clip a new node.
+        // Use the real canvas control before dragging, just as the input/output tests do.
+        await page
+            .getByRole('button', { name: '适应画布', exact: true })
+            .click()
         for (const [from, to] of [
             ['in', id],
             [id, 'out'],

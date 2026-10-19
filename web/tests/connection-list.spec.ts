@@ -118,7 +118,7 @@ async function refresh(page: Page) {
 
 // UI compatibility guard only: this response fixture is not evidence of a
 // module configuration form or protocol operation through the browser.
-test('module draft response never opens the built-in protocol editor', async ({
+test('unknown module remains inspectable but never opens the built-in protocol editor', async ({
     browser,
 }) => {
     const f = await fixture(browser)
@@ -161,13 +161,21 @@ test('module draft response never opens the built-in protocol editor', async ({
             .getByRole('row')
             .filter({ hasText: 'Wire fixture' })
         await expect(row).toContainText('扩展连接 · testwire v2')
-        await expect(row).toContainText('此扩展连接的网页编辑尚未接入')
         await expect(
             row.getByRole('button', { name: '编辑连接', exact: true }),
+        ).toBeEnabled()
+        await row.getByRole('button', { name: '编辑连接', exact: true }).click()
+        const editor = f.page.getByRole('form', {
+            name: '扩展连接参数',
+            exact: true,
+        })
+        await expect(editor).toContainText('请选择已安装的准确声明版本')
+        await expect(
+            editor.getByRole('button', { name: '保存到草稿', exact: true }),
         ).toBeDisabled()
         await expect(row).not.toContainText('not-displayed.invalid')
         await expect(
-            f.page.getByLabel('连接名称', { exact: true }),
+            f.page.getByLabel('Broker 主机', { exact: true }),
         ).not.toBeVisible()
     } finally {
         await f.close()

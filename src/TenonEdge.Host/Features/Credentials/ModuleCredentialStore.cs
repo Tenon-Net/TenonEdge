@@ -60,6 +60,42 @@ internal sealed class ModuleCredentialStore(ConfigDatabase database, IDataProtec
         return row is null ? null : Metadata(client, row);
     });
 
+    // Dynamic, non-secret review only; not a lease or authorization to save.
+    // The original writer still rechecks versions and pending data under its identity barrier.
+    public ModuleCredentialReview Review(long id, ModuleCredentialReviewRequest request, bool administrator)
+    {
+        if (request.RetainExisting && !administrator)
+        { throw new CredentialWriteException("credential.administratorRequired"); }
+        if (request.RetainExisting ? request.Account is not null : !ValidAccount(request.Account))
+        { throw new ArgumentException("请核对可见账户。"); }
+        var captured = database.InTransaction(client =>
+        {
+            var connection = RequireDraft(client, id, request.ExpectedDraftVersion).Module!.Snapshot(id);
+            var definition = BoundDefinition(connection);
+            var parameters = ModuleConnectionSnapshot.ReadModuleConfiguration(connection).Parameters;
+            var row = client.Queryable<ModuleCredentialRecord>().InSingle(id);
+            if (row?.Version != request.ExpectedVersion)
+            { throw new CredentialWriteException("credential.versionConflict"); }
+            if (client.Queryable<HttpCredentialRecord>().InSingle(id) is not null || client.Queryable<MqttCredentialRecord>().InSingle(id) is not null)
+            { throw new CredentialWriteException("credential.protocolConflict"); }
+            if (request.RetainExisting && row?.ProtectedSecrets is null)
+            { throw new ArgumentException("没有可保留的材料。"); }
+            return (Definition: definition, Recipient: definition.RecipientIdentity(parameters),
+                Parameters: JsonSerializer.SerializeToElement(definition.RecipientParameters.ToDictionary(name => name, name => parameters.GetProperty(name))),
+                Current: row is null ? null : Identity(row), Configured: row?.ProtectedSecrets is not null);
+        });
+        if (deliveries.GetStatus().Store is null)
+        { throw new CredentialWriteException("credential.queueUnavailable"); }
+        var report = deliveries.GetQueueReport([id], id - 1, 1);
+        var usage = report.Targets.Single(value => value.ConnectionId == id).Usage;
+        var account = request.RetainExisting ? captured.Current!.Account : request.Account!;
+        return new(id, request.ExpectedDraftVersion, request.ExpectedVersion, captured.Definition.Kind, captured.Definition.Version,
+            captured.Recipient, captured.Parameters, account, captured.Current, captured.Configured,
+            captured.Current?.Recipient != captured.Recipient || captured.Current.Account != account,
+            !request.RetainExisting && captured.Current?.Account == account && usage.PendingCount + usage.FailedCount > 0,
+            request.RetainExisting, usage.PendingCount, usage.FailedCount, report.CapturedAt);
+    }
+
     public async Task<ModuleCredentialMetadata> WriteAsync(long id, ModuleCredentialRequest request, AuditAccount account,
         string? sourceIp, bool administrator, CancellationToken token)
     {
@@ -68,7 +104,7 @@ internal sealed class ModuleCredentialStore(ConfigDatabase database, IDataProtec
         if (request.RetainExisting && !administrator)
         { throw new CredentialWriteException("credential.administratorRequired"); }
         if (request.Secrets is null ? request.Account is not null || request.AccountChanged is not null :
-            request.RetainExisting || string.IsNullOrWhiteSpace(request.Account) || request.Account.Length > 128 || request.Account.Any(char.IsControl))
+            request.RetainExisting || !ValidAccount(request.Account))
         { throw new ArgumentException("新凭证须填写可见账户，保留或作废不能混入新材料。"); }
         // Clone caller-owned values before awaiting the original queue identity barrier.
         var supplied = request.Secrets?.ToDictionary(StringComparer.Ordinal);
@@ -220,6 +256,7 @@ internal sealed class ModuleCredentialStore(ConfigDatabase database, IDataProtec
         return json;
     }
     private IDataProtector Protector(long id) => protection.CreateProtector(SecretProtection.Purposes.ModuleCredential, id.ToString(CultureInfo.InvariantCulture));
+    private static bool ValidAccount(string? account) => !string.IsNullOrWhiteSpace(account) && account.Length <= 128 && !account.Any(char.IsControl);
     private static ModuleCredentialIdentity Identity(ModuleCredentialRecord row) => new(row.Kind, row.ModuleVersion, row.Recipient, row.Account, row.AccountMarker, row.Version);
 }
 
@@ -231,6 +268,14 @@ internal sealed record ModuleCredentialRequest(string ExpectedDraftVersion, stri
 }
 internal sealed record ModuleCredentialMetadata(long ConnectionId, ModuleCredentialIdentity Identity, bool Configured,
     string[] ConfiguredFields, bool MatchesDraft, string DraftVersion, DateTimeOffset UpdatedAt);
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ModuleCredentialReviewRequest(string ExpectedDraftVersion, string? ExpectedVersion = null,
+    string? Account = null, bool RetainExisting = false);
+internal sealed record ModuleCredentialReview(long ConnectionId, string ExpectedDraftVersion, string? ExpectedVersion,
+    string Kind, int ModuleVersion, string Recipient, JsonElement RecipientParameters, string Account,
+    ModuleCredentialIdentity? Current, bool CurrentConfigured, bool IdentityChanged, bool AccountDeclarationRequired,
+    bool RetainExisting, long PendingCount, long FailedCount, DateTimeOffset CapturedAt);
 
 [SugarTable("module_credential")]
 internal sealed class ModuleCredentialRecord

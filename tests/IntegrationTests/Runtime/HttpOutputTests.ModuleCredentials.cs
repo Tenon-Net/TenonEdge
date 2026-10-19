@@ -125,6 +125,7 @@ internal sealed class CredentialWireModule(IModuleCredentialResolver credentials
     public int Builds => Volatile.Read(ref _builds);
     public int CredentialRejected => Volatile.Read(ref _rejected);
     public SemaphoreSlim Sample { get; } = new(0);
+    public bool Automatic { get; init; }
     public string Kind => "input.authwire";
     public int Version => 1;
     public ParameterSchema Parameters { get; } = new("input.authwire", ParameterScope.Input,
@@ -146,7 +147,10 @@ internal sealed class CredentialWireModule(IModuleCredentialResolver credentials
             await context.WaitForActivationAsync(stoppingToken);
             while (true)
             {
-                await owner.Sample.WaitAsync(stoppingToken);
+                if (owner.Automatic)
+                { await Task.Delay(TimeSpan.FromSeconds(1), context.Time, stoppingToken); }
+                else
+                { await owner.Sample.WaitAsync(stoppingToken); }
                 var credential = credentials.ResolveModule(frozen);
                 if (credential is null)
                 { Interlocked.Increment(ref owner._rejected); throw new InvalidOperationException("Credential unavailable."); }

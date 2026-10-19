@@ -249,11 +249,7 @@ export function ConnectionTable({
                                 <td className="space-y-2 border-b p-2">
                                     <Button
                                         variant="outline"
-                                        disabled={
-                                            busy ||
-                                            !draft ||
-                                            draft.kind === 'module'
-                                        }
+                                        disabled={busy || !draft}
                                         onClick={() => draft && onOpen(draft)}
                                     >
                                         {t(
@@ -262,13 +258,6 @@ export function ConnectionTable({
                                                 : 'connections.view',
                                         )}
                                     </Button>
-                                    {draft?.kind === 'module' && (
-                                        <p className="text-xs text-muted-foreground">
-                                            {t(
-                                                'connections.moduleEditorPending',
-                                            )}
-                                        </p>
-                                    )}
                                     {canEdit && (
                                         <Button
                                             variant="outline"

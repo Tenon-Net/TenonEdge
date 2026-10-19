@@ -154,6 +154,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "reviewConfigurationRollback",
         "reviewCorruptSnapshotRecovery",
         "reviewCredentialChange",
+        "reviewModuleCredential",
         "revokeApiToken",
         "rollbackConfigurationVersion",
         "startAuditExport",
