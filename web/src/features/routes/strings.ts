@@ -14,9 +14,14 @@ export const routeStrings = {
     },
     runtime: {
         unknown: '无法读取当前运行状态；不会据草稿推断为已生效。',
-        state: '运行协调状态：{{state}}；当前有效版本：{{revision}}；本路线：{{route}}。',
+        state: '运行协调状态：{{state}}；当前运行版本：{{revision}}；本路线：{{route}}。',
         none: '无',
         effective: '与有效运行配置一致',
+        localChanges: '有本地未保存编辑；不能视为已生效',
+        matchUnknown: '草稿与运行版本暂不可核对；不使用旧缓存推断一致',
+        inactive: '路线停用或运行尚未激活；不代表正在执行',
+        draftChanged:
+            '完整草稿仍有未应用修改（可能涉及引用对象）；不能确认本页与运行配置一致',
         notEffective: '当前草稿未在有效运行配置中',
         states: {
             starting: '启动中',

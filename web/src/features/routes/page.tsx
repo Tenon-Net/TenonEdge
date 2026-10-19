@@ -12,6 +12,8 @@ import { ErrorMessage } from '../auth/error-message'
 import { Button } from '../../components/ui/button'
 import { CanvasEditor } from '../canvas/editor'
 import { useRuntimeStatus } from '../diagnostics/queries'
+import { useDraftSummary } from '../configuration/queries'
+import { routeRuntimeMatch } from './runtime-match'
 import { createGraphEditor } from '../canvas/store'
 import { createRouteApi, newRoute, type RouteForm } from './api'
 import { ReferenceDrawer } from './reference-drawer'
@@ -30,6 +32,7 @@ export function RoutesPage() {
         refetchInterval: 5000,
     })
     const runtime = useRuntimeStatus()
+    const summary = useDraftSummary()
     const [canvas] = useState(createGraphEditor)
     const [previewDraft] = useState(createPreviewDraft)
     const document = useStore(canvas, (state) => state.document)
@@ -232,7 +235,7 @@ export function RoutesPage() {
                                             : 'routes.list.disabled',
                                     )}
                                 </span>
-                                {route.effective && (
+                                {!query.isError && route.effective && (
                                     <span role="status">
                                         {t('routes.list.effective')}
                                     </span>
@@ -299,9 +302,6 @@ export function RoutesPage() {
             {form && (
                 <>
                     {(() => {
-                        const selectedRoute = query.data?.routes.find(
-                            (item) => item.id === form.id,
-                        )
                         const coordinator = runtime.data?.coordinator
                         if (runtime.isError || !coordinator)
                             return (
@@ -324,9 +324,19 @@ export function RoutesPage() {
                                     revision:
                                         coordinator.activeRevision ??
                                         t('routes.runtime.none'),
-                                    route: selectedRoute?.effective
-                                        ? t('routes.runtime.effective')
-                                        : t('routes.runtime.notEffective'),
+                                    route: t(
+                                        `routes.runtime.${routeRuntimeMatch({
+                                            form,
+                                            dirty,
+                                            list: query.data,
+                                            summary: summary.data,
+                                            runtime: runtime.data,
+                                            failed:
+                                                query.isError ||
+                                                summary.isError ||
+                                                runtime.isError,
+                                        })}`,
+                                    ),
                                 })}
                             </p>
                         )
@@ -422,7 +432,8 @@ export function RoutesPage() {
                         onCreateReference={
                             canEdit
                                 ? (kind) => {
-                                      const active = globalThis.document.activeElement
+                                      const active =
+                                          globalThis.document.activeElement
                                       referenceOpener.current =
                                           active instanceof HTMLElement
                                               ? active

@@ -360,6 +360,42 @@ for (const creator of ['administrator', 'configurator'] as const) {
                 await page.request.get(root + '/configuration/draft')
             ).json()
             expect(applied.effectiveRevision).toBe(1)
+            await page.goto('/routes')
+            await page
+                .getByRole('button', { name: '打开 电表采集转发', exact: true })
+                .click()
+            const effective = page.getByText(/本路线：与有效运行配置一致/)
+            await expect(effective).toBeVisible()
+            const localName = page.getByLabel('路线名称', { exact: true })
+            await localName.fill('本地未保存路线')
+            await expect(effective).toHaveCount(0)
+            await expect(localName).toHaveValue('本地未保存路线')
+            await localName.fill('电表采集转发')
+            await expect(effective).toBeVisible()
+            // A failed list refresh must withdraw the old healthy badge without
+            // reloading the canvas or pretending cached data is a fresh match.
+            let failRouteList = true
+            const routeListUrl = gateway.url + root + '/routes'
+            await page.route(routeListUrl, async (route) => {
+                if (failRouteList && route.request().method() === 'GET')
+                    return route.fulfill({
+                        status: 500,
+                        contentType: 'application/problem+json',
+                        body: '{"title":"fixture route read failure","status":500}',
+                    })
+                return route.continue()
+            })
+            await page
+                .getByRole('button', { name: '重新查询', exact: true })
+                .click()
+            await expect(effective).toHaveCount(0)
+            await expect(localName).toHaveValue('电表采集转发')
+            failRouteList = false
+            await page
+                .getByRole('button', { name: '重新查询', exact: true })
+                .click()
+            await expect(effective).toBeVisible()
+            await page.unroute(routeListUrl)
             await page.goto('/runtime/devices')
             await page
                 .getByRole('button', { name: '查看 现场电表', exact: true })

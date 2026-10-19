@@ -501,6 +501,10 @@ test('certificate cancellation, strict file bounds, actual Kestrel upload limit 
         await panel
             .getByRole('button', { name: '核对客户端证书（不保存）' })
             .click()
+        // This case targets a conflict at final save, not a race before the
+        // preflight has read the credential version. Clicking only dispatches
+        // the async review; wait for its actual result before the competing PUT.
+        await expect(reviewPanel(page)).toBeVisible()
         expect(
             (
                 await page.request.put(f.endpoint, {
@@ -515,7 +519,13 @@ test('certificate cancellation, strict file bounds, actual Kestrel upload limit 
                 })
             ).status(),
         ).toBe(200)
+        const conflictingSave = page.waitForResponse(
+            (response) =>
+                new URL(response.url()).pathname === f.endpoint &&
+                response.request().method() === 'PUT',
+        )
         await confirm(page)
+        expect((await conflictingSave).status()).toBe(409)
         await expect(panel.getByRole('status')).toContainText('不会自动重试')
         await expect(
             panel.getByText('已载入（不回显）', { exact: true }),
