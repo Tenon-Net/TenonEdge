@@ -14,10 +14,11 @@ public sealed class HttpInputFactory(IHttpCredentialResolver credentials, IOutbo
         try
         {
             var settings = HttpInputSettings.Parse(unit.Configuration);
+            HttpCredentialValidation.ValidatePreparation(settings, credentials);
             return new HttpInputUnit(unit.Id, settings, context, decoders.Build(settings.Fields, settings.UpstreamTime), credentials, connector, connections, trust);
         }
         catch (Exception exception) when (exception is ArgumentException or JsonException or InvalidOperationException or FormatException)
-        { throw new RuntimeUnitBuildException(unit.Id, "HTTP 输入配置无效，请核对连接、周期和字段定义。", exception); }
+        { throw new RuntimeUnitBuildException(unit.Id, "HTTP 输入配置或凭证无效，请核对连接、周期、字段定义及凭证是否可解密。", exception); }
     }
 }
 

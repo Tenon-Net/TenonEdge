@@ -67,6 +67,26 @@
 | T3 | T3-11 无平台端到端验收 | 部分软件子场景通过，整项未完成 | 当前 `9a50bcf` 完整浏览器 **170/170**、后端 **2081 单元 + 2798 集成**通过，源码哈希一致（§2.306），但不是全部 T3 退出验收；十来源已补§2.307，FS-08已补§2.308；新增后的完整回归及剩余明确需求继续核对。容量原失败已按环境/样本适用性修正，当前/Chromium111各2项真实文件系统浏览器验证通过（§2.303）；旧完整浏览器158/161的三项失败及真实画布缺陷修复保留在§2.302；新增HTTP/MQTT双角色完整网页闭环与原Modbus共6项通过，Chromium111关联10项通过；另补HTTP关闭浏览器/重启后必须发生新采集请求的检查，最终协议当前/111各4项通过；原画布关联当前/111各3项通过。容量适用性已由§2.303补充，完整阶段仍未完成。扩展连接网页及独立凭证核对接线后完整后端4621、Web699及当前/111关联各9通过（§2.287），有真实TCP轮换/正常重启，但设备/来源/路线/应用仍为API夹具，不是完整无JSON闭环；原失败与并行网络变化记录保留，最终串行复验通过。扩展凭证后端接线后完整后端4617、Web693及当前/111关联各8通过（§2.286），不是新凭证网页流程或完整浏览器复验；首次表分类检查失败及中止的全量保留，不计通过。新连接声明/冻结共享运行基础最终完整后端4549与当前浏览器关联7全部通过（§2.284）；不是新连接表单或完整浏览器复验。设备标识/删除引用核对接线后完整后端4518、Web692、当前完整浏览器140及Chromium111关联48全部通过（§2.282）；最低关联组不是完整套件，具体剩余缺口源码复核与接续顺序见§2.283。统一连接列表接线后完整后端4510、Web683、当前浏览器完整138及Chromium111关联48全部通过（§2.281），最低浏览器关联组不等同完整套件；共享连接观测基础完整后端4490项通过；随后RTU EOF补充/格式整理后1881单元+800协议关联及3轮41项通过（§2.280），非最终源代码再次全量或新增网页验收。输出网页接线后Web679、后端关联122、Chromium111关联19与新增双协议3轮6项通过（§2.278）；完整当前浏览器第二轮135/136的既有16MiB上传测试EPIPE，已按最小差分复现并改为真实浏览器严格验证，随后当前完整136/136、Chromium111关联2/2通过（§2.279）；该最低浏览器组不是全量，前述失败保留。最近完整后端4467/4467通过（1875单元+2592集成，§2.277）；§2.274首次全量的MQTT保留计数偶发超时仍未定位，后续完整/关联重跑未复现不等于根因修复（§2.275）。当前/111关联组各13通过，不替代完整浏览器。MQTT/Modbus模块委托与冻结诊断接通后，当前Chromium/Chromium111关联组各60/60通过（§2.273）；含两种协议模块自动表单、真实转发与重启，连接/图仍为API夹具，不是完整浏览器或无API全流程验收。输入模块网页接线后当前 Chromium/Chromium111关联组各57/57通过（§2.270），含新输入模块与既有点表/画布/来源/预览/导入/应用/诊断，不是完整131项浏览器复验；转换启动隔离后当前 Chromium/Chromium111关联组各11/11通过（§2.269），本批不是完整浏览器复验；输入运行基础后当前 Chromium 完整130/130通过（§2.268），该批最低浏览器未复验；转换模块接线后当前 Chromium 完整130/130、Chromium111关联19/19通过（§2.267）；已保留首次迁移夹具竞态失败和确定性红/绿证据，后者不是最低浏览器全量。参数声明接入后的完整当前 Chromium129/129、Chromium111关联63/63见§2.265，后者不是本轮最低浏览器全量复验。新增管理员/配置人员无 JSON 建立 Modbus TCP→映射→HTTP、只读边界、整个浏览器退出与原 Host 正常重启接续，当前 Chromium 与 Chromium111完整套件均128/128通过见§2.264（不再只是关联组），不替代尚缺功能或真实Chrome/Edge/Safari。前次完整浏览器126/126、Chromium111关联57/57通过见§2.263；此前完整120/120及Chromium111关联51/51见§2.262，仍非T3整项验收；此前109/109基线见§2.253；后续TLS信任的当前/Chromium111关联组各17/17见§2.257，不等于重新执行完整套件，不能替代尚缺功能的无JSON闭环。 §2.223的CSV超限传输竞态已最小复现并改用真实浏览器传输严格验证，完整浏览器基线73/73通过（§2.224），改名后75/75通过（§2.225）；连接页授权与历史刷新竞态修复后77/77通过（§2.226），运行参数子项后79/79通过（§2.227），队列参数后81/81通过（§2.229）；Schema27与实时API文档页面后的完整浏览器84/84通过（§2.236），不把首次中止的50通过/34跳过算作通过。§2.225/2.228后端全量超时已在§2.232以RDG和原单次完整套件收口：1446单元+2022集成全部通过，不等于本任务全部需求完成。Modbus TCP→HTTP 已使用完整页面而非种子/手写 JSON 完成登录→配置→预览→应用→真实发送→诊断→浏览器关闭/Host 重启（§2.264）；其他协议及尚缺扩展等仍须补齐，并汇总 FE-AT-01—07、AT-01/05/17/18/28—30、V-02/03/10、FS-01—08/23/27/28 逐子项证据及最低浏览器。实物/断电条件验证单列，不伪造通过 | PLAN-01 §6、FE-D01 §7/8 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
 
+### 1.1 T3 有限退出核对矩阵（2026-10-19 接续）
+
+范围固定为 PLAN-01 §6 的十一项及其明确引用的验收，不再以没有定义的“所有组合”追加门槛。下表是当前退出核对入口，**不是十一项已经通过的声明**：历史证据保留原提交/环境边界，本轮新增后的完整回归尚未完成。任何新缺口须指出具体需求及可观察的反例。
+
+| 任务 | 必须核对的边界 | 已定位的实现/历史证据入口 | 退出前还须核实 |
+|---|---|---|---|
+| T3-01 | 固定来源裁剪、单一路由/客户端、真实登录、离线与深链（V-02、FE-AT-01/02/07） | `web/THIRD_PARTY.md`、`auth.spec.ts`；§2.241、§2.306；CI 修正§2.309 | 当前源码固定安装/构建、完整认证及离线/路由回归；远端 CI 未执行单列 |
+| T3-02 | 点表编辑、批量、逐行错误、1000行粘贴/10000行虚拟化及最低浏览器（V-03/10、FE-AT-05/06） | `auth.spec.ts`、`device-workflow.spec.ts`、`minimum-firefox-smoke.mjs`；§2.241 | 当前回归；实际 Chrome111/Edge111/Safari16.4 环境缺失，Firefox128尚缺HTTPS关键操作证据 |
+| T3-03 | 拖放、连线/拒绝非法图、复制删除、50步撤销重做、自有格式与布局分离 | `auth.spec.ts`、`canvas-placement.spec.ts`；§2.302 | 当前完整画布回归，不以API建图代替交互 |
+| T3-04 | 草稿不改运行、key/复制/CSV、凭证不回显/接收方规则、测试及信任（AT-18） | `business-keys`、`device-workflow`、`credential-review`、`connection-trust`、`client-certificate`浏览器用例；§2.257—§2.263、§2.282 | 当前三角色、失败/冲突不重放、凭证轮换关联回归 |
+| T3-05 | 有界图计数、多来源身份与字段、版本/引用检查、预览不出站不入队（AT-07/13/29） | `RouteTopologyCompilerTests`；十来源真实画布/软件从站§2.307；扩展纯预览§2.300 | 当前回归；十来源夹具不能冒充全流程无JSON |
+| T3-06 | 准备失败不中断、停止超时单实例、COMMIT前后恢复、并发草稿、历史/回滚/启动保护（FS-01—06、AT-10/13/28） | `RuntimeApplicationLifecycleTests`、`RuntimeQuiescenceTests`、`RuntimeHistoryTests`及进程中断测试；受限恢复§2.238—§2.239 | FS-01真实HTTP解密失败缺陷已修正，§2.310定向/关联通过；当前完整中断与生命周期回归仍须核对 |
+| T3-07 | 原连接读取、测试发送、有界正文/字节预算、当前值/趋势/事件与权限（FS-08、AT-29/30、FE-AT-03/04） | §2.252、§2.303、§2.306、§2.308；`runtime-messages`、`current-values`、`outputs`、`diagnostics`浏览器用例 | 当前完整回归；持续1MiB软件压力不是整机RSS或长期容量承诺 |
+| T3-08 | 队列操作权限、冻结编号/原文、两种迁移、原子性及审计（FS-23、AT-14/26） | §2.201—§2.217；`delivery-*`、`configuration-migration`、`clear-pending`、`output-controls`用例 | 当前操作与中断回归；平台身份分支留T4，实物断电不当软件已验证 |
+| T3-09 | 用户/临时密码/下线/最后管理员、HTTPS Token、审计、参数与白名单（AT-18/32） | §2.219—§2.240；`users`、`tokens`、`audit`、`system`、`runtime-parameters`、`queue-parameters`用例 | 当前完整权限及参数生效回归；宿主管理证书替换/HTTPS-only属T5 |
+| T3-10 | 跨Host业务key/ID、合并替换预检与原子草稿、秘密排除、六类参数同源校验、缺失模块拒绝（FS-27、AT-17） | §2.253、§2.273—§2.287、§2.300—§2.305；`configuration-import`、`parameter-schemas`及输入/转换/输出/连接模块用例 | 当前扩展/导入回归；不以模拟响应证明真实接入，不提前交付T5的extension-guide |
+| T3-11 | 无平台、无JSON页面闭环，浏览器关闭仍运行，Host重启、离线/路由/权限及最低浏览器 | Modbus闭环与总览§2.306，HTTP/MQTT闭环§2.302；`gateway-workflow`、`json-protocol-workflow` | 新增后完整后端/Web/浏览器套件；最低实际浏览器缺口；MQTT历史偶发尚无根因，不能把全绿当修复 |
+
+**剩余项分开处理：** 可以自主完成的是 FS-01 修正、逐项证据核对及当前源码完整回归；外部条件是实际 Chrome111/Edge111/Safari16.4 环境或可核查报告，既有询问未答复，不重复提问、不阻止独立工作。Firefox128 HTTPS 可继续在本机调查，不能直接归为外部阻塞。T4平台联调、T5备份/部署/完整诊断包/手动升级、G1升级和条件性实物断电均不提前纳入本次实现。只有本表各项的实际必需证据齐备，才标记整个T3完成。
+
 ### 2.288 T3 连续收口接续：连接删除复核与路线列表状态（2026-10-19）
 
 基线核对：`4983d28`，工作区起始无改动；本节不是T3验收。连接删除复核 API 返回设备/来源/路线/保留运行版本引用以及待发、失败、隔离队列的分区计数；网页先展示复核结果再要求确认，服务端DELETE仍在原写事务中重新核对版本、引用及队列，核对失败不显示可删除确认。路线列表现在返回描述、创建/修改人时间、是否启用、有效版本一致性、编译错误和未应用状态；错误为不完整/损坏快照时保守标记启用路线有错误。
@@ -7812,6 +7832,33 @@ TENONEDGE_TEST_EXECUTABLE=/home/shiny/.cache/tenonedge-module-web/minimum-browse
 证据：`/home/shiny/.cache/tenonedge-t3-exit-audit/ci/`。`preflight-before.log` 保留旧20分钟预算及缺少预拉取两项失败；`preflight-after.log` 用 PyYAML 读取当前配置、实际170项报告并验证预算/步骤顺序，两项通过。官方 actionlint **1.7.12**（归档经官方 SHA-256 清单核对）对前后端两份 workflow 检查退出0，见 `actionlint.log`；镜像命令与结果见 `broker-pull.log`。`git diff --check` 通过。
 
 **边界：** 只验证本地配置和镜像前置，没有推送、没有运行 GitHub Actions；45分钟不是远端时长保证。旧170项全量报告不会因 CI 修改自动成为当前新增用例后的全量结果。FS-01 精确凭证准备与 T3 最终退出核对继续推进。
+
+### 2.310 T3-06/11、FS-01 真实 HTTP 凭证解密失败的准备边界修复（2026-10-19）
+
+隔离树基线 `2fb47b9`。按总设计 §7.4、功能 §6.3/6.6、FS-01、AT-13/28 核对发现真实缺陷：HTTP 输入与输出工厂只解析配置，直到运行请求才解析秘密；因此损坏凭证仍能通过准备、停止旧输入并提交新版本。原 `RuntimeApplicationLifecycleTests` 的泛化构建异常测试及回滚凭证校验不能证明这条路径正确。
+
+**先复现、后修复：** 新增 `HttpCredentialPreparationTests` 两个场景：新HTTP输入凭证和新HTTP输出凭证。用产品 `HttpCredentialStore` 写入并实际解密成功，再只破坏该行真实受保护密文；元数据仍存在，原 Data Protection 解密返回不可用。最初两项均失败，API操作实际为 **Completed 而非 Preparing**，见 `fs01/red/red.trx`，不是仅靠静态检查判定缺陷。
+
+- 在既有 `HttpCredentialValidation` 增加本地准备检查，HTTP 两个原工厂在创建单元前调用：匿名连接仍可使用；已有凭证必须可按接收方解析、身份读取一致且格式有效，客户端证书不能用于明文HTTP。不连接对端，不将秘密存入运行单元、计划或队列；每次真实请求仍读取当前凭证，保留轮换行为。
+- 测试使用真实产品Host装配、原HTTP采集/分发/SQLite队列/发送者及Kestrel软件对端；API确认发起应用。测试侧仅在**原凭证存储已结束解密/释放短上下文之后**暂缓返回，固定准备窗口，不伪造解密异常，不替换采集或队列。
+- 旧链路先完成至少3次真实GET→POST，在准备窗口再连续完成至少3次；失败后再完成至少3次。原读取计数持续增长、单元仍Running且无重启，旧有效版本保持r1，新连接网络请求为0；接收值逐条连续且核对原设备身份、`Idempotency-Key`。
+- 操作API显示failed/未提交/`runtime.prepareFailed`；**版本详情API**显示未生效、具体失败单元及原运行时的固定脱敏“检查配置和凭证”原因，不含密文或测试秘密。重新填写有效凭证后再应用可激活并发出新请求，版本号大于失败版本、不复用。
+- 两个既有身份测试夹具更新为“构建准备可读秘密、冻结身份/格式化/存储不可读秘密”；仍保留原禁止外联和捕获阶段抛错的守卫，并没有放宽身份一致性、冻结报文或迁移断言。无依赖、RuntimePlan、启动注册或API契约变化。
+
+环境：Linux x64 `7.0.0-31-generic`，SDK `10.0.401`；证据根 `/home/shiny/.cache/tenonedge-t3-exit-audit/fs01/`。主要实际命令：
+
+```sh
+dotnet build TenonEdge.sln -c Release --no-restore -m:1 /nodeReuse:false -p:UseSharedCompilation=false
+dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter FullyQualifiedName~HttpCredentialPreparationTests --logger 'trx;LogFileName=integration.trx' --results-directory <verified>
+dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-build --no-restore --logger 'trx;LogFileName=unit.trx' --results-directory <associated-final>
+dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --filter 'FullyQualifiedName~Http|FullyQualifiedName~Credentials|FullyQualifiedName~RuntimeApplicationLifecycleTests|FullyQualifiedName~RuntimeRollbackTests|FullyQualifiedName~ConfigurationMigration|FullyQualifiedName~InputModuleConnectionTests|FullyQualifiedName~OutputModule|FullyQualifiedName~DeliveryRecipientIdentityTests' --blame-hang-timeout 5m --blame-hang-dump-type none --logger 'trx;LogFileName=integration.trx' --results-directory <associated-final>
+python3 .github/scripts/verify-test-results.py <associated-final> --require TenonEdge.UnitTests --require TenonEdge.IntegrationTests
+# dotnet format --verify-no-changes --no-restore --include 本批六个C#文件
+```
+
+结果：定向 **2/2**；最终完整单元 **2081/2081**、关联集成 **630/630**（包含同两项，不重复累计），均0失败/跳过。最终两项分别9.62/9.77秒；关联集成1分14秒。Release0警告/错误，变更文件格式/分析检查及 `git diff --check` 通过，964个后端源码文件前后哈希一致。最终报告/日志/哈希在 `associated-final/`；首次复现、首次编译CA1859、测试误用画布节点ID及误预期适配器原始错误文本、旧HTTP身份夹具拒绝准备读取导致的4项单元失败均保留在原目录，不把失败报告覆写为通过。
+
+**边界与下一步：** FS-01 的真实HTTP软件集成子场景通过，不是物理设备、浏览器故障页面或整个T3验收。新增后完整集成、完整Web与171项浏览器尚未运行；§1.1按十一任务列出有限退出矩阵。实际最低品牌浏览器与历史MQTT偶发根因仍未收口，不推送、不进入T4/T5/G1。
 
 ## 3. 验收编号登记
 

@@ -12,9 +12,13 @@ public sealed class HttpOutputFactory(IHttpCredentialResolver credentials, TimeP
     public IOutputTarget Build(RuntimeUnitPlan plan)
     {
         try
-        { return new HttpOutputTarget(plan.Id, HttpOutputSettings.Parse(plan.Configuration), credentials, time, connector, connections, trust); }
+        {
+            var settings = HttpOutputSettings.Parse(plan.Configuration);
+            HttpCredentialValidation.ValidatePreparation(settings, credentials);
+            return new HttpOutputTarget(plan.Id, settings, credentials, time, connector, connections, trust);
+        }
         catch (Exception exception) when (exception is ArgumentException or JsonException or FormatException or InvalidOperationException)
-        { throw new RuntimeUnitBuildException(plan.Id, "HTTP 输出配置无效，请检查固定地址、请求头和成功约定。", exception); }
+        { throw new RuntimeUnitBuildException(plan.Id, "HTTP 输出配置或凭证无效，请检查固定地址、请求头、成功约定及凭证是否可解密。", exception); }
     }
 }
 

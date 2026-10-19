@@ -6,6 +6,20 @@ namespace TenonEdge.Adapters.Http;
 /// <summary>管理写入与发送共用的凭证格式检查；错误说明不包含凭证内容。</summary>
 public static class HttpCredentialValidation
 {
+    // Preparation is local only. Do not retain the secret in a unit/plan:
+    // requests must still resolve current credentials to support rotation.
+    internal static void ValidatePreparation(HttpRequestSettings settings, IHttpCredentialResolver credentials)
+    {
+        var identity = credentials.DescribeHttp(settings.ConnectionId);
+        if (identity is null)
+        { return; }
+        var credential = credentials.ResolveHttp(settings.ConnectionId, settings.BaseAddress);
+        if (credential is null || credential.Identity != identity ||
+            identity.Kind == HttpCredentialKind.ClientCertificate && settings.BaseUri.Scheme != "https")
+        { throw new ArgumentException("HTTP 凭证不可用、无法解密或已变化，请重新核对。"); }
+        Validate(identity.Kind, identity.Username, identity.Name, credential.Secret);
+    }
+
     public static void Validate(HttpCredentialKind kind, string? username, string? name, string secret)
     {
         if (kind == HttpCredentialKind.ClientCertificate)
