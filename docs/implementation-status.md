@@ -93,6 +93,14 @@ Web验证：`npm run typecheck`、`npm run lint`、`npm test -- --run`通过，5
 
 路线列表已按5秒间隔读取实际有效草稿匹配状态；画布同时轮询后端运行诊断并显示协调状态、有效版本与该路线是否与有效运行配置一致。运行状态查询失败时明确显示未知，不把保存草稿显示成生效。只读角色仍使用同一只读状态API。Web类型/lint/格式和完整Vitest通过（50文件/708用例）；本次前端尚未运行真实浏览器验证。
 
+### 2.292 全量集成首次复验失败定位：连接删除API清单与HTTP复用测试条件（2026-10-19）
+
+在 Release 当前代码运行完整后端测试（Web浏览器尚未运行，遵守后端/浏览器串行规则）：单元 1,943/1,943通过；集成 2,681/2,685通过，失败4项且均保留在`/tmp/tenonedge-t3/full-integration/t3-integration-full.trx`。3项为新增登录态连接删除核对 GET endpoint 后测试静态 OpenAPI/授权端点清单未增 operation/route；已补期望清单，针对这3个原测试 + 1项证书集成用例运行，均4/4通过，TRX:`/tmp/tenonedge-t3/inventory-and-cert-reuse-corrected/inventory-and-cert-reuse-corrected.trx`。
+
+第四项原检查两次HTTP输出请求复用同一TCP连接；全量中响应成功但业务成功规则为空，客户端按既有`MaxResponseDrainSize=0`不读取无界正文并释放连接，服务端使用JSON响应导致不保证连接复用。未放宽断言或改生产逻辑；将该测试配置为既有有界JSON业务成功规则`/counter == 9007199254740993`，使它实际验证响应正文已读取后的连接复用。第一次针对性修复误用非RFC6901的`counter`指针，得到第二次失败证据`/tmp/tenonedge-t3/inventory-and-cert-reuse/inventory-and-cert-reuse.trx`；更正为`/counter`后4项全通过。此根因是测试刺激条件问题，不代表HTTP任何响应都应复用TCP。
+
+完整集成尚未全绿：上述4项之后未重跑全量，因此当前统计仍为2681/2685；浏览器不得与下一轮后端网络集成并行。既有§2.274/§2.275 MQTT偶发计数超时风险仍独立保留、未定位。
+
 ## 2. 实现内容
 
 2.1—2.3 为 T0-A，2.4—2.9 为 T0-B，2.10 起为 T0-C。
