@@ -688,6 +688,10 @@ test('real connection drafts persist, conflicts and query failures retain edits,
         .filter({ hasText: 'browser-http' })
         .getByRole('button', { name: '删除连接', exact: true })
         .click()
+    await page
+        .getByRole('region', { name: '删除前核对', exact: true })
+        .getByRole('button', { name: '确认删除', exact: true })
+        .click()
     await expect(
         page.getByRole('row').filter({ hasText: 'browser-http' }),
     ).toHaveCount(0)
@@ -3874,7 +3878,7 @@ test('route manual preview UI keeps exact values, invalidates edits, preserves s
         name: '预览当前图（不发送）',
         exact: true,
     })
-    const body = panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true })
+    const body = panel.getByLabel('将要发送的正文（仅预览）', { exact: true })
     await sample.fill('{"f000":9223372036854775807}')
     await run.click()
     await expect(body).toHaveText('{"result":9223372036854775807}')
@@ -4137,7 +4141,7 @@ test('route HTTP onsite preview confirms one real read, preserves manual text an
         page.once('dialog', (dialog) => dialog.accept())
         await run.click()
         await expect(
-            panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true }),
+            panel.getByLabel('将要发送的正文（仅预览）', { exact: true }),
         ).toHaveText('{"result":9223372036854775807}')
         await expect(
             panel.getByText(/本次结果来自现场 HTTP 读取/),
@@ -4151,7 +4155,7 @@ test('route HTTP onsite preview confirms one real read, preserves manual text an
             '超限或包含敏感内容',
         )
         await expect(
-            panel.getByLabel('将要发送的 JSON（仅预览）', { exact: true }),
+            panel.getByLabel('将要发送的正文（仅预览）', { exact: true }),
         ).toHaveCount(0)
         await expect(sample).toHaveValue('deliberately invalid manual JSON')
         expect(calls).toEqual(['GET /values', 'GET /values'])
@@ -4373,7 +4377,7 @@ test('route MQTT onsite preview confirms diagnostic capture and marks retained v
         expect(requests).toEqual([])
         page.once('dialog', (dialog) => dialog.accept())
         await run.click()
-        const body = panel.getByLabel('将要发送的 JSON（仅预览）', {
+        const body = panel.getByLabel('将要发送的正文（仅预览）', {
             exact: true,
         })
         await expect(body).toHaveText('{"result":9223372036854775807}')
@@ -4609,7 +4613,7 @@ test('route Modbus onsite preview reads exact uint64 and bad quality, cancels an
         expect(requests).toBe(0)
         page.once('dialog', (dialog) => dialog.accept())
         await run.click()
-        const body = panel.getByLabel('将要发送的 JSON（仅预览）', {
+        const body = panel.getByLabel('将要发送的正文（仅预览）', {
             exact: true,
         })
         await expect(body).toHaveText('{"result":18446744073709551615}')

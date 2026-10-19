@@ -44,6 +44,14 @@ public sealed record OutputMessage(ReadOnlyMemory<byte> Payload, string Address,
     public const int MaximumProtocolMetadataBytes = 16 * 1024;
 }
 
+/// <summary>纯格式化结果，不包含账户、凭证、指纹或发送状态。适配器的正式 CreateMessage 与预览复用同一实现。
+/// 正文为 1 字节—256 KiB 的有效 UTF-8 文本；头和协议元数据必须非秘密、有界；返回后不得修改缓冲区。</summary>
+public sealed record OutputMessageContent(ReadOnlyMemory<byte> Payload, string Address, int? QualityOfService = null,
+    IReadOnlyDictionary<string, string>? Headers = null, string? ProtocolMetadata = null)
+{
+    public override string ToString() => "Formatted output (body omitted)";
+}
+
 public enum OutputSendStatus { Ack, Retry, RejectMessage, SuspendTarget }
 
 /// <summary>错误说明必须为不含凭证/原始响应正文的安全文本。只有明确的非临时失败才计入毒消息次数。</summary>
@@ -62,6 +70,10 @@ public interface IOutputAdapterFactory
 {
     string Kind { get; }
     IOutputTarget Build(RuntimeUnitPlan plan);
+    /// <summary>可选的纯格式化入口，须与正式目标 CreateMessage 复用同一实现。
+    /// 保留正式 Build 的原运行单元 ID，只接受冻结的非秘密协议配置和已经映射的消息，不再执行映射；不 Build 目标、不读取凭证、不连接或入队。
+    /// null 表示未提供纯格式化能力，预览不得猜测协议或调用 Build 代替。实现须有界并响应取消。</summary>
+    OutputMessageContent? FormatMessage(RuntimeUnitPlan plan, EdgeMessage message, Guid deliveryId, CancellationToken cancellationToken) => null;
     /// <summary>可选的无路线发送绑定。仅纯本地计算，返回非秘密协议配置；不连接、不读凭证、不生成报文。
     /// 配置须声明 queueOnly=true、空 inputs、原 connectionId 和空地址模板的 transportRoute。
     /// null 表示此传输不提供队列接续。结果在新编译时冻结；历史读取绝不调用该方法。</summary>

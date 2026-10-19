@@ -139,7 +139,7 @@ export const routeStrings = {
         failure: '计算失败',
         locate: '定位节点：{{name}}',
         delivery: '本次预览临时编号：{{id}}（不是队列投递）',
-        body: '将要发送的 JSON（仅预览）',
+        body: '将要发送的正文（仅预览）',
         bodyBytes: '完整报文 {{bytes}} 字节',
         field: '字段',
         type: '类型',

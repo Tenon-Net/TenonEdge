@@ -44,6 +44,7 @@ async function createInput(page: Page) {
         .click()
     expect((await saved).status()).toBe(200)
     expect(await (await saved).text()).toContain('9007199254740993')
+    return (await (await saved).json()).input.id
 }
 
 test('extension output: UI-created connection, source and route use discovered transport and frozen TCP replay', async ({
@@ -55,7 +56,9 @@ test('extension output: UI-created connection, source and route use discovered t
     const frames: { address: string; body: string }[] = []
     const faults: string[] = []
     let acknowledge = false
+    let acceptedConnections = 0
     const peer = createServer((socket) => {
+        acceptedConnections++
         sockets.add(socket)
         socket.on('error', () => {})
         socket.on('close', () => sockets.delete(socket))
@@ -155,7 +158,7 @@ test('extension output: UI-created connection, source and route use discovered t
         await expect(
             page.getByRole('row').filter({ hasText: 'Wire sink' }),
         ).toBeVisible()
-        await createInput(page)
+        const sourceId = await createInput(page)
         await page.goto('/routes')
         await page
             .getByRole('button', { name: '新建路线', exact: true })
@@ -278,6 +281,48 @@ test('extension output: UI-created connection, source and route use discovered t
             .locator('.react-flow__handle.source')
             .dragTo(nodes.nth(1).locator('.react-flow__handle.target'))
         await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+        // The only hand-written JSON here is a transient sample, never configuration.
+        const preview = page.getByRole('region', {
+            name: '路线样本预览',
+            exact: true,
+        })
+        await preview
+            .getByLabel('预览数据来源', { exact: true })
+            .selectOption(`input.testscalar:${sourceId}`)
+        await preview
+            .getByLabel('手工 JSON 样本（不保存）', { exact: true })
+            .fill('{"value":9007199254740993}')
+        const previewReply = page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                response.url().endsWith('/routes/preview'),
+        )
+        await preview
+            .getByRole('button', { name: '预览当前图（不发送）', exact: true })
+            .click()
+        const reply = await previewReply
+        expect(reply.status()).toBe(200)
+        const result = (await reply.json()).result
+        expect(result.totalPaths).toBe(1)
+        expect(result.succeededPaths).toBe(1)
+        expect(result.paths[0].output.kind).toBe('output.wire')
+        expect(result.paths[0].output.address).toBe('events/sensor')
+        expect(result.paths[0].output.body).toContain(
+            '"value":9007199254740993',
+        )
+        expect(result.paths[0].output.testSendId).toBeNull()
+        await expect(preview).toContainText('output.wire · events/sensor')
+        await expect(
+            preview.getByLabel('将要发送的正文（仅预览）', { exact: true }),
+        ).toHaveText(result.paths[0].output.body)
+        await expect(
+            preview.getByRole('region', {
+                name: '发送预览测试报文',
+                exact: true,
+            }),
+        ).toHaveCount(0)
+        expect(acceptedConnections).toBe(0)
+        expect(frames).toHaveLength(0)
         await page
             .getByRole('button', { name: '保存路线草稿', exact: true })
             .click()

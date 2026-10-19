@@ -13,12 +13,16 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
 {
     private readonly ISharedConnections _connections = connections;
     private readonly IOutboundConnector _outbound = outbound;
+    private int _builds;
     private int _adapters;
     private int _sessions;
     private int _disposedSessions;
+    public int Builds => Volatile.Read(ref _builds);
     public int Adapters => Volatile.Read(ref _adapters);
     public int Sessions => Volatile.Read(ref _sessions);
     public int DisposedSessions => Volatile.Read(ref _disposedSessions);
+    public bool PrefixUnitKind { get; set; }
+    public Func<OutputMessageContent, OutputMessageContent>? ContentTransform { get; set; }
     public string? RecipientOverride { get; set; }
     public string? MessageAddressOverride { get; set; }
     public string? MessageSummaryOverride { get; set; }
@@ -49,8 +53,23 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
         }, JsonSerializerOptions.Web);
     }
 
+    public OutputMessageContent FormatMessage(RuntimeUnitPlan plan, EdgeMessage message, Guid deliveryId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Format(plan.Id, OutputTransportRoute.Read(plan.Configuration, Kind, required: true)!, message, deliveryId);
+    }
+
+    private OutputMessageContent Format(RuntimeUnitId id, OutputTransportRoute route, EdgeMessage message, Guid deliveryId)
+    {
+        var content = new OutputMessageContent(StandardEnvelope.Serialize(message, deliveryId), MessageAddressOverride ?? route.AddressFor(message.DeviceKey));
+        if (PrefixUnitKind)
+        { content = content with { Payload = Encoding.UTF8.GetBytes(id.Kind + ":" + Encoding.UTF8.GetString(content.Payload.Span)) }; }
+        return ContentTransform?.Invoke(content) ?? content;
+    }
+
     public IOutputTarget Build(RuntimeUnitPlan plan)
     {
+        Interlocked.Increment(ref _builds);
         var route = OutputTransportRoute.Read(plan.Configuration, Kind, required: true)!;
         var connection = plan.Configuration.GetProperty("connection");
         var settings = connection.GetProperty("configuration").GetProperty("connectionModule").GetProperty("parameters");
@@ -77,8 +96,10 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
         public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId)
         {
             var identity = CaptureIdentity();
-            return new(StandardEnvelope.Serialize(message, deliveryId), owner.MessageAddressOverride ?? route.AddressFor(message.DeviceKey), null,
-                owner.MessageFingerprintOverride ?? identity.Fingerprint, owner.MessageSummaryOverride ?? identity.Summary);
+            var content = owner.Format(Id, route, message, deliveryId);
+            return new(content.Payload, content.Address, content.QualityOfService,
+                owner.MessageFingerprintOverride ?? identity.Fingerprint, owner.MessageSummaryOverride ?? identity.Summary,
+                content.Headers, content.ProtocolMetadata);
         }
         public bool CanShareSenderWith(IOutputTarget other) => other is Target target && ConnectionId == target.ConnectionId && Recipient == target.Recipient;
         public IOutputAdapter CreateAdapter()
