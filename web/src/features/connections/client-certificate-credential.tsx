@@ -19,12 +19,14 @@ export function ClientCertificateCredential({
     blocked,
     refresh,
     onBusy,
+    onDirty,
 }: {
     connection: Connection
     draftVersion: string
     version: string | null
     blocked: boolean
     onBusy: (value: boolean) => void
+    onDirty: (value: boolean) => void
     refresh: () => Promise<unknown>
 }) {
     const { t } = useTranslation()
@@ -37,6 +39,23 @@ export function ClientCertificateCredential({
     const controller = useRef<AbortController | null>(null)
     useEffect(() => () => controller.current?.abort(), [])
     const recipient = credentialRecipient(connection)
+    useEffect(() => {
+        onDirty(
+            material.format !== 'pkcs12' ||
+                Object.keys(material.upload).length > 0 ||
+                !!review ||
+                !!account ||
+                acknowledged,
+        )
+    }, [
+        material.format,
+        material.upload,
+        review,
+        account,
+        acknowledged,
+        onDirty,
+    ])
+    useEffect(() => () => onDirty(false), [onDirty])
     const tls =
         recipient.startsWith('https://') || recipient.startsWith('mqtts://')
     const operation = useMutation({

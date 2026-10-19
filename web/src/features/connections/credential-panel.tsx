@@ -15,9 +15,11 @@ type Kind = NonNullable<components['schemas']['HttpCredentialKind']>
 export function CredentialPanel({
     connection,
     draftVersion,
+    onDirty,
 }: {
     connection: Connection
     draftVersion: string
+    onDirty: (value: boolean) => void
 }) {
     const { t } = useTranslation()
     const role = useSession((state) => state.value?.role)
@@ -240,6 +242,7 @@ export function CredentialPanel({
                             version={query.data?.version ?? null}
                             blocked={blocked}
                             onBusy={setCertificateBusy}
+                            onDirty={onDirty}
                             refresh={refresh}
                         />
                     ) : (
@@ -251,6 +254,7 @@ export function CredentialPanel({
                             version={query.data?.version ?? null}
                             blocked={blocked}
                             onBusy={setCertificateBusy}
+                            onDirty={onDirty}
                             refresh={refresh}
                         />
                     )}

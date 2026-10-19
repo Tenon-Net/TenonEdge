@@ -101,6 +101,16 @@ Web验证：`npm run typecheck`、`npm run lint`、`npm test -- --run`通过，5
 
 完整集成尚未全绿：上述4项之后未重跑全量，因此当前统计仍为2681/2685；浏览器不得与下一轮后端网络集成并行。既有§2.274/§2.275 MQTT偶发计数超时风险仍独立保留、未定位。
 
+### 2.293 T3 连续收口复验：修正后后端全量与浏览器全量（2026-10-19）
+
+接续时实际工作区并非干净：HEAD=`1ac3e99`，存在此前 T3 工作未提交的连接凭证防误关闭、删除确认后避免重复 DELETE、抽屉端到端测试等变更；按用户要求保留并纳入后续本地提交。此前§2.288所写“工作区起始无改动、HEAD=`4983d28`”只对应更早起点，不适用于本次接续。起点差异不改变代码基线提交链。
+
+串行网络集成回归：`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --logger 'trx;LogFileName=t3-integration-final2.trx' --results-directory /tmp/tenonedge-t3/final-integration2`，本地 Ubuntu 26.04、.NET 10.0.12、SQLite 3.51.3；**2685/2685通过，失败0、跳过0**，耗时12分59秒；TRX=`/tmp/tenonedge-t3/final-integration2/t3-integration-final2.trx`。本轮实测包含此前修复后的清单和HTTP复用测试；没有并行运行浏览器。
+
+随后 Chromium 全量 Playwright `npx playwright test`（web/，1 worker）**146/146通过，失败0、跳过0**，耗时27分钟；使用本机 HeadlessChromium 156.0.8078.4。命令输出由当前 Playwright 报告保留。先误用`npx playwright test --project=chromium`，配置没有命名 project，命令以“Project(s) chromium not found”失败退出；随即执行实际可用的无参数完整命令，该错误不计为测试通过，也未重跑测试子集。Vitest `npm test -- --run`：50文件/708用例通过；`npm run typecheck`、`npm run lint`、本次变更文件 Prettier 检查及`npm run build`均成功。构建保留已有 602.70 kB 入口 chunk 警告。
+
+本节修复了§2.292的验证状态，并为浏览器提供当前完整 Chromium 基线；**不代表 T3-10/T3-11需求完成或 T3 退出**。全量浏览器运行于 Chromium 156，不替代 Chromium 111最低兼容组以外浏览器、实际 Chrome/Edge/Safari 或实物验证。仍待按§1清单落实/复核的新输出传输扩展冻结身份/账号变化隔离/迁移/重启和报文编号保护矩阵、全 T3 需求退出矩阵及剩余多协议无 JSON用户闭环；MQTT偶发计数超时风险见§2.274/§2.275未定位，不视为本次全量通过即已消除。
+
 ## 2. 实现内容
 
 2.1—2.3 为 T0-A，2.4—2.9 为 T0-B，2.10 起为 T0-C。

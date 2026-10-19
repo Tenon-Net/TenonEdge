@@ -95,11 +95,16 @@ test('real HTTP output diagnostics show backlog, rates, retry, suspend, durable 
         expect(report.items[0].queue.usage.pendingCount).toBeGreaterThan(0)
         expect(report.items[0].headBlockedSeconds).toBeGreaterThanOrEqual(0)
         expect(report.items[0].traffic.points.length).toBeGreaterThan(0)
-        expect(report.items[0].capacity.seconds).toBeNull()
+        expect(report.items[0].capacity.seconds).toBeGreaterThan(0)
+        expect(
+            report.items[0].capacity.constraints.find(
+                (constraint: { kind: string }) => constraint.kind === 'disk',
+            ).status,
+        ).toBe('estimated')
         expect(report.items[0].capacity.quotaUpperBoundSeconds).toBeGreaterThan(
             0,
         )
-        await expect(detail).toContainText('磁盘放大系数未校准')
+        await expect(detail).toContainText('k=2.3')
         await expect(
             detail
                 .getByRole('img', { name: '目标最近一小时趋势' })

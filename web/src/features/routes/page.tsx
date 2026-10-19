@@ -422,7 +422,8 @@ export function RoutesPage() {
                         onCreateReference={
                             canEdit
                                 ? (kind) => {
-                                      const active = globalThis.document.activeElement
+                                      const active =
+                                          globalThis.document.activeElement
                                       referenceOpener.current =
                                           active instanceof HTMLElement
                                               ? active

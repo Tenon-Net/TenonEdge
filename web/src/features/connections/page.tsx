@@ -144,10 +144,9 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
     const [credentialDirty, setCredentialDirty] = useState(false)
     const moduleDirty =
         moduleForm !== null && JSON.stringify(moduleForm) !== original
-    const dirty =
-        (form !== null && JSON.stringify(form) !== original) ||
-        moduleDirty ||
-        credentialDirty
+    const formDirty =
+        (form !== null && JSON.stringify(form) !== original) || moduleDirty
+    const dirty = formDirty || credentialDirty
     const moduleDefinition = modules.data?.find(
         (item) =>
             item.kind === moduleForm?.kind &&
@@ -512,11 +511,13 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                     version={query.data.version}
                     onDeleted={async () => {
                         setDeleting(null)
-                        await mutation.mutateAsync({
-                            type: 'delete',
-                            connection: deleting,
-                            version: query.data!.version,
-                        })
+                        await Promise.all([
+                            queryClient.invalidateQueries({ queryKey }),
+                            queryClient.invalidateQueries({
+                                queryKey: ['configuration-summary'],
+                            }),
+                        ])
+                        setNotice(t('connections.deleted'))
                     }}
                     onClose={() => setDeleting(null)}
                 />
@@ -911,13 +912,14 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
             )}
             {form?.id !== undefined &&
                 form.kind !== 'modbus' &&
-                (!dirty && form.version === query.data?.version ? (
+                (!formDirty && form.version === query.data?.version ? (
                     <CredentialPanel
                         key={`${form.id}:${form.version}`}
                         connection={query.data.connections.find(
                             (item) => item.id === form.id,
                         )!}
                         draftVersion={form.version}
+                        onDirty={setCredentialDirty}
                     />
                 ) : (
                     <p>{t('credentials.saveDraftFirst')}</p>

@@ -682,12 +682,21 @@ test('real connection drafts persist, conflicts and query failures retain edits,
         .getByRole('combobox', { name: '协议筛选', exact: true })
         .selectOption('http')
     await expect(row).toHaveCount(0)
-    page.once('dialog', (dialog) => dialog.accept())
     await page
         .getByRole('row')
         .filter({ hasText: 'browser-http' })
         .getByRole('button', { name: '删除连接', exact: true })
         .click()
+    const deletion = page.getByRole('region', {
+        name: '删除前核对',
+        exact: true,
+    })
+    await expect(deletion).toContainText('设备及来源（0）')
+    await expect(deletion).toContainText('路线草稿（0）')
+    await expect(deletion).toContainText('保留运行版本（0）')
+    await expect(deletion).toContainText('待发 0 · 失败 0 · 隔离 0')
+    page.once('dialog', (dialog) => dialog.accept())
+    await deletion.getByRole('button', { name: '确认删除' }).click()
     await expect(
         page.getByRole('row').filter({ hasText: 'browser-http' }),
     ).toHaveCount(0)
