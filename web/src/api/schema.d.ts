@@ -2898,6 +2898,7 @@ export interface components {
             quarantinedCount: number | string;
             moreDeliveries: boolean;
             canDelete: boolean;
+            connections: components["schemas"]["ConnectionDraftReference"][];
         };
         ConnectionDeviceReference: {
             /** Format: int64 */
@@ -2921,6 +2922,13 @@ export interface components {
         ConnectionDraftList: {
             version: string;
             connections: components["schemas"]["ConnectionDraft"][];
+        };
+        ConnectionDraftReference: {
+            /** Format: int64 */
+            id?: number | string;
+            key?: string;
+            name?: string;
+            enabled?: boolean;
         };
         ConnectionDraftRequest: {
             expectedVersion: string;
@@ -3935,6 +3943,9 @@ export interface components {
             /** Format: int32 */
             version: number | string;
             parameters: components["schemas"]["JsonElement"];
+            connections?: null | {
+                [key: string]: number | string;
+            };
         };
         ModuleCredentialIdentity: {
             kind: string;
@@ -4332,7 +4343,7 @@ export interface components {
             mqtt: null | components["schemas"]["MqttConnectionDraft"];
             http: null | components["schemas"]["HttpConnectionDraft"];
             credential: null | components["schemas"]["PortableCredentialRequirement"];
-            module?: null | components["schemas"]["ModuleConnectionDraft"];
+            module?: null | components["schemas"]["PortableModuleConnection"];
         };
         PortableCredentialRequirement: {
             status: string;
@@ -4368,6 +4379,15 @@ export interface components {
             http: null | components["schemas"]["HttpSourceDraft"];
             simulator: null | components["schemas"]["SimulatorSourceDraft"];
             module?: null | components["schemas"]["PortableModuleSource"];
+        };
+        PortableModuleConnection: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            parameters: components["schemas"]["JsonElement"];
+            connections?: null | {
+                [key: string]: string;
+            };
         };
         PortableModuleSource: {
             kind: string;

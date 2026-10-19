@@ -50,8 +50,11 @@ public sealed class ConnectionModuleCatalog
     public ConnectionModuleDefinition Definition(ModuleConnectionSnapshot connection)
     {
         var (version, _) = ModuleConnectionSnapshot.ReadModuleConfiguration(connection);
-        return _definitions.GetValueOrDefault((connection.Kind, version)) ?? throw Invalid();
+        return Definition(connection.Kind, version);
     }
+
+    public ConnectionModuleDefinition Definition(string kind, int version) =>
+        _definitions.GetValueOrDefault((kind, version)) ?? throw Invalid();
 
     /// <summary>只有运行工厂的准备/重建调用；编辑、发现、结构编译不读取秘密。
     /// 曾配置的可选凭证不可因损坏/换址而退为匿名，必填凭证必须真正可解密。</summary>

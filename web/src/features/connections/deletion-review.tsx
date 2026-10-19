@@ -41,6 +41,10 @@ export function ConnectionDeletionReview({
             )
             if (
                 !data ||
+                !Array.isArray(data.connections) ||
+                !Array.isArray(data.devices) ||
+                !Array.isArray(data.routes) ||
+                !Array.isArray(data.versions) ||
                 Number(data.id) !== Number(connection.id) ||
                 data.version !== version
             )
@@ -80,6 +84,25 @@ export function ConnectionDeletionReview({
             )}
             {ready && review.data && (
                 <>
+                    <h3>
+                        {t('connections.deletion.connections', {
+                            count: review.data.connections.length,
+                        })}
+                    </h3>
+                    {review.data.connections.length > 0 && (
+                        <ul>
+                            {review.data.connections.map((item) => (
+                                <li key={item.id}>
+                                    {item.name} (<code>{item.key}</code>) ·{' '}
+                                    {t(
+                                        item.enabled
+                                            ? 'connections.deletion.enabled'
+                                            : 'connections.deletion.disabled',
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                     <h3>
                         {t('connections.deletion.devices', {
                             count: review.data.devices.length,

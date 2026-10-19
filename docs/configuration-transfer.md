@@ -18,7 +18,7 @@
 
 | 对象 | 标识与引用 |
 |---|---|
-| 连接 | `connectionKey` |
+| 连接 | `connectionKey`；扩展连接的 `module.connections` 以声明参数名引用其他连接的业务 key |
 | 设备 | `deviceKey`；通过 `connectionKey` 引用连接 |
 | 来源 | `deviceKey` + 设备内 `inputKey`；点位/字段的业务 `key` 原样保留 |
 | 路线 | `routeKey`；输入节点用 `sourceKeys: ["deviceKey/inputKey"]`，输出节点用 `connectionKey` |
@@ -51,6 +51,7 @@
 ### 冲突与失败
 
 - 合并按业务 key 新增/更新，未导入对象保留；路线整体替换。替换使草稿与文件一致。新对象分配本机内部编号，不能借用文件里的数据库编号。
+- 扩展连接可通过显式引用指向其他连接（含扩展连接），支持文件内前向引用。合并可引用保留的本机 key；替换只能引用最终候选中的 key。缺失、循环、声明不符、标量/引用重名或冻结体积超限会拒绝整个候选。
 - 同 `connectionKey` 的协议类型不可变。合并/替换发现 HTTP 改 MQTT 等情况时，整次预检失败，返回 `$.connections[n].kind` / `import.connectionKindImmutable`，须改用新 key。
 - 文件格式、模块、标识、引用或合并后大小有任何错误时均不写入草稿。不截断文件、不部分导入。错误列表最多 128 项，超过时明确标记 `import.issuesTruncated`，不表示其余内容通过。
 - 当前凭证只有在接收方和不可认证账户摘要均一致时保留；缺失、无法确认或接收方改变时，持久标记为需重新填写。导入不会替换当前秘密；既有凭证待补标记也不能通过去掉文件提示绕过。

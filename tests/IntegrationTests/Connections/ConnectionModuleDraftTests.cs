@@ -58,7 +58,7 @@ public sealed class ConnectionModuleDraftTests
             services.AddSingleton<IOutputModuleFactory>(output);
         });
         var file = new PortableConfiguration(1,
-            [new("wire", "Wire", ConnectionKind.Module, true, null, null, null, null, Request().Module),
+            [new("wire", "Wire", ConnectionKind.Module, true, null, null, null, null, new("testwire", 1, Request().Module!.Parameters)),
              new("sink", "Sink", ConnectionKind.Http, true, null, null, new("http://localhost/"), null)], [], [],
             [new("route", "Route", null, true, new(1,
                 [new("out", "output.testhttp", 1, "Output", Json("{\"connectionKey\":\"sink\",\"parameters\":{\"address\":\"send\"},\"connectionKeys\":{\"connection\":\"sink\",\"wire\":\"wire\"}}"))], [], new([])))]);
@@ -69,7 +69,7 @@ public sealed class ConnectionModuleDraftTests
         var graph = Assert.Single(candidate.Draft.Routes).Graph;
         Assert.Equal(wire.Id, Assert.Single(graph.Nodes).Config.GetProperty("connections").GetProperty("wire").GetInt64());
         Assert.Equal(0, output.Calls);
-        file.Connections[0] = file.Connections[0] with { Module = wire.Module! with { Kind = "otherwire" } };
+        file.Connections[0] = file.Connections[0] with { Module = file.Connections[0].Module! with { Kind = "otherwire" } };
         var failure = Assert.Throws<ConfigurationImportException>(() => store.Prepare(ConfigurationExport.Serialize(file, Token), mode, "0", Token));
         Assert.Contains(failure.Issues, issue => issue.Code == "import.protocolMismatch");
         Assert.Equal("0", host.Services.GetRequiredService<ConnectionDraftStore>().Read().Version);
@@ -256,9 +256,9 @@ public sealed class ConnectionModuleDraftTests
         var portable = ConfigurationImportDocument.Read(file, Token);
         foreach (var changed in new[]
         {
-            portable.Connections[0] with { Module = draft.Module with { Kind = "otherwire" } },
+            portable.Connections[0] with { Module = portable.Connections[0].Module! with { Kind = "otherwire" } },
             portable.Connections[0] with { Kind = ConnectionKind.Http, Module = null, Http = new("http://localhost/") },
-            portable.Connections[0] with { Module = draft.Module with { Version = 3 } },
+            portable.Connections[0] with { Module = portable.Connections[0].Module! with { Version = 3 } },
             portable.Connections[0] with { Credential = new("requiresInput", "sha256:" + new string('a', 64)) },
         })
         {

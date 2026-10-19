@@ -43,7 +43,7 @@ internal static partial class RoutePlanCompiler
         {
             token.ThrowIfCancellationRequested();
             try
-            { _ = snapshot.ConnectionsCatalog.Freeze(connection.Id, connection.Module!.Kind, connection.Module.Version, connection.Module.Parameters); }
+            { snapshot.ConnectionsCatalog.Validate(connection.Module!.Snapshot(connection.Id, snapshot.Connections, snapshot.MqttCredentials, requireEnabled: true)); }
             catch (Exception error) when (ConfigurationError(error)) { throw Error("plan.configuration", ""); }
         }
         var routes = snapshot.Routes.Where(route => route.Enabled).OrderBy(route => route.Key, StringComparer.Ordinal).ToArray();

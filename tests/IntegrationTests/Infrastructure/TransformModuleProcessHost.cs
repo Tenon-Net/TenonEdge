@@ -29,6 +29,9 @@ internal static class TransformModuleProcessHost
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt"))
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("modbus"))
                 .AddSingleton(BrowserConnection())
+                .AddSingleton(TestNestedHttpModule.Connection)
+                .AddSingleton<IInputModuleFactory>(provider => new TestNestedHttpModule(
+                    provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single()))
                 .AddSingleton<IInputModuleFactory>(provider => new CredentialWireModule(
                     provider.GetRequiredService<IModuleCredentialResolver>(), provider.GetRequiredService<ISharedConnections>(),
                     provider.GetRequiredService<IOutboundConnector>())

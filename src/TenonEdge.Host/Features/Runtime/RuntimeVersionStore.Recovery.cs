@@ -105,7 +105,7 @@ internal sealed partial class RuntimeVersionStore
         foreach (var connection in draft.Connections.Where(connection => connection.Module is not null))
         {
             if (client.Queryable<ModuleCredentialRecord>().InSingle(connection.Id) is not null &&
-                moduleCredentials.ResolveModule(connection.Module!.Snapshot(connection.Id)) is null)
+                moduleCredentials.ResolveModule(connection.Module!.Snapshot(connection.Id, draft.Connections.ToDictionary(value => value.Id), draft.CredentialConnections?.ToHashSet())) is null)
             { throw new DraftWriteException("configuration.rollbackCredentialMissing"); }
         }
         foreach (var connection in draft.Connections.Where(connection => connection.Http is not null))

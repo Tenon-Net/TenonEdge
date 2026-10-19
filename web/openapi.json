@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:46219/"
+      "url": "http://127.0.0.1:38183/"
     }
   ],
   "paths": {
@@ -13955,7 +13955,8 @@
           "failedCount",
           "quarantinedCount",
           "moreDeliveries",
-          "canDelete"
+          "canDelete",
+          "connections"
         ],
         "type": "object",
         "properties": {
@@ -14023,6 +14024,12 @@
           },
           "canDelete": {
             "type": "boolean"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionDraftReference"
+            }
           }
         }
       },
@@ -14141,6 +14148,28 @@
             "items": {
               "$ref": "#/components/schemas/ConnectionDraft"
             }
+          }
+        }
+      },
+      "ConnectionDraftReference": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
           }
         }
       },
@@ -18526,6 +18555,20 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/JsonElement"
+          },
+          "connections": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
           }
         },
         "additionalProperties": false
@@ -20357,7 +20400,7 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ModuleConnectionDraft"
+                "$ref": "#/components/schemas/PortableModuleConnection"
               }
             ]
           }
@@ -20551,6 +20594,40 @@
                 "$ref": "#/components/schemas/PortableModuleSource"
               }
             ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableModuleConnection": {
+        "required": [
+          "kind",
+          "version",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "connections": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false

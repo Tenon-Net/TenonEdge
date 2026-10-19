@@ -68,7 +68,7 @@ internal static partial class RoutePlanCompiler
                 {
                     if (!BusinessKeys.IsValid(connection.Key))
                     { throw new ArgumentException("连接 key 无效。"); }
-                    queue = outputs.WithQueueProtocol(RuntimeUnitId.Create("output." + module.Kind, "queue/" + connection.Key + "/sender"), module.Snapshot(connection.Id));
+                    queue = outputs.WithQueueProtocol(RuntimeUnitId.Create("output." + module.Kind, "queue/" + connection.Key + "/sender"), module.Snapshot(connection.Id, all.ToDictionary(value => value.Id), all.Where(value => usesPassword(value.Id) == true).Select(value => value.Id).ToHashSet(), requireEnabled: true));
                 }
                 catch (Exception error) when (ConfigurationError(error))
                 { throw Error("output.configuration", ""); }

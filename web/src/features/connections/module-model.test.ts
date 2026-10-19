@@ -4,6 +4,8 @@ import {
     moduleConnectionRequest,
     readConnectionList,
     selectConnectionModule,
+    changeModuleConnectionReference,
+    moduleConnectionIssues,
     type ConnectionModule,
 } from './module-model'
 import { transformConfig, transformValues } from '../canvas/transform-model'
@@ -140,5 +142,135 @@ describe('module connection form', () => {
         expect(
             parameterIssues(schema, { host: 'peer', secret: 'private' }),
         ).toEqual([{ name: '', code: 'unknown' }])
+    })
+})
+
+describe('explicit nested connection references', () => {
+    const nested: ConnectionModule = {
+        ...definition,
+        parameters: {
+            ...definition.parameters,
+            parameters: [
+                ...(definition.parameters.parameters ?? []),
+                {
+                    name: 'upstream',
+                    displayName: 'Upstream',
+                    type: 'connectionReference',
+                    required: true,
+                    connectionKinds: ['wire', 'http'],
+                },
+            ],
+        },
+    }
+    const choices = [
+        { id: '42', kind: 'wire', name: 'Self' },
+        { id: '43', kind: 'http', name: 'HTTP' },
+        { id: '44', kind: 'mqtt', name: 'MQTT' },
+        { id: '45', kind: 'wire', name: 'Other module' },
+    ]
+    const saved = () => {
+        const parsed = readConnectionList(
+            list.replace(
+                '"parameters":{',
+                '"connections":{"upstream":43},"parameters":{',
+            ),
+        )
+        return moduleConnectionForm(
+            parsed.version,
+            parsed.connections[0],
+            parsed.exactParameters['42'],
+        )
+    }
+    it('round-trips references outside scalar parameters and preserves exact numbers', () => {
+        const form = saved()
+        expect(form.connections).toEqual({ upstream: '43' })
+        expect(moduleConnectionIssues(form, nested, choices)).toEqual([])
+        const { body, serialized } = moduleConnectionRequest(form)
+        expect(body.module?.connections).toEqual({ upstream: 43 })
+        expect(serialized).toContain('"large":9007199254740993')
+        expect(JSON.parse(serialized).module.parameters).not.toHaveProperty(
+            'upstream',
+        )
+        expect(JSON.parse(serialized).module.connections).toEqual({
+            upstream: 43,
+        })
+    })
+    it('explicitly selects another module by its actual kind, then clears and reinitializes references', () => {
+        const form = saved()
+        const edited = changeModuleConnectionReference(form, 'upstream', '45')
+        expect(moduleConnectionIssues(edited, nested, choices)).toEqual([])
+        expect(form.connections).toEqual({ upstream: '43' })
+        expect(
+            changeModuleConnectionReference(edited, 'upstream', '').connections,
+        ).toEqual({})
+        expect(
+            selectConnectionModule(edited, { ...nested, version: 3 })
+                .connections,
+        ).toEqual({})
+    })
+    it('rejects missing, wrong-kind, self and undeclared references without erasing saved values', () => {
+        const form = saved()
+        for (const id of ['42', '44', '99']) {
+            const edited = changeModuleConnectionReference(form, 'upstream', id)
+            expect(
+                moduleConnectionIssues(edited, nested, choices),
+            ).toContainEqual({ name: 'upstream', code: 'connection' })
+            expect(edited.connections.upstream).toBe(id)
+        }
+        expect(
+            moduleConnectionIssues(form, definition, choices),
+        ).toContainEqual({ name: 'upstream', code: 'connection' })
+        expect(moduleConnectionIssues(form, nested, [])).toContainEqual({
+            name: 'upstream',
+            code: 'connection',
+        })
+    })
+    it('never treats a numeric scalar as a connection selection; explicit edit can repair it', () => {
+        const form = {
+            ...saved(),
+            parameters:
+                '{"host":"peer","large":9007199254740993,"upstream":43}',
+            connections: {},
+        }
+        expect(moduleConnectionIssues(form, nested, choices)).toContainEqual({
+            name: 'upstream',
+            code: 'connection',
+        })
+        const edited = changeModuleConnectionReference(form, 'upstream', '43')
+        expect(moduleConnectionIssues(edited, nested, choices)).toEqual([])
+        expect(edited.parameters).toContain('9007199254740993')
+        expect(edited.parameters).not.toContain('upstream')
+    })
+    it('rejects unsafe ID encodings and duplicate scalar/reference names at serialization', () => {
+        for (const id of [
+            '0',
+            '-1',
+            '01',
+            '1e2',
+            '1.5',
+            '9007199254740992',
+            '42',
+        ])
+            expect(() =>
+                moduleConnectionRequest({
+                    ...saved(),
+                    connections: { upstream: id },
+                }),
+            ).toThrow('module-connection')
+        expect(() =>
+            moduleConnectionRequest({
+                ...saved(),
+                parameters: '{"upstream":null}',
+            }),
+        ).toThrow('module-connection')
+    })
+    it('keeps the no-reference serialized shape compatible', () => {
+        const form = selectConnectionModule(
+            moduleConnectionForm('v'),
+            definition,
+        )
+        expect(moduleConnectionRequest(form).serialized).not.toContain(
+            'connections',
+        )
     })
 })

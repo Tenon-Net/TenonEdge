@@ -44,21 +44,31 @@ internal static class ConfigurationImportPlanner
             { throw new InvalidOperationException("本机发号器返回无效或重复编号。"); }
             return id;
         }
+        // Allocate every business key first, so references do not depend on file order.
+        var connectionIds = connections.ToDictionary(pair => pair.Key, pair => pair.Value.Id, StringComparer.Ordinal);
+        foreach (var value in file.Connections)
+        {
+            token.ThrowIfCancellationRequested();
+            connectionIds[value.ConnectionKey] = oldConnections.TryGetValue(value.ConnectionKey, out var old) ? old.Id : Allocate();
+        }
         for (var index = 0; index < file.Connections.Length; index++)
         {
             token.ThrowIfCancellationRequested();
             var value = file.Connections[index];
-            var id = oldConnections.TryGetValue(value.ConnectionKey, out var old) ? old.Id : Allocate();
-            if (old is not null && (old.Kind != value.Kind || old.Module?.Kind != value.Module?.Kind))
-            { throw ConfigurationImportDocument.Error("import.connectionKindImmutable", $"$.connections[{index}].kind"); }
-            connections[value.ConnectionKey] = Validate($"$.connections[{index}]", () => ConnectionDraftValidation.Normalize(id,
-                new("import", value.ConnectionKey, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Module)));
+            var path = $"$.connections[{index}]";
+            var id = connectionIds[value.ConnectionKey];
+            if (oldConnections.TryGetValue(value.ConnectionKey, out var old) && (old.Kind != value.Kind || old.Module?.Kind != value.Module?.Kind))
+            { throw ConfigurationImportDocument.Error("import.connectionKindImmutable", path + ".kind"); }
+            var module = value.Module is { } portable ? new ModuleConnectionDraft(portable.Kind, portable.Version, portable.Parameters,
+                portable.Connections?.ToDictionary(pair => pair.Key, pair => pair.Value is { } key && connectionIds.TryGetValue(key, out var reference)
+                    ? reference : throw ConfigurationImportDocument.Error("import.referenceMissing", path + ".module.connections"), StringComparer.Ordinal)) : null;
+            connections[value.ConnectionKey] = Validate(path, () => ConnectionDraftValidation.Normalize(id,
+                new("import", value.ConnectionKey, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http, module)));
             if (value.Kind == ConnectionKind.Module && value.Credential is not null)
             {
-                var definition = Validate($"$.connections[{index}]", () => (connectionModules ?? ConnectionModuleCatalog.Empty)
-                    .Definition(connections[value.ConnectionKey].Module!.Snapshot(id)));
+                var definition = Validate(path, () => (connectionModules ?? ConnectionModuleCatalog.Empty).Definition(module!.Kind, module.Version));
                 if (definition.RecipientParameters.IsEmpty || !definition.Parameters.Parameters.Any(field => field.Type == TenonEdge.Abstractions.Parameters.ParameterType.Credential))
-                { throw ConfigurationImportDocument.Error("import.credentialHint", $"$.connections[{index}].credential"); }
+                { throw ConfigurationImportDocument.Error("import.credentialHint", path + ".credential"); }
             }
         }
         var connectionsById = connections.Values.ToDictionary(value => value.Id);
@@ -123,7 +133,14 @@ internal static class ConfigurationImportPlanner
         {
             token.ThrowIfCancellationRequested();
             if (connection.Module is { } module)
-            { Validate("$.connections", () => (connectionModules ?? ConnectionModuleCatalog.Empty).Freeze(connection.Id, module.Kind, module.Version, module.Parameters)); }
+            {
+                Validate("$.connections", () =>
+                {
+                    var frozen = module.Snapshot(connection.Id, connectionsById, candidate.CredentialConnections?.ToHashSet());
+                    (connectionModules ?? ConnectionModuleCatalog.Empty).Validate(frozen);
+                    return frozen;
+                });
+            }
         }
         ValidateCombined(candidate, transforms, inputModules ?? InputModuleCatalog.Empty, outputModules ?? OutputModuleCatalog.Empty, token);
         return new(candidate, ConfigurationDiff.Between(before, candidate));

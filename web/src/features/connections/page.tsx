@@ -511,6 +511,14 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                         form={moduleForm}
                         definitions={modules.data ?? []}
                         ready={moduleReady && !query.error}
+                        connectionsReady={query.isSuccess && !query.isFetching}
+                        connections={(query.data?.connections ?? []).map(
+                            (item) => ({
+                                id: String(item.id),
+                                kind: item.module?.kind ?? item.kind,
+                                name: `${item.name} · ${item.key}`,
+                            }),
+                        )}
                         canEdit={canEdit}
                         blocked={
                             credentialBusy ||
