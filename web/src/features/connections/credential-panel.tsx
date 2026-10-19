@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { SecretCredential } from './secret-credential'
 import { ClientCertificateCredential } from './client-certificate-credential'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -15,9 +15,15 @@ type Kind = NonNullable<components['schemas']['HttpCredentialKind']>
 export function CredentialPanel({
     connection,
     draftVersion,
+    draftCurrent,
+    onDirty,
+    onBusy,
 }: {
     connection: Connection
     draftVersion: string
+    draftCurrent: boolean
+    onDirty: (value: boolean) => void
+    onBusy: (value: boolean) => void
 }) {
     const { t } = useTranslation()
     const role = useSession((state) => state.value?.role)
@@ -133,11 +139,17 @@ export function CredentialPanel({
         ])
     }
     const blocked =
+        !draftCurrent ||
         query.isPending ||
         query.isError ||
         query.isFetching ||
         mutation.isPending ||
         certificateBusy
+    const pending = mutation.isPending || certificateBusy
+    useEffect(() => {
+        onBusy(pending)
+        return () => onBusy(false)
+    }, [onBusy, pending])
     const mismatch = query.data && query.data.recipient !== recipient
     function act(action: 'clear' | 'retain') {
         if (blocked) return
@@ -163,6 +175,7 @@ export function CredentialPanel({
             <p className="text-sm text-muted-foreground">
                 {t('credentials.notice')}
             </p>
+            {!draftCurrent && <p role="alert">{t('credentials.staleDraft')}</p>}
             <p>
                 {query.isPending
                     ? t('credentials.loading')
@@ -240,6 +253,7 @@ export function CredentialPanel({
                             version={query.data?.version ?? null}
                             blocked={blocked}
                             onBusy={setCertificateBusy}
+                            onDirty={onDirty}
                             refresh={refresh}
                         />
                     ) : (
@@ -251,6 +265,7 @@ export function CredentialPanel({
                             version={query.data?.version ?? null}
                             blocked={blocked}
                             onBusy={setCertificateBusy}
+                            onDirty={onDirty}
                             refresh={refresh}
                         />
                     )}

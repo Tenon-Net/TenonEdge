@@ -282,6 +282,8 @@ export const connectionStrings = {
 
 export const credentialStrings = {
     title: '连接认证凭证',
+    staleDraft:
+        '连接草稿版本已变化或暂不可核对；未保存的凭证材料仍绑定原先打开的连接，不会转给新的接收方。请核对并重新载入连接后再操作凭证。',
     notice: '凭证与草稿分开保存，成功后立即生效，不需要应用。秘密从不回显；更换接收方默认需要重新填写。客户端证书用于身份认证，服务器信任须在独立的管理员表单中设置。',
     configured: '已设置',
     empty: '未设置',

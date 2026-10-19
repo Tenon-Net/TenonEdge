@@ -7341,10 +7341,38 @@ Web使用固定`npx --yes npm@11.21.0`的`run typecheck`、`run lint`、`run for
 原`/tmp`最低浏览器已不存在，本批从官方`chromium-browser-snapshots/Linux_x64/1097615`重新下载至证据目录`minimum-browser/`，先核对既有SHA256 `e655cc69971058b636672a7196a979b1435904cd9445d9c34986cfc8efe928d2`再执行，版本实测111.0.5563.0。最终1213个产品/测试/Web源码文件前后SHA256一致，`source-frozen.json`、`evidence-summary.json`核对正常终态、非零用例、全部通过及源码未变化。早期失败日志与trace保留；§2.274/§2.275的MQTT偶发计数超时风险不因本批全绿而移除。
 
 
+### 2.293 T3-05/11 侧栏真实流程、凭证退出保护与并发刷新（2026-10-19）
+
+本批接续 §2.290，不将侧栏验证当作完整 T3 验收。原共享工作区在本会话编辑期间收到另一会话的 `5533701`、`7683b5c`、`1ac3e99` 提交，因此本批在同一仓库的独立 worktree `~/.cache/tenonedge-inline-references/worktree`、分支 `t3-inline-reference-verification`（基点 `7683b5c`）验证。未覆盖原工作区残留的同名旧修改，未撤回他人提交，也未向共享分支合并；共享分支的全量测试不能当作隔离分支的全量通过证据。
+
+- 真实浏览器复现普通 HTTP/MQTT 凭证未上报未保存状态：关闭侧栏直接丢弃材料、没有确认。修复后秘密仍只在所属凭证组件中，上层仅接收 dirty/busy 布尔值；证书本地文件读取期间也阻止提前关闭。普通连接参数与凭证编辑互斥，凭证输入不会因为上报 dirty 而卸载自身。
+- 另复现并修复：他人改变连接接收方后刷新列表会卸载旧凭证表单。现在凭证绑定显式打开时的非秘密连接快照；草稿版本变化、查询失败或刷新中阻止凭证写入，但保留本地材料，不自动转绑到新接收方。明确确认重新载入或退出才清除。成功/冲突/丢回复后的既有清除与不重放规则不变。
+- 返回画布的焦点由版本核对结束、原按钮解除禁用后恢复，移除抽屉卸载时过早的手动聚焦。原生 dialog 保持模态隔离；Esc/背景不会绕过原子页面的退出流程。
+- 新增 `inline-references.spec.ts` 共 11 项：未保存画布内建立 Modbus 连接、设备、点表及 HTTP 输出；返回保留图、撤销/重做、样本及精确数值；预览不发送，显式应用后真实 HTTP 收到 `{"exact":9007199254740993}`。另覆盖 CSV 未导入文件退出、GET 500 后显式核对、同路线并发 409、七类凭证取消/确认退出、保存未返回时不能关闭/重放，以及并发改接收方后的材料保护。既有无 JSON 工作流补只读用户看不到两个侧栏创建按钮。
+- 证书退出测试只使用合成文件验证材料保留/清除，不将其称为有效证书或 TLS 验证；关联组中的既有 `client-certificate.spec.ts` 另行执行真实客户端证书握手。Modbus 仍为软件从站，不是实物兼容证据。
+
+本地证据根目录：`~/.cache/tenonedge-inline-references/`。保留全部早期失败：`isolated-minimized-red` 为真正最小化的退出确认 1 次/实际 0 次；`isolated-minimized-green` 为修复后 1/1；`refresh-red` 为刷新后凭证表单消失；`refresh-green` 为修复后旧版五项组 5/5。`isolated-minimal-red` 的最小化脚本路径有误，不将该文件名当作最小复现证据。早期协议下拉定位、保存/撤销后的节点选择、字段标签及导航夹具错误均保留原日志后修正，未更改产品规则迁就测试。trace 可能含一次性会话及测试材料，仅保留本机，不提交或公开认证头。
+
+| 检查 | 本批结果与证据 |
+|---|---|
+| 隔离树依赖恢复/Release 构建 | 固定 npm 11.21.0 `npm ci`、`dotnet restore TenonEdge.sln --locked-mode`、完整 Release 构建通过；0 构建警告/错误 |
+| 隔离后端完整单元 | 1943/1943，0 失败/跳过，`isolated-unit/unit.trx`；本批没有在隔离树完成全部后端集成 |
+| Web 类型/lint/完整单元 | `npx --yes npm@11.21.0 run typecheck && ... run lint && ... test -- --run`，终态 exit 0；50 文件/708 项通过，`final-static.log` |
+| 修改文件格式/diff | 八个变更的 Web 产品/测试文件 Prettier 检查及 `git diff --check` 通过；首次命令误写 `strings.tsx` 后已更正为实际 `strings.ts` |
+| 当前浏览器关联组 | 25/25，0 失败/跳过，`current-matrix.json`/`.log`，原执行会话终态 exit 0；与另一会话后端网络集成重叠，**不算串行最终验证** |
+| 当前浏览器与 Chromium111 串行复验 | **各 25/25**，0 失败/跳过/flaky；当前浏览器 241.3 秒，Chromium111 257.0 秒；`serial-final/current.json`、`minimum.json`、`verify.log`，脚本终态 `serial-final-exit=0` |
+
+关联组实际命令：在隔离树 `web/` 中，`TENONEDGE_TEST_URL=http://192.168.0.88:18083 PLAYWRIGHT_JSON_OUTPUT_NAME=<证据文件> npx --yes npm@11.21.0 run test:e2e -- inline-references.spec.ts gateway-workflow.spec.ts client-certificate.spec.ts connection-list.spec.ts connection-modules.spec.ts --reporter=line,json --output=<本机产物目录>`。Ubuntu 26.04 x64、Node 22.23.2、.NET SDK 10.0.401、Playwright 1.64.0；当前默认浏览器报告 HeadlessChrome 156.0.8078.4。最低版本 executable 为 `~/.cache/tenonedge-module-web/minimum-browser/chrome-linux/chrome`，实测版本 Chromium 111.0.5563.0，不等于真实 Chrome/Edge/Safari 验证。HTTP 主地址及 owned Host 均按测试配置使用网卡地址。
+
+最终浏览器在已观察到的后端集成进程 3590318 退出后开始，两组串行执行；`network-observation.log` 每秒观察期间未发现另起的同入口集成进程。1206 个源码/测试文件的 SHA256 在运行前后匹配，未用修改前结果代替当前源码验证。该结论只覆盖上述 25 项关联组，不是完整浏览器套件。
+
+剩余：逐节点运行态仍未实现（§2.291 仅为路线/全局状态，不能替代功能 §5.2）；路线旧缓存/本地编辑与有效配置须继续区分；完整 T3-10 输出传输/嵌套引用/六类组合、连接删除浏览器、容量及全阶段退出矩阵仍按 §1 收口。既有 MQTT 偶发计数超时风险不因本批通过而撤销。未推送、未发版、未进入 T4/T5/G1。
+
 ## 3. 验收编号登记
 
 | 编号 | 子场景 | 验证状态 | 证据 | 剩余 |
 |---|---|---|---|---|
+| T3-05/11、功能 §2.3/5.2、AT-17/18、FE-AT-02—04 | 侧栏建引用、凭证退出/并发保护、精确值与只读边界 | 最终串行当前/Chromium111 关联组各 25/25；原重叠运行单独保留 | §2.293 | 不代表节点运行态或完整 T3 验收 |
 | 功能 §2.3/12.2 / T3-10 / GW-16 / AT-17/18 / FS-27 / FE-AT-02—04/06 | 扩展连接标量网页与独立凭证核对 | 本地软件子项通过：4621后端、699 Web、当前/111关联各9；API三角色，浏览器管理员/只读、真实TCP轮换/重启及失败不重放 | §2.287 | 新输出传输、完整表单组合及无JSON/整阶段退出矩阵；旧网络变化与MQTT风险保留 |
 | 功能 §2.3/12.2 / T3-10 / GW-16 / AT-17/18 / FS-27 / BE-AT-03/05 | 扩展连接独立凭证后端与真实TCP逐请求轮换 | 本地软件子项通过：1941单元+2676集成=4617；Web693；当前/111既有关联各8；无新凭证网页验收 | §2.286 | 网页独立核对/自动表单、新输出身份与隔离/迁移、完整T3退出 |
 | 功能 §12.2 / T3-10 / GW-16 / AT-17 / FS-27 / BE-AT-03/05 / FE-AT-03/06 | 版本化新连接草稿、业务key导入与原共享链路 | 本地软件子项通过：1934单元+2650集成=4584；Web693；当前/111关联各8。浏览器新增仅为模拟响应的错误编辑器保护，不是新协议表单 | §2.285 | 独立凭证与账户/换址/积存保护、自动表单、新输出传输及完整T3退出 |

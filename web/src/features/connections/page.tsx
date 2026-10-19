@@ -142,12 +142,15 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
     const [moduleBusy, setModuleBusy] = useState(false)
     const [credentialBusy, setCredentialBusy] = useState(false)
     const [credentialDirty, setCredentialDirty] = useState(false)
+    // Keep credential material bound to the explicitly opened draft, not to a
+    // replacement row from a background/explicit list refresh.
+    const [credentialConnection, setCredentialConnection] =
+        useState<Connection | null>(null)
     const moduleDirty =
         moduleForm !== null && JSON.stringify(moduleForm) !== original
-    const dirty =
-        (form !== null && JSON.stringify(form) !== original) ||
-        moduleDirty ||
-        credentialDirty
+    const draftDirty =
+        (form !== null && JSON.stringify(form) !== original) || moduleDirty
+    const dirty = draftDirty || credentialDirty
     const moduleDefinition = modules.data?.find(
         (item) =>
             item.kind === moduleForm?.kind &&
@@ -258,6 +261,7 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                 ? initializeConnectionParameters(base, modbusSchema.data)
                 : base
         setShowParameterIssues(false)
+        setCredentialConnection(connection ?? null)
         setForm(next)
         setOriginal(JSON.stringify(next))
         setNotice('')
@@ -611,7 +615,7 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                     className="space-y-4 rounded-md border p-4"
                     onSubmit={(event) => {
                         event.preventDefault()
-                        if (!canEdit) return
+                        if (!canEdit || credentialDirty || editorBusy) return
                         if (form.kind !== 'http') {
                             if (!schemaReady) return
                             setShowParameterIssues(true)
@@ -628,7 +632,12 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                 >
                     <p>{t('connections.immutable')}</p>
                     <fieldset
-                        disabled={!canEdit || mutation.isPending}
+                        disabled={
+                            !canEdit ||
+                            mutation.isPending ||
+                            credentialDirty ||
+                            editorBusy
+                        }
                         className="grid gap-4 md:grid-cols-2"
                     >
                         {textField('key', true, 64)}
@@ -746,7 +755,12 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                     )}
                     {form.kind === 'http' && (
                         <fieldset
-                            disabled={!canEdit || mutation.isPending}
+                            disabled={
+                                !canEdit ||
+                                mutation.isPending ||
+                                credentialDirty ||
+                                editorBusy
+                            }
                             className="space-y-2"
                         >
                             <legend>{t('connections.headers')}</legend>
@@ -839,6 +853,8 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                                 type="submit"
                                 disabled={
                                     mutation.isPending ||
+                                    credentialDirty ||
+                                    editorBusy ||
                                     outboundBusy ||
                                     (form.kind !== 'http' && !schemaReady)
                                 }
@@ -849,7 +865,9 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                         <Button
                             type="button"
                             variant="outline"
-                            disabled={mutation.isPending || outboundBusy}
+                            disabled={
+                                mutation.isPending || outboundBusy || editorBusy
+                            }
                             onClick={() => {
                                 if (
                                     !dirty ||
@@ -911,13 +929,20 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
             )}
             {form?.id !== undefined &&
                 form.kind !== 'modbus' &&
-                (!dirty && form.version === query.data?.version ? (
+                (!draftDirty &&
+                credentialConnection &&
+                credentialConnection.id === form.id ? (
                     <CredentialPanel
-                        key={`${form.id}:${form.version}`}
-                        connection={query.data.connections.find(
-                            (item) => item.id === form.id,
-                        )!}
+                        key={`${form.id}:${form.version}:${testGeneration}`}
+                        connection={credentialConnection}
                         draftVersion={form.version}
+                        draftCurrent={
+                            form.version === query.data?.version &&
+                            !query.error &&
+                            !query.isFetching
+                        }
+                        onDirty={setCredentialDirty}
+                        onBusy={setCredentialBusy}
                     />
                 ) : (
                     <p>{t('credentials.saveDraftFirst')}</p>

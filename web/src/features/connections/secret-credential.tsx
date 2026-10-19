@@ -20,6 +20,7 @@ export function SecretCredential({
     blocked,
     refresh,
     onBusy,
+    onDirty,
 }: {
     connection: Connection
     draftVersion: string
@@ -28,6 +29,7 @@ export function SecretCredential({
     blocked: boolean
     refresh: () => Promise<unknown>
     onBusy: (value: boolean) => void
+    onDirty: (value: boolean) => void
 }) {
     const { t } = useTranslation()
     const mqtt = connection.kind === 'mqtt'
@@ -41,6 +43,11 @@ export function SecretCredential({
     const [notice, setNotice] = useState('')
     const controller = useRef<AbortController | null>(null)
     useEffect(() => () => controller.current?.abort(), [])
+    const dirty = !!username || !!name || !!secret || review !== null
+    useEffect(() => {
+        onDirty(dirty)
+        return () => onDirty(false)
+    }, [onDirty, dirty])
     function clear() {
         setUsername('')
         setName('')

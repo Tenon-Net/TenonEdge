@@ -19,12 +19,14 @@ export function ClientCertificateCredential({
     blocked,
     refresh,
     onBusy,
+    onDirty,
 }: {
     connection: Connection
     draftVersion: string
     version: string | null
     blocked: boolean
     onBusy: (value: boolean) => void
+    onDirty: (value: boolean) => void
     refresh: () => Promise<unknown>
 }) {
     const { t } = useTranslation()
@@ -36,6 +38,14 @@ export function ClientCertificateCredential({
     const [needsRefresh, setNeedsRefresh] = useState(false)
     const controller = useRef<AbortController | null>(null)
     useEffect(() => () => controller.current?.abort(), [])
+    const dirty =
+        material.reading ||
+        Object.values(material.upload).some(Boolean) ||
+        review !== null
+    useEffect(() => {
+        onDirty(dirty)
+        return () => onDirty(false)
+    }, [onDirty, dirty])
     const recipient = credentialRecipient(connection)
     const tls =
         recipient.startsWith('https://') || recipient.startsWith('mqtts://')
@@ -121,10 +131,11 @@ export function ClientCertificateCredential({
             setNeedsRefresh(false)
         },
     })
+    const pending = operation.isPending || material.reading
     useEffect(() => {
-        onBusy(operation.isPending)
+        onBusy(pending)
         return () => onBusy(false)
-    }, [onBusy, operation.isPending])
+    }, [onBusy, pending])
     const busy = blocked || operation.isPending
     function cancel() {
         setReview(null)

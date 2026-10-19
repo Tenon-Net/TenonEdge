@@ -19,12 +19,8 @@ export function ReferenceDrawer({
     const [deviceId, setDeviceId] = useState<number>()
     useEffect(() => {
         const element = dialog.current!
-        const previous = document.activeElement
         element.showModal()
-        return () => {
-            element.close()
-            if (previous instanceof HTMLElement) previous.focus()
-        }
+        return () => element.close()
     }, [])
     return createPortal(
         <dialog

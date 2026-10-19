@@ -416,6 +416,19 @@ for (const creator of ['administrator', 'configurator'] as const) {
             await page
                 .getByRole('button', { name: '打开 电表采集转发', exact: true })
                 .click()
+            await page.locator('.react-flow__node').first().click()
+            await expect(
+                page.getByRole('button', {
+                    name: '在侧栏新建连接',
+                    exact: true,
+                }),
+            ).toHaveCount(0)
+            await expect(
+                page.getByRole('button', {
+                    name: '在侧栏新建设备 / 来源',
+                    exact: true,
+                }),
+            ).toHaveCount(0)
             await expect(
                 page.getByRole('button', { name: '保存路线草稿', exact: true }),
             ).toBeDisabled()
