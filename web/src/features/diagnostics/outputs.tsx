@@ -2,6 +2,7 @@ import { useSession } from '../../lib/session'
 import { OutputControls } from '../deliveries/controls'
 import { ClearPending } from '../deliveries/clear-pending'
 import { LossCounters } from './loss-counters'
+import { CapacityCalibration } from './capacity-calibration'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -418,6 +419,9 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                         <p className="text-sm text-muted-foreground">
                             {t('outputs.capacityNotice')}
                         </p>
+                        <CapacityCalibration
+                            calibration={item.capacity.calibration}
+                        />
                         <dl className="grid gap-4 sm:grid-cols-3">
                             {(
                                 [

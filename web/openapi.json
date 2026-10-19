@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:37681/"
+      "url": "http://127.0.0.1:46219/"
     }
   ],
   "paths": {
@@ -16263,6 +16263,33 @@
           },
           "configStoreId": {
             "type": "string"
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": 0
+          },
+          "walAutoCheckpoint": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": 0
+          },
+          "autoVacuum": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": -1
           }
         }
       },
@@ -16627,6 +16654,34 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "DiskCapacityCalibration": {
+        "required": [
+          "status",
+          "profile",
+          "amplification"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "amplification": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -19475,6 +19530,16 @@
             "items": {
               "$ref": "#/components/schemas/CapacityConstraint"
             }
+          },
+          "calibration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskCapacityCalibration"
+              }
+            ]
           }
         }
       },
@@ -19934,6 +19999,24 @@
               "null",
               "boolean"
             ]
+          },
+          "minimumRecordBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maximumRecordBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -24115,6 +24198,12 @@
               "string"
             ],
             "format": "int64"
+          },
+          "fileSystem": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

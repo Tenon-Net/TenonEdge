@@ -3,16 +3,64 @@ using TenonEdge.Runtime.Deliveries;
 namespace TenonEdge.Runtime.Diagnostics;
 
 public sealed record CapacityConstraint(string Kind, double? Seconds, string Status);
+public sealed record DiskCapacityCalibration(string Status, string? Profile, double? Amplification);
 public sealed record OutputCapacityEstimate(double? Seconds, string? LimitingConstraint, double? QuotaUpperBoundSeconds,
-    string? QuotaLimitingConstraint, CapacityConstraint[] Constraints);
+    string? QuotaLimitingConstraint, CapacityConstraint[] Constraints, DiskCapacityCalibration? Calibration = null);
 
 /// <summary>估算目标从现在断网（其他已积压目标继续积压）的容量，不是保留期或承诺。
 /// 零速率不输出无限值；未知速率、磁盘空间或未校准的 k 不冒充完整估算。</summary>
 public static class OutputCapacityEstimator
 {
-    /// <summary>Measured upper envelope plus 10% margin for SQLite queue.db + live WAL, 1—64 KiB payloads;
-    /// see docs/capacity-calibration.md. Not valid for other SQLite/filesystem settings or larger payloads.</summary>
-    public const double CalibratedDiskAmplification = 2.3;
+    /// <summary>Empirical planning model, not a safety bound. Per-record WAL/index work must not be
+    /// diluted by using a large-payload-only coefficient; see docs/capacity-calibration.md.</summary>
+    public const double CalibratedBaseAmplification = 2.3;
+    public const long CalibratedPerRecordBytes = 16 * 1024;
+
+    public const long MinimumCalibratedRecordBytes = 320;
+    public const long MaximumCalibratedRecordBytes = 262463;
+    public const string CalibrationProfile = "linux-ext4-sqlite-3.53.3-queue9-v1";
+
+    /// <summary>Use actual store metadata and the same rate-window size range for every accumulating target.
+    /// A reference coefficient is not evidence that a different deployment/workload was calibrated.</summary>
+    public static OutputCapacityEstimate EstimateForStore(TenonEdge.Abstractions.Contracts.DeliveryPolicy options,
+        DeliveryQueueUsage target, DeliveryQueueUsage global, OutputTrafficSnapshot rates,
+        IReadOnlyList<OutputTrafficSnapshot> accumulating, StorageProtectionStatus storage, DeliveryStoreInfo? store)
+    {
+        foreach (var sample in accumulating)
+        {
+            ValidateRate(sample.RecordsPerSecond);
+            ValidateRate(sample.BytesPerSecond);
+        }
+        var calibration = SelectCalibration(storage.Space, store, accumulating);
+        double? totalRate = rates.BytesPerSecond is not null && accumulating.All(item => item.BytesPerSecond is not null)
+            ? accumulating.Sum(item => item.BytesPerSecond!.Value) : null;
+        return Estimate(options, target, global, rates.RecordsPerSecond, rates.BytesPerSecond, totalRate,
+            storage, calibration.Amplification) with
+        { Calibration = calibration };
+    }
+
+    private static DiskCapacityCalibration SelectCalibration(StorageSpace? space, DeliveryStoreInfo? store,
+        IReadOnlyList<OutputTrafficSnapshot> accumulating)
+    {
+        if (space?.FileSystem is null || store is null)
+        { return new("environmentUnknown", null, null); }
+        if (!OperatingSystem.IsLinux() || space.FileSystem != "ext4" || store.SqliteVersion != "3.53.3" ||
+            store.SchemaVersion != 9 || store.JournalMode != "wal" || store.Synchronous != 2 ||
+            store.PageSize != 4096 || store.WalAutoCheckpoint != 1000 || store.AutoVacuum != 0)
+        { return new("unsupportedEnvironment", null, null); }
+        if (accumulating.Count == 0 || accumulating.Any(item => item.BytesPerSecond is null || item.RecordsPerSecond is null ||
+            item.BytesPerSecond > 0 && (item.MinimumRecordBytes is null || item.MaximumRecordBytes is null)))
+        { return new("sampleUnknown", CalibrationProfile, null); }
+        if (accumulating.Any(item => item.BytesPerSecond > 0 && (item.MinimumRecordBytes < MinimumCalibratedRecordBytes ||
+            item.MaximumRecordBytes > MaximumCalibratedRecordBytes || item.MinimumRecordBytes > item.MaximumRecordBytes)))
+        { return new("sampleOutsideProfile", CalibrationProfile, null); }
+        var bytes = accumulating.Sum(item => item.BytesPerSecond!.Value);
+        var records = accumulating.Sum(item => item.RecordsPerSecond!.Value);
+        if (bytes == 0)
+        { return new("sampleUnknown", CalibrationProfile, null); }
+        var amplification = CalibratedBaseAmplification + CalibratedPerRecordBytes * records / bytes;
+        return new("applicable", CalibrationProfile, amplification);
+    }
 
     public static OutputCapacityEstimate Estimate(DeliveryCacheOptions options, DeliveryQueueUsage target,
         DeliveryQueueUsage global, double? recordsPerSecond, double? bytesPerSecond, double? accumulatingBytesPerSecond,

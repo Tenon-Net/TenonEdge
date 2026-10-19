@@ -93,7 +93,10 @@ public sealed record DeliveryStoreInfo(
     string JournalMode,
     long Synchronous,
     int SchemaVersion,
-    string ConfigStoreId);
+    string ConfigStoreId,
+    long PageSize = 0,
+    long WalAutoCheckpoint = 0,
+    long AutoVacuum = -1);
 
 /// <summary>失败区策略计数，与状态变更同事务落盘；按目标累计。</summary>
 public sealed record DeliveryFailureTotals(long Rejected, long Poisoned, long Overflowed, long Expired);

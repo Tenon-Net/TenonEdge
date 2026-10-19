@@ -243,7 +243,10 @@ internal sealed partial class DeliveryStore
         var settings = ApplySettings(connection);
         var schemaVersion = Migrate(connection);
         var configStoreId = EnsureMeta(connection);
-        _info = new DeliveryStoreInfo(_options.DatabasePath, version, settings.JournalMode, settings.Synchronous, schemaVersion, configStoreId);
+        _info = new DeliveryStoreInfo(_options.DatabasePath, version, settings.JournalMode, settings.Synchronous, schemaVersion, configStoreId,
+            Convert.ToInt64(Scalar(connection, "PRAGMA page_size;"), CultureInfo.InvariantCulture),
+            Convert.ToInt64(Scalar(connection, "PRAGMA wal_autocheckpoint;"), CultureInfo.InvariantCulture),
+            Convert.ToInt64(Scalar(connection, "PRAGMA auto_vacuum;"), CultureInfo.InvariantCulture));
         return _info;
     }
 

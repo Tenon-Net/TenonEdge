@@ -17,6 +17,90 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
     [Theory]
+    [InlineData(1, 1, false)]
+    [InlineData(1, 300, false)]
+    [InlineData(1024, 1, false)]
+    [InlineData(1024, 300, false)]
+    [InlineData(65536, 1, false)]
+    [InlineData(65536, 300, false)]
+    [InlineData(262144, 1, false)]
+    [InlineData(262144, 300, false)]
+    [InlineData(1, 1, true)]
+    public async Task MeasuresCapacityAmplificationAcrossCommitSizesAndRepeatedDeletion(int payloadBytes, int batchSize, bool metadata)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"capacity-churn-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        try
+        {
+            Assert.SkipUnless(OperatingSystem.IsLinux() && new DriveInfo(path).DriveFormat == "ext4",
+                "本校准档案仅对应 Linux/ext4；其他文件系统须另行实测，不能记作通过。");
+            var database = Path.Combine(path, DeliveryCacheOptions.FileName);
+            long Size(string suffix) => File.Exists(database + suffix) ? new FileInfo(database + suffix).Length : 0;
+            long Physical() => Size("") + Size("-wal") + Size("-shm");
+            double peakGrowth = 0;
+            double model = 0;
+            await using (var writer = WriterHarness.Start(path, options => new DeliveryCacheOptions
+            {
+                DatabasePath = options.DatabasePath,
+                ConfigStoreId = options.ConfigStoreId,
+                MaximumPendingBytesPerTarget = 128L * 1024 * 1024,
+            }))
+            {
+                _ = writer.Cache.GetQueueReport([]);
+                var store = writer.Cache.GetStatus().Store!;
+                Assert.Equal(("3.53.3", 9, 4096L, 1000L, 0L), (store.SqliteVersion, store.SchemaVersion, store.PageSize, store.WalAutoCheckpoint, store.AutoVacuum));
+                output.WriteLine($"filesystem={new DriveInfo(path).DriveFormat}; sqlite={store.SqliteVersion}; schema={store.SchemaVersion}; journal={store.JournalMode}; synchronous={store.Synchronous}; pageSize={store.PageSize}; checkpoint={store.WalAutoCheckpoint}; autoVacuum={store.AutoVacuum}; payload={payloadBytes}; batch={batchSize}; metadata={metadata}; commitMs=50");
+                var payload = new byte[payloadBytes];
+                for (var cycle = 0; cycle < 3; cycle++)
+                {
+                    var baseline = Physical();
+                    var drafts = Enumerable.Range(0, 300).Select(index => new DeliveryDraft(Guid.CreateVersion7(), 1, Guid.CreateVersion7(),
+                        $"meter-{index:D4}", 1, payload, "fingerprint", "recipient:v1:measurement", "events/meter", 1,
+                        metadata ? new Dictionary<string, string> { ["X-Application"] = new string('h', 8192) } : null,
+                        1, "output", metadata ? new string('m', 16 * 1024) : null)).ToArray();
+                    var logical = drafts.Sum(draft => draft.ByteSize);
+                    model = OutputCapacityEstimator.CalibratedBaseAmplification + OutputCapacityEstimator.CalibratedPerRecordBytes * (double)drafts.Length / logical;
+                    var sequences = new List<long>();
+                    foreach (var batch in drafts.Chunk(batchSize))
+                    {
+                        var result = await writer.EnqueueAsync(batch);
+                        Assert.True(result.Committed, result.Error);
+                        sequences.AddRange(result.Seqs);
+                    }
+                    Assert.Equal(300, writer.Cache.GetQueueTotals(1).PendingCount);
+                    void Measure(string phase)
+                    {
+                        var growth = Math.Max(0, Physical() - baseline) / (double)logical;
+                        peakGrowth = Math.Max(peakGrowth, growth);
+                        output.WriteLine($"cycle={cycle}; phase={phase}; logicalAdded={logical}; baseline={baseline}; database={Size("")}; wal={Size("-wal")}; shm={Size("-shm")}; growthK={growth:F6}");
+                    }
+                    Measure("inserted");
+                    foreach (var batch in sequences.Chunk(batchSize))
+                    { Assert.Equal(batch.Length, (await writer.DeleteAsync(batch)).AffectedRecords); }
+                    Assert.Equal(0, writer.Cache.GetQueueTotals(1).PendingCount);
+                    Measure("deleted");
+                    if (cycle == 1)
+                    {
+                        using var connection = Open(database);
+                        using var command = connection.CreateCommand();
+                        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                        using var reader = command.ExecuteReader();
+                        Assert.True(reader.Read());
+                        Assert.Equal(0L, reader.GetInt64(0));
+                        Measure("checkpointed");
+                    }
+                }
+            }
+            output.WriteLine($"peakGrowthK={peakGrowth:F6}; modelK={model:F6}");
+            Assert.InRange(peakGrowth, 0, model);
+        }
+        finally
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
+
+    [Theory]
     [InlineData(1024)]
     [InlineData(65536)]
     public async Task MeasuresDatabaseWalAndIndexAmplificationForCapacityCalibration(int payloadBytes)
@@ -73,6 +157,9 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
         Assert.Equal(2, info.Synchronous);
         Assert.Equal(9, info.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, info.ConfigStoreId);
+        Assert.Equal(4096, info.PageSize);
+        Assert.Equal(1000, info.WalAutoCheckpoint);
+        Assert.Equal(0, info.AutoVacuum);
         if (!OperatingSystem.IsWindows())
         {
             Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(info.FilePath));

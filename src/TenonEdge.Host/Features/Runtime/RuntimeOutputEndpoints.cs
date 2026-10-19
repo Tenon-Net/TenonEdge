@@ -71,6 +71,7 @@ internal static class RuntimeOutputEndpoints
             }
             var traffic = catalog.Keys.ToDictionary(id => id, id => cache.OutputTraffic.Read(id, includePoints: id == selected));
             var storage = cache.StorageProtection.Status;
+            var store = cache.GetStatus().Store;
             var options = cache.CurrentPolicy;
             var items = report.Targets.Select(queue =>
             {
@@ -82,13 +83,11 @@ internal static class RuntimeOutputEndpoints
                 var rates = traffic.GetValueOrDefault(id) ?? new OutputTrafficSnapshot(id, [], null, null, null, null);
                 // 场景：此目标现在断网，加上其他生成多于成功发送、退避/暂停/未运行或队头阻塞的目标；只对当前计划生成率估算。
                 var accumulating = traffic.Where(pair => pair.Key == id || pair.Value.Accumulating == true || states[pair.Key].State != "normal" ||
-                    states[pair.Key].Sender?.HeadBlockedSince is not null).Select(pair => pair.Value.BytesPerSecond).ToArray();
-                double? totalRate = target is not null && accumulating.All(rate => rate is not null) ? accumulating.Sum(rate => rate!.Value) : null;
+                    states[pair.Key].Sender?.HeadBlockedSince is not null).Select(pair => pair.Value).ToArray();
                 var blockedSince = sender?.HeadSequence == queue.HeadSequence && queue.HeadSequence is not null ? sender?.HeadBlockedSince : null;
                 return new RuntimeOutputInfo(id, target?.Key, target?.Name, target?.Kind, target is not null, state, unit, sender,
                     queue, queue.HeadClockAnomaly ? null : Age(queue.HeadCreatedAt, report.CapturedAt), Age(blockedSince, report.CapturedAt), rates,
-                    OutputCapacityEstimator.Estimate(options, queue.Usage, report.Usage, rates.RecordsPerSecond,
-                        rates.BytesPerSecond, totalRate, storage, OutputCapacityEstimator.CalibratedDiskAmplification));
+                    OutputCapacityEstimator.EstimateForStore(options, queue.Usage, report.Usage, rates, accumulating, storage, store));
             }).ToArray();
             if (runtime.ActiveRevision != status.ActiveRevision)
             { return Changed(); }

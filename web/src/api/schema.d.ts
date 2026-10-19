@@ -3407,6 +3407,21 @@ export interface components {
             /** Format: int32 */
             schemaVersion: number | string;
             configStoreId: string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            pageSize: number | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            walAutoCheckpoint: number | string;
+            /**
+             * Format: int64
+             * @default -1
+             */
+            autoVacuum: number | string;
         };
         DeliveryTargetQueueReport: {
             /** Format: int64 */
@@ -3492,6 +3507,12 @@ export interface components {
             revision: number | string;
             positions: string[];
             units: string[];
+        };
+        DiskCapacityCalibration: {
+            status: string;
+            profile: null | string;
+            /** Format: double */
+            amplification: null | number | string;
         };
         DiskSpaceInfo: {
             /** Format: int64 */
@@ -4139,6 +4160,7 @@ export interface components {
             quotaUpperBoundSeconds: null | number | string;
             quotaLimitingConstraint: null | string;
             constraints: components["schemas"]["CapacityConstraint"][];
+            calibration?: null | components["schemas"]["DiskCapacityCalibration"];
         };
         OutputControlRequest: {
             paused: boolean;
@@ -4239,6 +4261,10 @@ export interface components {
             /** Format: double */
             windowSeconds: null | number | string;
             accumulating: null | boolean;
+            /** Format: int64 */
+            minimumRecordBytes?: null | number | string;
+            /** Format: int64 */
+            maximumRecordBytes?: null | number | string;
         };
         ParameterDefinition: {
             name: string;
@@ -5218,6 +5244,7 @@ export interface components {
             totalBytes: number | string;
             /** Format: int64 */
             availableBytes: number | string;
+            fileSystem?: null | string;
         };
         SystemInfoResponse: {
             version: string;

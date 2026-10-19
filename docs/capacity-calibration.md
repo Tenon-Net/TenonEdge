@@ -1,28 +1,91 @@
 # 发送队列磁盘容量估算校准（T3-07）
 
-本估算只针对队列逻辑字节流入，给出磁盘剩余量的保守时间边界，不承诺文件系统可用空间不会被其他进程改变。诊断 API 将生成速率（队列新增冻结报文字节/秒）乘以 `OutputCapacityEstimator.CalibratedDiskAmplification = 2.3`，与目标条数、目标逻辑字节、全局逻辑字节和磁盘余量限制取最小值。当前磁盘余量还扣除配置的字节/百分比预留。未采到非零生成速率、磁盘空间不可读或空间保护已触发时，不给完整时长；保留期不等于缓存时长。
+这是**经验规划估算，不是安全上界或容量保证**。配额、保留期与磁盘保护继续独立执行。磁盘无法读取时维持原保护策略；只是文件系统类型未知时，不影响已可读取的剩余空间与硬保护。
 
-## 样本与方法
+## 模型与适用性
 
-`DeliveryCacheTests.MeasuresDatabaseWalAndIndexAmplificationForCapacityCalibration` 使用生产队列写者、queue.db schema、WAL/synchronous=FULL 和真实 SQLite 文件，分别插入 300 条 1 KiB 与 64 KiB 报文，等待提交后比较 `DeliveryDraft.ByteSize` 总逻辑字节与主库 + 活跃 WAL 文件大小；随后停写者，对同一数据库执行 `PRAGMA wal_checkpoint(TRUNCATE)`，记录检查点后数据库大小。主库大小含记录、索引、页空闲空间；WAL统计这次写入的页变更，没有尝试把索引单独归因。每种尺寸仅一次批次，不代表长期稳态分布或百分位。
+诊断估算的场景是“此目标从现在断网，其他实际生成多于发送、退避、暂停、未运行或队头阻塞的目标继续积压”。速率取原监控最近最多六个实际采样间隔，不从队列净增长反推。
 
-2026-10-19 本机实测：Ubuntu 26.04、Linux x86_64 kernel 7.0.0-31-generic、.NET SDK 10.0.401 / runtime 10.0.12、SQLite 3.51.3、ext4（测试文件位于程序集输出目录的 ext4 根文件系统，不是 `/tmp` tmpfs）。命令：
-
-```sh
-dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-restore \
-  --filter 'FullyQualifiedName~MeasuresDatabaseWalAndIndexAmplificationForCapacityCalibration' \
-  --logger 'console;verbosity=detailed' --results-directory /tmp/tenonedge-t3/capacity-measurement-ext4
+```text
+B = 参与积压估算的目标的逻辑字节生成速率之和（B/s）
+R = 同一组目标的记录生成速率之和（条/s）
+经验磁盘增长速率 = 2.3 × B + 16384 × R
+等效 k = 2.3 + 16384 × R / B，B > 0
+T_磁盘 = (实际可用空间 − max(字节预留, 总空间 × 预留比例)) / 经验磁盘增长速率
+可积存时长 = min(T_单目标条数, T_单目标字节, T_全局逻辑字节, T_磁盘)
 ```
 
-| payload | 记录 | 逻辑字节 | queue.db | 活跃 WAL | 主库+WAL / logical | checkpoint 后 / logical |
-|---:|---:|---:|---:|---:|---:|---:|
-| 1,024 B | 300 | 397,500 | 69,632 | 477,952 | 1.378 | 1.288 |
-| 65,536 B | 300 | 19,751,100 | 19,918,848 | 19,998,512 | 2.021 | 1.008 |
+逻辑字节采用原 `DeliveryDraft.ByteSize`，包括冻结报文、地址、头、协议元数据和既有逐条开销，不只是 payload。16 KiB/条用于有限样本中观测到的 WAL/索引逐条更新工作余量；它不是逐条实际占用值，也不是通过把任意文件大小除以当前条数得到的系数。全局逻辑配额仍只计待发与隔离，失败区有原独立配额。
 
-实际记录数包含持久元数据、索引和固定 per-record 逻辑开销；因此 1 KiB 报文时系数较高。较大样本的 WAL 因一次大批量提交达到主库量级，说明只测 checkpoint 后文件会漏掉活跃 WAL。选择 `k=2.3`，在本次最大实测 2.021 之上留约 13.8% 相对余量；这不是统计置信区间。小样本数量少且批次集中，不能推出更高写入速率下 fsync、自动检查点、磁盘控制器缓存、文件系统压缩/CoW、碎片和数据库增长策略的行为。
+档案 `linux-ext4-sqlite-3.53.3-queue9-v1` 仅在以下信息同时匹配时采用：
 
-## 适用边界和误差
+- 实际运行于 Linux，队列所在文件系统回读为 ext4；
+- 实际 SQLite 为 **3.53.3**、queue schema 9、WAL、synchronous=FULL（2）；
+- 初始化时实际回读 `page_size=4096`、`wal_autocheckpoint=1000`、`auto_vacuum=0`；
+- 参与估算的每个目标都具有有效生成速率；有新增字节的目标，其同一速率窗口内所有记录的逻辑大小极值均在 **320—262463 B**。使用极值而非平均值，不能让另一个目标的越界记录被混合平均掩盖；
+- 至少观测到非零生成字节；无记录样本时不宣称适用，也不显示无限时长。
 
-仅在本产品目前 queue.db schema、WAL、synchronous=FULL、ext4/Linux、1–64 KiB 冻结报文范围内使用该经验系数作为规划提示。真实部署可能是其他文件系统、挂载选项、SQLite/操作系统版本、写入批次、记录元数据大小或报文尺寸；对 >64 KiB 报文、长期积压/频繁删除、队列维护或不同 filesystem 的误差没有测定，不应把 2.3 当作安全上界。实际队列配额、保留/失败区保护和磁盘预留仍是硬限制，容量估算仅供操作员比较。删除不会保证数据库立即缩小。外部进程并发用盘、空间统计延迟及突发输入均不在模型内。
+`OutputTrafficHistory` 在原有有界桶里记录大小极值，不保存报文；随同六桶速率窗口滚出，采样过期或目标移除后不借用旧范围。API 的 `capacity.calibration` 返回状态、档案和本次等效 k：
 
-本次临时 `/tmp` tmpfs 首次探测（结果见测试日志但不采用）证实路径选择会影响条件，故最终测试改为在程序集输出目录文件系统测量；这避免将 tmpfs 结果误记为 ext4 校准。需要在其他受支持部署文件系统上声明适用时，应在对应介质上重新运行相同测量，并记录环境，不可由本地 ext4 结果外推。
+| 状态 | 含义 |
+|---|---|
+| `environmentUnknown` | 剩余空间/文件系统类型或 store 元数据尚不可得 |
+| `unsupportedEnvironment` | 文件系统、平台、SQLite/schema 或 PRAGMA 不匹配 |
+| `sampleUnknown` | 生成率尚未采样/已失效，缺少大小范围，或窗口无生成记录 |
+| `sampleOutsideProfile` | 至少一个参与目标的记录大小超出档案范围 |
+| `applicable` | 上述条件匹配，可以采用经验模型；不表示统计或硬件保证 |
+
+未匹配时完整磁盘估算未知，仍展示有依据的配额时长上界和原因；已经达到磁盘/配额硬限制时仍明确显示 0，而不是用校准未知遮掩已耗尽状态。网页同时展示模型限制、档案与动态等效 k。
+
+## 为什么不再无条件使用 k=2.3
+
+实施状态 §2.289 的早期测量只有 300 条 1 KiB/64 KiB 的集中批次，不能证明小报文逐条提交/删除适用。该节将 SQLite 3.51.3 写成环境版本也不准确：3.51.3 是安全最低要求，本轮实际加载回读为 **3.53.3**，不能把要求当作实测版本。
+
+扩大测量后，旧固定系数在以下三组失败：1 B/逐条提交（增长 k=43.984417）、1 B/300 条批次（2.489500）、1 KiB/逐条提交（11.395483）。原红例总计 9 项：6 通过、3 失败。小记录的逐条事务、删除和 WAL 页变更开销不能只按 payload 的比例估计；也不把所有报文一律乘以 50，从而严重扭曲大报文估算。
+
+完整红例证据：`/home/shiny/.cache/tenonedge-capacity-scope/measurement-red-v2/`，含 TRX、详细日志、测试源码差异及程序集 SHA-256。这不是新模型通过证据。
+
+## 测量方法与可复现命令
+
+`DeliveryCacheTests.MeasuresCapacityAmplificationAcrossCommitSizesAndRepeatedDeletion` 使用生产唯一队列写者、默认 50 ms 分组提交间隔、真实 ext4 文件：
+
+- payload 为 1、1024、65536、262144 B，分别以每次 1 条和 300 条提交，共八组；另有 1 B/逐条提交、附 8 KiB 请求头与 16 KiB 协议元数据的一组。
+- 每组进行三轮，每轮插入 300 条并全部删除；第二轮删除后再执行 `wal_checkpoint(TRUNCATE)` 并核对成功。
+- 每轮记录初始主库/WAL/SHM文件长度合计，以及插入后、删除后、检查点后的三类文件长度。增长 k 为 `max(0, 采样文件长度合计 − 本轮初始合计) / 本轮新增逻辑字节`，取采样点最大值。不是对整个进程瞬时峰值的连续采样。
+- 单目标逻辑字节配额设为 128 MiB，以容纳 300 条 256 KiB 记录；其余使用原默认。没有用内存 SQLite、fake writer 或 /tmp tmpfs 冒充磁盘校准。
+- 测试路径位于测试程序集目录的文件系统；非 Linux/ext4 明确跳过，跳过不能记为档案校准通过。
+
+```sh
+dotnet build TenonEdge.sln -c Release --no-restore -m:1 /nodeReuse:false
+dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build \
+  --filter 'FullyQualifiedName~MeasuresCapacityAmplificationAcrossCommitSizesAndRepeatedDeletion' \
+  --logger 'console;verbosity=detailed' --logger 'trx;LogFileName=measurement.trx' \
+  --results-directory <本次独立证据目录>
+```
+
+本轮环境：Ubuntu 26.04、Linux x86_64 kernel 7.0.0-31-generic、SDK 10.0.401/runtime 10.0.12、SQLite 3.53.3、ext4；测试同时回读实际 PRAGMA。最终绿例、API/网页测试和失败记录以[实施状态 §2.303](implementation-status.md#2303-t3-07-容量模型适用性实测与页面修正2026-10-19)为准。
+
+
+本轮新模型绿例 **9/9 通过、0 失败/跳过**（9.2027 分钟）；以下是各组采样点中的最大增长值，不是瞬时高水位保证：
+
+| payload B | 每批条数 | 大头/元数据 | 逻辑字节/条 | 实测增长 k | 模型等效 k |
+|---:|---:|---|---:|---:|---:|
+| 1 | 1 | 否 | 320 | 44.156083 | 53.500000 |
+| 1 | 1 | 是 | 24916 | 1.569365 | 2.957569 |
+| 1 | 300 | 否 | 320 | 2.489500 | 53.500000 |
+| 1024 | 1 | 否 | 1343 | 11.375031 | 14.499553 |
+| 1024 | 300 | 否 | 1343 | 1.850961 | 14.499553 |
+| 65536 | 1 | 否 | 65855 | 1.217613 | 2.548789 |
+| 65536 | 300 | 否 | 65855 | 2.018601 | 2.548789 |
+| 262144 | 1 | 否 | 262463 | 1.057165 | 2.362424 |
+| 262144 | 300 | 否 | 262463 | 2.010305 | 2.362424 |
+
+原始绿例：`/home/shiny/.cache/tenonedge-capacity-scope/measurement-green-v1/measurement.trx` 及同目录 `run.log`、`test-source.patch`、`assemblies.sha256`。两次运行的小记录峰值略有差异，不能以单次数字作为固定行为。
+
+## 误差与未覆盖范围
+
+- 只有九种组合、每种三轮的有限样本。档案范围内未逐一测试每种尺寸、元数据分布、批次/速率组合；内插只是规划模型，不是统计置信区间、长期稳态或所有部署保证。
+- 没有测定长时间 reader 阻止 checkpoint、其他写入/维护、长期碎片、多目标并发突发、不同挂载策略/介质、文件系统空间统计延迟或外部进程用盘。文件长度不等于分配块数或底层介质写放大，不据此推断 SSD 寿命或 fsync 延迟。
+- SQLite 删除不保证文件立即缩小；既有占用已反映在当前可用空间，不能把逻辑空队列当作磁盘已回收。估算不修改清理、失败区、保留期或硬保护行为。
+- 其他文件系统/版本及越界记录须重新测量并定义有证据的档案，不能自动沿用此参数。浏览器中的 tmpfs 场景只验证“不适用时诚实报告未知”，不是 tmpfs 已校准。
+- 本测量不是实物断电、产品最大吞吐或整个 T3 完成证据。
