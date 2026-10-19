@@ -157,6 +157,7 @@ async function drawRoute(page: Page) {
     await page.getByRole('button', { name: '新建路线', exact: true }).click()
     await page.getByLabel('路线标识', { exact: true }).fill('meter-to-http')
     await page.getByLabel('路线名称', { exact: true }).fill('电表采集转发')
+    await page.getByLabel('路线说明', { exact: true }).fill('现场电表验收路线')
     await page.getByLabel('参与静态编译（草稿启用）', { exact: true }).check()
     const canvas = page.getByLabel('路线画布', { exact: true })
     await canvas.scrollIntoViewIfNeeded()
@@ -219,6 +220,14 @@ async function drawRoute(page: Page) {
     await expect(
         page.getByText('路线草稿已保存，未应用。', { exact: true }),
     ).toBeVisible()
+    await page.goto('/routes')
+    const row = page.locator('li').filter({ hasText: '电表采集转发' })
+    await expect(row).toContainText('meter-to-http')
+    await expect(row).toContainText('现场电表验收路线')
+    await expect(row).toContainText('已启用')
+    await expect(row).toContainText('有未应用修改')
+    await expect(row).toContainText('最后修改：workflow-')
+    await row.getByRole('button', { name: '打开 电表采集转发' }).click()
 }
 async function previewRoute(page: Page) {
     const preview = page.getByRole('region', {
@@ -259,6 +268,12 @@ async function applyRoute(page: Page) {
             })
             .first(),
     ).toBeVisible()
+    await page.goto('/routes')
+    const row = page.locator('li').filter({ hasText: '电表采集转发' })
+    await expect(row).toContainText('有效配置')
+    await row.getByRole('button', { name: '打开 电表采集转发' }).click()
+    const runtimeStatus = page.getByText(/运行协调状态：运行中/)
+    await expect(runtimeStatus).toContainText('与有效运行配置一致')
 }
 
 for (const creator of ['administrator', 'configurator'] as const) {
