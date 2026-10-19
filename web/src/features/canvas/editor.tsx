@@ -106,6 +106,7 @@ function CanvasWorkspace({
     compiledErrorNodes,
 }: CanvasProps) {
     const { t } = useTranslation()
+    const canvasElement = useRef<HTMLDivElement>(null)
     const [store] = useState(() => editor ?? createGraphEditor())
     const [previewStore] = useState(() => previewDraft ?? createPreviewDraft())
     const previewInput = useStore(previewStore)
@@ -529,22 +530,35 @@ function CanvasWorkspace({
                                                 event.dataTransfer.effectAllowed =
                                                     'copy'
                                             }}
-                                            onClick={() =>
-                                                add(
-                                                    item,
+                                            onClick={() => {
+                                                const canvas =
+                                                    canvasElement.current
+                                                if (!canvas) return
+                                                // A long palette can scroll the canvas off screen.
+                                                // Place in its actual viewport, not at a fixed browser Y.
+                                                canvas.scrollIntoView({
+                                                    block: 'nearest',
+                                                    inline: 'nearest',
+                                                    behavior: 'instant',
+                                                })
+                                                const bounds =
+                                                    canvas.getBoundingClientRect()
+                                                const center =
                                                     flow.screenToFlowPosition({
                                                         x:
-                                                            window.innerWidth /
-                                                                2 +
-                                                            (nodes.length % 5) *
-                                                                24,
+                                                            bounds.left +
+                                                            bounds.width / 2,
                                                         y:
-                                                            360 +
-                                                            (nodes.length % 5) *
-                                                                24,
-                                                    }),
-                                                )
-                                            }
+                                                            bounds.top +
+                                                            bounds.height / 2,
+                                                    })
+                                                const offset =
+                                                    (nodes.length % 5) * 24
+                                                add(item, {
+                                                    x: center.x - 96 + offset,
+                                                    y: center.y - 60 + offset,
+                                                })
+                                            }}
                                         >
                                             {item.label}
                                         </button>
@@ -554,6 +568,7 @@ function CanvasWorkspace({
                     )}
                 </aside>
                 <div
+                    ref={canvasElement}
                     className="h-[600px] min-w-0 rounded-md border"
                     aria-label={t('canvas.graph')}
                     tabIndex={0}

@@ -56,6 +56,8 @@ LoRa／LoRaWAN 优先接入现有无线网关或网络服务器已经处理好�
 
 [Modbus 后端接入与软件验证](docs/modbus-integration.md)：运行计划配置、TCP/RTU over TCP 到 HTTP 的产品 Host 软件链路；另见[网页配置 Modbus → 映射 → HTTP](docs/modbus-web-workflow.md)，通过真实页面配置、预览、应用并核对接收结果，不代表实物兼容或 T3 整体验收。
 
+[网页配置 HTTP / MQTT → 映射 → 通用输出](docs/json-protocol-web-workflow.md)：使用真实表单配置 HTTP 拉取或 MQTT 订阅，核对大整数、换算和上游时间；浏览器退出、正常 Host 重启及三角色的软件验收证据统一见实施状态，不代表最低实际浏览器或 T3 整体完成。
+
 [已解码 LoRa 应用数据接入](docs/lora-integration.md)：提供两设备 MQTT 种子配置、人工报文和真实 Broker/Host 软件测试。不是无线实测或厂商兼容声明；不安装网络服务器或新增无线协议栈。
 
 ## 后续优先规划
