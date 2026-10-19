@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 
@@ -61,6 +62,10 @@ public interface IOutputAdapterFactory
 {
     string Kind { get; }
     IOutputTarget Build(RuntimeUnitPlan plan);
+    /// <summary>可选的无路线发送绑定。仅纯本地计算，返回非秘密协议配置；不连接、不读凭证、不生成报文。
+    /// 配置须声明 queueOnly=true、空 inputs、原 connectionId 和空地址模板的 transportRoute。
+    /// null 表示此传输不提供队列接续。结果在新编译时冻结；历史读取绝不调用该方法。</summary>
+    JsonElement? BindQueueOnly(ModuleConnectionSnapshot connection) => null;
     /// <summary>可能共享输入会话的稳定恢复组；只有计划存在同组输入时才共同恢复。只读静态配置，不做 I/O。</summary>
     RuntimeUnitId? RecoveryGroup(RuntimeUnitPlan plan) => null;
 }

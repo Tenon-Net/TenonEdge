@@ -132,7 +132,7 @@ internal static partial class RoutePlanCompiler
                 catch (Exception error) when (ConfigurationError(error)) { throw Error("output.configuration", route.Key, output.Id); }
             }
         }
-        foreach (var queue in QueueOutputs(snapshot.Connections.Values, units, id => snapshot.MqttCredentials.Contains(id), token))
+        foreach (var queue in QueueOutputs(snapshot.Connections.Values, units, id => snapshot.MqttCredentials.Contains(id), token, snapshot.OutputsCatalog))
         { Add(queue, "", queue.Id.Key); }
         token.ThrowIfCancellationRequested();
         var serialized = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units = units.Select(unit => new { kind = unit.Id.Kind, key = unit.Id.Key, unit.Configuration }) }, RouteSourceCompiler.Json);

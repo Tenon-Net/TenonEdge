@@ -13,7 +13,7 @@ public sealed record OutputModuleDefinition(string Kind, int Version, string Dis
 
 /// <summary>版本化输出声明、准入和原工厂视图；历史读取不运行已安装或已卸载的模块。
 /// 发送/重试/隔离仍由原输出目标、注册的传输工厂和队列实现，本目录不创建后台任务。</summary>
-public sealed class OutputModuleCatalog
+public sealed partial class OutputModuleCatalog
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> Outer = new(StringComparer.Ordinal)
@@ -22,13 +22,17 @@ public sealed class OutputModuleCatalog
     private readonly ImmutableDictionary<(string Kind, int Version), IOutputModuleFactory> _modules;
     private readonly ConnectionModuleCatalog _connections;
     private readonly IModuleCredentialResolver? _credentials;
+    private readonly ImmutableDictionary<string, IOutputAdapterFactory> _transports;
     public ImmutableArray<OutputModuleDefinition> Modules { get; }
     internal ImmutableArray<IOutputAdapterFactory> Factories { get; }
 
-    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null)
+    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null,
+        IEnumerable<IOutputAdapterFactory>? transports = null)
     {
         _credentials = credentials;
         _connections = connections ?? ConnectionModuleCatalog.Empty;
+        _transports = (transports ?? []).Where(factory => IsModuleKind(factory.Kind))
+            .ToImmutableDictionary(factory => factory.Kind, StringComparer.Ordinal);
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IOutputModuleFactory>();
         foreach (var module in modules)
@@ -72,6 +76,8 @@ public sealed class OutputModuleCatalog
 
     public void Validate(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("queueOutput", out _))
+        { ValidateQueue(unit); return; }
         if (!unit.Configuration.TryGetProperty("outputModule", out _) && !_modules.Keys.Any(key => key.Kind == unit.Id.Kind))
         { return; }
         try
@@ -87,11 +93,14 @@ public sealed class OutputModuleCatalog
 
     public static void ValidateStoredShape(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("queueOutput", out _))
+        { _ = ReadQueueProtocol(unit); return; }
         if (unit.Configuration.TryGetProperty("outputModule", out _))
         { _ = Read(unit); _ = ReadContext(unit); _ = ReadProtocol(unit) ?? throw Invalid(); }
     }
 
     public static ImmutableDictionary<string, ModuleConnectionSnapshot> ReadConnections(RuntimeUnitPlan unit) =>
+        unit.Configuration.TryGetProperty("queueOutput", out _) ? ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty.Add("target", ReadQueueConnection(unit)) :
         unit.Configuration.TryGetProperty("outputModule", out var envelope) ? ModuleConnections.Read(envelope) : ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty;
 
     public static OutputModuleContext ReadContext(RuntimeUnitPlan unit)
@@ -106,6 +115,8 @@ public sealed class OutputModuleCatalog
 
     public static RuntimeUnitPlan? ReadProtocol(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("queueOutput", out _))
+        { return ReadQueueProtocol(unit); }
         if (!unit.Configuration.TryGetProperty("outputModule", out var envelope) || !envelope.TryGetProperty("protocol", out var protocol))
         { return null; }
         if (protocol.ValueKind != JsonValueKind.Object || protocol.EnumerateObject().Count() != 2 ||

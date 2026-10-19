@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
@@ -22,15 +23,39 @@ internal sealed class TestWireOutputTransport(ISharedConnections connections, IO
     public string? MessageAddressOverride { get; set; }
     public string? MessageSummaryOverride { get; set; }
     public string? MessageFingerprintOverride { get; set; }
+    public long? TargetConnectionIdOverride { get; set; }
+    public string[]? TargetInputsOverride { get; set; }
     public string Kind => "output.wire";
+    public int QueueBindings { get; private set; }
+    public bool QueueBindingThrows { get; set; }
+
+    public JsonElement? BindQueueOnly(ModuleConnectionSnapshot connection)
+    {
+        QueueBindings++;
+        if (QueueBindingThrows)
+        { throw new InvalidOperationException("fixture-secret"); }
+        var settings = ModuleConnectionSnapshot.ReadModuleConfiguration(connection).Parameters;
+        return JsonSerializer.SerializeToElement(new
+        {
+            connectionId = connection.ConnectionId,
+            inputs = Array.Empty<string>(),
+            queueOnly = true,
+            connection,
+            transportRoute = new
+            {
+                recipient = $"wire://{settings.GetProperty("host").GetString()}:{settings.GetProperty("port").GetInt32()}",
+                addressTemplate = "",
+            },
+        }, JsonSerializerOptions.Web);
+    }
 
     public IOutputTarget Build(RuntimeUnitPlan plan)
     {
         var route = OutputTransportRoute.Read(plan.Configuration, Kind, required: true)!;
         var connection = plan.Configuration.GetProperty("connection");
         var settings = connection.GetProperty("configuration").GetProperty("connectionModule").GetProperty("parameters");
-        return new Target(this, plan.Id, plan.Configuration.GetProperty("connectionId").GetInt64(),
-            plan.Configuration.GetProperty("inputs").EnumerateArray().Select(value => value.GetString()!).ToArray(),
+        return new Target(this, plan.Id, TargetConnectionIdOverride ?? plan.Configuration.GetProperty("connectionId").GetInt64(),
+            TargetInputsOverride ?? plan.Configuration.GetProperty("inputs").EnumerateArray().Select(value => value.GetString()!).ToArray(),
             settings.GetProperty("host").GetString()!, settings.GetProperty("port").GetInt32(), route);
     }
 

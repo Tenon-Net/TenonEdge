@@ -217,13 +217,16 @@ public sealed partial class RuntimeHost : IAsyncDisposable
                     throw new PlanValidationException("未注册输出模块。");
                 }
 
-                var candidateGroup = factory.RecoveryGroup(unit);
+                var factoryUnit = OutputModules.QueueProtocolForUse(unit) ?? unit;
+                var candidateGroup = factory.RecoveryGroup(factoryUnit);
                 recoveryGroup = candidateGroup is not null && units.Any(input => input.RecoveryGroup == candidateGroup) ? candidateGroup : null;
                 var mapping = Transforms.ParsePipeline(unit.Configuration);
                 if (mapping?.WorkingReservationBytes > _options.InFlightBytes)
                 { throw new PlanValidationException("转换工作预算超过全局在途预算。"); }
-                var target = factory.Build(unit);
+                var target = factory.Build(factoryUnit);
                 var protocol = OutputModuleCatalog.ReadProtocol(unit) ?? unit;
+                if (factoryUnit != unit && (target.ConnectionId != unit.Configuration.GetProperty("connectionId").GetInt64() || target.Inputs.Count != 0))
+                { throw new PlanValidationException("队列接续不能改变目标或接入来源。"); }
                 if (OutputTransportRoute.Read(protocol.Configuration, protocol.Id.Kind) is { } route)
                 { target = new FrozenTransportTarget(target, route, protocol.Id.Kind[7..]); }
                 if (target.QuiesceWithInputs && recoveryGroup is null)
