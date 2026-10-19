@@ -103,7 +103,13 @@ public sealed class HttpClientCertificateRuntimeTests
         await HttpClientCertificateCredentialTests.ReadyAsync(factory);
         var store = HttpClientCertificateCredentialTests.Store(factory);
         var first = await store.WriteAsync(1, new(peer.Recipient, HttpCredentialKind.ClientCertificate, Certificate: peer.Issue()), "fixture", null, true, token: TestContext.Current.CancellationToken);
-        var settings = new HttpOutputSettings { ConnectionId = 1, BaseAddress = peer.Recipient };
+        var settings = new HttpOutputSettings
+        {
+            ConnectionId = 1,
+            BaseAddress = peer.Recipient,
+            SuccessPath = "/counter",
+            SuccessValue = JsonDocument.Parse("9007199254740993").RootElement.Clone(),
+        };
         var oldIdentity = store.DescribeHttp(1)!;
         var frozen = settings.FreezePayload("{}"u8.ToArray(), Guid.NewGuid(), oldIdentity);
         await using var session = new HttpConnectionSession(new OutboundConnector(new ConnectionTrustTests.LoopbackPolicy()), 5000,

@@ -73,6 +73,7 @@ public sealed partial class OpenApiDocumentTests(DevelopmentApplicationFactory f
         "getConfigurationOperation",
         "getConfigurationRuntimeState",
         "getConfigurationVersion",
+        "getConnectionDeletionReview",
         "getConnectionDrafts",
         "getConnectionModules",
         "getConnectionTlsTrust",
