@@ -87,7 +87,7 @@ internal sealed class HttpCredentialStore(
         return database.InTransaction(client =>
         {
             CredentialDraftGuard.Check(client, connectionId, ConnectionKind.Http, recipient, request.ExpectedDraftVersion);
-            if (client.Queryable<MqttCredentialRecord>().InSingle(connectionId) is not null)
+            if (client.Queryable<MqttCredentialRecord>().InSingle(connectionId) is not null || client.Queryable<ModuleCredentialRecord>().InSingle(connectionId) is not null)
             { throw new CredentialWriteException("credential.protocolConflict"); }
             var record = client.Queryable<HttpCredentialRecord>().InSingle(connectionId);
             if (record?.Version != request.ExpectedVersion)

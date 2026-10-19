@@ -444,5 +444,20 @@ internal static class ConfigMigrations
                     (kind = 1 AND certificate_subject IS NOT NULL AND length(certificate_subject) BETWEEN 1 AND 1024 AND username = ''))
             """,
         ]),
+        new(34, "module_credentials", [
+            """
+            CREATE TABLE module_credential (
+                connection_id INTEGER NOT NULL PRIMARY KEY CHECK(connection_id BETWEEN 1 AND 9007199254740991),
+                kind TEXT NOT NULL,
+                module_version INTEGER NOT NULL CHECK(module_version > 0),
+                recipient TEXT NOT NULL,
+                account TEXT NOT NULL,
+                account_marker TEXT NOT NULL,
+                version TEXT NOT NULL,
+                protected_secrets TEXT,
+                updated_at INTEGER NOT NULL
+            )
+            """,
+        ]),
     ];
 }

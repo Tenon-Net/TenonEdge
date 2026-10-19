@@ -24,6 +24,7 @@ public sealed class InputModuleCatalog
     };
     private readonly ImmutableDictionary<(string Kind, int Version), IInputModuleFactory> _modules;
     private readonly ConnectionModuleCatalog _connections;
+    private readonly IModuleCredentialResolver? _credentials;
     public ImmutableArray<InputModuleDefinition> Modules { get; }
     internal ImmutableArray<IInputUnitFactory> Factories { get; }
 
@@ -31,8 +32,9 @@ public sealed class InputModuleCatalog
         _modules.Values.GroupBy(module => module.Kind, StringComparer.Ordinal)
             .Select(group => (IInputUnitFactory)new Factory(this, group.Key, group.First().UsesDurableHandoff, adapters)).ToImmutableArray();
 
-    public InputModuleCatalog(IEnumerable<IInputModuleFactory> modules, ConnectionModuleCatalog? connections = null)
+    public InputModuleCatalog(IEnumerable<IInputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null)
     {
+        _credentials = credentials;
         _connections = connections ?? ConnectionModuleCatalog.Empty;
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IInputModuleFactory>();
@@ -246,6 +248,8 @@ public sealed class InputModuleCatalog
             {
                 catalog.Validate(unit);
                 var (module, parameters) = catalog.Resolve(unit);
+                foreach (var connection in ReadConnections(unit).Values.Where(value => value.Kind is not ("http" or "mqtt" or "modbus")))
+                { catalog._connections.ValidateForUse(connection, catalog._credentials); }
                 if (ReadProtocol(unit) is { } protocol)
                 { return ProtocolFactory(protocol).Build(new(unit.Id, protocol.Configuration), context); }
                 return module.Build(new(unit.Id, parameters), context) ?? throw Invalid();

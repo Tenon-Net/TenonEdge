@@ -8265,6 +8265,213 @@
         }
       }
     },
+    "/api/edge-admin/v1/connections/{connectionId}/module-credential": {
+      "get": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "查看扩展连接凭证状态，不返回秘密",
+        "operationId": "getModuleCredentialStatus",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleCredentialMetadata"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "独立写入扩展连接凭证，补齐导入待补标记时更新草稿版本",
+        "operationId": "writeModuleCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModuleCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleCredentialMetadata"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "清除未被运行版本引用且无投递的扩展连接凭证",
+        "operationId": "clearModuleCredential",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "expectedDraftVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/connections/{connectionId}/tls-trust": {
       "get": {
         "tags": [
@@ -13725,6 +13932,12 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/ParameterSchema"
+          },
+          "recipientParameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -17821,6 +18034,129 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/JsonElement"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModuleCredentialIdentity": {
+        "required": [
+          "kind",
+          "moduleVersion",
+          "recipient",
+          "account",
+          "accountMarker",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "moduleVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "accountMarker": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "ModuleCredentialMetadata": {
+        "required": [
+          "connectionId",
+          "identity",
+          "configured",
+          "configuredFields",
+          "matchesDraft",
+          "draftVersion",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/ModuleCredentialIdentity"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "configuredFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "matchesDraft": {
+            "type": "boolean"
+          },
+          "draftVersion": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ModuleCredentialRequest": {
+        "required": [
+          "expectedDraftVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedDraftVersion": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "secrets": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "account": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "accountChanged": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "retainExisting": {
+            "type": "boolean",
+            "default": false
           }
         },
         "additionalProperties": false

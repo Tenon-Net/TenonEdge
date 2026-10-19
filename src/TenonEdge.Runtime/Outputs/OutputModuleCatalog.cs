@@ -21,11 +21,13 @@ public sealed class OutputModuleCatalog
     public static OutputModuleCatalog Empty { get; } = new([]);
     private readonly ImmutableDictionary<(string Kind, int Version), IOutputModuleFactory> _modules;
     private readonly ConnectionModuleCatalog _connections;
+    private readonly IModuleCredentialResolver? _credentials;
     public ImmutableArray<OutputModuleDefinition> Modules { get; }
     internal ImmutableArray<IOutputAdapterFactory> Factories { get; }
 
-    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null)
+    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null)
     {
+        _credentials = credentials;
         _connections = connections ?? ConnectionModuleCatalog.Empty;
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IOutputModuleFactory>();
@@ -191,6 +193,8 @@ public sealed class OutputModuleCatalog
             {
                 catalog.Validate(unit);
                 var (_, _, context) = catalog.Resolve(unit);
+                foreach (var connection in context.Connections.Values.Where(value => value.Kind is not ("http" or "mqtt" or "modbus")))
+                { catalog._connections.ValidateForUse(connection, catalog._credentials); }
                 var protocol = ReadProtocol(unit) ?? throw Invalid();
                 var target = Original(protocol).Build(new(unit.Id, protocol.Configuration));
                 if (target is null || target.Id != unit.Id || target.ConnectionId != context.ConnectionId || !target.Inputs.SequenceEqual(context.Inputs))

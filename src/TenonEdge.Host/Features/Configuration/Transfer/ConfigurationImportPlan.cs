@@ -53,6 +53,13 @@ internal static class ConfigurationImportPlanner
             { throw ConfigurationImportDocument.Error("import.connectionKindImmutable", $"$.connections[{index}].kind"); }
             connections[value.ConnectionKey] = Validate($"$.connections[{index}]", () => ConnectionDraftValidation.Normalize(id,
                 new("import", value.ConnectionKey, value.Name, value.Kind, value.Enabled, value.Modbus, value.Mqtt, value.Http, value.Module)));
+            if (value.Kind == ConnectionKind.Module && value.Credential is not null)
+            {
+                var definition = Validate($"$.connections[{index}]", () => (connectionModules ?? ConnectionModuleCatalog.Empty)
+                    .Definition(connections[value.ConnectionKey].Module!.Snapshot(id)));
+                if (definition.RecipientParameters.IsEmpty || !definition.Parameters.Parameters.Any(field => field.Type == TenonEdge.Abstractions.Parameters.ParameterType.Credential))
+                { throw ConfigurationImportDocument.Error("import.credentialHint", $"$.connections[{index}].credential"); }
+            }
         }
         var connectionsById = connections.Values.ToDictionary(value => value.Id);
         for (var index = 0; index < file.Devices.Length; index++)
@@ -241,7 +248,7 @@ internal static class ConfigurationImportPlanner
             var value = file.Connections[index];
             if (value?.Credential is not { } credential)
             { continue; }
-            if (value.Kind is not (ConnectionKind.Http or ConnectionKind.Mqtt) || credential.Status != "requiresInput" || credential.AccountIdentity is not { Length: 71 } identity ||
+            if (value.Kind is not (ConnectionKind.Http or ConnectionKind.Mqtt or ConnectionKind.Module) || credential.Status != "requiresInput" || credential.AccountIdentity is not { Length: 71 } identity ||
                 !identity.StartsWith("sha256:", StringComparison.Ordinal) || identity[7..].Any(character => !char.IsAsciiHexDigitLower(character)))
             { issues.Add("import.credentialHint", $"$.connections[{index}].credential"); }
         }

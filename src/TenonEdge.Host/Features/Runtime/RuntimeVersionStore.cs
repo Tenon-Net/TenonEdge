@@ -19,7 +19,7 @@ namespace TenonEdge.Host.Features.Runtime;
 /// 配置库中的运行版本元数据（总设计 §7.4、§10.2）：快照、三个指针（effective、previous、pending）、“运行中”标记与稳定、非正常退出计数。
 /// 每个方法是一个单独的事务；不在事务中等待网络或做耗时计算（后端实施规范 §4）。
 /// </summary>
-internal sealed partial class RuntimeVersionStore(ConfigDatabase database, AuditTrail audit, TimeProvider time, MqttCredentialStore credentials, DeliveryCache deliveries, HttpCredentialStore httpCredentials, TransformCatalog transforms, InputModuleCatalog inputModules, OutputModuleCatalog outputModules, ConnectionModuleCatalog connectionModules)
+internal sealed partial class RuntimeVersionStore(ConfigDatabase database, AuditTrail audit, TimeProvider time, MqttCredentialStore credentials, DeliveryCache deliveries, HttpCredentialStore httpCredentials, TransformCatalog transforms, InputModuleCatalog inputModules, OutputModuleCatalog outputModules, ConnectionModuleCatalog connectionModules, ModuleCredentialStore moduleCredentials)
 {
     /// <summary>自动操作的操作人（总设计 §7.4：自动回滚的操作人记为“系统”）。</summary>
     public const string SystemOperator = "系统";
@@ -290,6 +290,7 @@ internal sealed partial class RuntimeVersionStore(ConfigDatabase database, Audit
 
             credentials.InvalidateChangedRecipients(client, document);
             httpCredentials.InvalidateChangedRecipients(client, document);
+            moduleCredentials.InvalidateChangedRecipients(client, document);
 
             snapshot.State = RuntimeSnapshotStates.Effective;
             snapshot.ActivatedAt = time.GetUtcNow().ToUnixTimeMilliseconds();

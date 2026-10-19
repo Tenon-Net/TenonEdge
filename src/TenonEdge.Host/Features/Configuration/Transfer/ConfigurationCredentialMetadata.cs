@@ -21,8 +21,13 @@ internal sealed record ConfigurationCredentialMetadata(long ConnectionId, Connec
                c.kind AS Kind, c.account_marker AS AccountMarker, c.recipient AS Recipient,
                c.version AS Version, (c.protected_secret IS NOT NULL) AS HasSecret
         FROM http_credential c INNER JOIN connection_draft d ON d.id = c.connection_id
+        UNION ALL
+        SELECT c.connection_id AS ConnectionId, 'module:' || c.kind AS Protocol,
+               c.account AS Username, NULL AS Kind, c.account_marker AS AccountMarker, c.recipient AS Recipient,
+               c.version AS Version, (c.protected_secrets IS NOT NULL) AS HasSecret
+        FROM module_credential c INNER JOIN connection_draft d ON d.id = c.connection_id
         """).Select(row => new ConfigurationCredentialMetadata(row.ConnectionId,
-            row.Protocol == "mqtt" ? ConnectionKind.Mqtt : ConnectionKind.Http, row.Recipient, row.Version,
+            row.Protocol == "mqtt" ? ConnectionKind.Mqtt : row.Protocol == "http" ? ConnectionKind.Http : ConnectionKind.Module, row.Recipient, row.Version,
             AccountDigest(row.Protocol, row.Username, row.Kind, row.AccountMarker), row.HasSecret)).ToArray();
 
     // Match the existing sender's account-identity semantics. An API-key header/

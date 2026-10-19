@@ -70,6 +70,8 @@ internal static class RuntimeRegistration
         services.AddSingleton<MqttCredentialStore>();
         services.AddSingleton<IMqttSubscriptionStore, MqttSubscriptionStore>();
         services.AddSingleton<HttpCredentialStore>();
+        services.AddSingleton<ModuleCredentialStore>();
+        services.AddSingleton<IModuleCredentialResolver>(provider => provider.GetRequiredService<ModuleCredentialStore>());
         services.AddSingleton<ConnectionTrustStore>();
         services.AddSingleton<ITlsTrustResolver>(provider => provider.GetRequiredService<ConnectionTrustStore>());
         services.AddSingleton<IHttpCredentialResolver>(provider => provider.GetRequiredService<HttpCredentialStore>());
@@ -123,8 +125,8 @@ internal static class RuntimeRegistration
             provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<ITlsTrustResolver>()));
         services.AddSingleton(provider => new TransformCatalog(provider.GetServices<IMessageTransformFactory>()));
         services.AddSingleton<ConnectionModuleCatalog>();
-        services.AddSingleton(provider => new InputModuleCatalog(provider.GetServices<IInputModuleFactory>(), provider.GetRequiredService<ConnectionModuleCatalog>()));
-        services.AddSingleton(provider => new OutputModuleCatalog(provider.GetServices<IOutputModuleFactory>(), provider.GetRequiredService<ConnectionModuleCatalog>()));
+        services.AddSingleton(provider => new InputModuleCatalog(provider.GetServices<IInputModuleFactory>(), provider.GetRequiredService<ConnectionModuleCatalog>(), provider.GetRequiredService<IModuleCredentialResolver>()));
+        services.AddSingleton(provider => new OutputModuleCatalog(provider.GetServices<IOutputModuleFactory>(), provider.GetRequiredService<ConnectionModuleCatalog>(), provider.GetRequiredService<IModuleCredentialResolver>()));
         services.AddSingleton<RuntimeHost>();
         services.AddSingleton<RuntimeVersionStore>();
         services.AddSingleton<RuntimeCoordinator>();

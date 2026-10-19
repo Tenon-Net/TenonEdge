@@ -71,7 +71,9 @@ internal sealed partial class RuntimeVersionStore
             .Where(row => ids.Contains(row.ConnectionId)).OrderBy(row => row.ConnectionId).ToArray();
         var http = client.Queryable<HttpCredentialRecord>().Select(row => new { row.ConnectionId, row.Version }).ToList()
             .Where(row => ids.Contains(row.ConnectionId)).OrderBy(row => row.ConnectionId).ToArray();
-        return RuntimePlanDocument.HashOf(JsonSerializer.Serialize(new { mqtt, http }));
+        var module = client.Queryable<ModuleCredentialRecord>().Select(row => new { row.ConnectionId, row.Version }).ToList()
+            .Where(row => ids.Contains(row.ConnectionId)).OrderBy(row => row.ConnectionId).ToArray();
+        return RuntimePlanDocument.HashOf(JsonSerializer.Serialize(new { mqtt, http, module }));
     }
 
     public void ValidateRecovery(RuntimeRecoveryAuthorization recovery, bool requireDraftVersion) => database.InTransaction(client =>
@@ -98,8 +100,14 @@ internal sealed partial class RuntimeVersionStore
     private void ValidateRecoveryReferences(SqlSugarClient client, ConfigurationCheckpoint draft)
     {
         ValidateRollbackReferences(client, draft);
-        // HTTP always resolves the current credential, even when the old snapshot was
+        // HTTP and module connections resolve the current credential, even when the old snapshot was
         // anonymous. Do not approve an identity whose secret is missing or bound elsewhere.
+        foreach (var connection in draft.Connections.Where(connection => connection.Module is not null))
+        {
+            if (client.Queryable<ModuleCredentialRecord>().InSingle(connection.Id) is not null &&
+                moduleCredentials.ResolveModule(connection.Module!.Snapshot(connection.Id)) is null)
+            { throw new DraftWriteException("configuration.rollbackCredentialMissing"); }
+        }
         foreach (var connection in draft.Connections.Where(connection => connection.Http is not null))
         {
             if (client.Queryable<HttpCredentialRecord>().InSingle(connection.Id) is { } current &&

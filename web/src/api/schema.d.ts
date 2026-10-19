@@ -1747,6 +1747,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/module-credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看扩展连接凭证状态，不返回秘密 */
+        get: operations["getModuleCredentialStatus"];
+        /** 独立写入扩展连接凭证，补齐导入待补标记时更新草稿版本 */
+        put: operations["writeModuleCredential"];
+        post?: never;
+        /** 清除未被运行版本引用且无投递的扩展连接凭证 */
+        delete: operations["clearModuleCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}/tls-trust": {
         parameters: {
             query?: never;
@@ -2862,6 +2881,7 @@ export interface components {
             version: number | string;
             displayName: string;
             parameters: components["schemas"]["ParameterSchema"];
+            recipientParameters?: string[];
         };
         /**
          * @default none
@@ -3802,6 +3822,37 @@ export interface components {
             /** Format: int32 */
             version: number | string;
             parameters: components["schemas"]["JsonElement"];
+        };
+        ModuleCredentialIdentity: {
+            kind: string;
+            /** Format: int32 */
+            moduleVersion: number | string;
+            recipient: string;
+            account: string;
+            accountMarker: string;
+            version: string;
+        };
+        ModuleCredentialMetadata: {
+            /** Format: int64 */
+            connectionId: number | string;
+            identity: components["schemas"]["ModuleCredentialIdentity"];
+            configured: boolean;
+            configuredFields: string[];
+            matchesDraft: boolean;
+            draftVersion: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ModuleCredentialRequest: {
+            expectedDraftVersion: string;
+            expectedVersion?: null | string;
+            secrets?: null | {
+                [key: string]: string;
+            };
+            account?: null | string;
+            accountChanged?: null | boolean;
+            /** @default false */
+            retainExisting: boolean;
         };
         ModuleSourceDraft: {
             kind: string;
@@ -11541,6 +11592,165 @@ export interface operations {
         };
     };
     clearHttpCredential: {
+        parameters: {
+            query: {
+                expectedDraftVersion: string;
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getModuleCredentialStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleCredentialMetadata"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    writeModuleCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModuleCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleCredentialMetadata"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["HttpValidationProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Payload Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    clearModuleCredential: {
         parameters: {
             query: {
                 expectedDraftVersion: string;

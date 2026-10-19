@@ -25,7 +25,8 @@ internal sealed record ConfigurationCheckpoint(string Version, ConnectionDraft[]
             client.Queryable<InputDraftRecord>().OrderBy(row => row.Id).ToList().Select(InputDraftStore.Decode).ToArray(),
             client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(RouteDraftStore.Decode).ToArray(),
             client.Queryable<MqttCredentialRecord>().Select(row => row.ConnectionId).ToList()
-                .Concat(client.Queryable<HttpCredentialRecord>().Select(row => row.ConnectionId).ToList()).Where(connectionIds.Contains).Distinct().Order().ToArray(),
+                .Concat(client.Queryable<HttpCredentialRecord>().Select(row => row.ConnectionId).ToList())
+                .Concat(client.Queryable<ModuleCredentialRecord>().Select(row => row.ConnectionId).ToList()).Where(connectionIds.Contains).Distinct().Order().ToArray(),
             ConfigurationEditJournal.Read(client), ConfigurationCredentialRequirements.Read(client));
     }
 

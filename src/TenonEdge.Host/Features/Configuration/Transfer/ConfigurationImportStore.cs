@@ -39,7 +39,7 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
         var added = plan.Draft.Connections.Where(value => !previousIds.Contains(value.Id)).Select(value => value.Id).ToArray();
         CheckReserved(plan.Draft, plan.Changes, captured.Reserved);
         var required = (plan.Draft.RequiredCredentials ?? []).ToDictionary(value => value.ConnectionId);
-        var decisions = ConfigurationImportCredentials.Compare(document, captured.Before, plan.Draft, captured.Credentials, required.Keys.ToHashSet());
+        var decisions = ConfigurationImportCredentials.Compare(document, captured.Before, plan.Draft, captured.Credentials, required.Keys.ToHashSet(), connectionModules);
         var hints = document.Connections.ToDictionary(value => value.ConnectionKey, value => value.Credential?.AccountIdentity, StringComparer.Ordinal);
         var identities = captured.Credentials.ToDictionary(value => value.ConnectionId, value => value.AccountIdentity);
         foreach (var decision in decisions.Where(value => value.Action == "requiresInput"))
@@ -125,6 +125,7 @@ internal sealed class ConfigurationImportStore(ConfigDatabase database, Snowflak
     {
         var reserved = new Reserved(client.Queryable<HttpCredentialRecord>().Select(value => value.ConnectionId).ToList()
             .Concat(client.Queryable<MqttCredentialRecord>().Select(value => value.ConnectionId).ToList())
+            .Concat(client.Queryable<ModuleCredentialRecord>().Select(value => value.ConnectionId).ToList())
             .Concat(client.Queryable<ConnectionTrustRecord>().Select(value => value.ConnectionId).ToList()).ToHashSet(),
             new(StringComparer.Ordinal), new(StringComparer.Ordinal));
         var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);

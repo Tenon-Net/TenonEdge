@@ -1,6 +1,7 @@
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Credentials;
+using TenonEdge.Runtime.Connections;
 
 namespace TenonEdge.Host.Features.Configuration.Transfer;
 
@@ -10,7 +11,7 @@ internal sealed record ConfigurationImportCredentialDecision(long ConnectionId, 
 internal static class ConfigurationImportCredentials
 {
     public static ConfigurationImportCredentialDecision[] Compare(PortableConfiguration file, ConfigurationCheckpoint before,
-        ConfigurationCheckpoint after, ConfigurationCredentialMetadata[] current, IReadOnlySet<long> alreadyRequired)
+        ConfigurationCheckpoint after, ConfigurationCredentialMetadata[] current, IReadOnlySet<long> alreadyRequired, ConnectionModuleCatalog? modules = null)
     {
         var old = before.Connections.ToDictionary(value => value.Key, StringComparer.Ordinal);
         var next = after.Connections.ToDictionary(value => value.Key, StringComparer.Ordinal);
@@ -31,10 +32,10 @@ internal static class ConfigurationImportCredentials
             { return Decision("requiresInput", "protocolChanged"); }
             if (!credential.HasSecret)
             { return Decision("requiresInput", "credentialUnavailable"); }
-            var recipient = Recipient(connection);
+            var recipient = Recipient(connection, modules);
             // The stored credential may still be bound to an older address than
             // the current draft. Comparing the two draft addresses alone is unsafe.
-            if (!old.TryGetValue(value.ConnectionKey, out var previous) || Recipient(previous) != recipient || credential.Recipient != recipient)
+            if (!old.TryGetValue(value.ConnectionKey, out var previous) || Recipient(previous, modules) != recipient || credential.Recipient != recipient)
             { return Decision("requiresInput", "recipientChanged"); }
             if (value.Credential?.AccountIdentity != credential.AccountIdentity)
             { return Decision("requiresInput", "accountChanged"); }
@@ -44,11 +45,21 @@ internal static class ConfigurationImportCredentials
         }).ToArray();
     }
 
-    internal static string? Recipient(ConnectionDraft connection) => connection.Kind switch
+    private static string? ModuleRecipient(ConnectionDraft connection, ConnectionModuleCatalog? modules)
+    {
+        try
+        {
+            return connection.Module is { } module ? modules?.Definition(module.Snapshot(connection.Id)).RecipientIdentity(module.Parameters) : null;
+        }
+        catch (ArgumentException) { return null; }
+    }
+
+    internal static string? Recipient(ConnectionDraft connection, ConnectionModuleCatalog? modules = null) => connection.Kind switch
     {
         ConnectionKind.Mqtt => MqttCredentialStore.NormalizeRecipient(new MqttConnectionSettings
         { Host = connection.Mqtt!.Host, Port = connection.Mqtt.Port, Tls = connection.Mqtt.Tls }.Recipient),
         ConnectionKind.Http => HttpCredentialStore.NormalizeRecipient(connection.Http!.BaseAddress),
+        ConnectionKind.Module => ModuleRecipient(connection, modules),
         _ => null,
     };
 }
