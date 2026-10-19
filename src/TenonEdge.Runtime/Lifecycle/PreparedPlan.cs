@@ -49,7 +49,7 @@ public sealed class PreparedPlan : IAsyncDisposable
             if (_handedOver || Failures.Count != 0)
             { return null; }
             var outputs = Outputs.Where(output => output.Target.ConnectionId == connectionId).ToArray();
-            if (outputs.Length == 0 || outputs.Any(output => output.ProtocolKind is not ("output.http" or "output.mqtt")))
+            if (outputs.Length == 0 || outputs.Any(output => !output.ProtocolKind.StartsWith("output.", StringComparison.Ordinal) || output.ProtocolKind == "output.tenon"))
             { return null; }
             var identities = outputs.Select(output => output.Target.CaptureIdentity()).ToArray();
             return identities[0] is { } first && identities.All(identity => identity == first) && outputs.All(output => output.ProtocolKind == "output." + first.Recipient.Protocol) ? first : null;

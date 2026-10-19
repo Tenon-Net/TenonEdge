@@ -4,6 +4,7 @@ using SqlSugar;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.Host.Storage.Ids;
 using TenonEdge.Runtime.Connections;
@@ -16,9 +17,74 @@ namespace TenonEdge.Host.Features.Routes;
 /// <summary>图草稿、引用索引、全局版本与审计原子保存；不持有运行时，也不执行图。</summary>
 internal sealed partial class RouteDraftStore(ConfigDatabase database, SnowflakeIdGenerator ids, AuditTrail audit, TimeProvider time, TransformCatalog transforms, InputModuleCatalog inputModules, OutputModuleCatalog outputModules, ConnectionModuleCatalog connectionModules)
 {
-    public RouteDraftList Read() => database.InTransaction(client => new RouteDraftList(ConfigurationDraft.ReadVersion(client),
-        client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(row =>
-            new RouteDraftSummary(row.Id, row.BusinessKey, row.Name, row.Description, row.Enabled, row.NodeCount, row.UpdatedBy, row.UpdatedAt)).ToArray()));
+    public RouteDraftList Read()
+    {
+        var captured = database.InTransaction(client =>
+        {
+            var version = ConfigurationDraft.ReadVersion(client);
+            var routes = client.Queryable<RouteDraftRecord>().OrderBy(row => row.Id).ToList().Select(Decode).ToArray();
+            var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
+            ConfigurationCheckpoint? effective = null;
+            if (state.EffectiveRevision is { } revision)
+            {
+                var snapshot = client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
+                    ?? throw new RuntimePlanDocumentException("有效运行快照缺失。");
+                effective = RuntimeSnapshotDocument.ReadForExecution(snapshot).Draft;
+            }
+            return (Version: version, Routes: routes, Effective: effective);
+        });
+
+        var errors = new HashSet<string>(StringComparer.Ordinal);
+        if (captured.Routes.Any(route => route.Enabled))
+        {
+            try
+            {
+                var snapshot = ReadCompilation(captured.Version, CancellationToken.None);
+                try
+                {
+                    _ = RoutePlanCompiler.Compile(snapshot, CancellationToken.None);
+                }
+                catch (RouteTopologyException error)
+                {
+                    if (error.Issue.RouteKey.Length > 0)
+                    {
+                        errors.Add(error.Issue.RouteKey);
+                    }
+                    foreach (var route in snapshot.Routes.Where(route => route.Enabled && route.Key != error.Issue.RouteKey))
+                    {
+                        try
+                        { _ = RoutePlanCompiler.Compile(snapshot with { Routes = [route] }, CancellationToken.None); }
+                        catch (RouteTopologyException routeError) { errors.Add(routeError.Issue.RouteKey.Length > 0 ? routeError.Issue.RouteKey : route.Key); }
+                        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or JsonException)
+                        {
+                            errors.Add(route.Key);
+                        }
+                    }
+                }
+            }
+            catch (Exception exception) when (exception is DraftWriteException or RouteTopologyException or RuntimePlanDocumentException or ArgumentException or InvalidOperationException)
+            {
+                foreach (var route in captured.Routes.Where(route => route.Enabled))
+                {
+                    errors.Add(route.Key);
+                }
+            }
+        }
+        database.InTransaction(client => { ConfigurationDraft.CheckVersion(client, captured.Version); return true; });
+        var effectiveRoutes = captured.Effective?.Routes.ToDictionary(route => route.Id) ?? [];
+        var summaries = captured.Routes.Select(route =>
+        {
+            var effective = effectiveRoutes.TryGetValue(route.Id, out var applied);
+            var same = effective && SameConfiguration(route, applied!);
+            return new RouteDraftSummary(route.Id, route.Key, route.Name, route.Description, route.Enabled, route.Graph.Nodes.Length,
+                route.UpdatedBy, route.UpdatedAt, same, errors.Contains(route.Key), !same);
+        }).ToArray();
+        return new(captured.Version, summaries);
+    }
+
+    private static bool SameConfiguration(RouteDraft left, RouteDraft right) => left.Key == right.Key && left.Name == right.Name &&
+        left.Description == right.Description && left.Enabled == right.Enabled &&
+        JsonSerializer.Serialize(left.Graph, RouteGraphFormat.Json) == JsonSerializer.Serialize(right.Graph, RouteGraphFormat.Json);
 
     public RouteDraftResult Read(long id) => database.InTransaction(client => new RouteDraftResult(ConfigurationDraft.ReadVersion(client), ReadRoute(client, id)));
 

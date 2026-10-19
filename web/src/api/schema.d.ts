@@ -2219,6 +2219,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/connections/{connectionId}/deletion-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 核对连接删除涉及的设备、路线、保留版本和队列记录；不授权或执行删除 */
+        get: operations["getConnectionDeletionReview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/connections/{connectionId}": {
         parameters: {
             query?: never;
@@ -2847,6 +2864,31 @@ export interface components {
             plan: components["schemas"]["JsonElement"];
             warnings: string[];
         };
+        ConnectionDeletionReview: {
+            version: string;
+            /** Format: int64 */
+            id: number | string;
+            key: string;
+            name: string;
+            devices: components["schemas"]["ConnectionDeviceReference"][];
+            routes: components["schemas"]["ConnectionRouteReference"][];
+            versions: components["schemas"]["ConnectionVersionReference"][];
+            /** Format: int64 */
+            pendingCount: number | string;
+            /** Format: int64 */
+            failedCount: number | string;
+            /** Format: int64 */
+            quarantinedCount: number | string;
+            moreDeliveries: boolean;
+            canDelete: boolean;
+        };
+        ConnectionDeviceReference: {
+            /** Format: int64 */
+            id?: number | string;
+            key?: string;
+            name?: string;
+            inputKey?: null | string;
+        };
         ConnectionDraft: {
             /** Format: int64 */
             id: number | string;
@@ -2903,6 +2945,13 @@ export interface components {
             parameters: components["schemas"]["ParameterSchema"];
             recipientParameters?: string[];
         };
+        ConnectionRouteReference: {
+            /** Format: int64 */
+            id?: number | string;
+            key?: string;
+            name?: string;
+            enabled?: boolean;
+        };
         /**
          * @default none
          * @enum {unknown}
@@ -2950,6 +2999,12 @@ export interface components {
             confirmedFingerprint: string;
             confirmed: boolean;
             expectedVersion?: null | string;
+        };
+        ConnectionVersionReference: {
+            /** Format: int64 */
+            revision: number | string;
+            positions: string[];
+            units: string[];
         };
         CreatorTokenReview: {
             version: string;
@@ -4402,6 +4457,9 @@ export interface components {
             updatedBy: null | string;
             /** Format: int64 */
             updatedAt: number | string;
+            effective: boolean;
+            hasErrors: boolean;
+            hasUnappliedChanges: boolean;
         };
         RouteFieldPage: {
             version: string;
@@ -13275,6 +13333,75 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getConnectionDeletionReview: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                connectionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionDeletionReview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

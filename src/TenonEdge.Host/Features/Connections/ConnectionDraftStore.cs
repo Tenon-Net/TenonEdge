@@ -29,6 +29,50 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
     public ConnectionDraftList Read() => database.InTransaction(client => new ConnectionDraftList(
         ConfigurationDraft.ReadVersion(client), client.Queryable<ConnectionDraftRecord>().OrderBy(row => row.Id).ToList().Select(Decode).ToArray()));
 
+    public ConnectionDeletionReview ReviewDeletion(long id, string expectedVersion)
+    {
+        if (id is < 1 or > 9007199254740991 || string.IsNullOrEmpty(expectedVersion) || expectedVersion.Length > 64)
+        { throw new ArgumentException("连接编号或草稿版本无效。", nameof(id)); }
+        var captured = database.InTransaction(client =>
+        {
+            ConfigurationDraft.CheckVersion(client, expectedVersion);
+            var draft = Read(client, id) ?? throw new DraftWriteException("connection.notFound");
+            var deviceDrafts = client.Queryable<DeviceDraftRecord>().ToList().Select(DeviceDraftStore.Decode).ToArray();
+            var inputDrafts = client.Queryable<InputDraftRecord>().ToList().Select(InputDraftStore.Decode).ToArray();
+            var devices = deviceDrafts.Where(device => device.ConnectionId == id || inputDrafts.Any(input =>
+                input.DeviceId == device.Id && input.Module?.ConnectionIds.Contains(id) == true))
+                .SelectMany(device => new[] { new ConnectionDeviceReference { Id = device.Id, Key = device.Key, Name = device.Name } }
+                    .Concat(inputDrafts.Where(input => input.DeviceId == device.Id && input.Module?.ConnectionIds.Contains(id) == true)
+                        .Select(input => new ConnectionDeviceReference { Id = device.Id, Key = device.Key, Name = device.Name, InputKey = input.Key })))
+                .ToArray();
+            var routes = client.Ado.SqlQuery<ConnectionRouteReference>("""
+                SELECT DISTINCT r.id AS Id, r.business_key AS Key, r.name AS Name, r.enabled AS Enabled
+                FROM route_draft r JOIN route_draft_reference ref ON ref.route_id = r.id
+                WHERE ref.kind = 'connection' AND ref.target_id = @id ORDER BY r.id
+                """, new SugarParameter("@id", id)).ToArray();
+            var state = client.Queryable<SystemStateRecord>().InSingle(SystemStateRecord.SingletonId);
+            var pointers = new[] { (Position: "effective", Revision: state.EffectiveRevision),
+                (Position: "previous", Revision: state.PreviousRevision), (Position: "pending", Revision: state.PendingRevision) }
+                .Where(value => value.Revision is not null).ToArray();
+            var snapshots = pointers.Select(value => value.Revision!.Value).Distinct().Select(revision =>
+                client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
+                    ?? throw new RuntimePlanDocumentException("运行版本引用缺失。")).ToArray();
+            return (draft, devices, routes, pointers, snapshots);
+        });
+        var versions = captured.snapshots.Select(snapshot =>
+        {
+            var plan = RuntimeSnapshotDocument.ReadPlan(snapshot);
+            var units = plan.Units.Where(unit => RuntimeConnectionReferences.ReadIds(unit).Contains(id))
+                .Select(unit => unit.Id.Kind + "/" + unit.Id.Key).Distinct().Order(StringComparer.Ordinal).ToArray();
+            return new ConnectionVersionReference(snapshot.Revision,
+                captured.pointers.Where(pointer => pointer.Revision == snapshot.Revision).Select(pointer => pointer.Position).ToArray(), units);
+        }).Where(reference => reference.Units.Length > 0).ToArray();
+        var counts = deliveries.GetTargetStateCounts(id);
+        return new(expectedVersion, id, captured.draft.Key, captured.draft.Name, captured.devices, captured.routes, versions,
+            counts.Pending, counts.Failed, counts.Quarantined, false,
+            captured.devices.Length == 0 && captured.routes.Length == 0 && versions.Length == 0 && counts.Pending == 0 && counts.Failed == 0 && counts.Quarantined == 0);
+    }
+
     public ConnectionDraftResult Write(long? existingId, ConnectionDraftRequest request, AuditAccount account, string? sourceIp)
     {
         var id = existingId ?? ids.NextId();
@@ -126,6 +170,25 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             draft.Enabled, draft.Modbus, draft.Mqtt, draft.Http, draft.Module));
     }
 }
+
+internal sealed record ConnectionDeletionReview(string Version, long Id, string Key, string Name,
+    ConnectionDeviceReference[] Devices, ConnectionRouteReference[] Routes, ConnectionVersionReference[] Versions,
+    long PendingCount, long FailedCount, long QuarantinedCount, bool MoreDeliveries, bool CanDelete);
+internal sealed class ConnectionDeviceReference
+{
+    public long Id { get; set; }
+    public string Key { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? InputKey { get; set; }
+}
+internal sealed class ConnectionRouteReference
+{
+    public long Id { get; set; }
+    public string Key { get; set; } = "";
+    public string Name { get; set; } = "";
+    public bool Enabled { get; set; }
+}
+internal sealed record ConnectionVersionReference(long Revision, string[] Positions, string[] Units);
 
 [SugarTable("connection_draft")]
 internal sealed class ConnectionDraftRecord

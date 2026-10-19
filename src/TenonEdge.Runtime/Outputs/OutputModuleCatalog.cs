@@ -12,7 +12,7 @@ namespace TenonEdge.Runtime.Outputs;
 public sealed record OutputModuleDefinition(string Kind, int Version, string DisplayName, ParameterSchema Parameters);
 
 /// <summary>版本化输出声明、准入和原工厂视图；历史读取不运行已安装或已卸载的模块。
-/// 发送/重试/隔离仍由原输出目标和队列实现，本目录不创建适配器或后台任务。</summary>
+/// 发送/重试/隔离仍由原输出目标、注册的传输工厂和队列实现，本目录不创建后台任务。</summary>
 public sealed class OutputModuleCatalog
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -125,7 +125,7 @@ public sealed class OutputModuleCatalog
 
     private static RuntimeUnitPlan CheckProtocol(RuntimeUnitPlan unit, string kind, JsonElement config, OutputModuleContext context)
     {
-        if (kind is not ("output.http" or "output.mqtt") || config.ValueKind != JsonValueKind.Object || Encoding.UTF8.GetByteCount(config.GetRawText()) > 1024 * 1024 ||
+        if (!kind.StartsWith("output.", StringComparison.Ordinal) || kind is "output.tenon" || config.ValueKind != JsonValueKind.Object || Encoding.UTF8.GetByteCount(config.GetRawText()) > 1024 * 1024 ||
             !config.TryGetProperty("connectionId", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt64(out var number) || number != context.ConnectionId ||
             !context.Connections.Values.Any(connection => connection.ConnectionId == number && "output." + connection.Kind == kind) ||
             !config.TryGetProperty("inputs", out var inputs) || inputs.ValueKind != JsonValueKind.Array ||

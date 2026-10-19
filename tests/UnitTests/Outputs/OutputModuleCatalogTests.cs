@@ -5,6 +5,7 @@ using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Features.Routes;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.UnitTests.Outputs;
@@ -29,7 +30,9 @@ public sealed class OutputModuleCatalogTests
                         connectionId = 11,
                         kind = protocol,
                         configuration = Json(protocol == "http"
-                    ? """{"baseAddress":"http://localhost/"}""" : """{"host":"localhost","clientId":"shared"}""")
+                    ? """{"baseAddress":"http://localhost/"}""" : protocol == "mqtt"
+                    ? """{"host":"localhost","clientId":"shared"}"""
+                    : """{"connectionModule":{"version":1,"parameters":{"host":"localhost","port":19001}}}""")
                     }
                 }
             }
@@ -65,6 +68,39 @@ public sealed class OutputModuleCatalogTests
         Assert.Null(error.InnerException);
         Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(Document(frozen)));
         Assert.Throws<RuntimePlanDocumentException>(() => plan.ValidateOutputs(OutputModuleCatalog.Empty));
+    }
+
+    [Fact]
+    public void RegisteredOutputTransportCanBindToNewConnectionKindWithoutChangingTargetOrInputs()
+    {
+        var module = new Module("wire")
+        {
+            Config = Json("""{"connectionId":11,"inputs":["meter/source"],"address":"wire://localhost:19001"}"""),
+        };
+        var connectionSchema = new ParameterSchema("connection.wire", ParameterScope.Connection,
+        [
+            new("host", "Host", ParameterType.Text) { Required = true, MaximumLength = 253 },
+            new("port", "Port", ParameterType.Number) { Required = true, MinimumJson = "1", MaximumJson = "65535", WholeNumber = true },
+        ]);
+        var connections = new ConnectionModuleCatalog([new ConnectionModuleDefinition("wire", 1, "Wire", connectionSchema, ["host", "port"])]);
+        var catalog = new OutputModuleCatalog([module], connections);
+        var frozen = catalog.WithFrozenProtocol(Unit("wire"));
+        catalog.Validate(frozen);
+        var protocol = OutputModuleCatalog.ReadProtocol(frozen)!;
+        Assert.Equal("output.wire", protocol.Id.Kind);
+        Assert.Equal(11, protocol.Configuration.GetProperty("connectionId").GetInt64());
+        Assert.Equal("meter/source", protocol.Configuration.GetProperty("inputs")[0].GetString());
+        Assert.Equal("wire://localhost:19001", protocol.Configuration.GetProperty("address").GetString());
+    }
+
+    [Fact]
+    public void ExtensionRecipientIdentityIsProtocolBoundAndNeverAcceptsUnrecordedAccounts()
+    {
+        var identity = OutputRecipientIdentity.Extension("wire", "wire://localhost:19001", "token", "operator");
+        Assert.Equal(identity, OutputRecipientIdentity.Read(identity.Freeze()));
+        Assert.Null(OutputRecipientIdentity.Read(identity.Freeze().Replace("\"accountRecorded\":true", "\"accountRecorded\":false", StringComparison.Ordinal)));
+        Assert.Throws<ArgumentException>(() => OutputRecipientIdentity.Extension("wire", "tcp://localhost:19001", "token", "operator").Freeze());
+        Assert.Throws<ArgumentException>(() => OutputRecipientIdentity.Extension("wire", "wire://localhost:19001", "bad auth", "operator").Freeze());
     }
 
     [Theory]

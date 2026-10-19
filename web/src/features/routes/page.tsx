@@ -157,10 +157,56 @@ export function RoutesPage() {
                         key={String(route.id)}
                         className="flex items-center gap-3 rounded border p-2"
                     >
-                        <span>
-                            {route.name} · {route.key} ·{' '}
-                            {String(route.nodeCount)}
-                        </span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                            <div className="font-medium">
+                                {route.name} · <code>{route.key}</code> ·{' '}
+                                {t('routes.nodes', { count: route.nodeCount })}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                {route.description ||
+                                    t('routes.list.descriptionEmpty')}
+                            </p>
+                            <div className="flex flex-wrap gap-2 text-xs">
+                                <span>
+                                    {t(
+                                        route.enabled
+                                            ? 'routes.list.enabled'
+                                            : 'routes.list.disabled',
+                                    )}
+                                </span>
+                                {route.effective && (
+                                    <span role="status">
+                                        {t('routes.list.effective')}
+                                    </span>
+                                )}
+                                {route.hasErrors && (
+                                    <span role="alert">
+                                        {t('routes.list.errors')}
+                                    </span>
+                                )}
+                                {route.hasUnappliedChanges && (
+                                    <span role="status">
+                                        {t('routes.list.unapplied')}
+                                    </span>
+                                )}
+                                <span>
+                                    {t('routes.list.updatedBy', {
+                                        user: route.updatedBy || t('unknown'),
+                                    })}
+                                </span>
+                                <time
+                                    dateTime={new Date(
+                                        Number(route.updatedAt),
+                                    ).toISOString()}
+                                >
+                                    {t('routes.list.updatedAt', {
+                                        time: new Date(
+                                            Number(route.updatedAt),
+                                        ).toLocaleString(),
+                                    })}
+                                </time>
+                            </div>
+                        </div>
                         <Button
                             variant="outline"
                             disabled={busy}

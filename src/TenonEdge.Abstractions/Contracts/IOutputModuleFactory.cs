@@ -14,9 +14,10 @@ public interface IOutputModuleFactory
     string DisplayName => Kind;
     Parameters.ParameterSchema Parameters { get; }
 
-    /// <summary>声明已有 HTTP/MQTT 协议的完整非秘密输出配置（含 inputs/connectionId），
-    /// 不包含映射/转换阶段；阶段由原分发器执行。只做本地计算；运行时使用同次 Prepare 的原工厂。
-    /// 新连接/传输类型的注册另需宿主支持，不能以未描述的自建客户端旁路目标保护。</summary>
+    /// <summary>声明完整非秘密输出配置（含 inputs/connectionId），不包含映射/转换阶段；阶段由原分发器执行。
+    /// 可委托既有 HTTP/MQTT，或委托明确注册的 output.&lt;connection-kind&gt; 传输工厂；只做本地计算，
+    /// 运行时使用同次 Prepare 的原工厂。传输工厂仍须复用 ISharedConnections、IOutboundConnector、受保护凭证解析
+    /// 与原 IOutputTarget / IOutputAdapter；不得创建旁路发送、队列或后台任务。</summary>
     OutputProtocolBinding BindProtocol(JsonElement parameters, OutputModuleContext context);
 }
 

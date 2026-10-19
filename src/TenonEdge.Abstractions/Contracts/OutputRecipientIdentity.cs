@@ -35,6 +35,11 @@ public sealed record OutputRecipientIdentity(string Protocol, string Address, st
         new("http", address, identity?.Kind.ToString() ?? "none", identity?.Kind == HttpCredentialKind.Basic ? identity.Username : null,
             identity?.Kind != HttpCredentialKind.Basic || identity.Username is not null, null, true);
 
+    /// <summary>非内置受信传输的冻结身份。适配器必须一次解析其真实接收方及公开账户；不得传入秘密。</summary>
+    public static OutputRecipientIdentity Extension(string protocol, string address, string authentication, string? account,
+        string? clientCertificateSubject = null) => new(protocol, address, authentication, account, true,
+            clientCertificateSubject, true);
+
     /// <summary>有版本且可读的 JSON 摘要。仍使用既有 fingerprint_summary 列，迁移时与指纹一起替换，
     /// 不污染必须原样保留的 protocol_metadata，也不更改指纹算法。</summary>
     public string Freeze()
@@ -128,8 +133,23 @@ public sealed record OutputRecipientIdentity(string Protocol, string Address, st
                     Authentication == "ClientCertificate" && AccountRecorded && ClientCertificateRecorded &&
                     !string.IsNullOrWhiteSpace(ClientCertificateSubject) && Account == ClientCertificateSubject ||
                     Authentication is "none" or "Bearer" or "ApiKeyHeader" or "ApiKeyQuery" && AccountRecorded && Account is null),
-            _ => false,
+            _ => ValidExtension(uri),
         };
+    }
+
+    private bool ValidExtension(Uri uri)
+    {
+        // New, trusted compile-time transports use their registered connection kind as the
+        // protocol identity. The adapter owns address/auth semantics; the shared envelope
+        // still rejects ambiguous schemes, controls and unrecorded account/certificate values.
+        if (string.IsNullOrEmpty(Protocol) || Protocol.Length > 64 ||
+            Protocol[0] is < 'a' or > 'z' || Protocol.Any(character => !(character is >= 'a' and <= 'z' or >= '0' and <= '9' or '.' or '-')) ||
+            !string.Equals(uri.Scheme, Protocol, StringComparison.Ordinal) || uri.Port <= 0 ||
+            string.IsNullOrWhiteSpace(Authentication) || Authentication.Length > 64 ||
+            Authentication.Any(character => !(character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '.' or '_' or '-')) ||
+            !AccountRecorded && Account is not null || !ClientCertificateRecorded && ClientCertificateSubject is not null)
+        { return false; }
+        return true;
     }
 }
 

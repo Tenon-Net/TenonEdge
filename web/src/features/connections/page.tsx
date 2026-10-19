@@ -1,5 +1,6 @@
 import { ModuleCredentialPanel } from './module-credential-panel'
 import { ModuleConnectionEditor } from './module-editor'
+import { ConnectionDeletionReview } from './deletion-review'
 import { moduleConnectionForm, readConnectionList } from './module-model'
 import { ConnectionTable } from './list'
 import { connectionRows, connectionSnapshotCurrent } from './list-model'
@@ -135,6 +136,7 @@ export function ConnectionsPage() {
     const [testGeneration, setTestGeneration] = useState(0)
     const [localError, setLocalError] = useState('')
     const [savedTarget, setSavedTarget] = useState<OutboundTarget | null>(null)
+    const [deleting, setDeleting] = useState<Connection | null>(null)
     const [outboundBusy, setOutboundBusy] = useState(false)
     const [moduleBusy, setModuleBusy] = useState(false)
     const [credentialBusy, setCredentialBusy] = useState(false)
@@ -480,17 +482,24 @@ export function ConnectionsPage() {
                     busy={mutation.isPending || outboundBusy || editorBusy}
                     onOpen={open}
                     onDelete={(connection) => {
-                        if (
-                            (!dirty ||
-                                window.confirm(t('connections.discard'))) &&
-                            window.confirm(t('connections.deleteConfirm'))
-                        )
-                            mutation.mutate({
-                                type: 'delete',
-                                connection,
-                                version: query.data!.version,
-                            })
+                        if (!dirty || window.confirm(t('connections.discard')))
+                            setDeleting(connection)
                     }}
+                />
+            )}
+            {deleting && query.data && (
+                <ConnectionDeletionReview
+                    connection={deleting}
+                    version={query.data.version}
+                    onDeleted={async () => {
+                        setDeleting(null)
+                        await mutation.mutateAsync({
+                            type: 'delete',
+                            connection: deleting,
+                            version: query.data!.version,
+                        })
+                    }}
+                    onClose={() => setDeleting(null)}
                 />
             )}
             {moduleForm && (

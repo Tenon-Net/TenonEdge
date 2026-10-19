@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Host.Features.Devices;
+using TenonEdge.Host.Features.Inputs;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Security;
 using TenonEdge.Host.Storage;
@@ -93,6 +95,88 @@ public sealed class ConnectionDraftTests
         Assert.Empty(store.Read().Connections);
         Assert.Single(TestAccounts.Audit(restarted.Services, "connection.draftUpdated"));
         Assert.Single(TestAccounts.Audit(restarted.Services, "connection.draftDeleted"));
+    }
+
+    [Fact]
+    public async Task DeletionReviewReportsAllRetainedReferencesAndExactQueueStateWithoutDeleting()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("admin", Token);
+        using var created = await client.PostJsonAsync(Endpoint, Request(), Token);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var response = await created.ReadJsonAsync(Token);
+        var id = response.GetProperty("connection").GetProperty("id").GetInt64();
+        var version = response.GetProperty("version").GetString()!;
+
+        _ = factory.Services.GetRequiredService<ConnectionDraftStore>().ReviewDeletion(id, version);
+
+        using var review = await client.GetAsync(new Uri($"{Endpoint}{id}/deletion-review?expectedVersion={version}", UriKind.Relative), Token);
+        Assert.True(review.StatusCode == HttpStatusCode.OK, $"{review.StatusCode}: {await review.Content.ReadAsStringAsync(Token)}");
+        Assert.True(review.Headers.CacheControl?.NoStore);
+        var report = await review.ReadJsonAsync(Token);
+        Assert.Equal(version, report.GetProperty("version").GetString());
+        Assert.True(report.GetProperty("canDelete").GetBoolean());
+        Assert.Empty(report.GetProperty("devices").EnumerateArray());
+        Assert.Empty(report.GetProperty("routes").EnumerateArray());
+        Assert.Empty(report.GetProperty("versions").EnumerateArray());
+        Assert.Equal(0, report.GetProperty("pendingCount").GetInt64());
+        Assert.Equal(0, report.GetProperty("failedCount").GetInt64());
+        Assert.Equal(0, report.GetProperty("quarantinedCount").GetInt64());
+        Assert.NotNull(factory.Services.GetRequiredService<ConnectionDraftStore>().Read().Connections.SingleOrDefault(item => item.Id == id));
+
+        using var stale = await client.GetAsync(new Uri($"{Endpoint}{id}/deletion-review?expectedVersion=old", UriKind.Relative), Token);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.NotNull(factory.Services.GetRequiredService<ConnectionDraftStore>().Read().Connections.SingleOrDefault(item => item.Id == id));
+    }
+
+    [Fact]
+    public async Task DeletionReviewListsDeviceSourceRetainedUnitAndAllAccumulationPartitions()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        TestAccounts.Create(factory.Services, "admin", ApiRequests.StrongPassword, UserRole.Administrator);
+        using var client = await factory.CreateLoggedInClientAsync("admin", Token);
+        var connection = factory.Services.GetRequiredService<ConnectionDraftStore>().Write(null, Request(), "admin", null);
+        var device = factory.Services.GetRequiredService<DeviceDraftStore>().Write(null,
+            new(connection.Version, "meter", "Meter", DeviceKind.Modbus, ConnectionId: connection.Connection.Id, UnitId: 1), "admin", null);
+        var input = factory.Services.GetRequiredService<InputDraftStore>().Write(device.Device.Id, null,
+            new(device.Version, "fast", "Fast", Modbus: new(5000, [new() { Key = "temperature", FunctionCode = 3, Address = 0, Type = "uint16" }])), "admin", null);
+        var cache = factory.Services.GetRequiredService<DeliveryCache>();
+        var insert = await cache.EnqueueAsync(Enumerable.Range(0, 3).Select(_ => new DeliveryDraft(Guid.NewGuid(), connection.Connection.Id, Guid.NewGuid(), "meter", 1,
+            Encoding.UTF8.GetBytes("{}"), "fixture-fingerprint", "fixture", "fixture", 1)).ToArray(), Token);
+        Assert.True(insert.Committed);
+        Assert.True((await cache.RecordFailureAsync(new(insert.Seqs[1], 0, "fixture", true, false), Token)).Committed);
+        Assert.True((await cache.QuarantineAsync(insert.Seqs[2], "fixture", Token)).Committed);
+
+        // A retained plan fixture checks cross-draft references without starting external I/O.
+        var plan = RuntimePlanDocument.Parse(Encoding.UTF8.GetBytes("{\"schemaVersion\":1,\"units\":[{\"kind\":\"output.http\",\"key\":\"output\",\"configuration\":{\"connectionId\":" + connection.Connection.Id + ",\"baseAddress\":\"http://10.0.0.1/\",\"inputs\":[\"meter/fast\"]}}]}"));
+        var database = factory.Services.GetRequiredService<ConfigDatabase>();
+        database.InTransaction(db =>
+        {
+            db.Insertable(new RuntimeSnapshotRecord
+            {
+                Revision = 1,
+                SchemaVersion = 1,
+                Content = plan.CanonicalText,
+                ContentHash = plan.ContentHash,
+                Origin = RuntimeSnapshotOrigins.Seed,
+                State = RuntimeSnapshotStates.Effective,
+                CreatedBy = "fixture"
+            }).ExecuteCommand();
+            var state = db.Queryable<SystemStateRecord>().InSingle(1);
+            state.EffectiveRevision = 1;
+            db.Updateable(state).ExecuteCommand();
+            return true;
+        });
+        using var response = await client.GetAsync(new Uri($"{Endpoint}{connection.Connection.Id}/deletion-review?expectedVersion={input.Version}", UriKind.Relative), Token);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var report = await response.ReadJsonAsync(Token);
+        Assert.False(report.GetProperty("canDelete").GetBoolean());
+        Assert.Contains(report.GetProperty("devices").EnumerateArray(), item => item.GetProperty("name").GetString() == "Meter");
+        Assert.Contains(report.GetProperty("versions").EnumerateArray(), item => item.GetProperty("units").EnumerateArray().Any(unit => unit.GetString() == "output.http/output"));
+        Assert.Equal(1, report.GetProperty("pendingCount").GetInt64());
+        Assert.Equal(1, report.GetProperty("failedCount").GetInt64());
+        Assert.Equal(1, report.GetProperty("quarantinedCount").GetInt64());
     }
 
     [Fact]

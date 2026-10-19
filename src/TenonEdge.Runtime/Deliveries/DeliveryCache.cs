@@ -141,6 +141,9 @@ public sealed class DeliveryCache
     /// <summary>指定连接的待发计数；单次只读查询，不读取正文。最多覆盖两份各500连接的有效/草稿目录。</summary>
     public IReadOnlyDictionary<long, long> GetPendingCounts(IReadOnlyCollection<long> connectionIds) => Store.ReadPendingCounts(connectionIds);
 
+    /// <summary>删除/迁移复核用的精确目标分区计数；短只读快照，不读取正文。</summary>
+    public (long Pending, long Failed, long Quarantined) GetTargetStateCounts(long connectionId) => Store.ReadTargetStateCounts(connectionId);
+
     public DeliveryRecoveryCheck CheckRecoveryTargets(Func<long, string, string, string?, bool> allows, CancellationToken token) =>
         Store.CheckRecoveryTargets(allows, token);
 

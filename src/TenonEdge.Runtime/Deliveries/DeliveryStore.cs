@@ -270,6 +270,19 @@ internal sealed partial class DeliveryStore
     public IReadOnlyList<StoredDelivery> ReadPending(long connectionId, long afterSeq, int limit)
         => Read(connectionId, afterSeq, limit, DeliveryState.Pending);
 
+    internal (long Pending, long Failed, long Quarantined) ReadTargetStateCounts(long connectionId)
+    {
+        EnsureInitialized();
+        using var connection = Open(_readConnectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FILTER (WHERE state='pending'), COUNT(*) FILTER (WHERE state='failed'), COUNT(*) FILTER (WHERE state='quarantined') FROM delivery WHERE connection_id=$id";
+        command.Parameters.AddWithValue("$id", connectionId);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        { throw new InvalidOperationException("队列目标计数不可用。"); }
+        return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
+    }
+
     internal IReadOnlyList<StoredDelivery> Read(long connectionId, long afterSeq, int limit, DeliveryState state, int? belowFailureCount = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);

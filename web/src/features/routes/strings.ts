@@ -11,6 +11,17 @@ export const routeStrings = {
         refresh: '重新读取输出模块',
     },
     title: '路线草稿',
+    nodes: '{{count}} 个节点',
+    list: {
+        descriptionEmpty: '无说明',
+        enabled: '已启用',
+        disabled: '已停用',
+        effective: '有效配置',
+        errors: '有错误',
+        unapplied: '有未应用修改',
+        updatedBy: '最后修改：{{user}}',
+        updatedAt: '{{time}}',
+    },
     references: '来源 / 输出连接',
     preview: {
         title: '路线样本预览',

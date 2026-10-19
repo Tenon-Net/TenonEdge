@@ -13,6 +13,9 @@ internal static class ConnectionDraftEndpoints
         var group = api.MapGroup("/connections").WithTags("Connections");
         group.MapGet("", (ConnectionDraftStore store) => TypedResults.Ok(store.Read()))
             .WithName("getConnectionDrafts").WithSummary("查看连接草稿及全局草稿版本，不代表运行状态");
+        group.MapGet("/{connectionId:long}/deletion-review", ReviewDeletion)
+            .WithName("getConnectionDeletionReview").WithSummary("核对连接删除涉及的设备、路线、保留版本和队列记录；不授权或执行删除")
+            .ProducesProblem(400).ProducesProblem(404).ProducesProblem(409).ProducesProblem(503);
         group.MapPost("", (ConnectionDraftRequest request, ConnectionDraftStore store, HttpContext context) => Write(null, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("createConnectionDraft")
             .WithSummary("新建连接草稿，保存不改变运行配置").ProducesProblem(409).ProducesProblem(403);
@@ -41,6 +44,20 @@ internal static class ConnectionDraftEndpoints
         try
         { return TypedResults.Ok(store.Delete(connectionId, expectedVersion, ManagementIdentity.Audit(context.User), SourceAddress.Of(context))); }
         catch (DraftWriteException exception) { return Failure(exception); }
+    }
+
+    private static Results<Ok<ConnectionDeletionReview>, ProblemHttpResult> ReviewDeletion(long connectionId, string expectedVersion,
+        ConnectionDraftStore store, HttpContext context)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        try
+        { return TypedResults.Ok(store.ReviewDeletion(connectionId, expectedVersion)); }
+        catch (ArgumentException) { return ApiProblems.Problem(400, "connection.invalidDeletionReview", "连接编号或草稿版本无效。"); }
+        catch (DraftWriteException exception) { return Failure(exception); }
+        catch (TenonEdge.Host.Features.Runtime.RuntimePlanDocumentException)
+        { return ApiProblems.Problem(409, "connection.referencesUnavailable", "保留运行版本不可核对，不能据此判断连接可删除。"); }
+        catch (Exception exception) when (exception is Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException)
+        { return ApiProblems.Problem(503, "connection.reviewUnavailable", "连接引用或积存暂不可核对，不能据此判断连接可删除。"); }
     }
 
     private static ProblemHttpResult Failure(DraftWriteException exception) => ApiProblems.Problem(

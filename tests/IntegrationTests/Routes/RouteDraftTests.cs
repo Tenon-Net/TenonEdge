@@ -76,6 +76,24 @@ public sealed class RouteDraftTests
     }
 
     [Fact]
+    public async Task RouteListReportsDescriptionEnablementUpdateAndCompilationEffectiveState()
+    {
+        await using var factory = new TenonEdgeApplicationFactory();
+        var store = factory.Services.GetRequiredService<RouteDraftStore>();
+        var created = store.Write(null, Request() with { Description = "north line" }, "editor", null);
+        var listed = store.Read();
+        var route = Assert.Single(listed.Routes);
+        Assert.Equal("north line", route.Description);
+        Assert.True(route.Enabled);
+        Assert.Equal("editor", route.UpdatedBy);
+        Assert.True(route.UpdatedAt > 0);
+        Assert.False(route.Effective);
+        Assert.True(route.HasErrors);
+        Assert.True(route.HasUnappliedChanges);
+
+    }
+
+    [Fact]
     public async Task OversizedBodyIsRejectedBeforeDraftMutation()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "真实进程验证依赖 Linux 的 SIGTERM 与 flock。");
