@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { createServer } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -73,6 +73,22 @@ async function login(page: Page, account: string, temporary = false) {
             .click()
     }
     await expect(page.getByRole('navigation')).toBeVisible()
+}
+
+async function refreshCatalog(page: Page, refresh: Locator, path: string) {
+    const response = page.waitForResponse(
+        (value) =>
+            new URL(value.url()).pathname === root + path &&
+            value.request().method() === 'GET',
+    )
+    await refresh.click()
+    const completed = await response
+    expect(await completed.finished()).toBeNull()
+    // Accept is disabled both while loading and after a rejected catalog.
+    // Wait for the actual response AND its query to settle before asserting
+    // the rejection or removing the route and starting another refresh.
+    await expect(refresh).toBeEnabled()
+    return completed.status()
 }
 
 // Test assembly registers v2 declarations only. Connection/input/map are API fixtures;
@@ -315,12 +331,13 @@ for (const protocol of ['http', 'mqtt'] as const) {
                                   ),
                     })
                 })
-                await page
-                    .getByRole('button', {
-                        name: '重新读取输出模块',
-                        exact: true,
-                    })
-                    .click()
+                const refresh = page.getByRole('button', {
+                    name: '重新读取输出模块',
+                    exact: true,
+                })
+                expect(
+                    await refreshCatalog(page, refresh, '/output-modules'),
+                ).toBe(fault === 'error' ? 500 : 200)
                 await expect(accept).toBeDisabled()
                 await expect(precision).toHaveValue('9007199254741000')
                 await expect(reference).toHaveValue(
@@ -330,12 +347,9 @@ for (const protocol of ['http', 'mqtt'] as const) {
                     String(connection.connection.id),
                 )
                 await page.unroute(metadata)
-                await page
-                    .getByRole('button', {
-                        name: '重新读取输出模块',
-                        exact: true,
-                    })
-                    .click()
+                expect(
+                    await refreshCatalog(page, refresh, '/output-modules'),
+                ).toBe(200)
                 await expect(accept).toBeEnabled()
             }
             for (const fault of ['error', 'version'] as const) {
@@ -353,24 +367,22 @@ for (const protocol of ['http', 'mqtt'] as const) {
                         json: { ...(await response.json()), version: '99999' },
                     })
                 })
-                await form
-                    .getByRole('button', {
-                        name: '重新读取模块连接',
-                        exact: true,
-                    })
-                    .click()
+                const refresh = form.getByRole('button', {
+                    name: '重新读取模块连接',
+                    exact: true,
+                })
+                expect(
+                    await refreshCatalog(page, refresh, '/connections'),
+                ).toBe(fault === 'error' ? 500 : 200)
                 await expect(accept).toBeDisabled()
                 await expect(precision).toHaveValue('9007199254741000')
                 await expect(target).toHaveValue(
                     String(connection.connection.id),
                 )
                 await page.unroute(catalog)
-                await form
-                    .getByRole('button', {
-                        name: '重新读取模块连接',
-                        exact: true,
-                    })
-                    .click()
+                expect(
+                    await refreshCatalog(page, refresh, '/connections'),
+                ).toBe(200)
                 await expect(accept).toBeEnabled()
             }
             await precision.fill('')

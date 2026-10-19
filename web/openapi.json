@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:18081/"
+      "url": "http://127.0.0.1:36503/"
     }
   ],
   "paths": {
@@ -11390,6 +11390,97 @@
         }
       }
     },
+    "/api/edge-admin/v1/routes/{routeId}/runtime": {
+      "get": {
+        "tags": [
+          "Routes"
+        ],
+        "summary": "\u67e5\u770b\u6709\u6548\u8def\u7ebf\u5404\u8282\u70b9\u7684\u5faa\u73af\u4e0e\u6709\u754c\u8def\u5f84\u89c2\u6d4b\uff1b\u4e0d\u8fd4\u56de\u6b63\u6587\uff0c\u4e0d\u89e6\u53d1\u91c7\u96c6\u6216\u53d1\u9001",
+        "operationId": "getRouteNodeRuntime",
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteRuntimePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/routes/{routeId}/copy": {
       "post": {
         "tags": [
@@ -20908,10 +20999,7 @@
           "enabled",
           "nodeCount",
           "updatedBy",
-          "updatedAt",
-          "effective",
-          "hasErrors",
-          "hasUnappliedChanges"
+          "updatedAt"
         ],
         "type": "object",
         "properties": {
@@ -20961,13 +21049,16 @@
             "format": "int64"
           },
           "effective": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": false
           },
           "hasErrors": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": false
           },
           "hasUnappliedChanges": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           }
         }
       },
@@ -21309,6 +21400,112 @@
           }
         },
         "additionalProperties": false
+      },
+      "RouteNodeRuntimeInfo": {
+        "required": [
+          "id",
+          "kind",
+          "version",
+          "state",
+          "inputs",
+          "runningInputs",
+          "faultedInputs",
+          "paths",
+          "observedPaths",
+          "failedPaths",
+          "unknownPaths",
+          "lastObservedAt",
+          "lastOutcome"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "state": {
+            "type": "string"
+          },
+          "inputs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "runningInputs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "faultedInputs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "paths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "observedPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failedPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "unknownPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lastObservedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "RoutePreviewField": {
         "required": [
@@ -21729,6 +21926,43 @@
           }
         },
         "additionalProperties": false
+      },
+      "RouteRuntimePage": {
+        "required": [
+          "draftVersion",
+          "revision",
+          "applied",
+          "capturedAt",
+          "nodes"
+        ],
+        "type": "object",
+        "properties": {
+          "draftVersion": {
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteNodeRuntimeInfo"
+            }
+          }
+        }
       },
       "RouteSamplePreviewResult": {
         "required": [

@@ -15,6 +15,9 @@ internal static class RouteDraftEndpoints
         group.MapGet("", (RouteDraftStore store) => TypedResults.Ok(store.Read()))
             .WithName("getRouteDrafts").WithSummary("查看路线草稿摘要，尚未编译，不代表运行状态");
         group.MapGet("/{routeId:long}", Read).WithName("getRouteDraft").WithSummary("读取自有图草稿及全局版本").ProducesProblem(404);
+        group.MapGet("/{routeId:long}/runtime", RouteRuntimeEndpoints.Read).WithName("getRouteNodeRuntime")
+            .WithSummary("查看有效路线各节点的循环与有界路径观测；不返回正文，不触发采集或发送")
+            .ProducesProblem(400).ProducesProblem(404).ProducesProblem(409).ProducesProblem(503);
         group.MapPost("", (RouteDraftRequest request, RouteDraftStore store, HttpContext context) => Write(null, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("createRouteDraft").WithSummary("新建路线草稿，保存不应用")
             .ProducesProblem(409).ProducesProblem(403).ProducesProblem(413);

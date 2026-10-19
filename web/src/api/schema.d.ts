@@ -2361,6 +2361,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/{routeId}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看有效路线各节点的循环与有界路径观测；不返回正文，不触发采集或发送 */
+        get: operations["getRouteNodeRuntime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/routes/{routeId}/copy": {
         parameters: {
             query?: never;
@@ -4457,8 +4474,11 @@ export interface components {
             updatedBy: null | string;
             /** Format: int64 */
             updatedAt: number | string;
+            /** @default false */
             effective: boolean;
+            /** @default false */
             hasErrors: boolean;
+            /** @default true */
             hasUnappliedChanges: boolean;
         };
         RouteFieldPage: {
@@ -4541,6 +4561,30 @@ export interface components {
             x: number | string;
             /** Format: double */
             y: number | string;
+        };
+        RouteNodeRuntimeInfo: {
+            id: string;
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            state: string;
+            /** Format: int32 */
+            inputs: number | string;
+            /** Format: int32 */
+            runningInputs: number | string;
+            /** Format: int32 */
+            faultedInputs: number | string;
+            /** Format: int32 */
+            paths: number | string;
+            /** Format: int32 */
+            observedPaths: number | string;
+            /** Format: int32 */
+            failedPaths: number | string;
+            /** Format: int32 */
+            unknownPaths: number | string;
+            /** Format: date-time */
+            lastObservedAt: null | string;
+            lastOutcome: null | string;
         };
         RoutePreviewField: {
             key: string;
@@ -4635,6 +4679,15 @@ export interface components {
             revision: string;
             /** Format: uuid */
             sourceMessageId: string;
+        };
+        RouteRuntimePage: {
+            draftVersion: string;
+            /** Format: int64 */
+            revision: null | number | string;
+            applied: boolean;
+            /** Format: date-time */
+            capturedAt: string;
+            nodes: components["schemas"]["RouteNodeRuntimeInfo"][];
         };
         RouteSamplePreviewResult: {
             version: string;
@@ -14171,6 +14224,75 @@ export interface operations {
             };
             /** @description Payload Too Large */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRouteNodeRuntime: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                routeId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRuntimePage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

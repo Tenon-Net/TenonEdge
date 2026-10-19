@@ -14,6 +14,8 @@ import { CanvasEditor } from '../canvas/editor'
 import { useRuntimeStatus } from '../diagnostics/queries'
 import { useDraftSummary } from '../configuration/queries'
 import { routeRuntimeMatch } from './runtime-match'
+import { bindNodeRuntime } from './node-runtime'
+import { useRouteNodeRuntime } from './node-runtime-query'
 import { createGraphEditor } from '../canvas/store'
 import { createRouteApi, newRoute, type RouteForm } from './api'
 import { ReferenceDrawer } from './reference-drawer'
@@ -56,6 +58,30 @@ export function RoutesPage() {
     const dirty =
         form !== null &&
         (pendingConfig || JSON.stringify({ ...form, document }) !== original)
+    const runtimeMatch = form
+        ? routeRuntimeMatch({
+              form,
+              dirty,
+              list: query.data,
+              summary: summary.data,
+              runtime: runtime.data,
+              failed: query.isError || summary.isError || runtime.isError,
+          })
+        : 'notEffective'
+    const nodeRuntime = useRouteNodeRuntime(
+        form?.id,
+        form?.version,
+        runtimeMatch === 'effective',
+    )
+    const nodeStates = bindNodeRuntime(
+        document,
+        form?.version ?? '',
+        runtime.data?.runtime.activeRevision,
+        runtimeMatch === 'effective' &&
+            nodeRuntime.isSuccess &&
+            !nodeRuntime.isError,
+        nodeRuntime.data,
+    )
     useBlocker({
         disabled: !dirty,
         enableBeforeUnload: dirty,
@@ -324,19 +350,7 @@ export function RoutesPage() {
                                     revision:
                                         coordinator.activeRevision ??
                                         t('routes.runtime.none'),
-                                    route: t(
-                                        `routes.runtime.${routeRuntimeMatch({
-                                            form,
-                                            dirty,
-                                            list: query.data,
-                                            summary: summary.data,
-                                            runtime: runtime.data,
-                                            failed:
-                                                query.isError ||
-                                                summary.isError ||
-                                                runtime.isError,
-                                        })}`,
-                                    ),
+                                    route: t(`routes.runtime.${runtimeMatch}`),
                                 })}
                             </p>
                         )
@@ -421,12 +435,56 @@ export function RoutesPage() {
                             )}
                         </fieldset>
                     </form>
+                    <section
+                        className="space-y-2 rounded border p-3"
+                        aria-label={t('canvas.nodeStatus.refresh')}
+                    >
+                        <p className="text-sm">
+                            {t('canvas.nodeStatus.notice')}
+                        </p>
+                        {runtimeMatch === 'effective' && (
+                            <>
+                                <ErrorMessage error={nodeRuntime.error} />
+                                <Button
+                                    variant="outline"
+                                    disabled={nodeRuntime.isFetching}
+                                    onClick={() => void nodeRuntime.refetch()}
+                                >
+                                    {t('canvas.nodeStatus.refresh')}
+                                </Button>
+                                {nodeStates.size > 0 && (
+                                    <p className="text-xs">
+                                        {t('canvas.nodeStatus.captured', {
+                                            time: nodeRuntime.data?.capturedAt,
+                                        })}
+                                    </p>
+                                )}
+                            </>
+                        )}
+                    </section>
                     <CanvasEditor
                         key={generation}
                         editor={canvas}
                         persisted
                         version={form.version}
                         previewDraft={previewDraft}
+                        nodeRuntime={nodeStates}
+                        compiledErrorNodes={
+                            !dirty &&
+                            !compile.isPending &&
+                            !compile.isError &&
+                            compile.data?.version === form.version &&
+                            query.data?.version === form.version
+                                ? compile.data.issues
+                                      .filter(
+                                          (issue) =>
+                                              issue.routeKey === form.key,
+                                      )
+                                      .flatMap((issue) =>
+                                          issue.nodeId ? [issue.nodeId] : [],
+                                      )
+                                : undefined
+                        }
                         onPendingChange={setPendingConfig}
                         readOnly={!canEdit || busy}
                         onCreateReference={

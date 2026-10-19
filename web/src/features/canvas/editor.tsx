@@ -12,7 +12,10 @@ import { useOutputModules } from './output-module-query'
 import { OutputModuleEditor } from './output-module-editor'
 import { outputModuleDefaults, type OutputModule } from './output-module-model'
 import { RoutePreview } from '../routes/preview'
-import type { PreviewDraft } from '../routes/preview-model'
+import { createPreviewDraft, type PreviewDraft } from '../routes/preview-model'
+import { localNodeErrors, type PreviewNodeIssues } from '../routes/node-errors'
+import type { NodeRuntime } from '../routes/node-runtime'
+import { NodeStatus, NodeTypeIcon } from './node-status'
 import { FieldAnalysis, useFieldAnalysis } from '../routes/field-analysis'
 import { MappingEditor } from '../routes/mapping-editor'
 import { OutputEditor } from '../routes/output-editor'
@@ -45,23 +48,34 @@ import {
 import { createGraphEditor } from './store'
 
 type CanvasNode = Node<
-    { name: string; kind: NodeKind; label: string },
+    {
+        name: string
+        kind: NodeKind
+        label: string
+        runtime?: NodeRuntime
+        invalid: boolean
+        persisted: boolean
+    },
     'gateway'
 >
 function GatewayNode({ data, selected }: NodeProps<CanvasNode>) {
-    const { t } = useTranslation()
     return (
         <div
-            className={`w-48 rounded-md border bg-background p-3 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+            className={`w-48 rounded-md border bg-background p-3 shadow-sm ${selected ? 'ring-2 ring-primary' : ''} ${data.invalid ? 'border-destructive' : ''}`}
         >
             {!data.kind.startsWith('input.') && (
                 <Handle type="target" position={HandlePosition.Left} />
             )}
-            <div className="truncate font-medium">{data.name}</div>
-            <div className="text-xs text-muted-foreground">{data.label}</div>
-            <div className="text-xs text-muted-foreground">
-                {t('canvas.unbound')}
+            <div className="flex items-center gap-1 font-medium">
+                <NodeTypeIcon kind={data.kind} />
+                <span className="truncate">{data.name}</span>
             </div>
+            <div className="text-xs text-muted-foreground">{data.label}</div>
+            <NodeStatus
+                runtime={data.runtime}
+                invalid={data.invalid}
+                persisted={data.persisted}
+            />
             {!data.kind.startsWith('output.') && (
                 <Handle type="source" position={HandlePosition.Right} />
             )}
@@ -77,6 +91,8 @@ type CanvasProps = {
     previewDraft?: PreviewDraft
     onPendingChange?: (pending: boolean) => void
     onCreateReference?: (kind: 'connection' | 'device') => void
+    nodeRuntime?: Map<string, NodeRuntime>
+    compiledErrorNodes?: string[]
 }
 function CanvasWorkspace({
     editor,
@@ -86,9 +102,14 @@ function CanvasWorkspace({
     previewDraft,
     onPendingChange,
     onCreateReference,
+    nodeRuntime,
+    compiledErrorNodes,
 }: CanvasProps) {
     const { t } = useTranslation()
     const [store] = useState(() => editor ?? createGraphEditor())
+    const [previewStore] = useState(() => previewDraft ?? createPreviewDraft())
+    const previewInput = useStore(previewStore)
+    const [previewIssues, setPreviewIssues] = useState<PreviewNodeIssues>()
     const modules = useTransformModules(persisted)
     const inputModules = useInputModules(persisted)
     const outputModules = useOutputModules(persisted)
@@ -199,6 +220,35 @@ function CanvasWorkspace({
         selected.length === 1 ? selected[0].id : undefined,
         version,
     )
+    const errorNodes = useMemo(() => {
+        const ids = localNodeErrors(doc)
+        for (const id of compiledErrorNodes ?? []) ids.add(id)
+        if (!pendingConfig) {
+            for (const issue of analysis.current?.page?.issues ?? [])
+                if (issue.nodeId) ids.add(issue.nodeId)
+        }
+        if (
+            !readOnly &&
+            !pendingConfig &&
+            previewIssues?.document === doc &&
+            previewIssues.version === version &&
+            previewIssues.source === previewInput.source &&
+            previewIssues.sample === previewInput.sample &&
+            !previewIssues.signal.aborted
+        ) {
+            for (const id of previewIssues.nodes) ids.add(id)
+        }
+        return ids
+    }, [
+        doc,
+        compiledErrorNodes,
+        pendingConfig,
+        analysis.current,
+        readOnly,
+        previewIssues,
+        version,
+        previewInput,
+    ])
     const nodes = useMemo<CanvasNode[]>(
         () =>
             doc.definition.nodes.map((n) => ({
@@ -207,6 +257,9 @@ function CanvasWorkspace({
                 data: {
                     name: n.name,
                     kind: n.kind,
+                    runtime: nodeRuntime?.get(n.id),
+                    invalid: errorNodes.has(n.id),
+                    persisted,
                     label:
                         nodeKinds.some((kind) => kind === n.kind) &&
                         (n.version ?? 1) === 1
@@ -227,6 +280,9 @@ function CanvasWorkspace({
             modules.data,
             inputModules.data,
             outputModules.data,
+            nodeRuntime,
+            errorNodes,
+            persisted,
             t,
         ],
     )
@@ -235,8 +291,18 @@ function CanvasWorkspace({
             doc.definition.edges.map((e) => ({
                 ...e,
                 selected: state.selectedEdges.includes(e.id),
+                ...(errorNodes.has(e.source) || errorNodes.has(e.target)
+                    ? {
+                          className: 'route-edge-error',
+                          style: { stroke: 'var(--destructive)' },
+                          ariaLabel: t('canvas.nodeStatus.errorEdge', {
+                              source: e.source,
+                              target: e.target,
+                          }),
+                      }
+                    : {}),
             })),
-        [doc, state.selectedEdges],
+        [doc, state.selectedEdges, errorNodes, t],
     )
     const attempt = (action: () => void, accepting = false) => {
         if (readOnly || (pendingConfig && !accepting)) return false
@@ -651,7 +717,11 @@ function CanvasWorkspace({
                             <Button type="submit" disabled={readOnly}>
                                 {t('canvas.applyName')}
                             </Button>
-                            <p className="text-sm">{t('canvas.unbound')}</p>
+                            <NodeStatus
+                                runtime={nodeRuntime?.get(selected[0].id)}
+                                invalid={errorNodes.has(selected[0].id)}
+                                persisted={persisted}
+                            />
                         </form>
                     ) : (
                         <p>{t('canvas.selectOne')}</p>
@@ -911,7 +981,8 @@ function CanvasWorkspace({
                 <RoutePreview
                     document={doc}
                     version={version}
-                    draft={previewDraft}
+                    draft={previewStore}
+                    onIssues={setPreviewIssues}
                     disabled={readOnly || pendingConfig}
                     locate={(id) => {
                         if (
@@ -949,6 +1020,18 @@ function CanvasWorkspace({
                                 .join('、'),
                         })}
                     </p>
+                )}
+                {!!errorNodes.size && (
+                    <ul className="text-sm text-destructive">
+                        {doc.definition.nodes
+                            .filter((node) => errorNodes.has(node.id))
+                            .map((node) => (
+                                <li key={node.id}>
+                                    {node.name}:{' '}
+                                    {t('canvas.nodeStatus.invalid')}
+                                </li>
+                            ))}
+                    </ul>
                 )}
                 <p className="text-sm text-muted-foreground">
                     {t('canvas.topologyOnly')}
