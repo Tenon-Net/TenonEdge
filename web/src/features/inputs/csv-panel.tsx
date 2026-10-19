@@ -11,11 +11,13 @@ export function PointCsvPanel({
     version,
     blocked,
     canEdit,
+    onDirtyChange,
 }: {
     deviceId: number
     version: string
     blocked: boolean
     canEdit: boolean
+    onDirtyChange?: (dirty: boolean) => void
 }) {
     const { t } = useTranslation()
     const [file, setFile] = useState<File | null>(null)
@@ -72,6 +74,7 @@ export function PointCsvPanel({
                 }),
             )
             setFile(null)
+            onDirtyChange?.(false)
             if (fileInput.current) fileInput.current.value = ''
             await Promise.all([
                 queryClient.invalidateQueries({
@@ -131,7 +134,9 @@ export function PointCsvPanel({
                                 accept=".csv,text/csv"
                                 className="mt-1 block w-full"
                                 onChange={(e) => {
-                                    setFile(e.target.files?.[0] ?? null)
+                                    const next = e.target.files?.[0] ?? null
+                                    setFile(next)
+                                    onDirtyChange?.(next !== null)
                                     mutation.reset()
                                     setNotice('')
                                 }}

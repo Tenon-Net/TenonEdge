@@ -75,6 +75,20 @@
 
 未执行：真实浏览器、所有后端网络集成/完整全量、容量磁盘实测；当前路线状态未证明全部复杂路线在列表中均可区分每类编译问题；新建引用侧栏、输出传输完整合同与迁移/重启矩阵仍未实现。既有§2.274/§2.275 MQTT计数偶发超时风险不变。不得将本节局部通过等同T3-04/05/07/10/11完成。
 
+### 2.289 T3-07 队列磁盘放大实测与容量估算接线（2026-10-19）
+
+新增独立真实 SQLite 队列写者测量测试，按 300 条 1 KiB/64 KiB 报文读取主库、活跃 WAL 及 `wal_checkpoint(TRUNCATE)` 后文件；确认 queue.db 文件系统为 ext4（测试文件位于测试程序集输出目录，未把 `/tmp` tmpfs 探针算作正式测量）。ext4 样本 k 分别为 1.378/2.021（主库+WAL除以`DeliveryDraft.ByteSize`逻辑总字节），checkpoint后为1.288/1.008。基于最大实测值留13.8%余量，运行估算采用 k=2.3，并接入真实运行诊断容量公式及用户提示；完整方法、条件、边界和样本表见`docs/capacity-calibration.md`。
+
+命令 `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-restore --filter 'FullyQualifiedName~MeasuresDatabaseWalAndIndexAmplificationForCapacityCalibration' --logger 'console;verbosity=detailed' --results-directory /tmp/tenonedge-t3/capacity-measurement-ext4` 2/2通过、0失败/跳过；每组300条，输出数据在本轮VSTest控制台日志中。此前在`/tmp` tmpfs的同样探针输出相同数量级但不作为最终证据；它暴露临时路径与部署文件系统混淆风险，已修改探针路径后再次运行。
+
+条件限制：仅两种报文尺寸、单次批次和本机Ubuntu 26.04/.NET 10.0.12/SQLite 3.51.3/ext4；不代表长期稳态、其他文件系统/挂载策略、>64KiB报文或高并发/其他磁盘写入上界。k=2.3是经验估算而非置信上界。其他部署类型尚未复测。容量估算不替代配额、磁盘保留保护，也不保证未被其他进程耗尽。
+
+### 2.290 T3-05 未保存路线内创建设备/连接引用抽屉（2026-10-19）
+
+路线画布现在可从来源/输出节点打开原设备、点位或连接页面作为遮罩抽屉，不创建第二份CRUD实现；原路线编辑器与Zustand图状态保持挂载，浏览器对话框隔离焦点。保存草稿或返回前按子页面现有未保存修改确认，创建点位从设备选择状态进入点表页，返回不会离开父路线。关闭后复核当前路线/目录版本：仅并发版本变化时在原路线未发生远端改动的条件下更新并发令牌，不覆盖路线编辑、图文档、撤销栈或样本；检查不一致时显式提示冲突，禁止自动重放。新增 rebase 逻辑单测覆盖版本更新保留、本地编辑保留、远端冲突拒绝和新路线刷新。
+
+Web验证：`npm run typecheck`、`npm run lint`、`npm test -- --run`通过，50个测试文件/708用例（本地Web无数据库或网络模拟的Vitest）。首次类型检查发现新rebase测试夹具漏`schemaVersion`，保留失败并补齐夹具后通过，不修改产品类型或放宽规则。当前变更文件Prettier已执行。真实浏览器下抽屉焦点/保存/放弃/点位往返以及父编辑/撤销历史持有仍未验证；本子项不等于 T3-05/11完成。
+
 ## 2. 实现内容
 
 2.1—2.3 为 T0-A，2.4—2.9 为 T0-B，2.10 起为 T0-C。

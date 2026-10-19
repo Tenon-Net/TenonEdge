@@ -76,6 +76,7 @@ type CanvasProps = {
     version?: string
     previewDraft?: PreviewDraft
     onPendingChange?: (pending: boolean) => void
+    onCreateReference?: (kind: 'connection' | 'device') => void
 }
 function CanvasWorkspace({
     editor,
@@ -84,6 +85,7 @@ function CanvasWorkspace({
     version,
     previewDraft,
     onPendingChange,
+    onCreateReference,
 }: CanvasProps) {
     const { t } = useTranslation()
     const [store] = useState(() => editor ?? createGraphEditor())
@@ -656,6 +658,36 @@ function CanvasWorkspace({
                     )}
                     {persisted &&
                         selected.length === 1 &&
+                        onCreateReference &&
+                        (selected[0].kind.startsWith('input.') ||
+                            selected[0].kind.startsWith('output.')) && (
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={readOnly || pendingConfig}
+                                    onClick={() =>
+                                        onCreateReference('connection')
+                                    }
+                                >
+                                    {t('routes.inline.connection')}
+                                </Button>
+                                {selected[0].kind.startsWith('input.') && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={readOnly || pendingConfig}
+                                        onClick={() =>
+                                            onCreateReference('device')
+                                        }
+                                    >
+                                        {t('routes.inline.device')}
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    {persisted &&
+                        selected.length === 1 &&
                         (selected[0].kind.startsWith('input.') ||
                             ['output.http', 'output.mqtt'].includes(
                                 selected[0].kind,
@@ -663,6 +695,7 @@ function CanvasWorkspace({
                             <ReferencePicker
                                 key={`references:${selected[0].id}`}
                                 node={selected[0]}
+                                version={version}
                                 disabled={readOnly || pendingConfig}
                                 change={(text) =>
                                     attempt(() =>

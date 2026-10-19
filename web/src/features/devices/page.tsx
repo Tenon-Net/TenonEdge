@@ -3,7 +3,7 @@ import { businessKeyPattern } from '../../lib/business-key'
 import { useState } from 'react'
 import { useStore } from 'zustand'
 import { Link, useBlocker } from '@tanstack/react-router'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, queryClient, useSession } from '../../lib/session'
 import { ApiError } from '../../api/errors'
@@ -22,8 +22,12 @@ import {
 const queryKey = ['device-drafts']
 const fieldClass =
     'mt-1 w-full rounded border bg-background p-2 disabled:opacity-60'
-export function DevicesPage() {
+export function DevicesPage({
+    onReturn,
+    onOpenInputs,
+}: { onReturn?: () => void; onOpenInputs?: (id: number) => void } = {}) {
     const { t } = useTranslation()
+    const activeMutations = useIsMutating()
     const role = useSession((s) => s.value?.role)
     const canEdit = role === 'administrator' || role === 'configurator'
     const modules = useInputModules()
@@ -167,10 +171,25 @@ export function DevicesPage() {
     }
     return (
         <section className="space-y-4">
+            {onReturn && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || activeMutations > 0}
+                    onClick={() => {
+                        if (!dirty || window.confirm(t('devices.discard')))
+                            onReturn()
+                    }}
+                >
+                    {t('routes.inline.return')}
+                </Button>
+            )}
             <h1 className="text-2xl font-semibold">{t('devices.title')}</h1>
-            <Link to="/runtime/devices" className="underline">
-                {t('currentValues.title')}
-            </Link>
+            {!onReturn && (
+                <Link to="/runtime/devices" className="underline">
+                    {t('currentValues.title')}
+                </Link>
+            )}
             <p className="text-sm text-muted-foreground">
                 {t('devices.notice')}
             </p>
@@ -284,15 +303,31 @@ export function DevicesPage() {
                         }}
                     >
                         <p className="text-sm">{t('devices.immutable')}</p>
-                        {form.id !== undefined && (
-                            <Link
-                                to="/devices/$deviceId/inputs"
-                                params={{ deviceId: String(form.id) }}
-                                className="inline-block underline"
-                            >
-                                {t('inputs.title')}
-                            </Link>
-                        )}
+                        {form.id !== undefined &&
+                            (onOpenInputs ? (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={busy || activeMutations > 0}
+                                    onClick={() => {
+                                        if (
+                                            !dirty ||
+                                            window.confirm(t('devices.discard'))
+                                        )
+                                            onOpenInputs(form.id!)
+                                    }}
+                                >
+                                    {t('inputs.title')}
+                                </Button>
+                            ) : (
+                                <Link
+                                    to="/devices/$deviceId/inputs"
+                                    params={{ deviceId: String(form.id) }}
+                                    className="inline-block underline"
+                                >
+                                    {t('inputs.title')}
+                                </Link>
+                            ))}
                         {!canEdit && <p>{t('devices.readOnly')}</p>}
                         <fieldset
                             disabled={!canEdit || busy}

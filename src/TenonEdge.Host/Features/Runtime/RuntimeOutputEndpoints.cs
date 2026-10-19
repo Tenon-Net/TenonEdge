@@ -88,7 +88,7 @@ internal static class RuntimeOutputEndpoints
                 return new RuntimeOutputInfo(id, target?.Key, target?.Name, target?.Kind, target is not null, state, unit, sender,
                     queue, queue.HeadClockAnomaly ? null : Age(queue.HeadCreatedAt, report.CapturedAt), Age(blockedSince, report.CapturedAt), rates,
                     OutputCapacityEstimator.Estimate(options, queue.Usage, report.Usage, rates.RecordsPerSecond,
-                        rates.BytesPerSecond, totalRate, storage));
+                        rates.BytesPerSecond, totalRate, storage, OutputCapacityEstimator.CalibratedDiskAmplification));
             }).ToArray();
             if (runtime.ActiveRevision != status.ActiveRevision)
             { return Changed(); }

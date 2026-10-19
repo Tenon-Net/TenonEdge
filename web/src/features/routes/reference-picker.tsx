@@ -9,10 +9,12 @@ import { selectedReferences, withReferences } from './references'
 
 export function ReferencePicker({
     node,
+    version,
     disabled,
     change,
 }: {
     node: GraphNode
+    version?: string
     disabled: boolean
     change: (text: string) => void
 }) {
@@ -59,6 +61,8 @@ export function ReferencePicker({
         }
     }
     const input = node.kind.startsWith('input.')
+    const coherent =
+        !query.error && !query.isFetching && query.data?.version === version
     return (
         <section className="space-y-2" aria-label={t('routes.references')}>
             <h3 className="font-medium">{t('routes.references')}</h3>
@@ -68,6 +72,9 @@ export function ReferencePicker({
                 })}
             </p>
             <ErrorMessage error={query.error} />
+            {query.data && query.data.version !== version && (
+                <p role="alert">{t('routes.inline.versionChanged')}</p>
+            )}
             {(error || invalid) && (
                 <p role="alert">{t('routes.configError')}</p>
             )}
@@ -105,6 +112,7 @@ export function ReferencePicker({
                                     checked={checked}
                                     disabled={
                                         disabled ||
+                                        !coherent ||
                                         invalid ||
                                         (!item.enabled && !checked) ||
                                         !Number.isSafeInteger(id)

@@ -13,6 +13,8 @@ import { Button } from '../../components/ui/button'
 import { CanvasEditor } from '../canvas/editor'
 import { createGraphEditor } from '../canvas/store'
 import { createRouteApi, newRoute, type RouteForm } from './api'
+import { ReferenceDrawer } from './reference-drawer'
+import { rebaseReferences } from './reference-rebase'
 
 const routes = createRouteApi(api)
 const queryKey = ['route-drafts']
@@ -40,6 +42,10 @@ export function RoutesPage() {
     const [pendingConfig, setPendingConfig] = useState(false)
     const [copyKey, setCopyKey] = useState('')
     const [copyName, setCopyName] = useState('')
+    const [referenceDrawer, setReferenceDrawer] = useState<
+        'connection' | 'device'
+    >()
+    const [referenceConflict, setReferenceConflict] = useState(false)
     const dirty =
         form !== null &&
         (pendingConfig || JSON.stringify({ ...form, document }) !== original)
@@ -51,6 +57,8 @@ export function RoutesPage() {
     function load(next: RouteForm | null, keepSample = false) {
         if (!keepSample) previewDraft.setState({ source: '', sample: '' })
         setPendingConfig(false)
+        setReferenceConflict(false)
+        referenceReview.reset()
         if (next) canvas.getState().load(next.document)
         editor.setState({
             form: next,
@@ -111,7 +119,42 @@ export function RoutesPage() {
     const compile = useMutation({
         mutationFn: (version: string) => routes.compile(version),
     })
-    const busy = mutation.isPending || compile.isPending
+    const referenceReview = useMutation({
+        retry: false,
+        mutationFn: async () => {
+            const current = editor.getState()
+            if (!current.form) return
+            const latest =
+                current.form.id === undefined
+                    ? (await routes.list()).version
+                    : await routes.read(current.form.id)
+            // Reading must not overwrite edits made while awaiting the server.
+            if (editor.getState().original !== current.original) return
+            const rebased = rebaseReferences(
+                editor.getState().form!,
+                JSON.parse(current.original),
+                latest,
+            )
+            setReferenceConflict(rebased === null)
+            if (rebased)
+                editor.setState({
+                    form: rebased.form,
+                    original: JSON.stringify(rebased.baseline),
+                })
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey }),
+                queryClient.invalidateQueries({ queryKey: ['route-catalog'] }),
+                queryClient.invalidateQueries({
+                    queryKey: ['connection-drafts'],
+                }),
+            ])
+        },
+    })
+    const busy =
+        mutation.isPending ||
+        compile.isPending ||
+        referenceReview.isPending ||
+        referenceDrawer !== undefined
     function open(id?: number) {
         if (
             !query.data ||
@@ -220,6 +263,19 @@ export function RoutesPage() {
             </ul>
             {query.data?.routes.length === 0 && <p>{t('routes.empty')}</p>}
             <ErrorMessage error={mutation.error} />
+            <ErrorMessage error={referenceReview.error} />
+            {referenceConflict && (
+                <p role="alert">{t('routes.inline.conflict')}</p>
+            )}
+            {(referenceReview.error || referenceConflict) && (
+                <Button
+                    disabled={busy}
+                    variant="outline"
+                    onClick={() => referenceReview.mutate()}
+                >
+                    {t('routes.inline.review')}
+                </Button>
+            )}
             {mutation.error instanceof ApiError &&
                 mutation.error.status === 409 && (
                     <p role="alert">{t('routes.conflict')}</p>
@@ -315,6 +371,11 @@ export function RoutesPage() {
                         previewDraft={previewDraft}
                         onPendingChange={setPendingConfig}
                         readOnly={!canEdit || busy}
+                        onCreateReference={
+                            canEdit
+                                ? (kind) => setReferenceDrawer(kind)
+                                : undefined
+                        }
                     />
                     {form.id !== undefined && (
                         <form
@@ -395,6 +456,15 @@ export function RoutesPage() {
                     </>
                 )}
             </section>
+            {referenceDrawer && (
+                <ReferenceDrawer
+                    kind={referenceDrawer}
+                    close={() => {
+                        setReferenceDrawer(undefined)
+                        referenceReview.mutate()
+                    }}
+                />
+            )}
         </section>
     )
 }

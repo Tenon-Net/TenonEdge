@@ -22,7 +22,7 @@ import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, queryClient, useSession } from '../../lib/session'
 import { ApiError } from '../../api/errors'
@@ -61,8 +61,9 @@ function useParameterSchema(kind: 'modbus' | 'mqtt') {
 const queryKey = ['connection-drafts', 'exact']
 const fieldClass =
     'mt-1 w-full rounded-md border bg-background p-2 disabled:opacity-60'
-export function ConnectionsPage() {
+export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
     const { t } = useTranslation()
+    const activeMutations = useIsMutating()
     const session = useSession((state) => state.value)
     const canEdit =
         session?.role === 'administrator' || session?.role === 'configurator'
@@ -325,6 +326,24 @@ export function ConnectionsPage() {
     )
     return (
         <section className="space-y-4">
+            {onReturn && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={
+                        activeMutations > 0 ||
+                        outboundBusy ||
+                        editorBusy ||
+                        deleting !== null
+                    }
+                    onClick={() => {
+                        if (!dirty || window.confirm(t('connections.discard')))
+                            onReturn()
+                    }}
+                >
+                    {t('routes.inline.return')}
+                </Button>
+            )}
             <h1 className="text-2xl font-semibold">{t('connections.title')}</h1>
             <p className="text-sm text-muted-foreground">
                 {t('connections.notice')}

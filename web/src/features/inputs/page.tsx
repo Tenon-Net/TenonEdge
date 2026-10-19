@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import { useBlocker, useParams } from '@tanstack/react-router'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, queryClient, useSession } from '../../lib/session'
 import { ApiError } from '../../api/errors'
@@ -35,9 +35,16 @@ export function InputsPage() {
     const { deviceId } = useParams({ from: '/devices/$deviceId/inputs' })
     return <DeviceInputsPage key={deviceId} routeId={deviceId} />
 }
-function DeviceInputsPage({ routeId }: { routeId: string }) {
+export function DeviceInputsPage({
+    routeId,
+    onReturn,
+}: {
+    routeId: string
+    onReturn?: () => void
+}) {
     const deviceId = Number(routeId)
     const { t } = useTranslation()
+    const activeMutations = useIsMutating()
     const role = useSession((s) => s.value?.role)
     const canEdit = role === 'administrator' || role === 'configurator'
     const modules = useInputModules()
@@ -85,12 +92,14 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
     const [points] = useState(createPointEditor)
     const { form, original, generation } = useStore(editor)
     const { rows, mode } = useStore(points)
+    const [csvDirty, setCsvDirty] = useState(false)
     const dirty = form !== null && JSON.stringify({ form, rows }) !== original
+    const hasUnsavedWork = dirty || csvDirty
     const [notice, setNotice] = useState('')
     const [invalid, setInvalid] = useState(false)
     useBlocker({
-        disabled: !dirty,
-        enableBeforeUnload: dirty,
+        disabled: !hasUnsavedWork,
+        enableBeforeUnload: hasUnsavedWork,
         shouldBlockFn: () => !window.confirm(t('inputs.discard')),
     })
     const mutation = useMutation({
@@ -218,6 +227,22 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
             !validModuleForm(form, modules.data ?? [], connectionChoices))
     return (
         <section className="space-y-4">
+            {onReturn && (
+                <Button
+                    type="button"
+                    variant="outline"
+                    disabled={activeMutations > 0}
+                    onClick={() => {
+                        if (
+                            !hasUnsavedWork ||
+                            window.confirm(t('inputs.discard'))
+                        )
+                            onReturn()
+                    }}
+                >
+                    {t('routes.inline.backDevices')}
+                </Button>
+            )}
             <h1 className="text-2xl font-semibold">{t('inputs.title')}</h1>
             <p>
                 {t('inputs.device', {
@@ -279,6 +304,7 @@ function DeviceInputsPage({ routeId }: { routeId: string }) {
                     version={query.data.version}
                     blocked={!coherent || form !== null || mutation.isPending}
                     canEdit={canEdit}
+                    onDirtyChange={setCsvDirty}
                 />
             )}
             {!query.data?.inputs.length && <p>{t('inputs.empty')}</p>}

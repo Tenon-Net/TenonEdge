@@ -12,9 +12,51 @@ namespace TenonEdge.IntegrationTests.Runtime;
 /// WAL 与 synchronous=FULL 显式设置并回读；只有分组提交返回后才报告接管，读取只能读到已提交的记录；
 /// 提交失败时整批回滚并如实报告；报文与目标冻结，重启后原样保留；同一目标内按 seq 先进先出，大量积压分页读取不重不漏。
 /// </summary>
-public sealed class DeliveryCacheTests
+public sealed class DeliveryCacheTests(ITestOutputHelper output)
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
+    [Theory]
+    [InlineData(1024)]
+    [InlineData(65536)]
+    public async Task MeasuresDatabaseWalAndIndexAmplificationForCapacityCalibration(int payloadBytes)
+    {
+        var directoryPath = Path.Combine(AppContext.BaseDirectory, $"capacity-measurement-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directoryPath);
+        var payload = Encoding.UTF8.GetBytes(new string('x', payloadBytes));
+        var drafts = Enumerable.Range(0, 300).Select(index => new DeliveryDraft(Guid.CreateVersion7(), 1, Guid.CreateVersion7(),
+            $"meter-{index:D4}", 1, payload, "fingerprint", "recipient:v1:measurement")).ToArray();
+        var logicalBytes = drafts.Sum(draft => draft.ByteSize);
+        long databaseBytes;
+        long walBytes;
+        string databasePath;
+        await using (var writer = WriterHarness.Start(directoryPath))
+        {
+            var result = await writer.EnqueueAsync(drafts);
+            Assert.True(result.Committed, result.Error);
+            databasePath = writer.Cache.GetStatus().Store!.FilePath;
+            databaseBytes = new FileInfo(databasePath).Length;
+            var walPath = databasePath + "-wal";
+            walBytes = File.Exists(walPath) ? new FileInfo(walPath).Length : 0;
+        }
+        var pageBytes = databaseBytes + walBytes;
+        output.WriteLine($"payload={payloadBytes}; records={drafts.Length}; logical={logicalBytes}; database={databaseBytes}; wal={walBytes}; liveK={(double)pageBytes / logicalBytes:F3}");
+
+        using var connection = Open(databasePath);
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(0L, reader.GetInt64(0));
+        }
+        var checkpointedBytes = new FileInfo(databasePath).Length;
+        output.WriteLine($"checkpointed={checkpointedBytes}; checkpointedK={(double)checkpointedBytes / logicalBytes:F3}");
+        Assert.True(databaseBytes > 0);
+        Assert.True(pageBytes >= logicalBytes);
+        Assert.True(checkpointedBytes > 0);
+        Directory.Delete(directoryPath, recursive: true);
+    }
 
     [Fact]
     public async Task OpeningCreatesAPrivateWalDatabaseWithFullSynchronousWrites()

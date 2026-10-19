@@ -10,6 +10,10 @@ public sealed record OutputCapacityEstimate(double? Seconds, string? LimitingCon
 /// 零速率不输出无限值；未知速率、磁盘空间或未校准的 k 不冒充完整估算。</summary>
 public static class OutputCapacityEstimator
 {
+    /// <summary>Measured upper envelope plus 10% margin for SQLite queue.db + live WAL, 1—64 KiB payloads;
+    /// see docs/capacity-calibration.md. Not valid for other SQLite/filesystem settings or larger payloads.</summary>
+    public const double CalibratedDiskAmplification = 2.3;
+
     public static OutputCapacityEstimate Estimate(DeliveryCacheOptions options, DeliveryQueueUsage target,
         DeliveryQueueUsage global, double? recordsPerSecond, double? bytesPerSecond, double? accumulatingBytesPerSecond,
         StorageProtectionStatus storage, double? calibratedDiskAmplification = null)
