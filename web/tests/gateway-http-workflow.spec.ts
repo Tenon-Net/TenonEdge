@@ -4,6 +4,34 @@ import { startWorkflowGateway } from './support/gateway-workflow'
 import { startMqttWorkflowBroker } from './support/mqtt-workflow-broker'
 
 const password = 'Http-workflow-admin-7234!'
+const temporaryPassword = 'Http-workflow-temporary-4826!'
+const configuratorPassword = 'Http-workflow-configurator-5937!'
+
+async function createConfigurator(page: Page) {
+    await page.goto('/users')
+    await page.getByRole('button', { name: '新建用户', exact: true }).click()
+    await page
+        .getByLabel('用户账号', { exact: true })
+        .fill('http-workflow-configurator')
+    await page.getByLabel('显示名', { exact: true }).fill('HTTP配置人员')
+    await page.getByLabel('角色', { exact: true }).selectOption('configurator')
+    await page.getByLabel('临时密码', { exact: true }).fill(temporaryPassword)
+    await page.getByRole('button', { name: '核对操作', exact: true }).click()
+    await page.getByLabel('我已核对账号与操作，确认执行').check()
+    await page.getByRole('button', { name: '确认执行', exact: true }).click()
+    await expect(page.getByRole('status')).toHaveText('用户操作已完成。')
+    await page.getByRole('button', { name: '退出登录', exact: true }).click()
+    await page.goto('/')
+    await page
+        .getByLabel('账号', { exact: true })
+        .fill('http-workflow-configurator')
+    await page.getByLabel('密码', { exact: true }).fill(temporaryPassword)
+    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByLabel('原密码', { exact: true }).fill(temporaryPassword)
+    await page.getByLabel('新密码', { exact: true }).fill(configuratorPassword)
+    await page.getByRole('button', { name: '保存新密码', exact: true }).click()
+    await expect(page.getByRole('navigation')).toBeVisible()
+}
 
 async function createHttpConnection(
     page: Page,
@@ -177,7 +205,11 @@ async function applyRoute(page: Page) {
     ).toBeVisible()
 }
 
-async function runHttpPullWorkflow(browser: Browser, target: 'http' | 'mqtt') {
+async function runHttpPullWorkflow(
+    browser: Browser,
+    target: 'http' | 'mqtt',
+    creator: 'administrator' | 'configurator' = 'administrator',
+) {
     test.setTimeout(180_000)
     const broker =
         target === 'mqtt' ? await startMqttWorkflowBroker() : undefined
@@ -218,6 +250,7 @@ async function runHttpPullWorkflow(browser: Browser, target: 'http' | 'mqtt') {
         await expect(
             page.getByRole('heading', { name: '总览', exact: true }),
         ).toBeVisible()
+        if (creator === 'configurator') await createConfigurator(page)
 
         await createHttpConnection(page, gateway.httpPort, broker?.port)
         await createDeviceAndSource(page)
@@ -321,3 +354,7 @@ test('no JSON workflow: administrator configures real HTTP pull to HTTP output a
 test('no JSON workflow: administrator configures real HTTP pull to MQTT output and Host restart', async ({
     browser,
 }) => runHttpPullWorkflow(browser, 'mqtt'))
+
+test('no JSON workflow: configurator configures real HTTP pull to MQTT output and Host restart', async ({
+    browser,
+}) => runHttpPullWorkflow(browser, 'mqtt', 'configurator'))

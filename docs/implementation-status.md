@@ -8321,3 +8321,9 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 新增MQTT→HTTP配置人员用户流程当前/最低专项均2/2通过，且含在上述150项套件。其余矩阵和平台边界仍按§2.305及§2.283记录；全套软件绿色不替代T3-10协议范围决策、未覆盖组合和真实Chrome/Edge/Safari、Windows、实物/断电、远端CI验证。原MQTT计数偶发超时风险§2.274/2.275保持未解决。
 
 浏览器全量结束后在`web/`执行`npm test -- --run`：**50个文件、708/708 Vitest通过**（Vite `4.1.11`，用例约4.72秒）；TypeScript、oxlint和该spec的Prettier检查也在本代码批次通过。该单测结果不改变Playwright最低版2项失败结论。
+
+### 2.307 T3-11 HTTP拉取→MQTT输出配置人员真实页面流程（2026-10-19）
+
+补上此前仅管理员验证的HTTP输入→MQTT输出用户闭环配置人员场景。管理员先通过页面建配置人员并完成退出；配置人员从登录、临时密码强制更换起，通过页面新建HTTP/MQTT连接、HTTP设备来源点表、路线和MQTT输出，真实读取HTTP peer并预览，显式应用后接收真实Mosquitto投递，断开浏览器后仍轮询/投递，Host重启后再次读取和投递。无API写入夹具、无JSON配置、样本/投递均通过真实socket。新增代码`web/tests/gateway-http-workflow.spec.ts`，复用HTTP/MQTT双输出场景的共用流程函数，仅为MQTT加配置人员用户分支；不改变产品代码/依赖。
+
+串行验证：`npm run typecheck`、`npm run lint`、Prettier通过；当前Chromium156 `npx playwright test tests/gateway-http-workflow.spec.ts --workers=1` **3/3通过**（管理员HTTP→HTTP、管理员HTTP→MQTT、配置人员HTTP→MQTT；54.4秒）；最低Chromium111同命令增加`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome` **3/3通过**（约1分钟）。运行于Linux本地产品Host、真实HTTP peer及Docker Mosquitto，外发请求由已有测试断言拦截。全量套件是之前151项基线（最低148/150）的数字；加入此项后的当前/最低完整套件需重新运行后才可记矩阵结果。
