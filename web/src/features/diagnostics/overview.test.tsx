@@ -15,7 +15,8 @@ const queries = vi.hoisted(() => ({
     trends: vi.fn(),
     events: vi.fn(),
 }))
-vi.mock('../../lib/session', () => ({ useSession: () => ({ role: 'viewer' }) }))
+const session = vi.hoisted(() => ({ role: 'viewer' }))
+vi.mock('../../lib/session', () => ({ useSession: () => session }))
 vi.mock('./queries', () => ({
     useRuntimeStatus: queries.runtime,
     useSystemInfo: queries.info,
@@ -54,6 +55,7 @@ function status() {
     }`)
 }
 beforeEach(() => {
+    session.role = 'viewer'
     queries.runtime.mockReturnValue(query(status()))
     queries.info.mockReturnValue(query())
     queries.devices.mockReturnValue(query())
@@ -61,6 +63,30 @@ beforeEach(() => {
     queries.trends.mockReturnValue(query([]))
     queries.events.mockReturnValue(query([]))
 })
+
+it.each(['administrator', 'configurator', 'viewer'])(
+    'first-use guidance respects %s permissions and never claims an unavailable configuration is empty',
+    (role) => {
+        session.role = role
+        const data = status()
+        data.configuration = {
+            effectiveRevision: null,
+            appliedBy: null,
+            appliedAt: null,
+        }
+        data.runtime.activeRevision = null
+        data.coordinator.state = 'idle'
+        queries.runtime.mockReturnValue(query(data))
+        expect(
+            renderToStaticMarkup(<OverviewPage />).includes('开始使用'),
+        ).toBe(role !== 'viewer')
+        queries.runtime.mockReturnValue(query(data, new Error('unavailable')))
+        expect(renderToStaticMarkup(<OverviewPage />)).not.toContain('开始使用')
+        data.coordinator.state = 'runFailed'
+        queries.runtime.mockReturnValue(query(data))
+        expect(renderToStaticMarkup(<OverviewPage />)).not.toContain('开始使用')
+    },
+)
 
 it('pairs exact durable revision with its own operator/time, not the active runtime revision; keeps independent chart and exception summary', () => {
     const html = renderToStaticMarkup(<OverviewPage />)

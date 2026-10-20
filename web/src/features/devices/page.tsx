@@ -1,7 +1,7 @@
 import { PageHeading } from '../../components/layout/page'
 import { DeviceDeletionPanel } from './deletion-review'
 import { businessKeyPattern } from '../../lib/business-key'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useStore } from 'zustand'
 import { Link, useBlocker } from '@tanstack/react-router'
 import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
@@ -28,6 +28,7 @@ export function DevicesPage({
     onOpenInputs,
 }: { onReturn?: () => void; onOpenInputs?: (id: number) => void } = {}) {
     const { t } = useTranslation()
+    const unitHelpId = useId()
     const activeMutations = useIsMutating()
     const role = useSession((s) => s.value?.role)
     const canEdit = role === 'administrator' || role === 'configurator'
@@ -541,25 +542,37 @@ export function DevicesPage({
                                 )}
                             {form.kind === 'modbus' && (
                                 <>
-                                    <label>
-                                        {t('devices.unitId')}
-                                        <input
-                                            className={fieldClass}
-                                            type="number"
-                                            min={0}
-                                            max={255}
-                                            step={1}
-                                            required
-                                            value={form.unitId ?? ''}
-                                            onChange={(e) =>
-                                                patch({
-                                                    unitId: e.target.value
-                                                        ? Number(e.target.value)
-                                                        : null,
-                                                })
-                                            }
-                                        />
-                                    </label>
+                                    <div>
+                                        <label>
+                                            {t('devices.unitId')}
+                                            <input
+                                                className={fieldClass}
+                                                type="number"
+                                                min={0}
+                                                max={255}
+                                                step={1}
+                                                required
+                                                aria-describedby={unitHelpId}
+                                                value={form.unitId ?? ''}
+                                                onChange={(e) =>
+                                                    patch({
+                                                        unitId: e.target.value
+                                                            ? Number(
+                                                                  e.target
+                                                                      .value,
+                                                              )
+                                                            : null,
+                                                    })
+                                                }
+                                            />
+                                        </label>
+                                        <p
+                                            id={unitHelpId}
+                                            className="mt-1 text-xs leading-relaxed text-muted-foreground"
+                                        >
+                                            {t('devices.unitIdHelp')}
+                                        </p>
+                                    </div>
                                     <label>
                                         {t('devices.notation')}
                                         <select

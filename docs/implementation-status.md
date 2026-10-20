@@ -9035,3 +9035,25 @@ node scripts/verify-results.mjs "$E/unit-final.json" "$E/browser-final.json"
 试用地址仍为 `http://192.168.0.88:18490`，于 `2026-10-20T08:53:11.938073+00:00` 更新为被测 `dist-final`，入口 SHA256 `e1926448685ba4f413d427b66cf3fe4c22b496bb425bf2aa63ec6cc74f32ffeb`。更新前后核对原 Host/软件对端 PID、startTicks 与完整命令；保留旧 hashed assets，最后原子替换入口，没有重启或修改人工账号/配置。入口/readyz 200，入口及49个 JS/CSS 资源哈希匹配；匿名登录页、390px 无溢出，页面错误/外部请求/写请求均0。证据为 `preview-update.json`、`preview-assets.json`、`preview-browser.json`；匿名检查不代替人工账号内的观感验收。
 
 仅完成本次界面收口，不代表 T3 整体验收；原最低实际浏览器、Excel、CI及维护者验收边界不变。不推送、不合回原工作区、不进入后续阶段。
+
+
+### 2.321 T3 / AT / FE-AT 产品视角首轮 QA 与易用性修复（2026-10-20）
+
+维护者要求按测试专家及边缘网关使用者开展功能、性能、E2E与体验测试。本轮继续在隔离工作树 `/home/shiny/.cache/tenonedge-inline-references/worktree`、分支 `t3-inline-reference-verification`、基线 `cd12c88` 实施，不修改或合回原工作区。详细范围、实际命令、环境、失败与关闭条件见[产品 QA 报告](reviews/2026-10-20-product-qa.md)。原始证据根 `/home/shiny/.cache/tenonedge-product-qa/evidence/`。
+
+结果须分开记录，**本轮不是全绿或 T3 整体验收**：
+
+- locked restore、格式、Release 构建通过，后端构建 0 warning/error；Unit **2081/2081**，Integration **2801/2802**，32 路扇出等待输入写完超时，保留 `backend/*.trx` / `backend-tests.log`。报告校验 `backend-report-verification.log` 明确非零、不通过。原单项独立三次通过（`fanout-{1,2,3}`），未改原 90 秒期限/8000 条断言；根因尚未关闭，不能凭重跑通过归因环境。
+- 全量浏览器基线 **176/177**，删除令牌创建者且明确保留令牌场景超过原 30 秒总期限。三独立 Host/库/端口分片、片内 workers1/retries0；`browser-baseline-coverage.json` 确认各项一次。`tokens-repro.json` 后续连续3次通过，保留全部权限断言与秘密不入 trace 边界，不覆盖最初失败。
+- 修复连接内部 key 的中文格式/例子和非法格式校验、Modbus UnitId 的从站地址说明，以可访问描述关联，保留原字段名、范围和持久化语义。`product-usability.mjs` 在基线准确复现两项缺失；最终 **5/5**，非法输入不写入，改正后真实保存一次并从 API 读回。初探过早读取首页的误判已纠正：原本有接入四步引导，已撤回重复引导，产品首页实现不变。
+- 最终 lint/格式/类型/build 通过，保留两条既有 lint 警告、大 chunk 及外部目录不自动清空提示；Web **59 文件、819/819**（新增三角色/失败边界测试）；最终八文件浏览器 **21/21**，失败/跳过/flaky/运行错误均0，341.274秒。覆盖连接/设备、key、三协议两角色网页闭环/只读/浏览器退出/正常 Host 重启、总览、响应式、主题、移动焦点与未保存编辑。见 `web-*-verified.log`、`browser-verified.json`、`verify-verified-results.log` 与 artifacts；不与前轮或重跑用例相加。
+- 新增 `product-performance.mjs` 可重复短测，原 Host+模拟输入+原 SQLite 队列→loopback真实 HTTP，两个数据字段、一个输出目标，每档持续60秒、503中断15秒、持续输入下恢复最长60秒、成功恢复后15秒。**ext4 5条/秒通过**：稳态约5条/秒、待发0，中断积压75，恢复6.268秒清空；**ext4 50条/秒失败**：稳态仅约15.56条/秒、待发2487，中断后3235，恢复60秒后仍5707。两档均无已接收重复ID/坏报文，配额拒绝/过期/失败/隔离计数0，Host正常退出；积压不等于已丢失，但不能承诺该档持续运行。单目标 ACK 后持久删除及默认50ms组提交存在串行等待，未降低持久性追求跑分。tmpfs对照及早期并行冒烟的失败均保留，详见报告；不是实物采集或生产容量 SLA。
+- ext4低档：1000行软件粘贴中位116ms，追加9000行195ms、末行编辑103ms，50节点原型画布添加/改名约3.16秒；登录态runtime/status并发1/5/10各100请求均200，p95约6.62/10.63/14.29ms。点表/画布为既有原型，不等于完整业务点表或Excel实测。RSS/CPU、JS heap和原始分位数在JSON中，短测不证明长期无泄漏。
+
+环境：Linux x86_64、20逻辑CPU、约61.4GiB RAM、共享开发机（起测swap近满），.NET SDK10.0.401、Node22.23.2、npm11.21.0、Playwright1.64.0/Chromium156.0.8078.4；`/tmp`为tmpfs，正式磁盘对照使用本轮独立ext4目录。性能分档串行、与本轮重型回归错开，但不保证其他会话空闲。不重新安装前端依赖、不冒充远端CI。
+
+实际命令完整见报告：根目录 `dotnet restore --locked-mode`、format/build/test与TRX校验；web/固定npm执行lint、format、typecheck、819项测试和外部dist构建；两版易用性脚本、八文件Playwright定向及双报告校验。性能设置 `TENONEDGE_QA_INPUTS=5/50`、独立 `TENONEDGE_QA_RESULTS` 与ext4 `TENONEDGE_QA_DATA_ROOT`；高档命令保持exit1，低档通过不覆盖高档失败。
+
+`frozen-verified.json`核对343个源码/测试/脚本与锁文件，以及77个产物目录文件在最终验证期间未变，并确认性能与最终回归目录逐文件相同。外部outDir保留旧hashed assets，77不是干净发布文件数。当前试用入口于2026-10-20T10:08:58.821984+00:00更新为SHA256 `111bd6465390aad72819476270e9d730413207205c0f3a5cc6abca2dd1b592fd`；原Host/对端PID、startTicks、完整命令和更新前旧入口均核对，保留旧assets并原子替换index，没有重启、重置、登录人工账号或修改人工配置。入口/readyz200；入口及71个JS/CSS资源哈希一致；匿名登录/390px检查的页面错误、外部请求、写请求均0，未新增通用HTTP警告。证据 `preview-update.json` / `preview-assets.json` / `preview-browser.json`，维护者可刷新原 `http://192.168.0.88:18490` 体验。
+
+本轮完成既有T3软件子场景首轮QA与两项体验修复，保留P1单HTTP目标吞吐/恢复风险、P1扇出超时诊断及P2令牌回归不稳定；真实新手任务评估、最低实际浏览器、Excel、设备/客户网络、工控硬件/慢盘、断电、长期soak、实际CI及维护者验收不新增通过证据，继续按§1.1边界。未进入T4/T5/G1；不推送、不发布，不把开发试用静态更新当作GW-27。

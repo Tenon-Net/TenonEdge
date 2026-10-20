@@ -22,7 +22,7 @@ import { outboundTarget, type OutboundTarget } from './outbound-api'
 import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, queryClient, useSession } from '../../lib/session'
@@ -64,6 +64,7 @@ const fieldClass =
     'mt-1 w-full rounded-md border bg-background p-2 disabled:opacity-60'
 export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
     const { t } = useTranslation()
+    const keyHelpId = useId()
     const activeMutations = useIsMutating()
     const session = useSession((state) => state.value)
     const canEdit =
@@ -251,18 +252,41 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
         maxLength = 253,
     ) {
         return (
-            <label className="block">
-                {t(`connections.${key}`)}
-                <input
-                    className={fieldClass}
-                    value={String(form![key])}
-                    onChange={(event) => edit(key, event.target.value)}
-                    required={required}
-                    maxLength={maxLength}
-                    disabled={key === 'key' && form!.id !== undefined}
-                    pattern={key === 'key' ? businessKeyPattern : undefined}
-                />
-            </label>
+            <div>
+                <label className="block">
+                    {t(`connections.${key}`)}
+                    <input
+                        className={fieldClass}
+                        value={String(form![key])}
+                        onChange={(event) => {
+                            event.currentTarget.setCustomValidity('')
+                            edit(key, event.target.value)
+                        }}
+                        onInvalid={(event) => {
+                            if (
+                                key === 'key' &&
+                                event.currentTarget.validity.patternMismatch
+                            )
+                                event.currentTarget.setCustomValidity(
+                                    t('connections.keyFormat'),
+                                )
+                        }}
+                        aria-describedby={key === 'key' ? keyHelpId : undefined}
+                        required={required}
+                        maxLength={maxLength}
+                        disabled={key === 'key' && form!.id !== undefined}
+                        pattern={key === 'key' ? businessKeyPattern : undefined}
+                    />
+                </label>
+                {key === 'key' && (
+                    <p
+                        id={keyHelpId}
+                        className="mt-1 text-xs leading-relaxed text-muted-foreground"
+                    >
+                        {t('connections.keyFormat')}
+                    </p>
+                )}
+            </div>
         )
     }
     function numberField(

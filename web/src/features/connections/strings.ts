@@ -248,6 +248,8 @@ export const connectionStrings = {
     filter: '协议筛选',
     all: '全部协议',
     key: '连接 key',
+    keyFormat:
+        '内部引用标识，例如 plc_01。以英文字母或数字开头，可用字母、数字、下划线、短横线和点，最多 64 个字符；创建后不可修改。',
     name: '连接名称',
     kind: '协议类型',
     target: '目标',
