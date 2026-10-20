@@ -58,7 +58,7 @@ export const canvasStrings = {
         output: {
             mqtt: 'MQTT 输出',
             http: 'HTTP 输出',
-            tenon: 'TenonIoT 输出（T4 待实现）',
+            tenon: 'TenonIoT 输出（不可用）',
         },
     },
     help: '拖入或点击节点库添加；从端口拖出连线。Shift 框选 / 多选，拖动空白平移。支持 Ctrl/Cmd+C、V、Z、Y 及 Delete。剪贴板仅本页内部；文本框保留原生快捷键。',

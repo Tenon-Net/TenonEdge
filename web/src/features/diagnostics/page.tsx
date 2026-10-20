@@ -1,3 +1,11 @@
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { OutputSummary } from './outputs'
 import { DeviceSummary } from './current-values'
@@ -23,9 +31,9 @@ export function DiagnosticsPage() {
                 {data && (
                     <>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr>
+                            <Table className="w-full text-left text-sm">
+                                <TableHeader>
+                                    <TableRow>
                                         {[
                                             'unit',
                                             'unitState',
@@ -33,42 +41,45 @@ export function DiagnosticsPage() {
                                             'lastError',
                                             'nextRestart',
                                         ].map((key) => (
-                                            <th key={key} className="p-2">
+                                            <TableHead
+                                                key={key}
+                                                className="p-2"
+                                            >
                                                 {t(`diagnostics.${key}`)}
-                                            </th>
+                                            </TableHead>
                                         ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
                                     {data.runtime.units.map((unit) => (
-                                        <tr
+                                        <TableRow
                                             key={`${unit.id.kind}/${unit.id.key}`}
                                             className="border-t align-top"
                                         >
-                                            <td className="p-2">
+                                            <TableCell className="p-2">
                                                 {unit.id.kind}/{unit.id.key}
-                                            </td>
-                                            <td className="p-2">
+                                            </TableCell>
+                                            <TableCell className="p-2">
                                                 {t(
                                                     `diagnostics.unitStates.${unit.state}`,
                                                 )}
-                                            </td>
-                                            <td className="p-2">
+                                            </TableCell>
+                                            <TableCell className="p-2">
                                                 {unit.restartCount}
-                                            </td>
-                                            <td className="max-w-lg p-2 break-words">
+                                            </TableCell>
+                                            <TableCell className="max-w-lg p-2 break-words">
                                                 {unit.lastError ?? '—'}
                                                 <small className="block">
                                                     {dateText(unit.lastErrorAt)}
                                                 </small>
-                                            </td>
-                                            <td className="p-2">
+                                            </TableCell>
+                                            <TableCell className="p-2">
                                                 {dateText(unit.nextRestartAt)}
-                                            </td>
-                                        </tr>
+                                            </TableCell>
+                                        </TableRow>
                                     ))}
-                                </tbody>
-                            </table>
+                                </TableBody>
+                            </Table>
                         </div>
                         {data.runtime.units.length === 0 && (
                             <p>{t('diagnostics.empty')}</p>
@@ -77,9 +88,9 @@ export function DiagnosticsPage() {
                             {t('diagnostics.reads')}
                         </h3>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr>
+                            <Table className="w-full text-left text-sm">
+                                <TableHeader>
+                                    <TableRow>
                                         {[
                                             'device',
                                             'health',
@@ -88,25 +99,28 @@ export function DiagnosticsPage() {
                                             'skipped',
                                             'lastError',
                                         ].map((key) => (
-                                            <th key={key} className="p-2">
+                                            <TableHead
+                                                key={key}
+                                                className="p-2"
+                                            >
                                                 {t(`diagnostics.${key}`)}
-                                            </th>
+                                            </TableHead>
                                         ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
                                     {data.runtime.units.map(
                                         (unit) =>
                                             unit.reads && (
-                                                <tr
+                                                <TableRow
                                                     key={`${unit.id.kind}/${unit.id.key}`}
                                                     className="border-t align-top"
                                                 >
-                                                    <td className="p-2">
+                                                    <TableCell className="p-2">
                                                         {unit.reads.deviceKey} /{' '}
                                                         {unit.reads.inputKey}
-                                                    </td>
-                                                    <td className="p-2">
+                                                    </TableCell>
+                                                    <TableCell className="p-2">
                                                         {unit.id.kind ===
                                                         'input.mqtt'
                                                             ? t(
@@ -115,28 +129,28 @@ export function DiagnosticsPage() {
                                                             : t(
                                                                   `diagnostics.readHealth.${unit.reads.health}`,
                                                               )}
-                                                    </td>
-                                                    <td className="p-2">
+                                                    </TableCell>
+                                                    <TableCell className="p-2">
                                                         {dateText(
                                                             unit.reads
                                                                 .lastSuccessAt,
                                                         )}
-                                                    </td>
-                                                    <td className="p-2">
+                                                    </TableCell>
+                                                    <TableCell className="p-2">
                                                         {
                                                             unit.reads
                                                                 .readsCompleted
                                                         }{' '}
                                                         /{' '}
                                                         {unit.reads.readsFailed}
-                                                    </td>
-                                                    <td className="p-2">
+                                                    </TableCell>
+                                                    <TableCell className="p-2">
                                                         {
                                                             unit.reads
                                                                 .cyclesSkipped
                                                         }
-                                                    </td>
-                                                    <td className="max-w-lg p-2 break-words">
+                                                    </TableCell>
+                                                    <TableCell className="max-w-lg p-2 break-words">
                                                         {unit.reads.lastError ??
                                                             '—'}
                                                         <small className="block">
@@ -145,12 +159,12 @@ export function DiagnosticsPage() {
                                                                     .lastFailureAt,
                                                             )}
                                                         </small>
-                                                    </td>
-                                                </tr>
+                                                    </TableCell>
+                                                </TableRow>
                                             ),
                                     )}
-                                </tbody>
-                            </table>
+                                </TableBody>
+                            </Table>
                         </div>
                     </>
                 )}
@@ -182,35 +196,35 @@ export function DiagnosticsPage() {
                                     {t('diagnostics.countersUnknown')}
                                 </p>
                             ) : (
-                                <table className="w-full text-left text-sm">
-                                    <thead>
-                                        <tr>
-                                            <th className="p-2">
+                                <Table className="w-full text-left text-sm">
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="p-2">
                                                 {t('diagnostics.counter')}
-                                            </th>
-                                            <th className="p-2">
+                                            </TableHead>
+                                            <TableHead className="p-2">
                                                 {t('diagnostics.value')}
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
+                                            </TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
                                         {Object.entries(data[key]).map(
                                             ([name, value]) => (
-                                                <tr
+                                                <TableRow
                                                     className="border-t"
                                                     key={name}
                                                 >
-                                                    <td className="p-2">
+                                                    <TableCell className="p-2">
                                                         {name}
-                                                    </td>
-                                                    <td className="p-2">
+                                                    </TableCell>
+                                                    <TableCell className="p-2">
                                                         {value}
-                                                    </td>
-                                                </tr>
+                                                    </TableCell>
+                                                </TableRow>
                                             ),
                                         )}
-                                    </tbody>
-                                </table>
+                                    </TableBody>
+                                </Table>
                             )}
                         </div>
                     ))}

@@ -119,12 +119,14 @@ function CanvasWorkspace({
     const inputsAvailable = inputModules.isSuccess && !inputModules.isFetching
     const available = modules.isSuccess && !modules.isFetching
     const palette = [
-        ...nodeKinds.map((kind) => ({
-            kind,
-            version: 1,
-            label: t(`canvas.kinds.${kind}`),
-            configText: undefined as string | undefined,
-        })),
+        ...nodeKinds
+            .filter((kind) => kind !== 'output.tenon')
+            .map((kind) => ({
+                kind,
+                version: 1,
+                label: t(`canvas.kinds.${kind}`),
+                configText: undefined as string | undefined,
+            })),
         ...(inputsAvailable ? (inputModules.data ?? []) : []).flatMap(
             (module) =>
                 isNodeKind(module.kind)

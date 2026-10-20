@@ -378,10 +378,7 @@ test('real failed delivery plus bounded queue fixtures: filters, paging, body is
             .getByRole('button', { name: `查看正文 ${binaryId}`, exact: true })
             .click()
         await pending
-        await page
-            .getByRole('navigation')
-            .getByRole('link', { name: '账号安全', exact: true })
-            .click()
+        await page.getByRole('link', { name: '账号安全', exact: true }).click()
         release()
         expect((await aborted).failure()?.errorText).toBe('net::ERR_ABORTED')
         await expect(body()).toHaveCount(0)

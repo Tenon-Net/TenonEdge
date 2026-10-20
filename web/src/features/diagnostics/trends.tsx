@@ -1,3 +1,11 @@
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { diagnostics } from './queries'
@@ -96,9 +104,9 @@ export function RuntimeTrends() {
                                 {t('diagnostics.trendDetails')}
                             </summary>
                             <div className="max-h-96 overflow-auto">
-                                <table className="w-full text-left text-sm">
-                                    <thead>
-                                        <tr>
+                                <Table className="w-full text-left text-sm">
+                                    <TableHeader>
+                                        <TableRow>
                                             {[
                                                 'at',
                                                 'duration',
@@ -109,23 +117,26 @@ export function RuntimeTrends() {
                                                 'rejectedPaths',
                                                 'storageFailed',
                                             ].map((key) => (
-                                                <th key={key} className="p-2">
+                                                <TableHead
+                                                    key={key}
+                                                    className="p-2"
+                                                >
                                                     {t(`diagnostics.${key}`)}
-                                                </th>
+                                                </TableHead>
                                             ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
                                         {query.data.points.map((point) => (
-                                            <tr
+                                            <TableRow
                                                 key={String(
                                                     point.uptimeSeconds,
                                                 )}
                                                 className="border-t"
                                             >
-                                                <td className="p-2 whitespace-nowrap">
+                                                <TableCell className="p-2 whitespace-nowrap">
                                                     {dateText(point.at)}
-                                                </td>
+                                                </TableCell>
                                                 {[
                                                     point.durationSeconds,
                                                     point.received,
@@ -135,17 +146,17 @@ export function RuntimeTrends() {
                                                     point.rejectedPaths,
                                                     point.storageFailedRecordAttempts,
                                                 ].map((value, index) => (
-                                                    <td
+                                                    <TableCell
                                                         className="p-2"
                                                         key={index}
                                                     >
                                                         {value}
-                                                    </td>
+                                                    </TableCell>
                                                 ))}
-                                            </tr>
+                                            </TableRow>
                                         ))}
-                                    </tbody>
-                                </table>
+                                    </TableBody>
+                                </Table>
                             </div>
                         </details>
                     </>

@@ -1,3 +1,11 @@
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
@@ -161,9 +169,9 @@ export function UsersPage() {
             {query.isPending && <p>{t('loading')}</p>}
             {query.data && (
                 <div className="overflow-x-auto rounded-md border">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-muted">
-                            <tr>
+                    <Table className="w-full text-left text-sm">
+                        <TableHeader className="bg-muted">
+                            <TableRow>
                                 {[
                                     'account',
                                     'displayName',
@@ -172,31 +180,31 @@ export function UsersPage() {
                                     'lastLogin',
                                     'ip',
                                 ].map((key) => (
-                                    <th key={key} className="p-3">
+                                    <TableHead key={key} className="p-3">
                                         {t(`users.${key}`)}
-                                    </th>
+                                    </TableHead>
                                 ))}
-                                <th className="p-3">
+                                <TableHead className="p-3">
                                     {t('users.operation', { action: '' })}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                                </TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             {query.data.items.map((user) => (
-                                <tr
+                                <TableRow
                                     key={user.id}
                                     className="border-t align-top"
                                 >
-                                    <td className="p-3 font-medium">
+                                    <TableCell className="p-3 font-medium">
                                         {user.accountName}
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                         {user.displayName ?? '—'}
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                         {t(`roles.${user.role}`)}
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                         <p>
                                             {t(
                                                 user.isEnabled
@@ -216,14 +224,14 @@ export function UsersPage() {
                                         {user.mustChangePassword && (
                                             <p>{t('users.mustChange')}</p>
                                         )}
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                         {formatTime(user.lastLoginAt)}
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                         {user.lastLoginIp ?? t('users.unknown')}
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                         <div className="flex max-w-xs flex-wrap gap-2">
                                             {(
                                                 [
@@ -254,11 +262,11 @@ export function UsersPage() {
                                                 </Button>
                                             ))}
                                         </div>
-                                    </td>
-                                </tr>
+                                    </TableCell>
+                                </TableRow>
                             ))}
-                        </tbody>
-                    </table>
+                        </TableBody>
+                    </Table>
                 </div>
             )}
             <div className="flex gap-2">

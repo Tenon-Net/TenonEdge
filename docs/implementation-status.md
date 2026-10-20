@@ -54,7 +54,7 @@
 | T2 | T2-06 输入复用与多输出 | 后端软件子集待验收 | 三协议共享链路及 Modbus Host 扇出/扇入通过；图编译与实时应用属 T3 | §2.34—§2.39、§2.96 |
 | T2 | T2-07 设备直连与 LoRa 样例 | 软件子集待验收 | 已解码样例、真实 Broker ACL/持久化/积存边界通过；无线实物未验证 | §2.67、§2.76—§2.87 |
 | T2 | T2-08 协议故障与资源回归 | 软件回归待验收，长期观察未完成 | 1754 项基线通过；连接/缓冲/线程有界和一分钟 Modbus 观测，不代表长期整机压力 | §2.62—§2.66、§2.80、§2.97—§2.98 |
-| T3 | T3-01 前端精简基础 | 待验收 | 固定来源、单一路由/客户端、真实认证、离线/深链已执行本地回归；实际 CI 未执行，不以本地安装/构建代替 | §2.99—§2.100、§2.241、§2.309—§2.311、§2.315；退出见 §1.1 |
+| T3 | T3-01 前端精简基础 | 源码基线已补正，待验收 | 已从固定shadcn-admin提交补齐侧栏、页头、布局、主题、认证外观和公共表单/列表；去掉产品导航中的原型入口及开发进度说明。797 Web与68项定向浏览器通过；新组件最低浏览器与实际CI仍待核实，不沿用旧全量覆盖新源码 | §2.99—§2.100、§2.241、§2.309—§2.311、§2.315—§2.316；退出见 §1.1 |
 | T3 | T3-02 点表交互原型 | 软件原型待验收 | 1000 行粘贴、逐行修正/覆盖/批改、10000 行虚拟化与查询失败编辑保护已有软件证据；Firefox128双协议专项通过。实际Chrome111/Edge111/Safari16.4及Excel来源仍缺，不保存或采集 | §2.101、§2.311—§2.312；外部步骤见 §2.315 |
 | T3 | T3-03 画布交互原型 | 软件原型待验收 | 拖放/连线、拒环、选择/移动、复制删除和50步撤销重做已有本地交互证据；自有格式与布局分离。最低实际浏览器剩余项见 §1.1 | §2.102、§2.302、§2.311—§2.312 |
 | T3 | T3-04 连接设备与点位配置 | 待验收 | 三协议/模拟草稿、复制/CSV/推断、独立凭证、连接测试、TLS固定证书/CA、本地建链和双方客户端证书已接线；连接/设备删除引用复核、三角色及冲突/丢回复不重放已纳入本地回归。Excel来源项仍缺 | §2.103—§2.122、§2.254—§2.264、§2.281—§2.282、§2.288、§2.296、§2.311、§2.315 |
@@ -64,16 +64,16 @@
 | T3 | T3-08 队列操作与迁移 | 待验收 | 重试/暂停恢复、清理/完整导出、两种迁移及审计已接线；权限、冻结原文/编号、原子迁移及双重重启已执行本地验证。FS-23的24项强杀/放行不是实物断电，平台身份分支留T4；HTTP错误摘要保持配置人员/管理员正文权限 | §2.196—§2.218、§2.301、§2.311 |
 | T3 | T3-09 用户审计与系统管理 | 待验收 | 本地用户/临时密码/会话失效、HTTPS Token、审计完整导出、系统信息/名称、白名单/代理与运行参数已接线并本地回归；权限由API落实。宿主管理证书替换、HTTPS-only留T5-01 | §2.219—§2.241、§2.311、§2.315 |
 | T3 | T3-10 配置导入与扩展表单 | 待验收 | 业务key跨Host重映射、合并/替换预检、凭证待补与原子草稿、六类参数、输入/转换/输出/新连接模块及连接嵌套引用已接线；自动表单、真实协议/扩展TCP转发、凭证与迁移/重启有分项软件证据。不将已验证模块推广成任意第三方协议兼容，不要求未定义的“所有组合” | §2.242—§2.253、§2.265—§2.278、§2.284—§2.287、§2.297—§2.305、§2.311、§2.315 |
-| T3 | T3-11 无平台端到端验收 | 退出证据未齐，整项未完成 | 当前产品源码对应39e8de1全量：2081单元、2801集成、797 Web、171浏览器通过；Modbus/HTTP/MQTT分别有管理员与配置人员无JSON配置、预览/真实收包、关闭整个浏览器及原Host重启证据。Firefox128双协议与Chrome155默认HTTP专项通过；最低Chrome111/Edge111/Safari16.4、真实Excel、实际CI及维护者验收仍缺；MQTT历史偶发无根因结论 | §2.264、§2.275、§2.302、§2.306—§2.315；有限退出矩阵见 §1.1 |
+| T3 | T3-11 无平台端到端验收 | 退出证据未齐，整项未完成 | 历史39e8de1全量为2081单元、2801集成、797 Web、171浏览器；本轮界面补正后797 Web/68项定向浏览器通过，含管理员/配置人员无JSON Modbus→HTTP、关闭浏览器及原Host重启。没有重跑完整后端/全部浏览器；新组件最低版本仍须复核，真实Excel、实际CI及维护者验收仍缺；MQTT历史偶发无根因结论 | §2.264、§2.275、§2.302、§2.306—§2.316；有限退出矩阵见 §1.1 |
 | 后续 | T4/T5/G1 | 不在本次目标内 | T3 全部要求仍须完成；不通过提前进入后续阶段绕过缺项 | 不推送、不发布 |
 
 ### 1.1 T3 有限退出核对矩阵（2026-10-19 接续）
 
-范围固定为 PLAN-01 §6 的十一项及其明确引用的验收，不再以没有定义的“所有组合”追加门槛。下表是当前退出核对入口，**不是十一项已经通过的声明**：历史证据保留原提交/环境边界，`39e8de1` 完整回归已通过（§2.311），本轮核对产品源码仍一致；任务与报告关联见 §2.315，不把测试名称匹配当作每条需求已经验收。任何新缺口须指出具体需求及可观察的反例。
+范围固定为 PLAN-01 §6 的十一项及其明确引用的验收，不再以没有定义的“所有组合”追加门槛。下表是当前退出核对入口，**不是十一项已经通过的声明**：历史证据保留原提交/环境边界，`39e8de1` 完整回归已通过（§2.311），§2.315核对时产品源码仍一致；2026-10-20发现FE-D01布局复用缺口并开始补正，旧全量不覆盖新界面；任务与报告关联见 §2.315，不把测试名称匹配当作每条需求已经验收。任何新缺口须指出具体需求及可观察的反例。
 
 | 任务 | 必须核对的边界 | 已定位的实现/历史证据入口 | 退出前还须核实 |
 |---|---|---|---|
-| T3-01 | 固定来源裁剪、单一路由/客户端、真实登录、离线与深链（V-02、FE-AT-01/02/07） | `web/THIRD_PARTY.md`、`auth.spec.ts`；§2.241、§2.306；CI 修正§2.309 | 固定安装/构建及认证、离线/深链本地回归已通过（§2.311）；V-02的实际CI仍未执行 |
+| T3-01 | 固定来源裁剪、单一路由/客户端、真实登录、离线与深链（V-02、FE-AT-01/02/07） | `web/THIRD_PARTY.md`、`auth.spec.ts`、`workspace.spec.ts`；§2.241、§2.306、§2.316；CI修正§2.309 | §2.316已补正真实布局复用缺口并执行固定安装、构建、认证/离线/深链及响应式定向回归；本轮不是完整171项或最低浏览器复验，V-02实际CI仍未执行 |
 | T3-02 | 点表编辑、批量、逐行错误、1000行粘贴/10000行虚拟化及最低浏览器（V-03/10、FE-AT-05/06） | `auth.spec.ts`、`device-workflow.spec.ts`、`minimum-firefox-smoke.mjs`；§2.241 | 当前软件回归已通过（§2.311）；实际Chrome111/Edge111/Safari16.4及真实Excel100行粘贴仍缺；Firefox128双协议六阶段已通过（§2.312） |
 | T3-03 | 拖放、连线/拒绝非法图、复制删除、50步撤销重做、自有格式与布局分离 | `auth.spec.ts`、`canvas-placement.spec.ts`；§2.302 | 实际拖放/连线及50步交互回归已通过（§2.311—§2.312）；最低浏览器余项与T3-02共用，不以API建图代替 |
 | T3-04 | 草稿不改运行、key/复制/CSV、凭证不回显/接收方规则、测试及信任（AT-18、FS-28） | `business-keys`、`device-workflow`、`credential-review`、`connection-trust`、`client-certificate`浏览器用例；§2.257—§2.263、§2.282 | 三角色、失败/冲突不重放、凭证轮换本地回归已通过（§2.311）；真实Excel来源仍缺 |
@@ -87,6 +87,7 @@
 
 **剩余门槛分开登记（2026-10-20）：**
 
+已补正的内部缺口：T3-01 / FE-D01 §3 的布局/侧栏/页头源码复用现已补齐并通过本轮定向验证（§2.316）。历史Firefox128/Chrome155证据保留原基线边界，新增组件仍须最低版本复核。
 1. **V-03 / V-10 / FE-AT-06：** 实际 Chrome111、Edge111、Safari16.4 的最低版本 HTTP/HTTPS 报告；Firefox128双协议和Chrome155默认HTTP已有对应证据，Chromium不能代替其他产品。
 2. **功能§3.7 / V-10：** 真正从Excel复制100行，逐行错误/修正/批改及保存草稿；生成TSV或自动化paste不核销复制源。
 3. **V-02：** 实际CI的固定安装与构建执行报告（工作流run、提交和结果）；工作流源码和本地等效结果不等于已执行，尚未获推送授权，不擅自触发发布或推送。
@@ -8830,3 +8831,42 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 ### 本地提交整理（2026-10-08，`a67bfc9`）
 
 维护者授权“整理提交一下未提交的，然后继续”。将截至 §2.23 的 T1-05—T1-08、T2-01 子项及 T2-05 固定字段定位整理为本地检查点；因共享存储、注册和测试改动交织，保留为一个已整体回归的提交，不人为拆出不可构建的中间态。验证基线为 890 项通过；本地 Agent 会话文件不入库，未获推送授权，不推送。后续继续实现不等于本检查点宣称 T2 或网页验收完成。
+
+
+### 2.316 T3-01 固定来源界面复用补正与定向回归（2026-10-20）
+
+维护者指出必须采用 shadcn-admin，并按真正产品组织界面，不放 AI/开发过程提示。核对 FE-D01 §3 与旧 `web/THIRD_PARTY.md`：此前只复用按钮、输入框、标签、卡片、Main 和主题六项，Workspace 的侧栏/页头另写，不足以满足已确认基线。纠正§1.1只剩外部门槛的判断，本项属于内部可推进的明确缺口。
+
+本轮仍取固定提交 `e16c87f213a5ba5e45964e9b67c792105ec74d26`，复用文件、改造和MIT声明见 `web/THIRD_PARTY.md`。布局接入已有会话与草稿状态；移除总览的“已连接到真实网关”和过时开发进度说明，产品主导航不再展示独立点表/画布原型；业务操作风险和HTTP提示保留。依赖精确固定，新增Dialog/Dropdown/Tooltip/Separator与Lucide所需包，已有包版本未变；安装与许可检查均通过。补入缺失的react-remove-scroll-bar许可正文，明确固定来源和npm gitHead不可访问的事实，不跳过缺许可检查。独立构建目录及临时Host验证不触碰人工试用数据。未实现的TenonIoT输出不再出现在可选节点库中，已有文档仍可辨识不可用节点，未提前实现T4。
+
+本轮验证环境：Ubuntu26.04 x64、Linux7.0.0-31-generic、SDK10.0.401、Node22.23.2、npm11.21.0、Playwright1.64.0自带Chromium156.0.8078.4。主浏览器测试URL为网卡HTTP `http://192.168.0.88:18894`；部分独立Host用回环地址，Modbus→HTTP两角色闭环另用网卡地址和动态端口。真实协议测试使用软件从站/接收端，不等于实物验收。未修改后端源码，也未把旧后端全量重记为本轮执行。
+
+证据根：`/home/shiny/.cache/tenonedge-shadcn-product/evidence/`。实际命令（npm命令在`web/`）：
+
+```sh
+npx --yes npm@11.21.0 ci
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 run build -- --outDir /home/shiny/.cache/tenonedge-shadcn-product/dist-final
+npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=/home/shiny/.cache/tenonedge-shadcn-product/evidence/web-unit-final.json
+TENONEDGE_TEST_URL=http://192.168.0.88:18894 TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-shadcn-product/dist-final PLAYWRIGHT_JSON_OUTPUT_NAME=/home/shiny/.cache/tenonedge-shadcn-product/evidence/browser-final.json npx --yes npm@11.21.0 run test:e2e -- auth.spec.ts workspace.spec.ts users.spec.ts gateway-name.spec.ts diagnostics.spec.ts connection-list.spec.ts audit.spec.ts gateway-workflow.spec.ts current-values.spec.ts outputs.spec.ts deliveries.spec.ts --reporter=line,json
+node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evidence/web-unit-final.json /home/shiny/.cache/tenonedge-shadcn-product/evidence/browser-final.json
+```
+
+结果：固定安装、类型/构建、格式及lint通过；lint保留两条既存prefer-string-starts-ends-with警告，构建保留大于500kB的chunk提示。Web **56文件、797/797**；浏览器 **68/68**，0失败/跳过/flaky，耗时512.148秒。报告验证器确认非零且无失败/跳过；`environment.json`记录环境，`source-before-login-layout.json`和`build-before-login-layout.json`保留该轮被测源码/产物哈希。`browser-final-artifacts/`保留浅色、深色、手机布局及业务截图。覆盖真实首次设置/登录/改密/会话失效、权限、离线资源/深链、点表与画布、连接/设备/来源/预览、审计/诊断/队列、网关命名和两角色Modbus→HTTP无JSON闭环；新增两项布局用例核对折叠提示、主题切换与系统变化、未保存输入保留、手机焦点隔离/Escape关闭/焦点恢复/导航后关闭及无横向溢出。
+
+失败记录保留：首次浏览器启动误与npm ci重叠，worker模块短暂缺失，未执行用例（`workspace-browser-infrastructure-failure.log`）；串行重启后两项布局首次失败，分别是测试误写菜单名称、上游隐藏Tooltip拦截手机Escape。修正定位，并仅在桌面折叠图标状态创建Tooltip，2/2通过。后续62项首次为58通过/4失败（`regression-browser-failed-first.json`及对应日志/trace）：会话查询错误的重试按钮被固定侧栏遮挡，已将错误区放入Workspace主内容；画布硬编码布点越出新内容宽度，改按实际可见宽度布点且仍断言四节点框选/组移动；HTTP采样文案断言及账号安全移至页脚后的旧导航范围定位同步更新。最终上述68项在冻结源码/产物上全部通过，没有放宽原期限、删除断言或重试掩盖失败。
+
+试用更新：2026-10-20 10:05（北京时间）将已验证的静态文件复制至原`web/dist`，保留旧hashed assets并最后原子替换index，未重启Host或对端、未修改人工试用账号/配置。`preview-before.json`记录自有PID/startTicks及旧入口；`preview-after.json`核对实际HTTP入口及15个入口资源SHA256与构建一致、readyz200；匿名浏览器只读检查登录/主题入口，0页面错误/外部资源请求/写请求，见`preview-browser.json`和`preview-login.png`。最初未带Accept的入口探针按既有SPA规则返回404，补上浏览器的Accept:text/html后核对200，没有改后端回退策略。
+
+最终登录展示微调：截图检查后明确居中容器为单列并居中对齐，避免卡片被网格收缩；登录页HTTP风险仍直接显示，HTTPS使用详情改为可展开说明。仅变更`auth-layout.tsx`、`session-gate.tsx`和`i18n.ts`三个文件，不变更认证、写操作或业务状态。重新构建后定向复验真实首次设置/登录/改密/退出、失败登录不重放、设置密码确认以及两项桌面/移动布局，共 **5/5**，0失败/跳过/flaky，21.319秒；这是前述68项中受影响场景的复验，不相加称为73项独立用例。命令及报告：
+
+```sh
+npx --yes npm@11.21.0 run build -- --outDir /home/shiny/.cache/tenonedge-shadcn-product/dist-final
+TENONEDGE_TEST_URL=http://192.168.0.88:18894 TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-shadcn-product/dist-final PLAYWRIGHT_JSON_OUTPUT_NAME=/home/shiny/.cache/tenonedge-shadcn-product/evidence/login-layout-browser.json npx --yes npm@11.21.0 run test:e2e -- auth.spec.ts users.spec.ts workspace.spec.ts --grep 'real setup, session|failed login is not replayed|first setup requires|sidebar collapse|mobile navigation' --reporter=line,json
+node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evidence/login-layout-browser.json
+```
+
+`final-source-sha256.json`和`build-final-sha256.json`记录最终源码/产物，保留微调前哈希与68项报告的对应关系。10:09:44（北京时间）再次按上述方式只更新试用静态文件，入口SHA256为`8ff5d2fb05e9c6269e12a9076588ac3676092923082a83e0052cd11c570ffe9f`，readyz200；没有重启或修改人工账号/配置。最终匿名浏览器验证桌面登录卡片384px、390px手机无横向溢出、HTTPS说明可展开，0页面错误/外部请求/写请求；证据为`preview-after-login-layout.json`、`preview-browser-final.json`、`preview-login-final.png`和`preview-login-mobile.png`。
+
+本节是FE-D01界面补正和定向软件证据，**不是T3整体验收**；不把§2.311的171项或最低浏览器报告当作新组件已验证。实际最低浏览器、真实Excel、实际CI及维护者验收仍按§1.1；没有推送、发布或进入T4/T5/G1。

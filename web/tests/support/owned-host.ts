@@ -61,7 +61,7 @@ export async function startOwnedHost(
                       `--contentRoot=${join(root, 'src/TenonEdge.Host')}`,
                   ]
                 : []),
-            `--webroot=${join(root, 'web/dist')}`,
+            `--webroot=${process.env.TENONEDGE_TEST_WEBROOT ?? join(root, 'web/dist')}`,
             `--TenonEdge:DataDirectory=${data}`,
             `--TenonEdge:Http:Address=${httpAddress}`,
             `--TenonEdge:Http:Port=${port}`,

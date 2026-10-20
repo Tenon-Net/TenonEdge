@@ -7,7 +7,14 @@ import { useTranslation } from 'react-i18next'
 import { api, replaceSession } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
-import { Label } from '../../components/ui/label'
+import {
+    Form,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormControl,
+    FormMessage,
+} from '../../components/ui/form'
 import { ErrorMessage } from './error-message'
 
 export function AuthForm({
@@ -62,113 +69,89 @@ export function AuthForm({
             replaceSession(session)
         },
     })
-    return (
-        <form
-            className="space-y-5"
-            onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
-        >
-            {mode !== 'passwordChange' && (
-                <div className="space-y-2">
-                    <Label htmlFor="accountName">{t('account')}</Label>
-                    <Input
-                        id="accountName"
-                        autoComplete="username"
-                        readOnly={mode === 'reset'}
-                        {...form.register('accountName')}
-                        aria-invalid={!!form.formState.errors.accountName}
-                    />
-                    {form.formState.errors.accountName && (
-                        <p role="alert">
-                            {form.formState.errors.accountName.message}
-                        </p>
-                    )}
-                </div>
+    const field = (
+        name: keyof z.infer<typeof schema>,
+        label: string,
+        input: {
+            type?: string
+            autoComplete?: string
+            readOnly?: boolean
+        } = {},
+    ) => (
+        <FormField
+            control={form.control}
+            name={name}
+            render={({ field }) => (
+                <FormItem>
+                    <FormLabel>{label}</FormLabel>
+                    <FormControl>
+                        <Input {...input} {...field} />
+                    </FormControl>
+                    <FormMessage role="alert" />
+                </FormItem>
             )}
-            <div className="space-y-2">
-                <Label htmlFor="password">
-                    {t(
+        />
+    )
+    return (
+        <Form {...form}>
+            <form
+                className="space-y-5"
+                onSubmit={form.handleSubmit((values) =>
+                    mutation.mutate(values),
+                )}
+            >
+                {mode !== 'passwordChange' &&
+                    field('accountName', t('account'), {
+                        autoComplete: 'username',
+                        readOnly: mode === 'reset',
+                    })}
+                {field(
+                    'password',
+                    t(
                         mode === 'passwordChange'
                             ? 'currentPassword'
                             : 'password',
-                    )}
-                </Label>
-                <Input
-                    id="password"
-                    type="password"
-                    autoComplete={
-                        mode === 'setup' || mode === 'reset'
-                            ? 'new-password'
-                            : 'current-password'
-                    }
-                    {...form.register('password')}
-                    aria-invalid={!!form.formState.errors.password}
-                />
-                {form.formState.errors.password && (
-                    <p role="alert">{form.formState.errors.password.message}</p>
+                    ),
+                    {
+                        type: 'password',
+                        autoComplete:
+                            mode === 'setup' || mode === 'reset'
+                                ? 'new-password'
+                                : 'current-password',
+                    },
                 )}
-            </div>
-            {(mode === 'setup' || mode === 'reset') && (
-                <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">
-                        {t('confirmPassword')}
-                    </Label>
-                    <Input
-                        id="confirmPassword"
-                        type="password"
-                        autoComplete="new-password"
-                        {...form.register('confirmPassword')}
-                        aria-invalid={!!form.formState.errors.confirmPassword}
-                    />
-                    {form.formState.errors.confirmPassword && (
-                        <p role="alert">
-                            {form.formState.errors.confirmPassword.message}
-                        </p>
-                    )}
-                </div>
-            )}
-            {mode === 'passwordChange' && (
-                <div className="space-y-2">
-                    <Label htmlFor="newPassword">{t('newPassword')}</Label>
-                    <Input
-                        id="newPassword"
-                        type="password"
-                        autoComplete="new-password"
-                        {...form.register('newPassword')}
-                        aria-invalid={!!form.formState.errors.newPassword}
-                    />
-                    {form.formState.errors.newPassword && (
-                        <p role="alert">
-                            {form.formState.errors.newPassword.message}
-                        </p>
-                    )}
-                </div>
-            )}
-            {mode === 'setup' && (
-                <div className="space-y-2">
-                    <Label htmlFor="gatewayName">{t('gatewayName')}</Label>
-                    <Input id="gatewayName" {...form.register('gatewayName')} />
-                </div>
-            )}
-            <ErrorMessage error={mutation.error} />
-            {mode === 'passwordChange' && mutation.isSuccess && (
-                <p role="status">{t('savedPassword')}</p>
-            )}
-            <Button
-                className="w-full"
-                type="submit"
-                disabled={mutation.isPending}
-            >
-                {t(
-                    mutation.isPending
-                        ? 'pending'
-                        : {
-                              login: 'login',
-                              setup: 'submitSetup',
-                              reset: 'submitReset',
-                              passwordChange: 'submitPassword',
-                          }[mode],
+                {(mode === 'setup' || mode === 'reset') &&
+                    field('confirmPassword', t('confirmPassword'), {
+                        type: 'password',
+                        autoComplete: 'new-password',
+                    })}
+                {mode === 'passwordChange' &&
+                    field('newPassword', t('newPassword'), {
+                        type: 'password',
+                        autoComplete: 'new-password',
+                    })}
+                {mode === 'setup' && field('gatewayName', t('gatewayName'))}
+                <ErrorMessage error={mutation.error} />
+                {mode === 'passwordChange' && mutation.isSuccess && (
+                    <p role="status">{t('savedPassword')}</p>
                 )}
-            </Button>
-        </form>
+                <Button
+                    className="w-full"
+                    type="submit"
+                    disabled={mutation.isPending}
+                >
+                    {t(
+                        mutation.isPending
+                            ? 'pending'
+                            : {
+                                  login: 'login',
+                                  setup: 'submitSetup',
+                                  reset: 'submitReset',
+                                  passwordChange: 'submitPassword',
+                              }[mode],
+                    )}
+                </Button>
+            </form>
+        </Form>
     )
 }

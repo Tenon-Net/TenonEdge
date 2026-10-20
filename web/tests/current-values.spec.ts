@@ -159,10 +159,7 @@ test('real HTTP point values retain exact last success on failure, recover, pagi
         page.on('request', (request) => {
             if (request.url().includes('/runtime/devices')) requests++
         })
-        await page
-            .getByRole('navigation')
-            .getByRole('link', { name: '账号安全', exact: true })
-            .click()
+        await page.getByRole('link', { name: '账号安全', exact: true }).click()
         await page.waitForTimeout(100)
         const count = requests
         await page.waitForTimeout(2300)

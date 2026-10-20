@@ -25,7 +25,6 @@ export function OverviewPage() {
             <h1 className="text-2xl font-semibold">
                 {t('diagnostics.overview')}
             </h1>
-            <p className="text-muted-foreground">{t('authenticated')}</p>
             <DeviceSummary />
             <OutputSummary />
             <LossCounters />
@@ -220,9 +219,6 @@ export function OverviewPage() {
                     </>
                 )}
             </DiagnosticPanel>
-            <p className="text-sm text-muted-foreground">
-                {t('diagnostics.partialNotice')}
-            </p>
         </div>
     )
 }

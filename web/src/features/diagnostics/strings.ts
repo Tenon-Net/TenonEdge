@@ -72,8 +72,7 @@ export const diagnosticsStrings = {
     unpersisted: '尚未持久化计数（进程退出可能丢失）',
     counter: '计数代码',
     value: '计数值',
-    counterNotice:
-        '代码按服务端原样展示；不是当前队列条数。按规则丢弃与异常分类汇总仍待补齐。',
+    counterNotice: '以下为累计事件次数；当前积存请查看发送缓存。',
     queueFault: '发送缓存存储异常',
     trends: '最近一小时趋势',
     trendNotice:
@@ -124,6 +123,4 @@ export const diagnosticsStrings = {
     deviceStep: '建立设备与来源',
     route: '画数据路线',
     apply: '确认应用',
-    partialNotice:
-        '总览只读展示，不会触发采集、测试发送或应用配置；查看报文及故障操作请进入相应页面。',
 }

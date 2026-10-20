@@ -200,10 +200,7 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
             path: 'test-results/diagnostics.png',
             fullPage: true,
         })
-        await page
-            .getByRole('navigation')
-            .getByRole('link', { name: '账号安全' })
-            .click()
+        await page.getByRole('link', { name: '账号安全' }).click()
         await expect(
             page.getByRole('heading', { name: '修改密码', exact: true }),
         ).toBeVisible()

@@ -52,7 +52,7 @@ void i18n.use(initReactI18next).init({
                 configurationExport: {
                     title: '配置草稿导出',
                     notice: '下载网关当前已保存的完整草稿（最多 16 MiB），不是当前运行版本。未保存的页面编辑不在文件中；导出不会应用或修改配置。',
-                    scope: '包含连接、设备、来源/点位和路线，以业务 key 关联。凭证仅标注需重新填写，不含秘密或受信任证书；不含用户、令牌、网关身份、系统参数、队列、审计或版本历史。配置可能含现场地址与业务样本，请妥善保管。当前仅交付导出，导入预检与确认仍在实施中。',
+                    scope: '包含连接、设备、来源/点位和路线，以业务 key 关联。凭证仅标注需重新填写，不含秘密或受信任证书；不含用户、令牌、网关身份、系统参数、队列、审计或版本历史。配置可能含现场地址与业务样本，请妥善保管。',
                     download: '下载已保存草稿 JSON',
                     ready: '文件已交给浏览器下载；不会自动重试。',
                     denied: '仅配置人员和管理员可以导出配置。',
@@ -118,11 +118,11 @@ void i18n.use(initReactI18next).init({
                 windowCloses: '设置窗口关闭时间：{{time}}',
                 httpWarning:
                     '当前使用 HTTP，密码会明文传输。请仅在可信管理网络使用，建议通过 HTTPS 访问。',
+                httpsHelp: '如何使用 HTTPS',
                 httpsInstructions:
                     '密码、会话和凭证可能被同网段设备截获。请使用管理员提供的 HTTPS 地址（默认端口 8443），核对证书后重新登录；两种协议的登录不通用。',
                 temporaryPassword: '当前账号必须先修改临时密码，才能继续操作。',
                 workspace: '总览',
-                authenticated: '已连接到真实网关',
                 accountDetail: '当前账号：{{name}}',
                 roles: {
                     administrator: '管理员',
@@ -136,6 +136,20 @@ void i18n.use(initReactI18next).init({
                 showNavigation: '展开导航',
                 hideNavigation: '收起导航',
                 navigation: '主导航',
+                navigationDescription: '选择要查看的网关功能。',
+                navigationGroups: {
+                    configuration: '接入配置',
+                    operations: '运行监控',
+                    management: '系统管理',
+                },
+                close: '关闭',
+                skipToContent: '跳至主要内容',
+                theme: {
+                    title: '切换主题',
+                    light: '浅色',
+                    dark: '深色',
+                    system: '跟随系统',
+                },
             },
         },
     },

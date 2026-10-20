@@ -1,3 +1,4 @@
+import { AuthLayout } from './auth-layout'
 import { LogoutButton } from './logout-button'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -38,30 +39,31 @@ export function SessionGate() {
     })
     if (session && !session.mustChangePassword)
         return (
-            <>
-                {sessionQuery.error && (
-                    <div className="space-y-2 border-b p-3">
-                        <ErrorMessage error={sessionQuery.error} />
-                        <p className="text-xs text-muted-foreground">
-                            {t('lastSessionRefresh', {
-                                time: sessionQuery.dataUpdatedAt
-                                    ? new Date(
-                                          sessionQuery.dataUpdatedAt,
-                                      ).toLocaleString('zh-CN')
-                                    : t('neverRefreshed'),
-                            })}
-                        </p>
-                        <Button
-                            variant="outline"
-                            disabled={sessionQuery.isFetching}
-                            onClick={() => void sessionQuery.refetch()}
-                        >
-                            {t('retry')}
-                        </Button>
-                    </div>
-                )}
-                <Workspace />
-            </>
+            <Workspace
+                sessionNotice={
+                    sessionQuery.error && (
+                        <div className="space-y-2 border-b p-3">
+                            <ErrorMessage error={sessionQuery.error} />
+                            <p className="text-xs text-muted-foreground">
+                                {t('lastSessionRefresh', {
+                                    time: sessionQuery.dataUpdatedAt
+                                        ? new Date(
+                                              sessionQuery.dataUpdatedAt,
+                                          ).toLocaleString('zh-CN')
+                                        : t('neverRefreshed'),
+                                })}
+                            </p>
+                            <Button
+                                variant="outline"
+                                disabled={sessionQuery.isFetching}
+                                onClick={() => void sessionQuery.refetch()}
+                            >
+                                {t('retry')}
+                            </Button>
+                        </div>
+                    )
+                }
+            />
         )
     const setup = setupQuery.data
     const mode = session?.mustChangePassword
@@ -75,91 +77,81 @@ export function SessionGate() {
         (mode === 'setup' || mode === 'reset') && setup?.windowOpen === false
     const error = sessionQuery.error ?? setupQuery.error
     return (
-        <main className="flex min-h-svh items-center justify-center bg-muted/40 px-4 py-12">
-            <div className="w-full max-w-md space-y-6">
-                <div className="text-center">
-                    <img
-                        className="mx-auto mb-3 size-14"
-                        src="/icon-128.png"
-                        alt=""
-                    />
-                    <h1 className="text-xl font-semibold">{t('product')}</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {t('subtitle')}
-                    </p>
-                </div>
-                <Card>
-                    <CardHeader>
-                        <CardTitle>{t(mode)}</CardTitle>
-                        <CardDescription>
-                            {session?.mustChangePassword &&
-                                t('temporaryPassword')}
-                            {location.protocol === 'http:' && (
-                                <span className="block">
-                                    {t('httpWarning')} {t('httpsInstructions')}
-                                </span>
-                            )}
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <ErrorMessage error={error} />
-                        {error && (
-                            <Button
-                                variant="outline"
-                                onClick={() =>
-                                    void (session === undefined
-                                        ? sessionQuery.refetch()
-                                        : setupQuery.refetch())
+        <AuthLayout>
+            <Card className="gap-4">
+                <CardHeader>
+                    <CardTitle className="text-lg tracking-tight">
+                        {t(mode)}
+                    </CardTitle>
+                    <CardDescription>
+                        {session?.mustChangePassword && t('temporaryPassword')}
+                        {location.protocol === 'http:' && (
+                            <div className="space-y-2">
+                                <p>{t('httpWarning')}</p>
+                                <details>
+                                    <summary className="cursor-pointer">
+                                        {t('httpsHelp')}
+                                    </summary>
+                                    <p className="mt-2">
+                                        {t('httpsInstructions')}
+                                    </p>
+                                </details>
+                            </div>
+                        )}
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <ErrorMessage error={error} />
+                    {error && (
+                        <Button
+                            variant="outline"
+                            onClick={() =>
+                                void (session === undefined
+                                    ? sessionQuery.refetch()
+                                    : setupQuery.refetch())
+                            }
+                        >
+                            {t('retry')}
+                        </Button>
+                    )}
+                    {(session === undefined && !error) ||
+                    (session === null && setupQuery.isPending) ? (
+                        <p role="status">{t('loading')}</p>
+                    ) : closed ? (
+                        <p role="status">{t('setupClosed')}</p>
+                    ) : (
+                        (session || setup) && (
+                            <AuthForm
+                                key={`${mode}:${setup?.resetAccountName ?? ''}`}
+                                mode={mode}
+                                resetAccount={
+                                    mode === 'reset'
+                                        ? setup?.resetAccountName
+                                        : undefined
                                 }
-                            >
-                                {t('retry')}
-                            </Button>
-                        )}
-                        {(session === undefined && !error) ||
-                        (session === null && setupQuery.isPending) ? (
-                            <p role="status">{t('loading')}</p>
-                        ) : closed ? (
-                            <p role="status">{t('setupClosed')}</p>
-                        ) : (
-                            (session || setup) && (
-                                <AuthForm
-                                    key={`${mode}:${setup?.resetAccountName ?? ''}`}
-                                    mode={mode}
-                                    resetAccount={
-                                        mode === 'reset'
-                                            ? setup?.resetAccountName
-                                            : undefined
-                                    }
-                                />
-                            )
-                        )}
-                        {!session && setup?.state === 'resetPending' && (
-                            <Button
-                                variant="outline"
-                                onClick={() => setExistingLogin(!existingLogin)}
-                            >
-                                {t(
-                                    existingLogin
-                                        ? 'backToReset'
-                                        : 'existingLogin',
-                                )}
-                            </Button>
-                        )}
-                        {!session &&
-                            setup?.windowOpen &&
-                            setup.windowClosesAt && (
-                                <p className="text-xs text-muted-foreground">
-                                    {t('windowCloses', {
-                                        time: new Date(
-                                            setup.windowClosesAt,
-                                        ).toLocaleString('zh-CN'),
-                                    })}
-                                </p>
-                            )}
-                        {session?.mustChangePassword && <LogoutButton />}
-                    </CardContent>
-                </Card>
-            </div>
-        </main>
+                            />
+                        )
+                    )}
+                    {!session && setup?.state === 'resetPending' && (
+                        <Button
+                            variant="outline"
+                            onClick={() => setExistingLogin(!existingLogin)}
+                        >
+                            {t(existingLogin ? 'backToReset' : 'existingLogin')}
+                        </Button>
+                    )}
+                    {!session && setup?.windowOpen && setup.windowClosesAt && (
+                        <p className="text-xs text-muted-foreground">
+                            {t('windowCloses', {
+                                time: new Date(
+                                    setup.windowClosesAt,
+                                ).toLocaleString('zh-CN'),
+                            })}
+                        </p>
+                    )}
+                    {session?.mustChangePassword && <LogoutButton />}
+                </CardContent>
+            </Card>
+        </AuthLayout>
     )
 }

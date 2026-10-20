@@ -1,3 +1,11 @@
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
@@ -55,12 +63,12 @@ export function ConnectionTable({
         value ? new Date(value).toLocaleString() : t('connections.runtime.none')
     return (
         <div className="overflow-x-auto">
-            <table
+            <Table
                 className="w-full text-left text-sm"
                 aria-label={t('connections.runtime.table')}
             >
-                <thead>
-                    <tr>
+                <TableHeader>
+                    <TableRow>
                         {[
                             'definition',
                             'state',
@@ -69,19 +77,19 @@ export function ConnectionTable({
                             'lastError',
                             'actions',
                         ].map((field) => (
-                            <th key={field} className="border-b p-2">
+                            <TableHead key={field} className="border-b p-2">
                                 {t(`connections.runtime.${field}`)}
-                            </th>
+                            </TableHead>
                         ))}
-                    </tr>
-                </thead>
-                <tbody>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
                     {rows.map(({ id, draft, runtime }) => {
                         const effective = runtime?.effective
                         const observed = current ? runtime : undefined
                         return (
-                            <tr key={id}>
-                                <td className="min-w-64 space-y-2 border-b p-2">
+                            <TableRow key={id}>
+                                <TableCell className="min-w-64 space-y-2 border-b p-2">
                                     {effective && (
                                         <div>
                                             <p className="text-xs text-muted-foreground">
@@ -158,8 +166,8 @@ export function ConnectionTable({
                                             )}
                                         </p>
                                     )}
-                                </td>
-                                <td className="whitespace-nowrap border-b p-2">
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap border-b p-2">
                                     <p>
                                         {t(
                                             `connections.runtime.states.${observed?.state ?? 'unavailable'}`,
@@ -173,8 +181,8 @@ export function ConnectionTable({
                                             : {date(observed.lastSuccessAt)}
                                         </p>
                                     )}
-                                </td>
-                                <td className="min-w-48 border-b p-2">
+                                </TableCell>
+                                <TableCell className="min-w-48 border-b p-2">
                                     {observed ? (
                                         <>
                                             <Users users={observed.users} />
@@ -188,8 +196,8 @@ export function ConnectionTable({
                                             'connections.runtime.states.unavailable',
                                         )
                                     )}
-                                </td>
-                                <td className="border-b p-2">
+                                </TableCell>
+                                <TableCell className="border-b p-2">
                                     {(effective?.kind ?? draft?.kind) ===
                                     'modbus' ? (
                                         t('connections.runtime.notOutput')
@@ -212,8 +220,8 @@ export function ConnectionTable({
                                             </Link>
                                         </>
                                     )}
-                                </td>
-                                <td className="min-w-48 border-b p-2">
+                                </TableCell>
+                                <TableCell className="min-w-48 border-b p-2">
                                     {!observed ? (
                                         t(
                                             'connections.runtime.states.unavailable',
@@ -245,8 +253,8 @@ export function ConnectionTable({
                                     ) : (
                                         t('connections.runtime.none')
                                     )}
-                                </td>
-                                <td className="space-y-2 border-b p-2">
+                                </TableCell>
+                                <TableCell className="space-y-2 border-b p-2">
                                     <Button
                                         variant="outline"
                                         disabled={busy || !draft}
@@ -269,12 +277,12 @@ export function ConnectionTable({
                                             {t('connections.remove')}
                                         </Button>
                                     )}
-                                </td>
-                            </tr>
+                                </TableCell>
+                            </TableRow>
                         )
                     })}
-                </tbody>
-            </table>
+                </TableBody>
+            </Table>
         </div>
     )
 }

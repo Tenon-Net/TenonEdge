@@ -276,7 +276,6 @@ for (const deployment of [
                 if (request.url().includes('/runtime/outputs')) requests++
             })
             await page
-                .getByRole('navigation')
                 .getByRole('link', { name: '账号安全', exact: true })
                 .click()
             await page.waitForTimeout(100)

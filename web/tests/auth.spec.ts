@@ -72,7 +72,7 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
     await page.getByRole('link', { name: '总览', exact: true }).click()
     await expect(page.getByRole('note')).toContainText('两种协议的登录不通用')
     await expect(
-        page.getByText('已连接到真实网关', { exact: true }),
+        page.getByRole('heading', { name: '总览', exact: true }),
     ).toBeVisible()
     await page.screenshot({
         path: 'test-results/workspace.png',
@@ -365,7 +365,7 @@ test('canvas drag/connect, cycle rejection, properties, clipboard and history us
 }) => {
     await page.setViewportSize({ width: 1600, height: 1100 })
     await openPointEditor(page)
-    await page.getByRole('link', { name: '画布交互原型' }).click()
+    await page.goto('/prototypes/canvas')
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     const mutations: string[] = []
@@ -387,10 +387,14 @@ test('canvas drag/connect, cycle rejection, properties, clipboard and history us
             .getByRole('button', { name, exact: true })
             .dragTo(area, { targetPosition: { x, y } })
     }
-    await drop('Modbus 输入', 130, 100)
-    await drop('字段映射', 420, 100)
-    await drop('字段映射', 420, 280)
-    await drop('MQTT 输出', 660, 280)
+    // The admin shell constrains content width. Keep each 192px node inside
+    // the actual canvas so this gesture checks selection, not offscreen panning.
+    const middle = (box.width - 212) / 2
+    await expect(page.getByRole('button', { name: /TenonIoT/ })).toHaveCount(0)
+    await drop('Modbus 输入', 20, 100)
+    await drop('字段映射', middle, 100)
+    await drop('字段映射', middle, 280)
+    await drop('MQTT 输出', box.width - 212, 280)
     await expect
         .poll(async () => (await graph()).definition.nodes.length)
         .toBe(4)
@@ -493,7 +497,7 @@ test('canvas drag/connect, cycle rejection, properties, clipboard and history us
     expect(errors).toEqual([])
     await page.screenshot({ path: 'test-results/canvas.png', fullPage: true })
     await page.getByRole('link', { name: '总览', exact: true }).click()
-    await page.getByRole('link', { name: '画布交互原型' }).click()
+    await page.goto('/prototypes/canvas')
     await page
         .getByText('查看自有格式（定义与布局分离）', { exact: true })
         .click()
@@ -507,7 +511,7 @@ test('canvas keeps 50-step UI history, text editing shortcuts and multi-node cop
     test.setTimeout(60_000)
     await page.setViewportSize({ width: 1600, height: 1100 })
     await openPointEditor(page)
-    await page.getByRole('link', { name: '画布交互原型' }).click()
+    await page.goto('/prototypes/canvas')
     await page.getByRole('button', { name: '字段映射', exact: true }).click()
     await page
         .getByText('查看自有格式（定义与布局分离）', { exact: true })
@@ -4143,9 +4147,7 @@ test('route HTTP onsite preview confirms one real read, preserves manual text an
         await expect(
             panel.getByLabel('将要发送的正文（仅预览）', { exact: true }),
         ).toHaveText('{"result":9223372036854775807}')
-        await expect(
-            panel.getByText(/本次结果来自现场 HTTP 读取/),
-        ).toBeVisible()
+        await expect(panel.getByText(/样本来自本次 HTTP 读取/)).toBeVisible()
         await expect(sample).toHaveValue('deliberately invalid manual JSON')
         expect(calls).toEqual(['GET /values'])
         responseBody = '{"password":"fixture-secret","value":42}'

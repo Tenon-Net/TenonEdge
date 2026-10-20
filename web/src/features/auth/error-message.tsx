@@ -1,3 +1,4 @@
+import { Alert, AlertDescription } from '../../components/ui/alert'
 import { useTranslation } from 'react-i18next'
 import { ApiError, fieldErrors } from '../../api/errors'
 
@@ -15,16 +16,16 @@ export function ErrorMessage({ error }: { error: unknown }) {
             : 'timeoutNotice'
     const fields = error instanceof ApiError ? fieldErrors(error.problem) : {}
     return (
-        <div
-            role="alert"
-            className="rounded-md border border-destructive/40 p-3 text-sm text-destructive"
-        >
-            <p>{t(key)}</p>
-            {Object.entries(fields).map(([field, messages]) => (
-                <p key={field}>
-                    {t(field, { defaultValue: field })}: {messages.join(' ')}
-                </p>
-            ))}
-        </div>
+        <Alert variant="destructive">
+            <AlertDescription>
+                <p>{t(key)}</p>
+                {Object.entries(fields).map(([field, messages]) => (
+                    <p key={field}>
+                        {t(field, { defaultValue: field })}:{' '}
+                        {messages.join(' ')}
+                    </p>
+                ))}
+            </AlertDescription>
+        </Alert>
     )
 }
