@@ -140,6 +140,7 @@ export function UsersPage() {
         <section className="product-page">
             <div>
                 <PageHeading
+                    hideTitle
                     description={t('users.description')}
                     title={t('users.title')}
                 />

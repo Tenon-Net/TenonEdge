@@ -320,6 +320,7 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                 </Button>
             )}
             <PageHeading
+                hideTitle={!onReturn}
                 level={onReturn ? 2 : 1}
                 description={
                     <>

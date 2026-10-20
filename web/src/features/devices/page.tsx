@@ -186,6 +186,7 @@ export function DevicesPage({
                 </Button>
             )}
             <PageHeading
+                hideTitle={!onReturn}
                 level={onReturn ? 2 : 1}
                 description={t('devices.notice')}
                 title={t('devices.title')}

@@ -9,20 +9,36 @@ export function PageHeading({
     description,
     children,
     level = 1,
+    hideTitle = false,
 }: {
     title: string
     level?: 1 | 2
+    hideTitle?: boolean
     description?: ReactNode
     children?: ReactNode
 }) {
     const Heading = level === 1 ? 'h1' : 'h2'
+    const actions = (
+        <>
+            {children}
+            {description && <PageHelp>{description}</PageHelp>}
+        </>
+    )
+    // Navigation already names top-level pages; keep the heading for readers
+    // without leaving an empty title row in the visual layout.
+    if (hideTitle)
+        return (
+            <>
+                <Heading className="sr-only">{title}</Heading>
+                {(children || description) && (
+                    <div className="product-heading-actions">{actions}</div>
+                )}
+            </>
+        )
     return (
         <header className="product-heading">
             <Heading>{title}</Heading>
-            <div className="product-heading-actions">
-                {children}
-                {description && <PageHelp>{description}</PageHelp>}
-            </div>
+            <div className="product-heading-actions">{actions}</div>
         </header>
     )
 }

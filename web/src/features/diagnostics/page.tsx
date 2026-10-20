@@ -22,7 +22,7 @@ export function DiagnosticsPage() {
     const data = query.data
     return (
         <div className="product-page">
-            <PageHeading title={t('diagnostics.title')} />
+            <PageHeading hideTitle title={t('diagnostics.title')} />
             <Link className="underline" to="/runtime/messages">
                 {t('messages.title')}
             </Link>

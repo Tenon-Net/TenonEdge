@@ -145,7 +145,17 @@ owned(
                 )
             expect(outside).toEqual([])
             const bounds = await dashboard.boundingBox()
-            expect(bounds!.x).toBeLessThanOrEqual(width < 768 ? 24 : 280)
+            const content = page.locator('[data-slot="sidebar-inset"]')
+            const contentBounds = await content.boundingBox()
+            const border = await content.evaluate((element) =>
+                parseFloat(getComputedStyle(element).borderLeftWidth),
+            )
+            // Measure from the panel's inner edge: its visible border is not
+            // unused page padding, and the dashboard must remain full-width.
+            expect(contentBounds!.x).toBeLessThanOrEqual(width < 768 ? 0 : 256)
+            expect(bounds!.x - contentBounds!.x - border).toBeLessThanOrEqual(
+                24,
+            )
             if (width === 2560) expect(bounds!.width).toBeGreaterThan(2200)
             await expect(
                 page.getByRole('region', { name: '队列压力' }),

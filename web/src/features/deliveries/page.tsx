@@ -63,6 +63,7 @@ function Records({ connectionId }: { connectionId?: string }) {
     return (
         <div className="product-page">
             <PageHeading
+                hideTitle
                 description={t('deliveries.notice')}
                 title={t('deliveries.title')}
             />

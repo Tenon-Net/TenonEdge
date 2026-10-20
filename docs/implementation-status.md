@@ -8996,3 +8996,42 @@ PLAYWRIGHT_JSON_OUTPUT_NAME="$E/browser-tested.json" node node_modules/@playwrig
 试用更新于`2026-10-20T08:06:03.010687+00:00`：继续使用`http://192.168.0.88:18490`，入口SHA256为`13188cf49428f1d4ae7890c2b338b4f3cb8c2a6dee34054e71a91fa44af94b57`。先保留/复制hashed assets，最后原子替换index；入口和readyz均200。核对原Host PID1060554/startTicks302364428、软件对端PID1060538/startTicks302364412及完整命令均未变，不重启、不重置/猜测账号，不读取或修改人工配置。`preview-assets.json`核对入口及49个JS/CSS资源与被测产物一致；`preview-browser.json`匿名核对登录、无HTTP通用提示、390px手机无溢出，页面错误/外部请求/写请求均0；截图为`login-desktop.png`/`login-mobile.png`。匿名验证不冒充已登录人工账号验收其他页面；维护者可刷新原地址体验。
 
 本节完成本轮页面改造及当前前端软件回归，**不是T3整体验收**。最低实际浏览器、真实Excel、实际CI及维护者验收仍按§1.1保留；不新增业务、不进入T4/T5/G1，不把开发试用静态热更新当作GW-27产品升级功能。仅本地提交，不推送、不发布、不合回原工作区。
+
+
+### 2.320 T3-01 / FE-D01 工作区分区与重复菜单标题收口（2026-10-20）
+
+维护者确认侧栏与内容采用独立面板，并要求页面内不再重复左侧菜单名称。继续在隔离工作树 `/home/shiny/.cache/tenonedge-inline-references/worktree`、分支 `t3-inline-reference-verification`、基线 `d3095b9` 实施。
+
+交付：
+
+- 保留真实 shadcn-admin 的 inset/折叠/移动抽屉结构；桌面浅灰底、侧栏与内容独立细边框面板、12px 间距与圆角，深色沿用 background/card 分层。折叠后图标仍在面板内；底部分隔线不跨越边框。
+- 连接、设备、路线、诊断、失败区、系统、用户、令牌、审计、API 文档十个一级页面不再显示重复菜单标题；保留读屏 H1 且不留空标题行。总览沿用已有隐藏标题。内联连接/设备、点表、画布及详情的上下文标题继续显示；操作、帮助和安全确认不变。
+- `design.md`、前端基线及 Hallmark 记录同步本次视觉约定。没有后端或依赖变更。
+
+环境：Linux x86_64、.NET SDK 10.0.401、Node 22.23.2、npm 11.21.0、Playwright 1.64.0 / Chromium 156.0.8078.4。证据根 `/home/shiny/.cache/tenonedge-shell-separation/evidence/`。实际命令在隔离工作树 `web/` 执行，使用 fail-fast 和固定 npm：
+
+```sh
+export PATH=/home/shiny/.npm/_npx/b0271877f536be0e/node_modules/.bin:$PATH
+E=/home/shiny/.cache/tenonedge-shell-separation/evidence
+npm run lint
+npm run format:check
+npm run typecheck
+npm test -- --reporter=default --reporter=json --outputFile="$E/unit-final.json"
+npm run build -- --outDir /home/shiny/.cache/tenonedge-shell-separation/dist-final
+TENONEDGE_TEST_URL=http://192.168.0.88:18224 \
+TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-shell-separation/dist-final \
+PLAYWRIGHT_JSON_OUTPUT_NAME="$E/browser-final.json" \
+npm run test:e2e -- tests/workspace.spec.ts tests/app-design.spec.ts tests/overview-dashboard.spec.ts \
+  --output="$E/browser-final-artifacts" --reporter=line,json
+node scripts/verify-results.mjs "$E/unit-final.json" "$E/browser-final.json"
+```
+
+最终检查：lint、格式、类型、构建通过，保留两条既有 lint 警告及原有大 chunk 提示；单元测试 **59 文件、816/816**；最终浏览器布局复验 **6/6**，失败/跳过/flaky 均 0，88.885 秒。覆盖 19 个页面家族、十个一级页面的视觉标题移除/可访问标题保留、320–2560px、浅深色、侧栏展开/折叠边界、移动抽屉焦点/Escape、未保存编辑、设置键盘切换以及点表/画布可用宽度。对应 T3-01 / FE-D01、FE-AT-01/02/06/07 的相关软件子场景，以及 T3-02/03/04/05 页面布局回归；不核销实际最低浏览器或整条跨阶段验收。
+
+首轮七文件 21 项定向回归使用独立 `dist-tested`：同上三文件，加 `canvas-placement.spec.ts`、`input-modules.spec.ts`、`extension-output-workflow.spec.ts`、`inline-references.spec.ts`，结果 **20 通过 / 1 失败**，保留 `browser.json`、`browser.log` 与 trace。失败为总览旧断言将新增 1px 面板边框计作留白（x=281，原上限280）；改为从面板内沿计算不超过24px，同时仍限制面板左边距、宽屏实际宽度及控件越界，没有删断言或放宽超时。截图另外发现原分隔线跨边框，修正其宽度，并调整折叠内边距、加入控件边界断言。随后针对实际变更及失败运行上述最终6项；其余首轮通过项不冒称在最终产物上重跑，也不把重叠次数相加。
+
+`final-hashes.json` / `final-hashes-verified.json` 核对最终 335 个源码/测试/锁文件与55个构建文件在最终验证期间未变；`verify-results.log` 校验非零、无失败及跳过的最终报告。`browser-final-artifacts/` 保留实际软件测试截图；`design-review.md` 为有范围限制的视觉复核，不当作全站无障碍认证。
+
+试用地址仍为 `http://192.168.0.88:18490`，于 `2026-10-20T08:53:11.938073+00:00` 更新为被测 `dist-final`，入口 SHA256 `e1926448685ba4f413d427b66cf3fe4c22b496bb425bf2aa63ec6cc74f32ffeb`。更新前后核对原 Host/软件对端 PID、startTicks 与完整命令；保留旧 hashed assets，最后原子替换入口，没有重启或修改人工账号/配置。入口/readyz 200，入口及49个 JS/CSS 资源哈希匹配；匿名登录页、390px 无溢出，页面错误/外部请求/写请求均0。证据为 `preview-update.json`、`preview-assets.json`、`preview-browser.json`；匿名检查不代替人工账号内的观感验收。
+
+仅完成本次界面收口，不代表 T3 整体验收；原最低实际浏览器、Excel、CI及维护者验收边界不变。不推送、不合回原工作区、不进入后续阶段。

@@ -34,11 +34,11 @@ function GatewayName() {
 
 export function Workspace({ sessionNotice }: { sessionNotice?: ReactNode }) {
     return (
-        <SidebarProvider>
+        <SidebarProvider className="has-data-[variant=inset]:bg-muted dark:has-data-[variant=inset]:bg-background">
             <SkipToMain />
             <AppSidebar />
-            <SidebarInset className="@container/content has-data-[layout=fixed]:h-svh peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]">
-                <Header fixed>
+            <SidebarInset className="@container/content bg-card has-data-[layout=fixed]:h-svh md:border md:peer-data-[variant=inset]:m-3 md:peer-data-[variant=inset]:ms-0 peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*6))]">
+                <Header fixed className="bg-card md:rounded-t-xl">
                     <GatewayName />
                     <ThemeSwitch />
                     <ConfigurationHeader />

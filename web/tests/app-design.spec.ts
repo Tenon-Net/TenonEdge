@@ -90,9 +90,22 @@ test('product page families are responsive; settings keyboard navigation preserv
             '/account',
             '/unknown-design-page',
         ]
+        const menuPages = new Set([
+            '/connections',
+            '/devices',
+            '/routes',
+            '/diagnostics',
+            '/deliveries',
+            '/system',
+            '/users',
+            '/tokens',
+            '/audit',
+            '/api-docs',
+        ])
         for (const route of routes) {
             await page.goto(route)
             await expect(page.locator('#content h1')).toHaveCount(1)
+            await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
             if (route === '/api-docs')
                 await expect(
                     page.getByLabel('筛选方法、路径、说明或 operationId', {
@@ -102,6 +115,17 @@ test('product page families are responsive; settings keyboard navigation preserv
             for (const width of [320, 375, 414, 768, 1440]) {
                 await page.setViewportSize({ width, height: 900 })
                 await page.evaluate(() => window.scrollTo(0, 0))
+                const titleBox = await page.locator('#content h1').boundingBox()
+                if (menuPages.has(route))
+                    expect(
+                        titleBox?.height,
+                        `${route} has no visible menu title`,
+                    ).toBeLessThanOrEqual(1)
+                else
+                    expect(
+                        titleBox?.height,
+                        `${route} keeps its contextual title`,
+                    ).toBeGreaterThan(1)
                 const overflow = await page.evaluate(() => ({
                     width: innerWidth,
                     root: document.documentElement.scrollWidth,
@@ -111,9 +135,7 @@ test('product page families are responsive; settings keyboard navigation preserv
                     overflow.root,
                     `${route} at ${width}: ${JSON.stringify(overflow)}`,
                 ).toBeLessThanOrEqual(width)
-                const guide = page
-                    .locator('#content .product-heading .product-help')
-                    .first()
+                const guide = page.locator('#content .product-help').first()
                 if (width === 320 && (await guide.count())) {
                     await guide.locator('summary').click()
                     expect(

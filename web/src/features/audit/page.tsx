@@ -50,6 +50,7 @@ export function AuditPage() {
     return (
         <div className="product-page">
             <PageHeading
+                hideTitle
                 description={t('audit.notice')}
                 title={t('audit.title')}
             />

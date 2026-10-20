@@ -49,7 +49,11 @@ export function AppSidebar() {
         icon: BookOpen,
     })
     return (
-        <Sidebar collapsible="icon" variant="inset">
+        <Sidebar
+            collapsible="icon"
+            variant="inset"
+            className="p-3 group-data-[collapsible=icon]:px-2 [&_[data-slot=sidebar-inner]]:rounded-xl [&_[data-slot=sidebar-inner]]:border [&_[data-slot=sidebar-inner]]:bg-card"
+        >
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>
@@ -129,7 +133,7 @@ export function AppSidebar() {
                     />
                 </nav>
             </SidebarContent>
-            <SidebarSeparator />
+            <SidebarSeparator className="data-[orientation=horizontal]:w-auto" />
             <SidebarFooter>
                 <NavUser />
             </SidebarFooter>

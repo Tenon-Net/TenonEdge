@@ -34,6 +34,51 @@ async function setup(page: Page, url: string) {
     ).toBeVisible()
 }
 
+async function expectSeparatedWorkspace(page: Page) {
+    const surfaces = await page.evaluate(() => {
+        const shell = document.querySelector('[data-slot="sidebar-wrapper"]')!
+        const sidebar = document.querySelector('[data-slot="sidebar-inner"]')!
+        const content = document.querySelector('[data-slot="sidebar-inset"]')!
+        const sidebarBounds = sidebar.getBoundingClientRect()
+        return {
+            background: getComputedStyle(shell).backgroundColor,
+            panels: [sidebar, content].map((element) => ({
+                background: getComputedStyle(element).backgroundColor,
+                border: parseFloat(getComputedStyle(element).borderLeftWidth),
+                radius: parseFloat(
+                    getComputedStyle(element).borderTopLeftRadius,
+                ),
+            })),
+            gap:
+                content.getBoundingClientRect().left -
+                sidebar.getBoundingClientRect().right,
+            width: document.documentElement.scrollWidth,
+            viewport: innerWidth,
+            outside: [
+                ...sidebar.querySelectorAll(
+                    '[data-sidebar="menu-button"], [data-sidebar="separator"]',
+                ),
+            ]
+                .filter((element) => {
+                    const bounds = element.getBoundingClientRect()
+                    return (
+                        bounds.left < sidebarBounds.left ||
+                        bounds.right > sidebarBounds.right
+                    )
+                })
+                .map((element) => element.getAttribute('data-sidebar')),
+        }
+    })
+    for (const panel of surfaces.panels) {
+        expect(panel.background).not.toBe(surfaces.background)
+        expect(panel.border).toBeGreaterThan(0)
+        expect(panel.radius).toBeGreaterThanOrEqual(8)
+    }
+    expect(surfaces.gap).toBeGreaterThanOrEqual(8)
+    expect(surfaces.width).toBeLessThanOrEqual(surfaces.viewport)
+    expect(surfaces.outside).toEqual([])
+}
+
 owned(
     'sidebar collapse, theme changes and responsive layout preserve unsaved edits without writes',
     async ({ page, workspaceUrl }, testInfo) => {
@@ -49,6 +94,7 @@ owned(
         await expect(
             navigation.getByRole('link', { name: '用户管理', exact: true }),
         ).toBeVisible()
+        await expectSeparatedWorkspace(page)
         await page.screenshot({
             path: testInfo.outputPath('workspace-light.png'),
             fullPage: true,
@@ -73,6 +119,11 @@ owned(
             .getByRole('link', { name: '连接', exact: true })
             .hover()
         await expect(page.getByRole('tooltip')).toHaveText('连接')
+        await page.screenshot({
+            path: testInfo.outputPath('workspace-collapsed.png'),
+            fullPage: true,
+        })
+        await expectSeparatedWorkspace(page)
         await header
             .getByRole('button', { name: '展开导航', exact: true })
             .click()
@@ -84,6 +135,7 @@ owned(
             path: testInfo.outputPath('workspace-dark.png'),
             fullPage: true,
         })
+        await expectSeparatedWorkspace(page)
         await header.getByRole('button', { name: '切换主题' }).click()
         await page
             .getByRole('menuitem', { name: '跟随系统', exact: true })

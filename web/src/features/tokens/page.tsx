@@ -99,6 +99,7 @@ export function TokensPage() {
         <section className="product-page">
             <div>
                 <PageHeading
+                    hideTitle
                     description={t('tokens.description')}
                     title={t('tokens.title')}
                 />

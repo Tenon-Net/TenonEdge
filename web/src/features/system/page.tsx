@@ -15,7 +15,7 @@ export function SystemPage() {
     const info = query.error ? undefined : query.data
     return (
         <div className="product-page">
-            <PageHeading title={t('systemSettings.title')} />
+            <PageHeading hideTitle title={t('systemSettings.title')} />
             <PageTabs
                 label={t('pageLayout.sections')}
                 initialTab={

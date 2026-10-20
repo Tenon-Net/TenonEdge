@@ -28,6 +28,7 @@ export function DocumentationPage() {
     return (
         <div className="product-page">
             <PageHeading
+                hideTitle
                 description={t('documentation.notice')}
                 title={t('documentation.title')}
             />

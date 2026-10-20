@@ -223,6 +223,7 @@ export function RoutesPage() {
     return (
         <section className="product-page">
             <PageHeading
+                hideTitle
                 description={t('routes.notice')}
                 title={t('routes.title')}
             />
