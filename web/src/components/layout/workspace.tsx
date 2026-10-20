@@ -2,7 +2,6 @@
 // MIT, Copyright (c) 2024 Sat Naing. See web/THIRD_PARTY.md.
 import { useEffect, type ReactNode } from 'react'
 import { Outlet } from '@tanstack/react-router'
-import { ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ConfigurationHeader } from '../../features/configuration/header'
 import { useSystemInfo } from '../../features/diagnostics/queries'
@@ -34,7 +33,6 @@ function GatewayName() {
 }
 
 export function Workspace({ sessionNotice }: { sessionNotice?: ReactNode }) {
-    const { t } = useTranslation()
     return (
         <SidebarProvider>
             <SkipToMain />
@@ -46,25 +44,6 @@ export function Workspace({ sessionNotice }: { sessionNotice?: ReactNode }) {
                     <ConfigurationHeader />
                 </Header>
                 {sessionNotice}
-                {location.protocol === 'http:' && (
-                    <div
-                        role="note"
-                        className="flex items-start gap-2 border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground"
-                    >
-                        <ShieldAlert
-                            aria-hidden="true"
-                            className="mt-0.5 size-4 shrink-0"
-                        />
-                        <details className="min-w-0">
-                            <summary className="cursor-pointer">
-                                {t('httpWarning')}
-                            </summary>
-                            <p className="mt-2 max-w-3xl leading-relaxed">
-                                {t('httpsInstructions')}
-                            </p>
-                        </details>
-                    </div>
-                )}
                 <Main
                     id="content"
                     tabIndex={-1}

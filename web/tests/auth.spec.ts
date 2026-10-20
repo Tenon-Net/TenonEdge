@@ -30,6 +30,9 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
         baseURL,
     )
     await expect(page.getByText('首次设置', { exact: true })).toBeVisible()
+    await expect(page.getByText('当前使用 HTTP', { exact: false })).toHaveCount(
+        0,
+    )
     await page.getByLabel('账号', { exact: true }).fill('browser-admin')
     await page.getByLabel('密码', { exact: true }).fill('Browser-fixture-4827')
     await page
@@ -39,8 +42,9 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
     await page.getByRole('button', { name: '创建管理员并登录' }).click()
     await expect(page.getByRole('navigation')).toBeVisible()
     await expect(page.getByRole('heading', { name: '修改密码' })).toBeVisible()
-    await expect(page.getByRole('note')).toContainText('密码会明文传输')
-    await expect(page.getByRole('note')).toContainText('默认端口 8443')
+    await expect(page.getByText('当前使用 HTTP', { exact: false })).toHaveCount(
+        0,
+    )
     const cookies = await context.cookies()
     expect(cookies.some((cookie) => cookie.httpOnly)).toBe(true)
     await expect
@@ -65,12 +69,17 @@ test('real setup, session, CSRF password change, logout and offline assets', asy
     await expect(
         page.getByRole('button', { name: '登录', exact: true }),
     ).toBeVisible()
+    await expect(page.getByText('当前使用 HTTP', { exact: false })).toHaveCount(
+        0,
+    )
     await page.getByLabel('账号', { exact: true }).fill('browser-admin')
     await page.getByLabel('密码', { exact: true }).fill('Changed-fixture-5938')
     await page.getByRole('button', { name: '登录', exact: true }).click()
     await expect(page.getByRole('navigation')).toBeVisible()
     await page.getByRole('link', { name: '总览', exact: true }).click()
-    await expect(page.getByRole('note')).toContainText('两种协议的登录不通用')
+    await expect(page.getByText('当前使用 HTTP', { exact: false })).toHaveCount(
+        0,
+    )
     await expect(
         page.getByRole('heading', { name: '总览', exact: true }),
     ).toBeVisible()

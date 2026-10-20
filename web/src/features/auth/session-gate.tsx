@@ -83,22 +83,11 @@ export function SessionGate() {
                     <CardTitle className="text-lg tracking-tight">
                         {t(mode)}
                     </CardTitle>
-                    <CardDescription>
-                        {session?.mustChangePassword && t('temporaryPassword')}
-                        {location.protocol === 'http:' && (
-                            <div className="space-y-2">
-                                <p>{t('httpWarning')}</p>
-                                <details>
-                                    <summary className="cursor-pointer">
-                                        {t('httpsHelp')}
-                                    </summary>
-                                    <p className="mt-2">
-                                        {t('httpsInstructions')}
-                                    </p>
-                                </details>
-                            </div>
-                        )}
-                    </CardDescription>
+                    {session?.mustChangePassword && (
+                        <CardDescription>
+                            {t('temporaryPassword')}
+                        </CardDescription>
+                    )}
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <ErrorMessage error={error} />

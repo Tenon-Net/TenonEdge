@@ -8057,7 +8057,7 @@ node /home/shiny/.cache/tenonedge-t3-exit-audit/acceptance-doc-check-20261020/ch
 | AT-13 / AT-25 / AT-28 / GW-10 / T3-06 | 共享 MQTT 输入启动异常、连续故障与单条/三条未确认积存及强杀恢复 | 六项软件子场景（五行同进程Theory＋一项强杀Fact）通过（测试包装在原循环前注入异常）：原释放/监督退避重建；积存不错误确认/接管、不重新发布，首条捕获DUP=true、双目标FIFO；无积存连续三次故障时快输入继续扇出；三次故障与三条积存组合中跨后两次异常仍不接管，第四实例恢复86→87→88；相同未接管窗口强杀后原产品宿主恢复FIFO、dirty保留、r2异常次数仅1；r2不自动回滚 | §2.184—§2.189 | 大积存/溢出、其他故障/积存数量组合、无限持续故障、真实适配器异常、其他协议/输入数量及完整网页流程 |
 | FS-02 / AT-13 / T3-06 | 应用停止超时不重复采集 | 共享 MQTT 双输入/双目标子场景通过（真实软件）：原 5 秒期限，原循环未退出不重建连接，退出后同进程恢复 r1、双目标原样补发，超时事件一次 | §2.181 | 其他协议/单元组合、实际设备与完整矩阵未验证 |
 | GW-15 / T3-07 / 功能 §7.1/7.4 | 真实总览、运行诊断与事件分页 | 本地软件子项通过：状态/读取计数、真实趋势、首次设置/系统信息、事件筛选及50+5分页，500保留筛选/旧数据，离页停止轮询；重启趋势清空、事件保留，只读可查元数据 | §2.193，256 Vitest / 44 Chromium | 当前值/设备汇总续见§2.194；输出详情/容量、计数分类、测试发送/完整调试及最低浏览器未完成 |
-| FE-AT-02/06 / T3-01 / 功能 §1.2 | 登录后HTTP持续风险提示 | 普通网卡HTTP下，登录/导航后仍显示明文风险与HTTPS说明；修改密码页不丢提示，既有认证/画布回归通过 | §2.193 | 最低浏览器、强制改密/重置完整流程及HTTPS策略仍未完整验收 |
+| FE-AT-02/06 / T3-01 / 功能 §1.2 | 默认HTTP管理访问 | 原持续提示的历史证据见§2.193；维护者于2026-10-20确认取消通用警告，首次设置/登录/改密/导航及桌面/手机布局定向回归见§2.317 | §2.193、§2.317 | 最低实际浏览器及HTTPS策略仍按原验收范围执行 |
 | GW-15 / AT-08 / T3-07 / 功能 §7.1/7.2/4.6 | 设备分类、当前值与最后成功值 | 本地软件子项通过：有界独立缓存、原文大整数、历史快照元数据、三角色/匿名/分页/版本边界；真实HTTP浏览器失败过期/恢复、隐私清除、只读重启重新采样，查询500保护和离页取消 | §2.194，2660后端 / 257 Vitest / 45 Chromium | Modbus/MQTT当前值的完整网页现场链路、10,000点整机性能、最低浏览器和实物未验证；非整个AT/T3完成 |
 | GW-14 / GW-15 / T3-08 / 功能 §8.2/8.4/8.6 | 失败/隔离元数据查看与正文权限 | 本地软件子项通过：唯一写者真实记录＋短事务查询、100+5分页/筛选、敏感列SQL防读、单独64KiB正文/UTF-8边界、三角色与匿名拒绝；浏览器真实HTTP 422加明确离线fixture验证查看流程 | §2.196 | 目标重试/暂停恢复续见§2.197；失败记录重试/清理/导出/迁移、FS-23审计及最低浏览器未完成；不把fixture算作真实隔离触发 |
 | GW-14 / AT-26 / FE-AT-02/04 / T3-08 / 功能 §8.1/8.6 | 目标立即重试及管理员暂停／恢复 | 本地软件子场景通过（2701后端/276 Vitest/48 Chromium全量回归）：真实HTTP原发送器、单窗口/版本边界、持久暂停与重启恢复、版本冲突/响应丢失不重放、三角色权限 | §2.197 | 失败记录重试、清理/导出/迁移及FS-23、最低浏览器和实物未完成 |
@@ -8864,9 +8864,27 @@ node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evid
 ```sh
 npx --yes npm@11.21.0 run build -- --outDir /home/shiny/.cache/tenonedge-shadcn-product/dist-final
 TENONEDGE_TEST_URL=http://192.168.0.88:18894 TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-shadcn-product/dist-final PLAYWRIGHT_JSON_OUTPUT_NAME=/home/shiny/.cache/tenonedge-shadcn-product/evidence/login-layout-browser.json npx --yes npm@11.21.0 run test:e2e -- auth.spec.ts users.spec.ts workspace.spec.ts --grep 'real setup, session|failed login is not replayed|first setup requires|sidebar collapse|mobile navigation' --reporter=line,json
-node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evidence/login-layout-browser.json
+node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evidence/web-unit-final.json /home/shiny/.cache/tenonedge-shadcn-product/evidence/login-layout-browser.json
 ```
 
 `final-source-sha256.json`和`build-final-sha256.json`记录最终源码/产物，保留微调前哈希与68项报告的对应关系。10:09:44（北京时间）再次按上述方式只更新试用静态文件，入口SHA256为`8ff5d2fb05e9c6269e12a9076588ac3676092923082a83e0052cd11c570ffe9f`，readyz200；没有重启或修改人工账号/配置。最终匿名浏览器验证桌面登录卡片384px、390px手机无横向溢出、HTTPS说明可展开，0页面错误/外部请求/写请求；证据为`preview-after-login-layout.json`、`preview-browser-final.json`、`preview-login-final.png`和`preview-login-mobile.png`。
 
 本节是FE-D01界面补正和定向软件证据，**不是T3整体验收**；不把§2.311的171项或最低浏览器报告当作新组件已验证。实际最低浏览器、真实Excel、实际CI及维护者验收仍按§1.1；没有推送、发布或进入T4/T5/G1。
+
+### 2.317 T3-01 默认HTTP访问取消通用警告（2026-10-20）
+
+维护者明确产品主要用于内网、默认通过HTTP访问，不需要通用连接警告。本次确认替代功能需求§1.2/1.7和§2.193中的持续提示要求；总设计§10.3、功能需求、README及人工浏览器验收步骤已同步。登录、首次设置、强制改密和登录后的布局移除HTTP警告及HTTPS展开说明，删除未使用的图标、翻译和空描述容器。会话、业务接口与协议配置保持原逻辑。
+
+环境沿用§2.316：Ubuntu26.04 x64、SDK10.0.401、Node22.23.2/npm11.21.0、Playwright1.64.0/Chromium156.0.8078.4。证据根为`/home/shiny/.cache/tenonedge-http-product/evidence/`；npm命令在`web/`执行：
+
+```sh
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 run build -- --outDir /home/shiny/.cache/tenonedge-http-product/dist
+TENONEDGE_TEST_URL=http://192.168.0.88:18894 TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-http-product/dist PLAYWRIGHT_JSON_OUTPUT_NAME=/home/shiny/.cache/tenonedge-http-product/evidence/browser.json npx --yes npm@11.21.0 run test:e2e -- auth.spec.ts users.spec.ts workspace.spec.ts --grep 'real setup, session|failed login is not replayed|first setup requires|sidebar collapse|mobile navigation' --reporter=line,json
+node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evidence/web-unit-final.json /home/shiny/.cache/tenonedge-http-product/evidence/browser.json
+```
+
+格式、lint和类型/构建通过，保留两条既存lint警告及已有chunk大小提示。浏览器 **5/5** 通过，0失败/跳过/flaky，22.291秒：真实首次设置/登录/CSRF改密/退出/离线资源，失败登录不重放、设置密码确认以及桌面/手机布局；原认证用例改为核对首次设置、登录、改密页和总览均无HTTP提示。首次格式检查发现修改后的来源表需格式化，修正后通过（`format-first.log`、`format.log`）；测试完成后曾只传一个报告给验证器，参数不足退出，按上列双参数命令修正后通过。双参数中的797项单元报告为§2.316既有证据，本轮没有重跑或另计该单元测试。
+
+10:47:23（北京时间）将新静态文件更新至原试用地址`http://192.168.0.88:18490`，保留旧hashed assets、原子替换index；核对原Host/对端PID、启动时刻及命令未变，未操作人工账号和配置。实际入口SHA256为`11fe15ce0671896b3f1b14d98670072c6bb0092bd246a12278e8d8d38868bde1`，入口和readyz均200（`preview-update.json`）。匿名浏览器核对登录可见、无HTTP提示/HTTPS说明、390px手机无横向溢出，页面错误/外部请求/写请求均0（`preview-browser.json`、`login-desktop.png`、`login-mobile.png`）；`source-sha256.json`与`build-sha256.json`保留代码和产物哈希。

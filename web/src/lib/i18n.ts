@@ -116,11 +116,6 @@ void i18n.use(initReactI18next).init({
                 required: '请填写此项。',
                 setupClosed: '设置窗口已关闭，请在主机上重启服务后再试。',
                 windowCloses: '设置窗口关闭时间：{{time}}',
-                httpWarning:
-                    '当前使用 HTTP，密码会明文传输。请仅在可信管理网络使用，建议通过 HTTPS 访问。',
-                httpsHelp: '如何使用 HTTPS',
-                httpsInstructions:
-                    '密码、会话和凭证可能被同网段设备截获。请使用管理员提供的 HTTPS 地址（默认端口 8443），核对证书后重新登录；两种协议的登录不通用。',
                 temporaryPassword: '当前账号必须先修改临时密码，才能继续操作。',
                 workspace: '总览',
                 accountDetail: '当前账号：{{name}}',
