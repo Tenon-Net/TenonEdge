@@ -1,6 +1,14 @@
 [
   {
     "date": "2026-10-20",
+    "scope": "app",
+    "macrostructure": "Workbench / resource list / operational detail / categorized settings",
+    "theme": "existing shadcn-admin",
+    "enrichment": "none",
+    "brief": "Confirmed shared product redesign, preserving actual routes, permissions, API and editing ownership; subordinate visual contract in design.md."
+  },
+  {
+    "date": "2026-10-20",
     "scope": "overview",
     "macrostructure": "Operations dashboard",
     "theme": "existing shadcn-admin",

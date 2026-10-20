@@ -37,6 +37,17 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                pageLayout: {
+                    help: '使用说明',
+                    sections: '设置分类',
+                    basic: '基本信息',
+                    network: '网络与访问',
+                    resources: '运行与存储',
+                    transfer: '配置导入导出',
+                    security: '账号安全',
+                    notFound: '未找到页面',
+                    notFoundHelp: '请检查访问地址，或返回总览。',
+                },
                 parameters: parameterStrings,
                 testSend: testSendStrings,
                 systemSettings: systemStrings,

@@ -106,7 +106,7 @@ export function TrustedProxyPanel() {
             <p className="text-sm text-muted-foreground">
                 {t('systemSettings.proxies.risk')}
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Button
                     variant="outline"
                     disabled={busy || query.isFetching}
@@ -202,7 +202,7 @@ export function TrustedProxyPanel() {
                             {t('systemSettings.proxies.invalid')}
                         </p>
                     )}
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button type="submit" disabled={blocked || !confirmed}>
                             {t('systemSettings.proxies.save')}
                         </Button>

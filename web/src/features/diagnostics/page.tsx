@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import {
     Table,
     TableHeader,
@@ -20,13 +21,15 @@ export function DiagnosticsPage() {
     const query = useRuntimeStatus()
     const data = query.data
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('diagnostics.title')}</h1>
+        <div className="product-page">
+            <PageHeading title={t('diagnostics.title')} />
             <Link className="underline" to="/runtime/messages">
                 {t('messages.title')}
             </Link>
-            <DeviceSummary />
-            <OutputSummary />
+            <div className="product-diagnostic-grid product-detail">
+                <DeviceSummary />
+                <OutputSummary />
+            </div>
             <DiagnosticPanel title={t('diagnostics.units')} query={query}>
                 {data && (
                     <>
@@ -169,6 +172,8 @@ export function DiagnosticsPage() {
                     </>
                 )}
             </DiagnosticPanel>
+            <RuntimeTrends />
+            <RuntimeEvents />
             {data && (
                 <section
                     className="space-y-4 rounded-lg border p-5"
@@ -230,8 +235,6 @@ export function DiagnosticsPage() {
                     ))}
                 </section>
             )}
-            <RuntimeTrends />
-            <RuntimeEvents />
         </div>
     )
 }

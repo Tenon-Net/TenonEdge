@@ -1,3 +1,4 @@
+import { PageHelp } from '../../components/layout/page'
 import { TransformEditor } from './transform-editor'
 import { useTransformModules } from './transform-query'
 import { useInputModules } from '../inputs/module-query'
@@ -400,14 +401,18 @@ function CanvasWorkspace({
     }
     const dangling = topologyHints(doc)
     return (
-        <section className="space-y-3" onKeyDown={keyboard}>
-            <h1 className="text-2xl font-semibold">
-                {t(persisted ? 'routes.canvas' : 'canvas.title')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-                {t(persisted ? 'routes.canvasNotice' : 'canvas.notice')}
-            </p>
-            <p className="text-sm">{t('canvas.help')}</p>
+        <section className="@container/canvas space-y-3" onKeyDown={keyboard}>
+            {persisted ? (
+                <h2 className="text-base font-semibold">
+                    {t('routes.canvas')}
+                </h2>
+            ) : (
+                <h1 className="text-lg font-semibold">{t('canvas.title')}</h1>
+            )}
+            <PageHelp>
+                <p>{t(persisted ? 'routes.canvasNotice' : 'canvas.notice')}</p>
+                <p>{t('canvas.help')}</p>
+            </PageHelp>
             <div className="flex flex-wrap gap-2">
                 <Button
                     variant="outline"
@@ -456,9 +461,9 @@ function CanvasWorkspace({
                     })}
                 </span>
             </div>
-            <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_220px]">
+            <div className="grid items-start gap-3 @min-[42rem]/canvas:grid-cols-[11rem_minmax(0,1fr)] @min-[66rem]/canvas:grid-cols-[11rem_minmax(0,1fr)_16rem]">
                 <aside
-                    className="space-y-3 rounded-md border p-3"
+                    className="space-y-3 rounded-md border p-3 @min-[42rem]/canvas:max-h-[min(65svh,720px)] @min-[42rem]/canvas:overflow-y-auto"
                     aria-label={t('canvas.palette')}
                 >
                     {persisted && (
@@ -571,7 +576,7 @@ function CanvasWorkspace({
                 </aside>
                 <div
                     ref={canvasElement}
-                    className="h-[600px] min-w-0 rounded-md border"
+                    className="h-[min(65svh,720px)] min-h-96 min-w-0 rounded-md border bg-muted/20"
                     aria-label={t('canvas.graph')}
                     tabIndex={0}
                     onDragOver={(event) => {
@@ -677,12 +682,23 @@ function CanvasWorkspace({
                         }}
                     >
                         <Background />
-                        <Controls showInteractive={false} />
+                        <Controls
+                            showInteractive={false}
+                            onFitView={() => {
+                                // Reveal the whole working area as well as fitting
+                                // its graph, after editing an off-screen form.
+                                canvasElement.current?.scrollIntoView({
+                                    block: 'center',
+                                    inline: 'nearest',
+                                    behavior: 'instant',
+                                })
+                            }}
+                        />
                         <MiniMap pannable zoomable />
                     </ReactFlow>
                 </div>
                 <aside
-                    className="space-y-3 rounded-md border p-3"
+                    className="space-y-3 rounded-md border p-3 @min-[42rem]/canvas:col-span-2 @min-[66rem]/canvas:col-span-1 @min-[66rem]/canvas:max-h-[min(65svh,720px)] @min-[66rem]/canvas:overflow-y-auto"
                     aria-label={t('canvas.properties')}
                 >
                     <h2 className="font-medium">{t('canvas.properties')}</h2>
@@ -1051,7 +1067,11 @@ function CanvasWorkspace({
                     </ul>
                 )}
                 <p className="text-sm text-muted-foreground">
-                    {t('canvas.topologyOnly')}
+                    {t(
+                        persisted
+                            ? 'canvas.topologyWithPreview'
+                            : 'canvas.topologyOnly',
+                    )}
                 </p>
                 <details>
                     <summary>{t('canvas.json')}</summary>

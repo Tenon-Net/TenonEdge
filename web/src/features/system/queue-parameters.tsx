@@ -110,7 +110,7 @@ export function QueueParameterPanel() {
             <p className="text-sm text-muted-foreground">
                 {t('systemSettings.queue.boundary')}
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Button
                     variant="outline"
                     disabled={busy || query.isFetching}
@@ -199,7 +199,7 @@ export function QueueParameterPanel() {
                     {invalid && (
                         <p role="alert">{t('systemSettings.queue.invalid')}</p>
                     )}
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button type="submit" disabled={blocked || !confirmed}>
                             {t('systemSettings.queue.save')}
                         </Button>

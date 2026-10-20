@@ -158,10 +158,14 @@ export function PointEditor({
                   : value
     return (
         <fieldset disabled={readOnly} className="min-w-0 space-y-4">
-            <h1 className="text-2xl font-semibold">
-                {t(managed ? 'points.managedTitle' : 'points.title')}
-            </h1>
-            <p className="rounded-md border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">
+            {managed ? (
+                <h2 className="text-base font-semibold">
+                    {t('points.managedTitle')}
+                </h2>
+            ) : (
+                <h1 className="text-lg font-semibold">{t('points.title')}</h1>
+            )}
+            <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
                 {t(managed ? 'points.managedNotice' : 'points.notice')}
             </p>
             <div className="flex flex-wrap items-center gap-3">
@@ -201,7 +205,7 @@ export function PointEditor({
             <p className="text-sm text-muted-foreground">
                 {t('points.modeHelp')}
             </p>
-            <details className="rounded-md border p-3" open>
+            <details className="rounded-md border p-3" open={!managed}>
                 <summary className="cursor-pointer font-medium">
                     {t('points.pasteTitle')}
                 </summary>

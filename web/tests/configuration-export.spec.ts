@@ -28,7 +28,7 @@ const owned = test.extend<{ exportHost: string }>({
     },
 })
 async function setup(page: Page, url: string) {
-    await page.goto(url + '/system')
+    await page.goto(url + '/system?section=transfer')
     await page.getByLabel('账号', { exact: true }).fill('export-admin')
     await page.getByLabel('密码', { exact: true }).fill(password)
     await page.getByLabel('确认密码', { exact: true }).fill(password)
@@ -261,7 +261,7 @@ owned(
             const context = await browser.newContext({ baseURL: exportHost })
             try {
                 const user = await context.newPage()
-                await user.goto('/system')
+                await user.goto('/system?section=transfer')
                 await user.getByLabel('账号', { exact: true }).fill(role)
                 await user.getByLabel('密码', { exact: true }).fill(password)
                 await user

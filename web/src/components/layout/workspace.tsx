@@ -1,7 +1,7 @@
 // Layout composition adapted from shadcn-admin authenticated-layout.tsx at e16c87f.
 // MIT, Copyright (c) 2024 Sat Naing. See web/THIRD_PARTY.md.
 import { useEffect, type ReactNode } from 'react'
-import { Outlet, useRouterState } from '@tanstack/react-router'
+import { Outlet } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { ConfigurationHeader } from '../../features/configuration/header'
 import { useSystemInfo } from '../../features/diagnostics/queries'
@@ -33,9 +33,6 @@ function GatewayName() {
 }
 
 export function Workspace({ sessionNotice }: { sessionNotice?: ReactNode }) {
-    const isOverview = useRouterState({
-        select: (state) => state.location.pathname === '/',
-    })
     return (
         <SidebarProvider>
             <SkipToMain />
@@ -48,7 +45,7 @@ export function Workspace({ sessionNotice }: { sessionNotice?: ReactNode }) {
                 </Header>
                 {sessionNotice}
                 <Main
-                    fluid={isOverview}
+                    fluid
                     id="content"
                     tabIndex={-1}
                     className="outline-none md:px-6"

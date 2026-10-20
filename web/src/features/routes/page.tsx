@@ -1,3 +1,4 @@
+import { PageEmpty, PageHeading, PageHelp } from '../../components/layout/page'
 import { businessKeyPattern } from '../../lib/business-key'
 import { createPreviewDraft } from './preview-model'
 import { useEffect, useRef, useState } from 'react'
@@ -220,366 +221,425 @@ export function RoutesPage() {
             editor.setState({ form: { ...form, [key]: value } })
     }
     return (
-        <section className="space-y-4">
-            <h1 className="text-2xl font-semibold">{t('routes.title')}</h1>
-            <p>{t('routes.notice')}</p>
+        <section className="product-page">
+            <PageHeading
+                description={t('routes.notice')}
+                title={t('routes.title')}
+            />
+
             {!canEdit && <p>{t('routes.readOnly')}</p>}
             <ErrorMessage error={query.error} />
-            <Button
-                variant="outline"
-                disabled={busy || query.isFetching}
-                onClick={() => void query.refetch()}
-            >
-                {t('retry')}
-            </Button>
-            <Button
-                disabled={!canEdit || busy || !query.data}
-                onClick={() => open()}
-            >
-                {t('routes.new')}
-            </Button>
-            <ul className="space-y-2">
-                {query.data?.routes.map((route) => (
-                    <li
-                        key={String(route.id)}
-                        className="flex items-center gap-3 rounded border p-2"
-                    >
-                        <div className="min-w-0 flex-1 space-y-1">
-                            <div className="font-medium">
-                                {route.name} · <code>{route.key}</code> ·{' '}
-                                {t('routes.nodes', { count: route.nodeCount })}
-                            </div>
-                            <p className="text-sm text-muted-foreground">
-                                {route.description ||
-                                    t('routes.list.descriptionEmpty')}
-                            </p>
-                            <div className="flex flex-wrap gap-2 text-xs">
-                                <span>
-                                    {t(
-                                        route.enabled
-                                            ? 'routes.list.enabled'
-                                            : 'routes.list.disabled',
-                                    )}
-                                </span>
-                                {!query.isError && route.effective && (
-                                    <span role="status">
-                                        {t('routes.list.effective')}
-                                    </span>
-                                )}
-                                {route.hasErrors && (
-                                    <span role="alert">
-                                        {t('routes.list.errors')}
-                                    </span>
-                                )}
-                                {route.hasUnappliedChanges && (
-                                    <span role="status">
-                                        {t('routes.list.unapplied')}
-                                    </span>
-                                )}
-                                <span>
-                                    {t('routes.list.updatedBy', {
-                                        user: route.updatedBy || t('unknown'),
-                                    })}
-                                </span>
-                                <time
-                                    dateTime={new Date(
-                                        Number(route.updatedAt),
-                                    ).toISOString()}
-                                >
-                                    {t('routes.list.updatedAt', {
-                                        time: new Date(
-                                            Number(route.updatedAt),
-                                        ).toLocaleString(),
-                                    })}
-                                </time>
-                            </div>
-                        </div>
-                        <Button
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => open(Number(route.id))}
-                            aria-label={`${t('routes.open')} ${route.name}`}
-                        >
-                            {t('routes.open')}
-                        </Button>
-                    </li>
-                ))}
-            </ul>
-            {query.data?.routes.length === 0 && <p>{t('routes.empty')}</p>}
-            <ErrorMessage error={mutation.error} />
-            <ErrorMessage error={referenceReview.error} />
-            {referenceConflict && (
-                <p role="alert">{t('routes.inline.conflict')}</p>
-            )}
-            {(referenceReview.error || referenceConflict) && (
+            <div className="flex flex-wrap gap-2">
                 <Button
-                    disabled={busy}
                     variant="outline"
-                    onClick={() => referenceReview.mutate()}
+                    disabled={busy || query.isFetching}
+                    onClick={() => void query.refetch()}
                 >
-                    {t('routes.inline.review')}
+                    {t('retry')}
                 </Button>
-            )}
-            {mutation.error instanceof ApiError &&
-                mutation.error.status === 409 && (
-                    <p role="alert">{t('routes.conflict')}</p>
-                )}
-            {notice && <p role="status">{notice}</p>}
-            {form && (
-                <>
-                    {(() => {
-                        const coordinator = runtime.data?.coordinator
-                        if (runtime.isError || !coordinator)
-                            return (
-                                <p
-                                    role="status"
-                                    className="text-sm text-muted-foreground"
-                                >
-                                    {t('routes.runtime.unknown')}
-                                </p>
-                            )
-                        return (
-                            <p
-                                role="status"
-                                className="text-sm text-muted-foreground"
+                <Button
+                    disabled={!canEdit || busy || !query.data}
+                    onClick={() => open()}
+                >
+                    {t('routes.new')}
+                </Button>
+            </div>
+            <div
+                className={
+                    form && query.data?.routes.length ? 'product-workbench' : ''
+                }
+            >
+                <div
+                    className={
+                        form && !query.data?.routes.length
+                            ? 'hidden'
+                            : 'product-rail'
+                    }
+                >
+                    <ul className="space-y-2">
+                        {query.data?.routes.map((route) => (
+                            <li
+                                key={String(route.id)}
+                                className="flex flex-wrap items-center gap-2 rounded border p-2"
                             >
-                                {t('routes.runtime.state', {
-                                    state: t(
-                                        `routes.runtime.states.${coordinator.state}`,
-                                    ),
-                                    revision:
-                                        coordinator.activeRevision ??
-                                        t('routes.runtime.none'),
-                                    route: t(`routes.runtime.${runtimeMatch}`),
-                                })}
-                            </p>
-                        )
-                    })()}
-                    {dirty && <p role="status">{t('routes.dirty')}</p>}
-                    <form
-                        onSubmit={(event) => {
-                            event.preventDefault()
-                            if (canEdit && !busy && !pendingConfig)
-                                mutation.mutate({
-                                    type: 'save',
-                                    form: { ...form, document },
-                                })
-                        }}
-                    >
-                        <fieldset
-                            disabled={!canEdit || busy}
-                            className="grid gap-3 rounded border p-3 md:grid-cols-2"
-                        >
-                            {(['key', 'name', 'description'] as const).map(
-                                (key) => (
-                                    <label key={key}>
-                                        {t(`routes.${key}`)}
-                                        <input
-                                            className={inputClass}
-                                            value={form[key]}
-                                            onChange={(event) =>
-                                                edit(key, event.target.value)
-                                            }
-                                            required={key !== 'description'}
-                                            maxLength={
-                                                key === 'description' ? 500 : 64
-                                            }
-                                            disabled={
-                                                key === 'key' &&
-                                                form.id !== undefined
-                                            }
-                                            pattern={
-                                                key === 'key'
-                                                    ? businessKeyPattern
-                                                    : undefined
-                                            }
-                                        />
-                                    </label>
-                                ),
-                            )}
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={form.enabled}
-                                    onChange={(event) =>
-                                        edit('enabled', event.target.checked)
-                                    }
-                                />{' '}
-                                {t('routes.enabled')}
-                            </label>
-                            <Button type="submit" disabled={pendingConfig}>
-                                {t('routes.save')}
-                            </Button>
-                            {form.id !== undefined && (
+                                <div className="min-w-0 flex-1 space-y-1">
+                                    <div className="font-medium">
+                                        {route.name} · <code>{route.key}</code>{' '}
+                                        ·{' '}
+                                        {t('routes.nodes', {
+                                            count: route.nodeCount,
+                                        })}
+                                    </div>
+                                    <p className="text-sm text-muted-foreground">
+                                        {route.description ||
+                                            t('routes.list.descriptionEmpty')}
+                                    </p>
+                                    <div className="flex flex-wrap gap-2 text-xs">
+                                        <span>
+                                            {t(
+                                                route.enabled
+                                                    ? 'routes.list.enabled'
+                                                    : 'routes.list.disabled',
+                                            )}
+                                        </span>
+                                        {!query.isError && route.effective && (
+                                            <span role="status">
+                                                {t('routes.list.effective')}
+                                            </span>
+                                        )}
+                                        {route.hasErrors && (
+                                            <span role="alert">
+                                                {t('routes.list.errors')}
+                                            </span>
+                                        )}
+                                        {route.hasUnappliedChanges && (
+                                            <span role="status">
+                                                {t('routes.list.unapplied')}
+                                            </span>
+                                        )}
+                                        <span>
+                                            {t('routes.list.updatedBy', {
+                                                user:
+                                                    route.updatedBy ||
+                                                    t('unknown'),
+                                            })}
+                                        </span>
+                                        <time
+                                            dateTime={new Date(
+                                                Number(route.updatedAt),
+                                            ).toISOString()}
+                                        >
+                                            {t('routes.list.updatedAt', {
+                                                time: new Date(
+                                                    Number(route.updatedAt),
+                                                ).toLocaleString(),
+                                            })}
+                                        </time>
+                                    </div>
+                                </div>
                                 <Button
-                                    type="button"
                                     variant="outline"
-                                    onClick={() => {
-                                        if (
-                                            window.confirm(
-                                                t('routes.confirmDelete'),
-                                            ) &&
-                                            (!dirty ||
-                                                window.confirm(
-                                                    t('routes.discard'),
-                                                ))
-                                        )
+                                    disabled={busy}
+                                    onClick={() => open(Number(route.id))}
+                                    aria-label={`${t('routes.open')} ${route.name}`}
+                                >
+                                    {t('routes.open')}
+                                </Button>
+                            </li>
+                        ))}
+                    </ul>
+                    {query.data?.routes.length === 0 && (
+                        <PageEmpty>{t('routes.empty')}</PageEmpty>
+                    )}
+                </div>
+                <div className="product-detail max-w-none">
+                    <ErrorMessage error={mutation.error} />
+                    <ErrorMessage error={referenceReview.error} />
+                    {referenceConflict && (
+                        <p role="alert">{t('routes.inline.conflict')}</p>
+                    )}
+                    {(referenceReview.error || referenceConflict) && (
+                        <Button
+                            disabled={busy}
+                            variant="outline"
+                            onClick={() => referenceReview.mutate()}
+                        >
+                            {t('routes.inline.review')}
+                        </Button>
+                    )}
+                    {mutation.error instanceof ApiError &&
+                        mutation.error.status === 409 && (
+                            <p role="alert">{t('routes.conflict')}</p>
+                        )}
+                    {notice && <p role="status">{notice}</p>}
+                    {form && (
+                        <>
+                            {(() => {
+                                const coordinator = runtime.data?.coordinator
+                                if (runtime.isError || !coordinator)
+                                    return (
+                                        <p
+                                            role="status"
+                                            className="text-sm text-muted-foreground"
+                                        >
+                                            {t('routes.runtime.unknown')}
+                                        </p>
+                                    )
+                                return (
+                                    <p
+                                        role="status"
+                                        className="text-sm text-muted-foreground"
+                                    >
+                                        {t('routes.runtime.state', {
+                                            state: t(
+                                                `routes.runtime.states.${coordinator.state}`,
+                                            ),
+                                            revision:
+                                                coordinator.activeRevision ??
+                                                t('routes.runtime.none'),
+                                            route: t(
+                                                `routes.runtime.${runtimeMatch}`,
+                                            ),
+                                        })}
+                                    </p>
+                                )
+                            })()}
+                            {dirty && <p role="status">{t('routes.dirty')}</p>}
+                            <form
+                                onSubmit={(event) => {
+                                    event.preventDefault()
+                                    if (canEdit && !busy && !pendingConfig)
+                                        mutation.mutate({
+                                            type: 'save',
+                                            form: { ...form, document },
+                                        })
+                                }}
+                            >
+                                <fieldset
+                                    disabled={!canEdit || busy}
+                                    className="grid gap-3 rounded border p-3 md:grid-cols-2"
+                                >
+                                    {(
+                                        ['key', 'name', 'description'] as const
+                                    ).map((key) => (
+                                        <label key={key}>
+                                            {t(`routes.${key}`)}
+                                            <input
+                                                className={inputClass}
+                                                value={form[key]}
+                                                onChange={(event) =>
+                                                    edit(
+                                                        key,
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                required={key !== 'description'}
+                                                maxLength={
+                                                    key === 'description'
+                                                        ? 500
+                                                        : 64
+                                                }
+                                                disabled={
+                                                    key === 'key' &&
+                                                    form.id !== undefined
+                                                }
+                                                pattern={
+                                                    key === 'key'
+                                                        ? businessKeyPattern
+                                                        : undefined
+                                                }
+                                            />
+                                        </label>
+                                    ))}
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={form.enabled}
+                                            onChange={(event) =>
+                                                edit(
+                                                    'enabled',
+                                                    event.target.checked,
+                                                )
+                                            }
+                                        />{' '}
+                                        {t('routes.enabled')}
+                                    </label>
+                                    <Button
+                                        type="submit"
+                                        disabled={pendingConfig}
+                                    >
+                                        {t('routes.save')}
+                                    </Button>
+                                    {form.id !== undefined && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => {
+                                                if (
+                                                    window.confirm(
+                                                        t(
+                                                            'routes.confirmDelete',
+                                                        ),
+                                                    ) &&
+                                                    (!dirty ||
+                                                        window.confirm(
+                                                            t('routes.discard'),
+                                                        ))
+                                                )
+                                                    mutation.mutate({
+                                                        type: 'delete',
+                                                        form,
+                                                    })
+                                            }}
+                                        >
+                                            {t('routes.remove')}
+                                        </Button>
+                                    )}
+                                </fieldset>
+                            </form>
+                            <section
+                                className="space-y-2 rounded border p-3"
+                                aria-label={t('canvas.nodeStatus.refresh')}
+                            >
+                                <p className="text-sm">
+                                    {t('canvas.nodeStatus.notice')}
+                                </p>
+                                {runtimeMatch === 'effective' && (
+                                    <>
+                                        <ErrorMessage
+                                            error={nodeRuntime.error}
+                                        />
+                                        <Button
+                                            variant="outline"
+                                            disabled={nodeRuntime.isFetching}
+                                            onClick={() =>
+                                                void nodeRuntime.refetch()
+                                            }
+                                        >
+                                            {t('canvas.nodeStatus.refresh')}
+                                        </Button>
+                                        {nodeStates.size > 0 && (
+                                            <p className="text-xs">
+                                                {t(
+                                                    'canvas.nodeStatus.captured',
+                                                    {
+                                                        time: nodeRuntime.data
+                                                            ?.capturedAt,
+                                                    },
+                                                )}
+                                            </p>
+                                        )}
+                                    </>
+                                )}
+                            </section>
+                            <CanvasEditor
+                                key={generation}
+                                editor={canvas}
+                                persisted
+                                version={form.version}
+                                previewDraft={previewDraft}
+                                nodeRuntime={nodeStates}
+                                compiledErrorNodes={
+                                    !dirty &&
+                                    !compile.isPending &&
+                                    !compile.isError &&
+                                    compile.data?.version === form.version &&
+                                    query.data?.version === form.version
+                                        ? compile.data.issues
+                                              .filter(
+                                                  (issue) =>
+                                                      issue.routeKey ===
+                                                      form.key,
+                                              )
+                                              .flatMap((issue) =>
+                                                  issue.nodeId
+                                                      ? [issue.nodeId]
+                                                      : [],
+                                              )
+                                        : undefined
+                                }
+                                onPendingChange={setPendingConfig}
+                                readOnly={!canEdit || busy}
+                                onCreateReference={
+                                    canEdit
+                                        ? (kind) => {
+                                              const active =
+                                                  globalThis.document
+                                                      .activeElement
+                                              referenceOpener.current =
+                                                  active instanceof HTMLElement
+                                                      ? active
+                                                      : null
+                                              setReferenceDrawer(kind)
+                                          }
+                                        : undefined
+                                }
+                            />
+                            {form.id !== undefined && (
+                                <form
+                                    onSubmit={(event) => {
+                                        event.preventDefault()
+                                        if (canEdit && !busy && !dirty)
                                             mutation.mutate({
-                                                type: 'delete',
+                                                type: 'copy',
                                                 form,
+                                                key: copyKey,
+                                                name: copyName,
                                             })
                                     }}
                                 >
-                                    {t('routes.remove')}
-                                </Button>
+                                    <fieldset
+                                        disabled={!canEdit || busy || dirty}
+                                        className="flex flex-wrap items-end gap-3 rounded border p-3"
+                                    >
+                                        <label>
+                                            {t('routes.copyKey')}
+                                            <input
+                                                className={inputClass}
+                                                required
+                                                maxLength={64}
+                                                pattern={businessKeyPattern}
+                                                value={copyKey}
+                                                onChange={(event) =>
+                                                    setCopyKey(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </label>
+                                        <label>
+                                            {t('routes.copyName')}
+                                            <input
+                                                className={inputClass}
+                                                required
+                                                maxLength={64}
+                                                value={copyName}
+                                                onChange={(event) =>
+                                                    setCopyName(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                            />
+                                        </label>
+                                        <Button type="submit">
+                                            {t('routes.copy')}
+                                        </Button>
+                                    </fieldset>
+                                </form>
                             )}
-                        </fieldset>
-                    </form>
-                    <section
-                        className="space-y-2 rounded border p-3"
-                        aria-label={t('canvas.nodeStatus.refresh')}
-                    >
-                        <p className="text-sm">
-                            {t('canvas.nodeStatus.notice')}
-                        </p>
-                        {runtimeMatch === 'effective' && (
+                        </>
+                    )}
+                    <section className="space-y-2 rounded border p-3">
+                        <PageHelp>{t('routes.compileNotice')}</PageHelp>
+                        <Button
+                            disabled={!canEdit || busy || dirty || !query.data}
+                            onClick={() =>
+                                query.data && compile.mutate(query.data.version)
+                            }
+                        >
+                            {t('routes.compile')}
+                        </Button>
+                        <ErrorMessage error={compile.error} />
+                        {compile.data && (
                             <>
-                                <ErrorMessage error={nodeRuntime.error} />
-                                <Button
-                                    variant="outline"
-                                    disabled={nodeRuntime.isFetching}
-                                    onClick={() => void nodeRuntime.refetch()}
-                                >
-                                    {t('canvas.nodeStatus.refresh')}
-                                </Button>
-                                {nodeStates.size > 0 && (
-                                    <p className="text-xs">
-                                        {t('canvas.nodeStatus.captured', {
-                                            time: nodeRuntime.data?.capturedAt,
-                                        })}
-                                    </p>
-                                )}
+                                <p role="status">
+                                    {compile.data.compiled
+                                        ? t('routes.compiled', compile.data)
+                                        : t('routes.invalid', compile.data)}
+                                </p>
+                                <ul>
+                                    {compile.data.issues.map((issue, index) => (
+                                        <li key={index}>
+                                            {issue.code} · {issue.routeKey} ·{' '}
+                                            {issue.nodeId} · {issue.fieldKey}
+                                        </li>
+                                    ))}
+                                </ul>
                             </>
                         )}
                     </section>
-                    <CanvasEditor
-                        key={generation}
-                        editor={canvas}
-                        persisted
-                        version={form.version}
-                        previewDraft={previewDraft}
-                        nodeRuntime={nodeStates}
-                        compiledErrorNodes={
-                            !dirty &&
-                            !compile.isPending &&
-                            !compile.isError &&
-                            compile.data?.version === form.version &&
-                            query.data?.version === form.version
-                                ? compile.data.issues
-                                      .filter(
-                                          (issue) =>
-                                              issue.routeKey === form.key,
-                                      )
-                                      .flatMap((issue) =>
-                                          issue.nodeId ? [issue.nodeId] : [],
-                                      )
-                                : undefined
-                        }
-                        onPendingChange={setPendingConfig}
-                        readOnly={!canEdit || busy}
-                        onCreateReference={
-                            canEdit
-                                ? (kind) => {
-                                      const active =
-                                          globalThis.document.activeElement
-                                      referenceOpener.current =
-                                          active instanceof HTMLElement
-                                              ? active
-                                              : null
-                                      setReferenceDrawer(kind)
-                                  }
-                                : undefined
-                        }
-                    />
-                    {form.id !== undefined && (
-                        <form
-                            onSubmit={(event) => {
-                                event.preventDefault()
-                                if (canEdit && !busy && !dirty)
-                                    mutation.mutate({
-                                        type: 'copy',
-                                        form,
-                                        key: copyKey,
-                                        name: copyName,
-                                    })
-                            }}
-                        >
-                            <fieldset
-                                disabled={!canEdit || busy || dirty}
-                                className="flex flex-wrap items-end gap-3 rounded border p-3"
-                            >
-                                <label>
-                                    {t('routes.copyKey')}
-                                    <input
-                                        className={inputClass}
-                                        required
-                                        maxLength={64}
-                                        pattern={businessKeyPattern}
-                                        value={copyKey}
-                                        onChange={(event) =>
-                                            setCopyKey(event.target.value)
-                                        }
-                                    />
-                                </label>
-                                <label>
-                                    {t('routes.copyName')}
-                                    <input
-                                        className={inputClass}
-                                        required
-                                        maxLength={64}
-                                        value={copyName}
-                                        onChange={(event) =>
-                                            setCopyName(event.target.value)
-                                        }
-                                    />
-                                </label>
-                                <Button type="submit">
-                                    {t('routes.copy')}
-                                </Button>
-                            </fieldset>
-                        </form>
-                    )}
-                </>
-            )}
-            <section className="space-y-2 rounded border p-3">
-                <p>{t('routes.compileNotice')}</p>
-                <Button
-                    disabled={!canEdit || busy || dirty || !query.data}
-                    onClick={() =>
-                        query.data && compile.mutate(query.data.version)
-                    }
-                >
-                    {t('routes.compile')}
-                </Button>
-                <ErrorMessage error={compile.error} />
-                {compile.data && (
-                    <>
-                        <p role="status">
-                            {compile.data.compiled
-                                ? t('routes.compiled', compile.data)
-                                : t('routes.invalid', compile.data)}
-                        </p>
-                        <ul>
-                            {compile.data.issues.map((issue, index) => (
-                                <li key={index}>
-                                    {issue.code} · {issue.routeKey} ·{' '}
-                                    {issue.nodeId} · {issue.fieldKey}
-                                </li>
-                            ))}
-                        </ul>
-                    </>
-                )}
-            </section>
+                </div>
+            </div>
             {referenceDrawer && (
                 <ReferenceDrawer
                     kind={referenceDrawer}

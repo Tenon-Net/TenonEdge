@@ -72,7 +72,7 @@ export function ClearPending({
                     {t('outputControls.clear.done', { count: command.data })}
                 </p>
             )}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Button
                     variant="outline"
                     disabled={busy || unavailable || uncertain}
@@ -113,7 +113,7 @@ export function ClearPending({
                         />
                         {t('outputControls.clear.confirmation')}
                     </label>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button
                             variant="destructive"
                             disabled={

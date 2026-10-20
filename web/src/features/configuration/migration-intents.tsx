@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useState } from 'react'
 import { create } from 'zustand'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
@@ -160,10 +161,8 @@ function Intents() {
         }
     }
     return (
-        <div className="mx-auto max-w-6xl space-y-6">
-            <h1 className="text-2xl font-semibold">
-                {t('configurationMigration.intents')}
-            </h1>
+        <div className="product-page">
+            <PageHeading title={t('configurationMigration.intents')} />
             <nav className="flex flex-wrap gap-4">
                 <Link className="underline" to="/configuration">
                     {t('configurationMigration.back')}
@@ -174,7 +173,7 @@ function Intents() {
             </nav>
             <p>{t('configurationMigration.listBoundary')}</p>
             <form
-                className="flex flex-wrap items-end gap-3"
+                className="product-toolbar"
                 onSubmit={(e) => {
                     e.preventDefault()
                     try {
@@ -287,9 +286,9 @@ function Intents() {
             {intentId && (
                 <section
                     aria-label={t('configurationMigration.detail')}
-                    className="space-y-4 rounded border p-4"
+                    className="product-panel space-y-4"
                 >
-                    <h2 className="text-xl font-semibold">
+                    <h2 className="text-base font-semibold">
                         {t('configurationMigration.detail')}
                     </h2>
                     <p className="break-all">
@@ -402,9 +401,9 @@ function Intents() {
             {review && (
                 <section
                     aria-label={t('configurationMigration.retryReview')}
-                    className="space-y-4 rounded border p-4"
+                    className="product-panel space-y-4"
                 >
-                    <h2 className="text-xl font-semibold">
+                    <h2 className="text-base font-semibold">
                         {t('configurationMigration.retryReview')}
                     </h2>
                     <p>
@@ -449,7 +448,7 @@ function Intents() {
             {attempt && (
                 <section
                     aria-label={t('migration.lookup')}
-                    className="space-y-3 rounded border p-4"
+                    className="product-panel space-y-3"
                 >
                     <h2 className="font-semibold">{t('migration.lookup')}</h2>
                     <p className="break-all font-mono">

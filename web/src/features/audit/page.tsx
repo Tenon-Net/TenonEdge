@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import {
     Table,
     TableHeader,
@@ -47,11 +48,14 @@ export function AuditPage() {
     })
     if (!allowed) return <p role="alert">{t('audit.adminOnly')}</p>
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('audit.title')}</h1>
-            <p className="text-muted-foreground">{t('audit.notice')}</p>
+        <div className="product-page">
+            <PageHeading
+                description={t('audit.notice')}
+                title={t('audit.title')}
+            />
+
             <form
-                className="flex flex-wrap items-end gap-3"
+                className="product-toolbar"
                 onSubmit={(event) => {
                     event.preventDefault()
                     try {

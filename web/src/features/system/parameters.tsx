@@ -126,7 +126,7 @@ export function RuntimeParameterPanel() {
             <p className="text-sm text-muted-foreground">
                 {t('systemSettings.parameters.planScope')}
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Button
                     variant="outline"
                     disabled={busy || query.isFetching}
@@ -226,7 +226,7 @@ export function RuntimeParameterPanel() {
                             {t('systemSettings.parameters.invalid')}
                         </p>
                     )}
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button type="submit" disabled={blocked || !confirmed}>
                             {t('systemSettings.parameters.save')}
                         </Button>

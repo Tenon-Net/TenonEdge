@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { businessKeyPattern } from '../../lib/business-key'
 import { HttpPreviewPanel } from './http-preview-panel'
 import { ModbusPreviewPanel } from './modbus-preview-panel'
@@ -229,7 +230,7 @@ export function DeviceInputsPage({
             (needsConnections && !connectionsReady) ||
             !validModuleForm(form, modules.data ?? [], connectionChoices))
     return (
-        <section className="space-y-4">
+        <section className="product-page">
             {onReturn && (
                 <Button
                     type="button"
@@ -246,16 +247,18 @@ export function DeviceInputsPage({
                     {t('routes.inline.backDevices')}
                 </Button>
             )}
-            <h1 className="text-2xl font-semibold">{t('inputs.title')}</h1>
+            <PageHeading
+                level={onReturn ? 2 : 1}
+                description={t('inputs.notice')}
+                title={t('inputs.title')}
+            />
             <p>
                 {t('inputs.device', {
                     name: device?.name ?? '—',
                     key: device?.key ?? routeId,
                 })}
             </p>
-            <p className="text-sm text-muted-foreground">
-                {t('inputs.notice')}
-            </p>
+
             <ErrorMessage
                 error={query.error ?? devices.error ?? mutation.error}
             />
@@ -268,7 +271,7 @@ export function DeviceInputsPage({
                 <p role="alert">{t('inputs.missing')}</p>
             )}
             {notice && <p role="status">{notice}</p>}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
                 <Button
                     variant="outline"
                     disabled={
@@ -301,17 +304,8 @@ export function DeviceInputsPage({
             <p className="text-xs text-muted-foreground">
                 {t('inputs.version', { version: query.data?.version ?? '—' })}
             </p>
-            {canEdit && device?.kind === 'modbus' && query.data && (
-                <PointCsvPanel
-                    deviceId={deviceId}
-                    version={query.data.version}
-                    blocked={!coherent || form !== null || mutation.isPending}
-                    canEdit={canEdit}
-                    onDirtyChange={setCsvDirty}
-                />
-            )}
-            {!query.data?.inputs.length && <p>{t('inputs.empty')}</p>}
-            <div className="flex flex-wrap gap-2">
+            {!query.data?.inputs.length && !form && <p>{t('inputs.empty')}</p>}
+            <div className="product-toolbar">
                 {query.data?.inputs.map((input) => (
                     <Button
                         key={input.id}
@@ -329,24 +323,8 @@ export function DeviceInputsPage({
                     </Button>
                 ))}
             </div>
-            {canEdit && coherent && device?.kind === 'modbus' && (
-                <ModbusPreviewPanel
-                    key={`device:${query.data!.version}`}
-                    deviceId={deviceId}
-                    version={query.data!.version}
-                    blocked={mutation.isPending}
-                />
-            )}
-            {canEdit && coherent && device?.kind === 'http' && (
-                <HttpPreviewPanel
-                    key={`http:${query.data!.version}`}
-                    deviceId={deviceId}
-                    version={query.data!.version}
-                    blocked={mutation.isPending}
-                />
-            )}
             {form && (
-                <section className="space-y-4 rounded border p-4">
+                <section className="product-panel space-y-4">
                     <form
                         onSubmit={(e) => {
                             e.preventDefault()
@@ -490,6 +468,35 @@ export function DeviceInputsPage({
                             )}
                         </div>
                     </form>
+                    {form.kind === 'modbus' ? (
+                        <PointEditor
+                            key={generation}
+                            store={points}
+                            managed
+                            readOnly={!canEdit || mutation.isPending}
+                        />
+                    ) : form.kind === 'module' ? (
+                        <ModuleSourceEditor
+                            key={generation}
+                            form={form}
+                            patch={patch}
+                            catalog={modules}
+                            connections={connectionChoices}
+                            connectionsReady={connectionsReady}
+                            refreshConnections={() =>
+                                void connections.refetch()
+                            }
+                            readOnly={!canEdit || mutation.isPending}
+                        />
+                    ) : (
+                        <JsonSourceEditor
+                            deviceId={deviceId}
+                            key={generation}
+                            form={form}
+                            patch={patch}
+                            readOnly={!canEdit || mutation.isPending}
+                        />
+                    )}
                     {form.kind === 'modbus' && canEdit && (
                         <ModbusPreviewPanel
                             key={`preview:${generation}`}
@@ -541,37 +548,37 @@ export function DeviceInputsPage({
                             }
                         />
                     )}
-                    {form.kind === 'modbus' ? (
-                        <PointEditor
-                            key={generation}
-                            store={points}
-                            managed
-                            readOnly={!canEdit || mutation.isPending}
-                        />
-                    ) : form.kind === 'module' ? (
-                        <ModuleSourceEditor
-                            key={generation}
-                            form={form}
-                            patch={patch}
-                            catalog={modules}
-                            connections={connectionChoices}
-                            connectionsReady={connectionsReady}
-                            refreshConnections={() =>
-                                void connections.refetch()
-                            }
-                            readOnly={!canEdit || mutation.isPending}
-                        />
-                    ) : (
-                        <JsonSourceEditor
-                            deviceId={deviceId}
-                            key={generation}
-                            form={form}
-                            patch={patch}
-                            readOnly={!canEdit || mutation.isPending}
-                        />
-                    )}
                 </section>
             )}
+            <div className="product-diagnostic-grid">
+                {canEdit && coherent && device?.kind === 'modbus' && (
+                    <ModbusPreviewPanel
+                        key={`device:${query.data!.version}`}
+                        deviceId={deviceId}
+                        version={query.data!.version}
+                        blocked={mutation.isPending}
+                    />
+                )}
+                {canEdit && coherent && device?.kind === 'http' && (
+                    <HttpPreviewPanel
+                        key={`http:${query.data!.version}`}
+                        deviceId={deviceId}
+                        version={query.data!.version}
+                        blocked={mutation.isPending}
+                    />
+                )}
+                {canEdit && device?.kind === 'modbus' && query.data && (
+                    <PointCsvPanel
+                        deviceId={deviceId}
+                        version={query.data.version}
+                        blocked={
+                            !coherent || form !== null || mutation.isPending
+                        }
+                        canEdit={canEdit}
+                        onDirtyChange={setCsvDirty}
+                    />
+                )}
+            </div>
         </section>
     )
 }

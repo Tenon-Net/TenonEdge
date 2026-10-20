@@ -15,3 +15,30 @@
     --dashboard-sent: oklch(0.77 0.12 170);
     --dashboard-attention: oklch(0.78 0.13 75);
 }
+
+/* Shared product workspaces. Existing shadcn-admin colors remain authoritative. */
+:root {
+    --font-display: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-body: var(--font-display);
+    --font-outlier: ui-monospace, SFMono-Regular, Consolas, monospace;
+    --workspace-paper: var(--card);
+    --workspace-subtle: var(--muted);
+    --workspace-ink: var(--foreground);
+    --workspace-secondary: var(--muted-foreground);
+    --workspace-rule: var(--border);
+    --workspace-focus: var(--primary);
+    --space-3xs: 0.25rem;
+    --space-2xs: 0.5rem;
+    --space-xs: 0.75rem;
+    --space-sm: 1rem;
+    --space-md: 1.5rem;
+    --space-lg: 2rem;
+    --workspace-title: 1.125rem;
+    --workspace-rail: 16rem;
+    --workspace-editor: 28rem;
+    --workspace-form: 64rem;
+    --workspace-radius: var(--radius);
+    --workspace-rule-width: 1px;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-micro: 120ms;
+}

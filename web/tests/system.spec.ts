@@ -30,6 +30,7 @@ async function setup(page: Page) {
     await page
         .getByRole('link', { name: '系统信息与设置', exact: true })
         .click()
+    await page.getByRole('tab', { name: '网络与访问', exact: true }).click()
     await expect(
         page.getByRole('button', { name: '编辑网页规则', exact: true }),
     ).toBeEnabled()
@@ -94,7 +95,7 @@ async function roleChecks(browser: Browser, page: Page, url: string) {
         const other = await browser.newContext({ baseURL: url })
         try {
             const user = await other.newPage()
-            await user.goto('/system')
+            await user.goto('/system?section=network')
             await user.getByLabel('账号', { exact: true }).fill(role)
             await user.getByLabel('密码', { exact: true }).fill(password)
             await user
@@ -168,6 +169,7 @@ test('system info matches real Host; web grants control real local HTTP, persist
         const info = await (
             await page.request.get(root + '/system/info')
         ).json()
+        await page.getByRole('tab', { name: '基本信息', exact: true }).click()
         const infoPanel = page.getByRole('region', {
             name: '系统信息',
             exact: true,
@@ -184,6 +186,7 @@ test('system info matches real Host; web grants control real local HTTP, persist
         await expect(infoPanel).toContainText(
             info.configStore.sqliteCompileOptions[0],
         )
+        await page.getByRole('tab', { name: '网络与访问', exact: true }).click()
         let rules = panel(page)
         await expect(
             rules.getByRole('region', {
@@ -250,7 +253,7 @@ test('system info matches real Host; web grants control real local HTTP, persist
         host = await startOwnedHost(data, 0, args)
         context = await browser.newContext({ baseURL: host.url })
         page = await context.newPage()
-        await page.goto('/system')
+        await page.goto('/system?section=network')
         await page.getByLabel('账号', { exact: true }).fill('system-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '登录', exact: true }).click()
@@ -501,6 +504,7 @@ test('invalid deployment stays explicit and system information does not round by
             })
         })
         await page.reload()
+        await page.getByRole('tab', { name: '基本信息', exact: true }).click()
         const info = page.getByRole('region', { name: '系统信息', exact: true })
         await expect(info).toContainText('9007199254740993')
         await expect(info).toContainText('9007199254740992')

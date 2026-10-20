@@ -15,7 +15,7 @@ function panel(page: Page) {
     })
 }
 async function setup(page: Page) {
-    await page.goto('/system')
+    await page.goto('/system?section=resources')
     await page.getByLabel('账号', { exact: true }).fill('parameters-admin')
     await page.getByLabel('密码', { exact: true }).fill(password)
     await page.getByLabel('确认密码', { exact: true }).fill(password)
@@ -203,7 +203,7 @@ test('queue settings change real admission without deleting rows, persist across
         host = await startOwnedHost(data, 0, args)
         context = await browser.newContext({ baseURL: host.url })
         page = await context.newPage()
-        await page.goto('/system')
+        await page.goto('/system?section=resources')
         await page.getByLabel('账号', { exact: true }).fill('parameters-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '登录', exact: true }).click()
@@ -247,7 +247,7 @@ test('queue settings change real admission without deleting rows, persist across
             const other = await browser.newContext({ baseURL: host.url })
             try {
                 const user = await other.newPage()
-                await user.goto('/system')
+                await user.goto('/system?section=resources')
                 await user.getByLabel('账号', { exact: true }).fill(role)
                 await user.getByLabel('密码', { exact: true }).fill(password)
                 await user
@@ -329,7 +329,7 @@ test('queue parameter editor retains validation input, freezes version and never
             .fill('365')
         page.once('dialog', (dialog) => dialog.dismiss())
         await page.getByRole('link', { name: '总览', exact: true }).click()
-        await expect(page).toHaveURL(/\/system$/)
+        await expect(page).toHaveURL(/\/system\?section=resources$/)
         const session = await (
             await page.request.get(root + '/auth/session')
         ).json()

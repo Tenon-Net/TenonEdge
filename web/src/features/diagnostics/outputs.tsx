@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import {
     Table,
     TableHeader,
@@ -77,11 +78,12 @@ export function RuntimeOutputsPage() {
     const page = query.data
     const revision = String(page?.revision ?? 0)
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('outputs.title')}</h1>
-            <p className="text-sm text-muted-foreground">
-                {t('outputs.notice')}
-            </p>
+        <div className="product-page">
+            <PageHeading
+                description={t('outputs.notice')}
+                title={t('outputs.title')}
+            />
+
             <DiagnosticPanel title={t('outputs.summary')} query={query}>
                 <p>
                     {t('outputs.revision', { revision: page?.revision ?? '—' })}
@@ -249,7 +251,6 @@ export function RuntimeOutputsPage() {
                     </>
                 )}
             </DiagnosticPanel>
-            <LossCounters />
             {selected && page && (
                 <OutputDetail
                     key={`${revision}/${selected}`}
@@ -257,6 +258,7 @@ export function RuntimeOutputsPage() {
                     revision={revision}
                 />
             )}
+            <LossCounters />
         </div>
     )
 }

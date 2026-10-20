@@ -161,7 +161,7 @@ export function OutboundPolicyPanel() {
             {!canEdit && (
                 <p className="text-sm">{t('systemSettings.policy.allRoles')}</p>
             )}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Button
                     variant="outline"
                     disabled={busy || query.isFetching}
@@ -353,7 +353,7 @@ export function OutboundPolicyPanel() {
                     {invalid && (
                         <p role="alert">{t('systemSettings.policy.invalid')}</p>
                     )}
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button type="submit" disabled={blocked || !confirmed}>
                             {t('systemSettings.policy.save')}
                         </Button>

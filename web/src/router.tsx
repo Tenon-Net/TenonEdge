@@ -1,3 +1,6 @@
+import { PageHeading } from './components/layout/page'
+import { Button } from './components/ui/button'
+import { FileQuestion, ShieldCheck } from 'lucide-react'
 import {
     createRootRoute,
     createRoute,
@@ -11,18 +14,36 @@ import { AuthForm } from './features/auth/auth-form'
 function AccountPage() {
     const { t } = useTranslation()
     return (
-        <div className="max-w-md space-y-6">
-            <h1 className="text-2xl font-semibold">{t('passwordChange')}</h1>
-            <AuthForm mode="passwordChange" />
+        <div className="product-page">
+            <PageHeading title={t('passwordChange')} />
+            <section className="product-panel max-w-lg space-y-5">
+                <ShieldCheck
+                    aria-hidden="true"
+                    className="size-6 text-muted-foreground"
+                />
+                <AuthForm mode="passwordChange" />
+            </section>
         </div>
     )
 }
 function NotFound() {
     const { t } = useTranslation()
     return (
-        <div>
-            <h1>{t('noPage')}</h1>
-            <Link to="/">{t('backHome')}</Link>
+        <div className="product-page">
+            <PageHeading title={t('pageLayout.notFound')} />
+            <section className="mx-auto flex max-w-md flex-col items-center gap-4 py-16 text-center">
+                <FileQuestion
+                    aria-hidden="true"
+                    className="size-10 text-muted-foreground"
+                />
+                <p>{t('noPage')}</p>
+                <p className="text-sm text-muted-foreground">
+                    {t('pageLayout.notFoundHelp')}
+                </p>
+                <Button asChild>
+                    <Link to="/">{t('backHome')}</Link>
+                </Button>
+            </section>
         </div>
     )
 }

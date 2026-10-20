@@ -78,7 +78,7 @@ export function SessionGate() {
     const error = sessionQuery.error ?? setupQuery.error
     return (
         <AuthLayout>
-            <Card className="gap-4">
+            <Card className="gap-4 border shadow-none">
                 <CardHeader>
                     <CardTitle className="text-lg tracking-tight">
                         {t(mode)}

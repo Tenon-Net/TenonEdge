@@ -1,0 +1,238 @@
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app
+ * Hallmark · pre-emit critique: P5 H4 E4 S5 R4 V4. Scope and verification limits are in the design review. */
+@layer components {
+    .product-page {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+    .product-page > button,
+    .product-page > a {
+        align-self: flex-start;
+    }
+    .product-heading {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-xs);
+        padding-block-end: var(--space-xs);
+        border-block-end: var(--workspace-rule-width) solid
+            var(--workspace-rule);
+    }
+    .product-heading :is(h1, h2) {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-family: var(--font-display);
+        font-size: var(--workspace-title);
+        font-weight: 600;
+        font-style: normal;
+        letter-spacing: -0.02em;
+    }
+    .product-heading-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2xs);
+    }
+    .product-help {
+        min-width: 0;
+        font-size: var(--text-sm);
+        color: var(--workspace-secondary);
+    }
+    .product-help > summary {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2xs);
+        cursor: pointer;
+        white-space: nowrap;
+        padding-block: var(--space-2xs);
+    }
+    .product-help[open] {
+        flex-basis: 100%;
+    }
+    .product-help-content {
+        max-width: 75ch;
+        padding-block: var(--space-xs);
+        line-height: 1.7;
+    }
+    .product-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: var(--space-xs);
+        padding: var(--space-xs);
+        border: var(--workspace-rule-width) solid var(--workspace-rule);
+        border-radius: var(--workspace-radius);
+        background: var(--workspace-paper);
+    }
+    .product-toolbar:empty {
+        display: none;
+    }
+    .product-toolbar > label {
+        min-width: 0;
+        flex: 1 1 9rem;
+        font-size: var(--text-sm);
+    }
+    .product-split,
+    .product-workbench {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        gap: var(--space-sm);
+    }
+    .product-list,
+    .product-detail,
+    .product-split:not(.has-detail) > .product-detail {
+        max-width: var(--workspace-form);
+    }
+    .product-rail {
+        min-width: 0;
+    }
+    .product-detail {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+    .product-list:empty,
+    .product-detail:empty {
+        display: none;
+    }
+    .product-rail {
+        padding: var(--space-xs);
+        background: var(--workspace-paper);
+        border: var(--workspace-rule-width) solid var(--workspace-rule);
+        border-radius: var(--workspace-radius);
+    }
+    .product-rail [aria-pressed='true'] {
+        background: var(--workspace-subtle);
+        border-color: var(--workspace-focus);
+    }
+    .product-panel {
+        min-width: 0;
+        padding: var(--space-sm);
+        background: var(--workspace-paper);
+        border: var(--workspace-rule-width) solid var(--workspace-rule);
+        border-radius: var(--workspace-radius);
+    }
+    .product-panel-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-xs);
+        border-block-end: var(--workspace-rule-width) solid
+            var(--workspace-rule);
+        padding-block-end: var(--space-xs);
+    }
+    .product-panel-header h2 {
+        font-size: var(--text-base);
+        font-weight: 600;
+    }
+    .product-tabs {
+        min-width: 0;
+    }
+    .product-tablist {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-3xs);
+        border-block-end: var(--workspace-rule-width) solid
+            var(--workspace-rule);
+        margin-block-end: var(--space-sm);
+    }
+    .product-tablist button {
+        min-height: 2.75rem;
+        padding: var(--space-2xs) var(--space-xs);
+        color: var(--workspace-secondary);
+        border-block-end: 2px solid transparent;
+        white-space: nowrap;
+    }
+    .product-tablist button:hover {
+        background: var(--workspace-subtle);
+        color: var(--workspace-ink);
+    }
+    .product-tablist button:active {
+        background: var(--accent);
+    }
+    .product-tablist button[aria-selected='true'] {
+        border-color: var(--workspace-focus);
+        color: var(--workspace-ink);
+        font-weight: 600;
+    }
+    .product-tabpanel.is-active {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+    .product-tabpanel[hidden] {
+        display: none;
+    }
+    .product-tabpanel:focus-visible,
+    .product-tablist button:focus-visible,
+    .product-help summary:focus-visible {
+        outline: 2px solid var(--workspace-focus);
+        outline-offset: 2px;
+    }
+    .product-page
+        :where(form, fieldset, section, aside, label, input, select, textarea) {
+        min-width: 0;
+    }
+    .product-page
+        :where(
+            input:not([type='checkbox']):not([type='radio']),
+            select,
+            textarea
+        ) {
+        max-width: 100%;
+    }
+    .product-page :where(table) {
+        font-variant-numeric: tabular-nums;
+    }
+    .product-page :where(th) {
+        color: var(--workspace-secondary);
+        font-size: var(--text-xs);
+        font-weight: 500;
+        background: var(--workspace-subtle);
+    }
+    .product-page :where(td) {
+        vertical-align: top;
+    }
+    .product-page :where(tbody tr:hover) {
+        background: var(--workspace-subtle);
+    }
+    .product-page :where(pre, code) {
+        font-family: var(--font-outlier);
+    }
+    .product-page :where(button) {
+        max-width: 100%;
+    }
+    .product-page :where(p, dd) {
+        overflow-wrap: anywhere;
+    }
+    .product-page .product-technical {
+        color: var(--workspace-secondary);
+        font-size: var(--text-xs);
+    }
+    @media (min-width: 64rem) {
+        .product-workbench {
+            grid-template-columns: var(--workspace-rail) minmax(0, 1fr);
+        }
+    }
+    @media (min-width: 80rem) {
+        .product-split.has-detail {
+            grid-template-columns: minmax(0, 1fr) minmax(
+                    20rem,
+                    var(--workspace-editor)
+                );
+        }
+        .product-diagnostic-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            align-items: start;
+            gap: var(--space-sm);
+        }
+    }
+}

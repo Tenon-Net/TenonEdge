@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
@@ -95,12 +96,12 @@ export function TokensPage() {
             : ''
     if (!canManage) return <p role="alert">{t('tokens.administratorOnly')}</p>
     return (
-        <section className="space-y-5">
+        <section className="product-page">
             <div>
-                <h1 className="text-2xl font-semibold">{t('tokens.title')}</h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    {t('tokens.description')}
-                </p>
+                <PageHeading
+                    description={t('tokens.description')}
+                    title={t('tokens.title')}
+                />
             </div>
             <p role={!https ? 'alert' : undefined}>{t('tokens.https')}</p>
             <ErrorMessage error={query.error} />
@@ -110,7 +111,7 @@ export function TokensPage() {
             )}
             {needsRead && <p role="alert">{t('tokens.afterFailure')}</p>}
             {notice && <p role="status">{notice}</p>}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
                 <Button
                     disabled={blocked || !https || !query.data}
                     onClick={() => {
@@ -130,181 +131,194 @@ export function TokensPage() {
                     {t('tokens.refresh')}
                 </Button>
             </div>
-            {query.isPending && <p>{t('loading')}</p>}
-            {query.data && (
-                <TokenTable
-                    items={query.data.items}
-                    disabled={blocked}
-                    revoke={(token) => {
-                        setTarget(token)
-                        setConfirmed(false)
-                        setNotice('')
-                    }}
-                />
-            )}
-            <div className="flex gap-2">
-                <Button
-                    variant="outline"
-                    disabled={
-                        busy || editing || query.isFetching || after === 0
-                    }
-                    onClick={() => setAfter(0)}
-                >
-                    {t('tokens.first')}
-                </Button>
-                <Button
-                    variant="outline"
-                    disabled={
-                        busy ||
-                        editing ||
-                        query.isFetching ||
-                        !query.data?.nextCursor
-                    }
-                    onClick={() => setAfter(Number(query.data!.nextCursor))}
-                >
-                    {t('tokens.next')}
-                </Button>
-            </div>
-            {form && (
-                <form
-                    className="max-w-xl space-y-4 rounded-md border p-5"
-                    onSubmit={(event) => {
-                        event.preventDefault()
-                        void execute()
-                    }}
-                >
-                    <h2 className="text-lg font-semibold">
-                        {t('tokens.create')}
-                    </h2>
-                    <p>{t('tokens.warning')}</p>
-                    <p>{t('tokens.oneTime')}</p>
-                    <label className="block">
-                        {t('tokens.name')}
-                        <input
-                            className={inputClass}
-                            value={form.name}
-                            required
-                            maxLength={64}
-                            autoComplete="off"
-                            onChange={(event) =>
-                                edit('name', event.target.value)
-                            }
+            <div className={`product-split ${editing ? 'has-detail' : ''}`}>
+                <div className="product-list space-y-3">
+                    {query.isPending && <p>{t('loading')}</p>}
+                    {query.data && (
+                        <TokenTable
+                            items={query.data.items}
+                            disabled={blocked}
+                            revoke={(token) => {
+                                setTarget(token)
+                                setConfirmed(false)
+                                setNotice('')
+                            }}
                         />
-                    </label>
-                    <label className="block">
-                        {t('tokens.role')}
-                        <select
-                            aria-label={t('tokens.role')}
-                            className={inputClass}
-                            value={form.role}
-                            onChange={(event) => {
-                                const value = event.target.value
-                                if (
-                                    value === 'administrator' ||
-                                    value === 'configurator' ||
-                                    value === 'viewer'
-                                )
-                                    edit('role', value)
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            variant="outline"
+                            disabled={
+                                busy ||
+                                editing ||
+                                query.isFetching ||
+                                after === 0
+                            }
+                            onClick={() => setAfter(0)}
+                        >
+                            {t('tokens.first')}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            disabled={
+                                busy ||
+                                editing ||
+                                query.isFetching ||
+                                !query.data?.nextCursor
+                            }
+                            onClick={() =>
+                                setAfter(Number(query.data!.nextCursor))
+                            }
+                        >
+                            {t('tokens.next')}
+                        </Button>
+                    </div>
+                </div>
+                <div className="product-detail">
+                    {form && (
+                        <form
+                            className="product-panel space-y-4"
+                            onSubmit={(event) => {
+                                event.preventDefault()
+                                void execute()
                             }}
                         >
-                            {(
-                                [
-                                    'viewer',
-                                    'configurator',
-                                    'administrator',
-                                ] as const
-                            ).map((role) => (
-                                <option key={role} value={role}>
-                                    {t(`roles.${role}`)}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="block">
-                        {t('tokens.expiry')}
-                        <input
-                            className={inputClass}
-                            type="datetime-local"
-                            value={form.expiresAt}
-                            onChange={(event) =>
-                                edit('expiresAt', event.target.value)
-                            }
-                        />
-                    </label>
-                    <div className="flex gap-2">
-                        <Button type="submit" disabled={busy}>
-                            {t('tokens.create')}
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => editor.setState({ form: null })}
+                            <h2 className="text-lg font-semibold">
+                                {t('tokens.create')}
+                            </h2>
+                            <p>{t('tokens.warning')}</p>
+                            <p>{t('tokens.oneTime')}</p>
+                            <label className="block">
+                                {t('tokens.name')}
+                                <input
+                                    className={inputClass}
+                                    value={form.name}
+                                    required
+                                    maxLength={64}
+                                    autoComplete="off"
+                                    onChange={(event) =>
+                                        edit('name', event.target.value)
+                                    }
+                                />
+                            </label>
+                            <label className="block">
+                                {t('tokens.role')}
+                                <select
+                                    aria-label={t('tokens.role')}
+                                    className={inputClass}
+                                    value={form.role}
+                                    onChange={(event) => {
+                                        const value = event.target.value
+                                        if (
+                                            value === 'administrator' ||
+                                            value === 'configurator' ||
+                                            value === 'viewer'
+                                        )
+                                            edit('role', value)
+                                    }}
+                                >
+                                    {(
+                                        [
+                                            'viewer',
+                                            'configurator',
+                                            'administrator',
+                                        ] as const
+                                    ).map((role) => (
+                                        <option key={role} value={role}>
+                                            {t(`roles.${role}`)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="block">
+                                {t('tokens.expiry')}
+                                <input
+                                    className={inputClass}
+                                    type="datetime-local"
+                                    value={form.expiresAt}
+                                    onChange={(event) =>
+                                        edit('expiresAt', event.target.value)
+                                    }
+                                />
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                <Button type="submit" disabled={busy}>
+                                    {t('tokens.create')}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() =>
+                                        editor.setState({ form: null })
+                                    }
+                                >
+                                    {t('tokens.cancel')}
+                                </Button>
+                            </div>
+                        </form>
+                    )}
+                    {secret && (
+                        <section
+                            className="product-panel space-y-3"
+                            aria-label={t('tokens.secret')}
                         >
-                            {t('tokens.cancel')}
-                        </Button>
-                    </div>
-                </form>
-            )}
-            {secret && (
-                <section
-                    className="max-w-2xl space-y-3 rounded-md border p-5"
-                    aria-label={t('tokens.secret')}
-                >
-                    <p>{t('tokens.oneTime')}</p>
-                    <label className="block">
-                        {t('tokens.secret')}
-                        <textarea
-                            className={inputClass}
-                            readOnly
-                            value={secret}
-                            autoComplete="off"
-                            spellCheck={false}
-                        />
-                    </label>
-                    <Button onClick={() => setSecret(null)}>
-                        {t('tokens.closeSecret')}
-                    </Button>
-                </section>
-            )}
-            {target && (
-                <section
-                    className="max-w-xl space-y-4 rounded-md border p-5"
-                    aria-label={t('tokens.execute')}
-                >
-                    <h2 className="text-lg font-semibold">
-                        {t('tokens.execute')}：{target.name}
-                    </h2>
-                    <p>{t('tokens.revokeWarning')}</p>
-                    <p>
-                        {t(`roles.${target.role}`)} ·{' '}
-                        {target.creatorAccountName}
-                    </p>
-                    <label className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            checked={confirmed}
-                            onChange={(event) =>
-                                setConfirmed(event.target.checked)
-                            }
-                        />
-                        {t('tokens.confirm')}
-                    </label>
-                    <div className="flex gap-2">
-                        <Button
-                            disabled={!confirmed || busy}
-                            onClick={() => void execute()}
+                            <p>{t('tokens.oneTime')}</p>
+                            <label className="block">
+                                {t('tokens.secret')}
+                                <textarea
+                                    className={inputClass}
+                                    readOnly
+                                    value={secret}
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                />
+                            </label>
+                            <Button onClick={() => setSecret(null)}>
+                                {t('tokens.closeSecret')}
+                            </Button>
+                        </section>
+                    )}
+                    {target && (
+                        <section
+                            className="product-panel space-y-4"
+                            aria-label={t('tokens.execute')}
                         >
-                            {t('tokens.execute')}
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => setTarget(null)}
-                        >
-                            {t('tokens.cancel')}
-                        </Button>
-                    </div>
-                </section>
-            )}
+                            <h2 className="text-lg font-semibold">
+                                {t('tokens.execute')}：{target.name}
+                            </h2>
+                            <p>{t('tokens.revokeWarning')}</p>
+                            <p>
+                                {t(`roles.${target.role}`)} ·{' '}
+                                {target.creatorAccountName}
+                            </p>
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={confirmed}
+                                    onChange={(event) =>
+                                        setConfirmed(event.target.checked)
+                                    }
+                                />
+                                {t('tokens.confirm')}
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    disabled={!confirmed || busy}
+                                    onClick={() => void execute()}
+                                >
+                                    {t('tokens.execute')}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setTarget(null)}
+                                >
+                                    {t('tokens.cancel')}
+                                </Button>
+                            </div>
+                        </section>
+                    )}
+                </div>
+            </div>
         </section>
     )
 }
