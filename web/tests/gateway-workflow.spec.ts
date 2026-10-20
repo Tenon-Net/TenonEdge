@@ -21,6 +21,7 @@ async function expectAppliedOverview(
 ) {
     await page.goto('/')
     const state = page.getByRole('region', { name: '运行状态', exact: true })
+    await state.getByText('配置与网关信息', { exact: true }).click()
     const fact = (name: string) =>
         state.getByText(name, { exact: true }).locator('..').locator('dd')
     await expect(fact('持久有效版本')).toHaveText(
@@ -36,7 +37,7 @@ async function expectAppliedOverview(
         page.getByRole('region', { name: '最近一小时趋势', exact: true }),
     ).toBeVisible()
     await expect(
-        page.getByRole('region', { name: '运行事件', exact: true }),
+        page.getByRole('region', { name: '最近异常', exact: true }),
     ).toBeVisible()
 }
 

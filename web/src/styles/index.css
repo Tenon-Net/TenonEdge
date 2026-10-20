@@ -1,9 +1,15 @@
 @import 'tailwindcss';
 @import './theme.css';
+@import '../../tokens.css';
 @custom-variant dark (&:is(.dark *));
 @layer base {
     * {
         @apply border-border outline-ring/50;
+    }
+    /* Limit dashboard clipping to its route: the route editor needs native document scrolling. */
+    html:has([data-dashboard='operations']),
+    body:has([data-dashboard='operations']) {
+        overflow-x: clip;
     }
     body {
         @apply m-0 min-h-svh bg-background text-foreground;

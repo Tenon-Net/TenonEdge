@@ -8888,3 +8888,41 @@ node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-shadcn-product/evid
 格式、lint和类型/构建通过，保留两条既存lint警告及已有chunk大小提示。浏览器 **5/5** 通过，0失败/跳过/flaky，22.291秒：真实首次设置/登录/CSRF改密/退出/离线资源，失败登录不重放、设置密码确认以及桌面/手机布局；原认证用例改为核对首次设置、登录、改密页和总览均无HTTP提示。首次格式检查发现修改后的来源表需格式化，修正后通过（`format-first.log`、`format.log`）；测试完成后曾只传一个报告给验证器，参数不足退出，按上列双参数命令修正后通过。双参数中的797项单元报告为§2.316既有证据，本轮没有重跑或另计该单元测试。
 
 10:47:23（北京时间）将新静态文件更新至原试用地址`http://192.168.0.88:18490`，保留旧hashed assets、原子替换index；核对原Host/对端PID、启动时刻及命令未变，未操作人工账号和配置。实际入口SHA256为`11fe15ce0671896b3f1b14d98670072c6bb0092bd246a12278e8d8d38868bde1`，入口和readyz均200（`preview-update.json`）。匿名浏览器核对登录可见、无HTTP提示/HTTPS说明、390px手机无横向溢出，页面错误/外部请求/写请求均0（`preview-browser.json`、`login-desktop.png`、`login-mobile.png`）；`source-sha256.json`与`build-sha256.json`保留代码和产物哈希。
+
+
+### 2.318 T3-01 总览重构为真实运行看板（2026-10-20）
+
+维护者要求减少信息堆叠、去掉重复大页标题与侧栏旁大块留白，参考边缘网关首页，确认采用“紧凑专业的网关运行看板”。继续使用§2.316已裁剪复用的固定 shadcn-admin 布局、Card、Button和浅/深色主题；业务图表按本网关真实API实现，不声称复制了上游完整Dashboard。只参考本地 iotgateway 的真实状态统计和 IoTEdge SummaryGrid 的指标组织模式，未移植这些仓库源码或演示数据。功能需求§1.3/7.1、前端设计与总设计的首页信息层级已同步本次确认。
+
+交付：
+
+- 首页单独使用流式宽屏Main，其他路由保持原布局；H1仅作读屏语义保留。顶部精简为运行状态、版本、统一刷新和可展开的配置/网关身份，保留持久有效版本及其应用人/时间、首次设置时间/IP、运行失败原因、版本不一致与存储保护。完整系统资料、计数/容量和事件筛选分别进入既有详情页。
+- 四项指标为已配置设备、最近完整采样收/发速率、待发积压。数字计数与版本不经Number舍入；全局队列压力用BigInt合计待发+隔离字节后对配额求比，失败区另计，不把第一页目标容量冒充全局估算。输出“正常”不代表远端在线，发送/收到也不被包装为成功率。
+- 吞吐SVG仅展示本进程真实最近一小时数据，可切换15分钟；按实际duration计算均值，图形/速率允许近似，原始采样保留。缺样不补零、不跨缺口连线，指针/触摸和键盘均可选择采样。没有24小时、CPU/内存等虚构数据，也没有新增API或依赖。
+- 设备分布区分正常、需关注、推送、停用及未就绪/其他，不将MQTT沉默误判为离线。异常摘要并发读取warning/error各最新50条，在有界候选中按最近发生/精确ID取5条；完整历史仍在运行诊断。任一路失败不能显示“无异常”，状态/设备/队列/趋势独立失败时隐藏相应缓存旧值，不伪造零或旧版身份。
+- 手机指标为两列，桌面四列；复用现有主题和系统字体，新增颜色只用语义token。产品界面没有AI/开发提示，也未恢复HTTP通用警告。样式、纯指标模型、查询及可视化各自分离，保留旧诊断组件和详情功能。
+
+关联T3-01/FE-D01；复验FE-AT-01（本轮构建、无新增依赖）、FE-AT-02/03/07的相关软件子场景。FE-AT-06本轮仅为当前Chromium/网卡HTTP与响应式软件检查，不代表指定最低版本验收。环境为Linux7.0.0-31-generic x64、SDK10.0.401、Node22.23.2/npm11.21.0、Playwright1.64.0自带Chromium156.0.8078.4。主测试URL为`http://192.168.0.88:18894`；部分自有Host使用动态端口。协议闭环使用软件Modbus从站/HTTP接收端，不当作实物验证；未修改后端或把旧后端全量测试记为本轮执行。
+
+证据根：`/home/shiny/.cache/tenonedge-overview-product/evidence/`。最终命令在`web/`执行：
+
+```sh
+npx --yes npm@11.21.0 run build -- --outDir /home/shiny/.cache/tenonedge-overview-product/dist-scoped
+npx --yes npm@11.21.0 run lint
+npx --yes npm@11.21.0 run format:check
+npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=/home/shiny/.cache/tenonedge-overview-product/evidence/web-unit-final.json
+TENONEDGE_TEST_URL=http://192.168.0.88:18894 TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-overview-product/dist-scoped PLAYWRIGHT_JSON_OUTPUT_NAME=/home/shiny/.cache/tenonedge-overview-product/evidence/browser-final.json npx --yes npm@11.21.0 run test:e2e -- auth.spec.ts workspace.spec.ts users.spec.ts gateway-name.spec.ts diagnostics.spec.ts overview-dashboard.spec.ts connection-list.spec.ts audit.spec.ts gateway-workflow.spec.ts current-values.spec.ts outputs.spec.ts deliveries.spec.ts system.spec.ts --output=/home/shiny/.cache/tenonedge-overview-product/evidence/browser-final-artifacts --reporter=line,json
+node scripts/verify-results.mjs /home/shiny/.cache/tenonedge-overview-product/evidence/web-unit-final.json /home/shiny/.cache/tenonedge-overview-product/evidence/browser-final.json
+```
+
+最终结果：类型/构建、格式和lint通过；保留两条既有lint警告和已有chunk大小提示。Web **58文件、813/813**；浏览器 **73/73**，0失败/跳过/flaky，550.984秒。两参数报告验证器通过；`source-before-final-browser.json`、`source-sha256.json`、`build-before-final-browser.json`记录被测源码与产物，确认最终浏览器执行期间前端源码无变化。覆盖总览真实采样/键盘选择/独立错误、宽屏与响应式、浅深主题、导航后停轮询、精确版本身份、角色权限、完整系统资料，以及原有点表/画布、保存/凭证/预览、审计/队列及两角色无JSON Modbus→HTTP闭环。
+
+`browser-final-artifacts/`保留1920/2560/1440/768/414/375/320浅色与1440/375深色截图；有意只用真实软件输入生成采样，不将视觉种子称为真实设备配置验收。无横向溢出的断言同时检查dashboard自身scrollWidth及可见控件边界，不仅靠根元素裁剪遮掩。较早的2项视觉、3项系统及3项定向修复复验与最终73项重合，不相加。
+
+失败与修复保留：最初7项为4通过/3失败，测试误以为首次设置不会留下warning，并把自有Host的趋势读取发给了默认测试Host；改为核对真实setup.windowOpen及绝对Host地址。第二轮3项中2通过/1失败，是测试误将768px桌面侧栏的合法x=280当成越界，改为验证实际边距/控件边界。拆分面板时unknown错误值直接参与JSX导致一次类型失败，修正为布尔判断；该次构建未成功但旧命令仍启动了旧产物浏览器测试（1通过/1失败），报告明确作废且不计通过；后续命令统一set -e避免继续测试陈旧产物。证据分别为`browser-first*`、`browser-dashboard-second*`、`build-final.log`和`browser-dashboard-third*`。
+
+首轮大回归为69/70（`browser-unscoped.json`），发现新增的全局html/body overflow-x:clip使千条映射规则表确认按钮无法通过原生scrollIntoView滚入视口。将原用例单独运行仍失败（`mapping-red.json`），只将裁剪约束限定到包含operations看板的首页后，原用例及两项看板测试3/3通过（`mapping-green.json`）；新增断言确保离开首页即撤销裁剪，没有强制点击、增加超时或删除验收断言。最终在冻结的修正版上重跑上述全部73项通过。设计自评与适用项检查见`design-review.md`，不将其当作无障碍认证或最低浏览器实测。
+
+试用更新于`2026-10-20T03:49:19.930432+00:00`：仍用`http://192.168.0.88:18490`，保留旧hashed assets并最后原子替换index，入口SHA256为`0ab4fb454b8f55dce7017b31a97c047841e7840c38e11be602a83fab4f09c8a6`，入口与readyz200。核对原Host/对端PID、startTicks和命令未变，没有重启、重置账号、猜测密码或修改人工配置。`preview-update.json`、`preview-assets.json`核对入口和实际静态资源；`preview-browser.json`匿名只读检查登录、无HTTP通用提示和390px手机无溢出，页面错误/外部请求/写请求均0。真实人工账号的总览观感仍由维护者刷新后验收，不借匿名检查声称已登录人工账号。
+
+本节完成总览重构及其软件回归，**不是T3整体验收**。实际最低浏览器、真实Excel、实际CI及维护者验收等剩余项仍按§1.1；没有推送、发布、合回原工作区或进入T4/T5/G1。

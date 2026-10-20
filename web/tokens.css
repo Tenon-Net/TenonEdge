@@ -1,0 +1,17 @@
+/* Hallmark · macrostructure: Operations dashboard · tone: modern-minimal · anchor hue: existing shadcn slate
+ * Hallmark · pre-emit critique: P5 H4 E4 S5 R4 V4; existing app theme preserved.
+ * Dashboard-only semantic aliases preserve the existing shadcn-admin theme and system fonts. */
+:root {
+    --dashboard-received: oklch(0.5 0.18 255);
+    --dashboard-sent: oklch(0.46 0.1 170);
+    --dashboard-attention: oklch(0.5 0.14 65);
+    --dashboard-normal: var(--dashboard-sent);
+    --dashboard-push: var(--dashboard-received);
+    --dashboard-disabled: var(--muted-foreground);
+    --dashboard-other: var(--border);
+}
+.dark {
+    --dashboard-received: oklch(0.74 0.13 255);
+    --dashboard-sent: oklch(0.77 0.12 170);
+    --dashboard-attention: oklch(0.78 0.13 75);
+}

@@ -7,22 +7,33 @@ import { decodeDiagnosticsJson, type Diagnostics } from './api'
 import { OverviewPage } from './overview'
 import { dateText } from './view'
 
-const queries = vi.hoisted(() => ({ runtime: vi.fn(), info: vi.fn() }))
+const queries = vi.hoisted(() => ({
+    runtime: vi.fn(),
+    info: vi.fn(),
+    devices: vi.fn(),
+    outputs: vi.fn(),
+    trends: vi.fn(),
+    events: vi.fn(),
+}))
 vi.mock('../../lib/session', () => ({ useSession: () => ({ role: 'viewer' }) }))
 vi.mock('./queries', () => ({
     useRuntimeStatus: queries.runtime,
     useSystemInfo: queries.info,
+    useRuntimeDevices: queries.devices,
+    useRuntimeOutputs: queries.outputs,
 }))
 vi.mock('@tanstack/react-router', () => ({
     Link: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }))
-vi.mock('./current-values', () => ({ DeviceSummary: () => null }))
-vi.mock('./outputs', () => ({ OutputSummary: () => null }))
-vi.mock('./loss-counters', () => ({ LossCounters: () => null }))
-vi.mock('./events', () => ({ RuntimeEvents: () => <p>events-component</p> }))
-vi.mock('./trends', () => ({ RuntimeTrends: () => <p>trends-component</p> }))
+vi.mock('./dashboard-queries', () => ({
+    useDashboardTrends: queries.trends,
+    useDashboardExceptions: queries.events,
+}))
+vi.mock('./dashboard-chart', () => ({
+    DashboardChart: () => <p>trends-component</p>,
+}))
 
-function query(data?: Diagnostics, error: unknown = null) {
+function query(data?: unknown, error: unknown = null) {
     return {
         data,
         error,
@@ -45,9 +56,13 @@ function status() {
 beforeEach(() => {
     queries.runtime.mockReturnValue(query(status()))
     queries.info.mockReturnValue(query())
+    queries.devices.mockReturnValue(query())
+    queries.outputs.mockReturnValue(query())
+    queries.trends.mockReturnValue(query([]))
+    queries.events.mockReturnValue(query([]))
 })
 
-it('pairs exact durable revision with its own operator/time, not the active runtime revision; mounts the shared trends and events', () => {
+it('pairs exact durable revision with its own operator/time, not the active runtime revision; keeps independent chart and exception summary', () => {
     const html = renderToStaticMarkup(<OverviewPage />)
     expect(html).toMatch(/持久有效版本<\/dt><dd[^>]*>r9007199254740993<\/dd>/)
     expect(html).toMatch(/当前运行版本<\/dt><dd[^>]*>r7<\/dd>/)
@@ -55,7 +70,8 @@ it('pairs exact durable revision with its own operator/time, not the active runt
     expect(html).toContain(dateText('2026-10-19T01:02:03Z'))
     expect(html).toContain('不表示全部运行单元已启动')
     expect(html).toContain('trends-component')
-    expect(html).toContain('events-component')
+    expect(html).toContain('最近异常')
+    expect(html).toContain('暂无警告与错误')
 })
 
 it('retains the durable identity when runtime startup failed and no units are active', () => {
@@ -106,5 +122,55 @@ it('does not show cached version metadata as current after a failed status refre
     expect(html).not.toContain('r9007199254740993')
     expect(html).not.toContain('actual-operator')
     expect(html).toContain('trends-component')
-    expect(html).toContain('events-component')
+    expect(html).toContain('最近异常')
+    expect(html).toContain('暂无警告与错误')
+})
+
+it('hides stale counts and the healthy exception message on independent query failures', () => {
+    queries.devices.mockReturnValue(
+        query(
+            { devices: [{ health: 'normal' }] },
+            new ApiError(500, { status: 500 }),
+        ),
+    )
+    queries.outputs.mockReturnValue(
+        query(
+            { usage: { pendingCount: '9007199254740993' } },
+            new ApiError(500, { status: 500 }),
+        ),
+    )
+    queries.events.mockReturnValue(
+        query([], new ApiError(500, { status: 500 })),
+    )
+    const html = renderToStaticMarkup(<OverviewPage />)
+    expect(html).not.toContain('暂无警告与错误')
+    expect(html).not.toContain('9,007,199,254,740,993')
+    expect(html).toContain('暂时无法读取')
+    expect(html).toContain('aria-valuetext="未知"')
+    expect(html).toContain('trends-component')
+    expect(html).toContain('actual-operator')
+})
+
+it('preserves exact pending counts and counts pending plus quarantine, not failed bytes, against global quota', () => {
+    queries.outputs.mockReturnValue(
+        query({
+            metadataAvailable: false,
+            usage: {
+                pendingCount: '9007199254740993',
+                pendingBytes: '20',
+                quarantinedBytes: '30',
+                failedBytes: '1000000',
+                failedCount: '2',
+                quarantinedCount: '3',
+            },
+            limits: { globalBytes: '100' },
+            activeStates: {},
+        }),
+    )
+    const html = renderToStaticMarkup(<OverviewPage />)
+    expect(html).toContain('9,007,199,254,740,993')
+    expect(html).toContain('aria-valuenow="50"')
+    expect(html).toContain('不能据此判断输出正在运行')
+    expect(html).not.toContain('成功率')
+    expect(html).toContain('class="sr-only">总览</h1>')
 })

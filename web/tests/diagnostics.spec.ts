@@ -47,15 +47,6 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
         await expect(
             page.getByRole('heading', { name: '总览', exact: true }),
         ).toBeVisible()
-        const info = await (
-            await page.request.get('/api/edge-admin/v1/system/info')
-        ).json()
-        await expect(
-            page.getByRole('region', { name: '网关信息' }),
-        ).toContainText(info.nodeId)
-        await expect(
-            page.getByRole('region', { name: '网关信息' }),
-        ).toContainText(info.httpsCertificate.sha256Fingerprint)
         await expect(
             page.getByRole('region', { name: '运行状态', exact: true }),
         ).toContainText('r1')
@@ -84,6 +75,7 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
             name: '运行状态',
             exact: true,
         })
+        await state.getByText('配置与网关信息', { exact: true }).click()
         await expect(state.getByText('系统', { exact: true })).toBeVisible()
         await expect(
             state.getByText('持久有效版本', { exact: true }),
@@ -92,18 +84,10 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
             page.getByRole('img', { name: '最近一小时趋势' }),
         ).toBeVisible({ timeout: 25_000 })
         const overviewEvents = page.getByRole('region', {
-            name: '运行事件',
+            name: '最近异常',
             exact: true,
         })
-        await expect(
-            overviewEvents.getByRole('cell', {
-                name: 'runtime.seedApplied',
-                exact: true,
-            }),
-        ).toBeVisible()
-        await overviewEvents
-            .getByLabel('类型代码', { exact: true })
-            .fill('unsaved-overview-filter')
+        await expect(overviewEvents).toContainText('setup.windowOpen')
         await page.route('**/runtime/status', (route) =>
             route.fulfill({
                 status: 500,
@@ -111,18 +95,16 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
                 body: '{"status":500}',
             }),
         )
-        await state.getByRole('button', { name: '刷新本区域' }).click()
+        await state.getByRole('button', { name: '刷新看板' }).click()
         await expect(state.getByRole('alert')).toContainText('请求失败')
         await expect(state).toContainText('当前运行状态与有效版本未知')
         await expect(state.getByText('系统', { exact: true })).toHaveCount(0)
-        await expect(
-            overviewEvents.getByLabel('类型代码', { exact: true }),
-        ).toHaveValue('unsaved-overview-filter')
+        await expect(overviewEvents).toContainText('setup.windowOpen')
         await expect(
             page.getByRole('img', { name: '最近一小时趋势' }),
         ).toBeVisible()
         await page.unroute('**/runtime/status')
-        await state.getByRole('button', { name: '刷新本区域' }).click()
+        await state.getByRole('button', { name: '刷新看板' }).click()
         await expect(state.getByRole('alert')).toHaveCount(0)
         await expect(state.getByText('系统', { exact: true })).toBeVisible()
         expect(
@@ -323,6 +305,7 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
             await viewer.request.get('/api/edge-admin/v1/runtime/status')
         ).json()
         expect(restarted.configuration).toEqual(durable.configuration)
+        await viewer.getByText('配置与网关信息', { exact: true }).click()
         await expect(
             viewer.getByRole('region', { name: '运行状态', exact: true }),
         ).toContainText('系统')
@@ -330,7 +313,7 @@ test('real diagnostics show runtime, trends and persistent events; query errors 
             viewer.getByRole('region', { name: '最近一小时趋势', exact: true }),
         ).toBeVisible()
         await expect(
-            viewer.getByRole('region', { name: '运行事件', exact: true }),
+            viewer.getByRole('region', { name: '最近异常', exact: true }),
         ).toContainText('pagination-row-55')
     } finally {
         try {

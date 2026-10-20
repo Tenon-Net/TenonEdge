@@ -1,3 +1,4 @@
+import { dashboardStrings } from '../features/diagnostics/dashboard-strings'
 import { moduleConnectionStrings } from '../features/connections/module-strings'
 import { parameterStrings } from '../features/parameters/strings'
 import { clientCertificateStrings } from '../features/connections/client-certificate-strings'
@@ -66,6 +67,7 @@ void i18n.use(initReactI18next).init({
                         '草稿格式或版本参数无效，未生成文件。请核对配置后重新导出。',
                 },
                 diagnostics: diagnosticsStrings,
+                dashboard: dashboardStrings,
                 messages: messageStrings,
                 currentValues: currentValueStrings,
                 outputs: outputStrings,

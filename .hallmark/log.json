@@ -1,0 +1,10 @@
+[
+  {
+    "date": "2026-10-20",
+    "scope": "overview",
+    "macrostructure": "Operations dashboard",
+    "theme": "existing shadcn-admin",
+    "enrichment": "none",
+    "brief": "Compact real gateway metrics and charts; preserve existing layout, theme, routes and permissions."
+  }
+]
