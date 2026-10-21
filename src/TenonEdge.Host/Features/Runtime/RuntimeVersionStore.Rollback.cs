@@ -75,7 +75,7 @@ internal sealed partial class RuntimeVersionStore
                         Port = connection.Mqtt.Port,
                         Tls = connection.Mqtt.Tls
                     }.Recipient && credentials.ResolveMqtt(connection.Id, mqtt.Recipient) is not null,
-                ConnectionKind.Module => connection.Module is { } module && moduleCredentials.ResolveModule(module.Snapshot(connection.Id)) is not null,
+                ConnectionKind.Module => connection.Module is { } module && moduleCredentials.ResolveModule(module.Snapshot(connection.Id, draft.Connections.ToDictionary(value => value.Id), requiredCredentials)) is not null,
                 _ => false,
             };
             if (!available)

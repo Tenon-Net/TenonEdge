@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TenonEdge.Abstractions.Contracts;
+using TenonEdge.Abstractions.Parameters;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.Runtime.Inputs;
@@ -13,9 +14,11 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class InputModuleProtocolLifecycleTests
 {
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task DelegationUsesOneProviderPerPrepareOriginalRecoveryGroupAndSupervisorContext(bool compatibleHandoff)
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task DelegationUsesOneProviderPerPrepareOriginalRecoveryGroupAndSupervisorContext(bool compatibleHandoff, bool nested)
     {
         using var data = TemporaryDirectory.Create();
         var provider = new Provider(compatibleHandoff);
@@ -23,11 +26,21 @@ public sealed class InputModuleProtocolLifecycleTests
         {
             services.RemoveAll<IRuntimePlanAdapterProvider>();
             services.AddSingleton<IRuntimePlanAdapterProvider>(provider);
-            services.AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt"));
+            services.AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt", nested));
+            if (nested)
+            {
+                services.AddSingleton(new ConnectionModuleDefinition("wrapper", 1, "Wrapper", new("connection.wrapper", ParameterScope.Connection,
+                    [new("upstream", "Upstream", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = ["mqtt"] }])));
+            }
         });
         var runtime = host.Services.GetRequiredService<RuntimeHost>();
         var module = runtime.InputModules.WithFrozenFields(new(RuntimeUnitId.Create("input.testmqtt", "module/source"),
-            JsonSerializer.Deserialize<JsonElement>("""
+            JsonSerializer.Deserialize<JsonElement>(nested ? """
+            {"inputModule":{"version":1,"parameters":{"connection":"12","topic":"in/module"},
+              "connections":{"connection":{"connectionId":12,"kind":"wrapper","configuration":{
+                "connectionModule":{"version":1,"parameters":{"upstream":"11"},"connections":{
+                  "upstream":{"connectionId":11,"kind":"mqtt","configuration":{"host":"localhost"}}}}}}}}}
+            """ : """
             {"inputModule":{"version":1,"parameters":{"connection":"11","topic":"in/module"},
               "connections":{"connection":{"connectionId":11,"kind":"mqtt","configuration":{"host":"localhost"}}}}}
             """)));
@@ -52,7 +65,10 @@ public sealed class InputModuleProtocolLifecycleTests
         var rebuilt = factory.Contexts.Where(item => item.Id == module.Id).ToArray();
         Assert.Equal(2, rebuilt.Length);
         Assert.Same(rebuilt[0].Context, rebuilt[1].Context);
-        Assert.Equal(11, rebuilt[1].Context.Connections["connection"].ConnectionId);
+        var reference = rebuilt[1].Context.Connections["connection"];
+        Assert.Equal(nested ? 12 : 11, reference.ConnectionId);
+        if (nested)
+        { Assert.Equal(11, ModuleConnectionReferences.Read(reference.Configuration.GetProperty("connectionModule"))["upstream"].ConnectionId); }
         Assert.Equal(1, factory.Disposals);
         Assert.All(runtime.GetStatus().Units.Where(unit => unit.Id.Kind.StartsWith("input.", StringComparison.Ordinal)),
             unit => Assert.Equal(RuntimeUnitState.Running, unit.State));

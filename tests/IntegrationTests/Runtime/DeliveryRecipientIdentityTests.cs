@@ -123,16 +123,22 @@ public sealed class DeliveryRecipientIdentityTests
         object settings = mqtt
             ? new { connectionId = connection, host = connection == 1 ? "old.test" : "new.test", port = 8883, tls = true, usePassword = true, topic = "frozen/topic", inputs = new[] { "meter/sample" } }
             : new { connectionId = connection, baseAddress = connection == 1 ? "https://old.test/api/" : "https://new.test/next/", path = "frozen/path", inputs = new[] { "meter/sample" } };
-        return factory.Build(new(RuntimeUnitId.Create(factory.Kind, "out"), JsonSerializer.SerializeToElement(settings)));
+        credentials.Preparing = true;
+        try
+        { return factory.Build(new(RuntimeUnitId.Create(factory.Kind, "out"), JsonSerializer.SerializeToElement(settings))); }
+        finally { credentials.Preparing = false; }
     }
 
     private sealed class Credentials : ICredentialResolver, IHttpCredentialResolver
     {
+        public bool Preparing;
         public string Username = "old-user", Marker = "old-marker";
         public MqttCredentialIdentity? DescribeMqtt(long connectionId) => new(Username, Marker, "version");
         public HttpCredentialIdentity? DescribeHttp(long connectionId) => new(HttpCredentialKind.Basic, Username, null, Marker, "version");
         public MqttCredential? ResolveMqtt(long connectionId, string recipient) => new(Username, "fixture-secret", Marker, "version");
-        public HttpCredential? ResolveHttp(long connectionId, string recipient) => throw new InvalidOperationException("No send in this storage test.");
+        public HttpCredential? ResolveHttp(long connectionId, string recipient) => Preparing
+            ? new(new(HttpCredentialKind.Basic, Username, null, Marker, "version"), "fixture-secret")
+            : throw new InvalidOperationException("Only preparation may resolve credentials in this storage test.");
     }
 
     private sealed class NoNetwork : IOutboundConnector

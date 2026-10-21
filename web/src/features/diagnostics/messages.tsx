@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from './i18n'
@@ -45,11 +46,12 @@ export function RuntimeMessagesPage() {
         (selected && query.data && selected.revision !== query.data.revision) ||
         (query.error instanceof ApiError && query.error.status === 409)
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('messages.title')}</h1>
-            <p className="text-sm text-muted-foreground">
-                {t('messages.notice')}
-            </p>
+        <div className="product-page">
+            <PageHeading
+                description={t('messages.notice')}
+                title={t('messages.title')}
+            />
+
             <Button
                 onClick={() => {
                     if (!paused)
@@ -62,107 +64,120 @@ export function RuntimeMessagesPage() {
                 {t(paused ? 'messages.resume' : 'messages.pause')}
             </Button>
             {paused && <p role="status">{t('messages.paused')}</p>}
-            <section
-                className="space-y-4 rounded-lg border p-5"
-                aria-label={t('messages.objects')}
-            >
-                <h2 className="text-lg font-semibold">
-                    {t('messages.objects')}
-                </h2>
-                <ErrorMessage error={query.error} />
-                <p>
-                    {t('messages.revision', {
-                        revision: query.data?.revision ?? '—',
-                    })}
-                </p>
-                {changed && <p role="alert">{t('messages.changed')}</p>}
-                <div>
-                    <label htmlFor="runtime-message-object">
-                        {t('messages.choose')}
-                    </label>
-                    <select
-                        id="runtime-message-object"
-                        className="ml-3 max-w-full rounded border bg-background p-2"
-                        value={selected ? identity(selected.object) : ''}
-                        disabled={paused || !!query.error || !!changed}
-                        onChange={(event) => {
-                            const object = query.data?.items.find(
-                                (item) => identity(item) === event.target.value,
-                            )
-                            select(
-                                object && query.data?.revision
-                                    ? { object, revision: query.data.revision }
-                                    : undefined,
-                            )
-                        }}
-                    >
-                        <option value="">—</option>
-                        {query.data?.items.map((object) => (
-                            <option
-                                key={identity(object)}
-                                value={identity(object)}
-                            >
-                                {identity(object)}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-                {query.data?.items.length === 0 && <p>{t('messages.empty')}</p>}
-                <div className="flex flex-wrap gap-3">
-                    <Button
-                        variant="outline"
-                        disabled={paused || !cursors.length || query.isFetching}
-                        onClick={() => {
-                            select(undefined)
-                            setCursors(cursors.slice(0, -1))
-                        }}
-                    >
-                        {t('diagnostics.previous')}
-                    </Button>
-                    <Button
-                        variant="outline"
-                        disabled={
-                            paused ||
-                            !query.data?.nextCursor ||
-                            query.isFetching ||
-                            !!query.error
-                        }
-                        onClick={() => {
-                            if (query.data?.nextCursor && query.data.revision) {
-                                select(undefined)
-                                setCursors([
-                                    ...cursors,
-                                    {
-                                        after: query.data.nextCursor,
-                                        revision: query.data.revision,
-                                    },
-                                ])
+            <div className={selected && !changed ? 'product-workbench' : ''}>
+                <section
+                    className="product-panel space-y-3"
+                    aria-label={t('messages.objects')}
+                >
+                    <h2 className="text-lg font-semibold">
+                        {t('messages.objects')}
+                    </h2>
+                    <ErrorMessage error={query.error} />
+                    <p>
+                        {t('messages.revision', {
+                            revision: query.data?.revision ?? '—',
+                        })}
+                    </p>
+                    {changed && <p role="alert">{t('messages.changed')}</p>}
+                    <div>
+                        <label htmlFor="runtime-message-object">
+                            {t('messages.choose')}
+                        </label>
+                        <select
+                            id="runtime-message-object"
+                            className="ml-3 max-w-full rounded border bg-background p-2"
+                            value={selected ? identity(selected.object) : ''}
+                            disabled={paused || !!query.error || !!changed}
+                            onChange={(event) => {
+                                const object = query.data?.items.find(
+                                    (item) =>
+                                        identity(item) === event.target.value,
+                                )
+                                select(
+                                    object && query.data?.revision
+                                        ? {
+                                              object,
+                                              revision: query.data.revision,
+                                          }
+                                        : undefined,
+                                )
+                            }}
+                        >
+                            <option value="">—</option>
+                            {query.data?.items.map((object) => (
+                                <option
+                                    key={identity(object)}
+                                    value={identity(object)}
+                                >
+                                    {identity(object)}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    {query.data?.items.length === 0 && (
+                        <p>{t('messages.empty')}</p>
+                    )}
+                    <div className="flex flex-wrap gap-3">
+                        <Button
+                            variant="outline"
+                            disabled={
+                                paused || !cursors.length || query.isFetching
                             }
-                        }}
-                    >
-                        {t('diagnostics.next')}
-                    </Button>
-                    <Button
-                        variant="outline"
-                        disabled={paused}
-                        onClick={() => {
-                            select(undefined)
-                            setCursors([])
-                            if (!cursor) void query.refetch()
-                        }}
-                    >
-                        {t('messages.reset')}
-                    </Button>
-                </div>
-            </section>
-            {selected && !changed && (
-                <Records
-                    key={`${selected.revision}/${identity(selected.object)}`}
-                    object={selected.object}
-                    revision={selected.revision}
-                    paused={paused}
-                />
-            )}
+                            onClick={() => {
+                                select(undefined)
+                                setCursors(cursors.slice(0, -1))
+                            }}
+                        >
+                            {t('diagnostics.previous')}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            disabled={
+                                paused ||
+                                !query.data?.nextCursor ||
+                                query.isFetching ||
+                                !!query.error
+                            }
+                            onClick={() => {
+                                if (
+                                    query.data?.nextCursor &&
+                                    query.data.revision
+                                ) {
+                                    select(undefined)
+                                    setCursors([
+                                        ...cursors,
+                                        {
+                                            after: query.data.nextCursor,
+                                            revision: query.data.revision,
+                                        },
+                                    ])
+                                }
+                            }}
+                        >
+                            {t('diagnostics.next')}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            disabled={paused}
+                            onClick={() => {
+                                select(undefined)
+                                setCursors([])
+                                if (!cursor) void query.refetch()
+                            }}
+                        >
+                            {t('messages.reset')}
+                        </Button>
+                    </div>
+                </section>
+                {selected && !changed && (
+                    <Records
+                        key={`${selected.revision}/${identity(selected.object)}`}
+                        object={selected.object}
+                        revision={selected.revision}
+                        paused={paused}
+                    />
+                )}
+            </div>
         </div>
     )
 }

@@ -11,6 +11,86 @@ namespace TenonEdge.IntegrationTests.Processes;
 
 public sealed class DeliveryExitProcessTests(ITestOutputHelper output)
 {
+    [Fact]
+    [Trait("Category", "Process")]
+    public async Task ForcedExitReplaysEveryConfirmationInTheUncommittedWindowInFrozenFifoOrder()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "真实进程退出验证仅在 Linux 执行。");
+        const int count = 5;
+        using var data = TemporaryDirectory.Create();
+        using var work = TemporaryDirectory.Create();
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var seed = Path.Combine(work.Path, "seed.json");
+        var units = Enumerable.Range(1, count).Select(index => new
+        {
+            kind = "input.simulator",
+            key = $"meter{index}/sim",
+            configuration = (object)new { periodMs = 60000, sample = new { value = index } },
+        }).ToList();
+        units.Add(new
+        {
+            kind = "output.mqtt",
+            key = "broker",
+            configuration = (object)new
+            {
+                connectionId = 1,
+                host = "127.0.0.1",
+                port,
+                topic = "exit-window",
+                qos = 1,
+                timeoutMs = 60000,
+                inputs = Enumerable.Range(1, count).Select(index => $"meter{index}/sim").ToArray(),
+            },
+        });
+        await File.WriteAllTextAsync(seed, JsonSerializer.Serialize(new { schemaVersion = 1, units }), Token);
+        var frozen = new List<byte[]>();
+        await using (var host = Start(work.Path, data.Path, seed, port))
+        {
+            try
+            {
+                using var peer = await listener.AcceptTcpClientAsync(Token).AsTask().WaitAsync(Timeout, Token);
+                var first = await ConnectAndReadPublishAsync(peer);
+                await OutputPipelineTests.UntilAsync(() => Scalar(data.Path, "queue.db", "SELECT COUNT(*) FROM delivery") == count);
+                using var connection = new SqliteConnection($"Data Source={Path.Combine(data.Path, "queue.db")};Pooling=False");
+                connection.Open();
+                using var transaction = connection.BeginTransaction(deferred: false);
+                frozen.Add(first.Payload);
+                await AckAsync(peer, first.PacketId);
+                for (var index = 1; index < count; index++)
+                {
+                    var publish = await ReadPublishAsync(peer.GetStream());
+                    frozen.Add(publish.Payload);
+                    await AckAsync(peer, publish.PacketId);
+                }
+                Assert.Equal(count, Scalar(data.Path, "queue.db", "SELECT COUNT(*) FROM delivery"));
+                await host.KillAsync(Token);
+                transaction.Rollback();
+            }
+            finally { output.WriteLine(host.Output); }
+        }
+        Assert.Equal(count, Scalar(data.Path, "queue.db", "SELECT COUNT(*) FROM delivery"));
+        await using var restarted = Start(work.Path, data.Path, seed, port);
+        try
+        {
+            using var peer = await listener.AcceptTcpClientAsync(Token).AsTask().WaitAsync(Timeout, Token);
+            for (var index = 0; index < count * 2; index++)
+            {
+                var replay = index == 0 ? await ConnectAndReadPublishAsync(peer) : await ReadPublishAsync(peer.GetStream());
+                if (index < count)
+                { Assert.Equal(frozen[index], replay.Payload); }
+                else
+                { Assert.DoesNotContain(frozen, previous => previous.AsSpan().SequenceEqual(replay.Payload)); }
+                await AckAsync(peer, replay.PacketId);
+            }
+            await OutputPipelineTests.UntilAsync(() => Scalar(data.Path, "queue.db", "SELECT COUNT(*) FROM delivery") == 0);
+            await restarted.RequestStopAsync(Token);
+            Assert.Equal(0, await restarted.WaitForExitAsync(Timeout, Token));
+        }
+        finally { output.WriteLine(restarted.Output); }
+    }
+
     [Theory]
     [InlineData("beforeAck")]
     [InlineData("ackBeforeDelete")]

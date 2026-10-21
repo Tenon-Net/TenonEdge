@@ -43,6 +43,11 @@ export function SecretCredential({
     const [notice, setNotice] = useState('')
     const controller = useRef<AbortController | null>(null)
     useEffect(() => () => controller.current?.abort(), [])
+    const dirty = !!username || !!name || !!secret || review !== null
+    useEffect(() => {
+        onDirty(dirty)
+        return () => onDirty(false)
+    }, [onDirty, dirty])
     function clear() {
         setUsername('')
         setName('')

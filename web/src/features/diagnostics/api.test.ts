@@ -116,3 +116,25 @@ it('output metadata uses bounded revision-bound pages and keeps exact queue coun
     await expect(api.outputs('-1')).rejects.toThrow()
     expect(requests).toHaveLength(2)
 })
+
+it('reads durable version metadata with exact revision text from status alone, without fetching snapshot contents', async () => {
+    const requests: Request[] = []
+    const api = client(async (input) => {
+        requests.push(input as Request)
+        return new Response(
+            '{"configuration":{"effectiveRevision":9007199254740993,"appliedBy":"operator","appliedAt":"2026-10-19T01:02:03+00:00"},"runtime":{"activeRevision":7}}',
+        )
+    })
+    const status = await api.status()
+    expect(status.configuration).toEqual({
+        effectiveRevision: '9007199254740993',
+        appliedBy: 'operator',
+        appliedAt: '2026-10-19T01:02:03+00:00',
+    })
+    expect(status.runtime.activeRevision).toBe('7')
+    expect(requests).toHaveLength(1)
+    expect(requests[0].method).toBe('GET')
+    expect(new URL(requests[0].url).pathname).toBe(
+        '/api/edge-admin/v1/runtime/status',
+    )
+})

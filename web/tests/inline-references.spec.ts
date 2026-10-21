@@ -54,8 +54,9 @@ async function connectionDrawer(page: Page) {
 async function createConnection(
     drawer: Locator,
     key: string,
-    kind: 'modbus' | 'http',
+    kind: 'modbus' | 'http' | 'mqtt',
     port: number,
+    tls = false,
 ) {
     await drawer.getByRole('button', { name: '新建连接', exact: true }).click()
     await drawer.getByLabel('连接 key', { exact: true }).fill(key)
@@ -66,10 +67,11 @@ async function createConnection(
     if (kind === 'http')
         await drawer
             .getByLabel('HTTP 基础地址', { exact: true })
-            .fill(`http://127.0.0.1:${port}/`)
+            .fill(`${tls ? 'https' : 'http'}://127.0.0.1:${port}/`)
     else {
         await drawer.getByLabel('主机或 IP', { exact: true }).fill('127.0.0.1')
         await drawer.getByLabel('端口', { exact: true }).fill(String(port))
+        if (tls) await drawer.getByLabel('启用 TLS', { exact: true }).check()
     }
     await drawer
         .getByRole('button', { name: '保存到草稿', exact: true })
@@ -124,7 +126,6 @@ test('inline references: unsaved canvas creates connection, device and points, p
     )
     // No canvas reload: the rename is still undoable after a global draft version change.
     await page.getByRole('button', { name: '撤销', exact: true }).click()
-    // Undo restores the graph snapshot and clears selection; select the node to inspect its restored value.
     await page.locator('.react-flow__node').first().click()
     await expect(page.getByLabel('节点名称', { exact: true })).toHaveValue(
         'Modbus 输入',
@@ -206,10 +207,13 @@ test('inline references: unsaved canvas creates connection, device and points, p
     await output
         .getByRole('button', { name: '添加组装字段', exact: true })
         .click()
-    const field = output.getByRole('group', { name: '组装字段 1' })
-    await field.getByLabel('目标字段名').fill('exact')
-    await field.getByLabel('取值方式').selectOption('constant')
-    await field.getByLabel('字段取值').fill('9007199254740993')
+    await output.getByLabel('目标字段名', { exact: true }).fill('exact')
+    await output
+        .getByRole('combobox', { name: '取值方式', exact: true })
+        .selectOption('constant')
+    await output
+        .getByLabel('字段取值', { exact: true })
+        .fill('9007199254740993')
     await output
         .getByRole('button', { name: '确认输出参数', exact: true })
         .click()
@@ -257,7 +261,7 @@ test('inline references: unsaved canvas creates connection, device and points, p
     await expect(preview).toContainText('9007199254740993')
     await expect(preview).toContainText('1 条路径中 1 条计算成功')
     expect(gateway.deliveries).toHaveLength(0)
-    await page.getByRole('link', { name: /配置应用/ }).click()
+    await page.goto(gateway.url + '/configuration')
     await page
         .getByRole('button', { name: '查看应用变更清单', exact: true })
         .click()
@@ -362,13 +366,13 @@ test('inline references: failed GET does not replay writes; explicit review pres
         data: {
             expectedVersion: remote.version,
             key: remote.route.key,
-            name: '其他客户端修改',
             description: remote.route.description,
             enabled: remote.route.enabled,
             graph: remote.route.graph,
+            name: '其他客户端修改',
         },
     })
-    expect(changed.status(), await changed.text()).toBe(200)
+    expect(changed.status()).toBe(200)
     await closeDrawer(page, drawer)
     await expect(page.getByText(/服务端这条路线已被修改或删除/)).toBeVisible()
     await expect(page.getByLabel('路线名称', { exact: true })).toHaveValue(
@@ -389,11 +393,115 @@ test('inline references: failed GET does not replay writes; explicit review pres
     expect(writes).toBe(1)
 })
 
-test('inline references: dirty credentials require discard and never survive closing; pending save cannot close', async ({
+for (const [protocol, kind] of [
+    ['http', 'basic'],
+    ['http', 'bearer'],
+    ['http', 'apiKeyHeader'],
+    ['http', 'apiKeyQuery'],
+    ['http', 'clientCertificate'],
+    ['mqtt', 'basic'],
+    ['mqtt', 'clientCertificate'],
+] as const) {
+    test(`inline references: ${protocol}/${kind} dirty credentials require discard and never survive closing`, async ({
+        page,
+        gateway,
+    }) => {
+        await newRoute(page)
+        await addNode(page, 'HTTP 输出', 300)
+        const drawer = await connectionDrawer(page)
+        await createConnection(
+            drawer,
+            'inline-secret',
+            protocol,
+            gateway.httpPort,
+            kind === 'clientCertificate',
+        )
+        const openCredentials = async () => {
+            await drawer
+                .getByRole('row')
+                .filter({ hasText: 'inline-secret' })
+                .getByRole('button', { name: '编辑连接', exact: true })
+                .click()
+            await credentials
+                .getByRole('combobox', { name: '新认证方式', exact: true })
+                .selectOption(kind)
+        }
+        const credentials = drawer.getByRole('region', {
+            name: '连接认证凭证',
+            exact: true,
+        })
+        let writes = 0
+        page.on('request', (request) => {
+            if (
+                ['POST', 'PUT', 'DELETE'].includes(request.method()) &&
+                /credential/.test(new URL(request.url()).pathname)
+            )
+                writes++
+        })
+        await openCredentials()
+        if (kind === 'clientCertificate') {
+            // Tests retaining/discarding selected material, not validating a real certificate.
+            await credentials
+                .getByLabel('PKCS#12 文件（最多 64 KiB）', { exact: true })
+                .setInputFiles({
+                    name: 'unsaved.p12',
+                    mimeType: 'application/x-pkcs12',
+                    buffer: Buffer.from('test material, never submitted'),
+                })
+            await expect(
+                credentials.getByText('已载入（不回显）', { exact: true }),
+            ).toBeVisible()
+        } else {
+            if (kind === 'basic')
+                await credentials
+                    .getByLabel('认证用户名', { exact: true })
+                    .fill('fixture-user')
+            if (kind === 'apiKeyHeader' || kind === 'apiKeyQuery')
+                await credentials
+                    .getByLabel('API Key 参数名', { exact: true })
+                    .fill('X-Api-Key')
+            await credentials
+                .getByLabel('新密码或秘密', { exact: true })
+                .fill('Unsaved-fixture-secret-2934!')
+        }
+        let confirmations = 0
+        page.once('dialog', (dialog) => {
+            confirmations++
+            return dialog.dismiss()
+        })
+        await drawer
+            .getByRole('button', { name: '返回画布并核对引用', exact: true })
+            .click()
+        expect(confirmations).toBe(1)
+        await expect(drawer).toBeVisible()
+        if (kind === 'clientCertificate')
+            await expect(
+                credentials.getByText('已载入（不回显）', { exact: true }),
+            ).toBeVisible()
+        else
+            await expect(
+                credentials.getByLabel('新密码或秘密', { exact: true }),
+            ).toHaveValue('Unsaved-fixture-secret-2934!')
+        page.once('dialog', (dialog) => dialog.accept())
+        await closeDrawer(page, drawer)
+        await connectionDrawer(page)
+        await openCredentials()
+        if (kind === 'clientCertificate')
+            await expect(
+                credentials.getByText('已载入（不回显）', { exact: true }),
+            ).toHaveCount(0)
+        else
+            await expect(
+                credentials.getByLabel('新密码或秘密', { exact: true }),
+            ).toHaveValue('')
+        expect(writes).toBe(0)
+    })
+}
+
+test('inline references: pending save cannot close or replay', async ({
     page,
     gateway,
 }) => {
-    test.setTimeout(90_000)
     await newRoute(page)
     await addNode(page, 'HTTP 输出', 300)
     const drawer = await connectionDrawer(page)
@@ -426,9 +534,21 @@ test('inline references: dirty credentials require discard and never survive clo
         release()
         await creating
     }
+    await closeDrawer(page, drawer)
+    expect(posts).toBe(1)
+})
+
+test('inline references: concurrent connection refresh preserves local credential material and never rebinds it', async ({
+    page,
+    gateway,
+}) => {
+    await newRoute(page)
+    await addNode(page, 'HTTP 输出', 300)
+    const drawer = await connectionDrawer(page)
+    await createConnection(drawer, 'inline-changed', 'http', gateway.httpPort)
     await drawer
         .getByRole('row')
-        .filter({ hasText: 'inline-secret' })
+        .filter({ hasText: 'inline-changed' })
         .getByRole('button', { name: '编辑连接', exact: true })
         .click()
     const credentials = drawer.getByRole('region', {
@@ -437,33 +557,73 @@ test('inline references: dirty credentials require discard and never survive clo
     })
     await credentials
         .getByRole('combobox', { name: '新认证方式', exact: true })
-        .selectOption('basic')
-    await credentials
-        .getByLabel('认证用户名', { exact: true })
-        .fill('fixture-user')
+        .selectOption('bearer')
     await credentials
         .getByLabel('新密码或秘密', { exact: true })
         .fill('Unsaved-fixture-secret-2934!')
+    const snapshot = await (
+        await page.request.get(gateway.url + root + '/connections')
+    ).json()
+    const connection = snapshot.connections.find(
+        (item: { key: string }) => item.key === 'inline-changed',
+    )
+    const session = await (
+        await page.request.get(gateway.url + root + '/auth/session')
+    ).json()
+    expect(
+        (
+            await page.request.put(
+                gateway.url + root + '/connections/' + connection.id,
+                {
+                    headers: { 'X-CSRF-Token': session.csrfToken },
+                    data: {
+                        expectedVersion: snapshot.version,
+                        key: connection.key,
+                        name: connection.name,
+                        kind: 'http',
+                        enabled: true,
+                        http: {
+                            baseAddress: `http://127.0.0.1:${gateway.httpPort}/changed/`,
+                        },
+                    },
+                },
+            )
+        ).status(),
+    ).toBe(200)
+    await drawer
+        .getByRole('button', { name: '刷新连接列表', exact: true })
+        .click()
+    await expect(
+        drawer.getByRole('row').filter({ hasText: 'inline-changed' }),
+    ).toContainText('/changed/')
+    await expect(credentials).toBeVisible()
+    await expect(
+        credentials.getByLabel('新密码或秘密', { exact: true }),
+    ).toHaveValue('Unsaved-fixture-secret-2934!')
+    await expect(
+        credentials.getByRole('button', {
+            name: '核对凭证变更（不保存）',
+            exact: true,
+        }),
+    ).toBeDisabled()
+    await expect(
+        drawer.getByLabel('HTTP 基础地址', { exact: true }),
+    ).toHaveValue(`http://127.0.0.1:${gateway.httpPort}/`)
     page.once('dialog', (dialog) => dialog.dismiss())
     await drawer
-        .getByRole('button', { name: '返回画布并核对引用', exact: true })
+        .getByRole('button', { name: '重新载入此连接', exact: true })
         .click()
     await expect(
         credentials.getByLabel('新密码或秘密', { exact: true }),
     ).toHaveValue('Unsaved-fixture-secret-2934!')
     page.once('dialog', (dialog) => dialog.accept())
-    await closeDrawer(page, drawer)
-    await connectionDrawer(page)
     await drawer
-        .getByRole('row')
-        .filter({ hasText: 'inline-secret' })
-        .getByRole('button', { name: '编辑连接', exact: true })
+        .getByRole('button', { name: '重新载入此连接', exact: true })
         .click()
-    await credentials
-        .getByRole('combobox', { name: '新认证方式', exact: true })
-        .selectOption('basic')
     await expect(
         credentials.getByLabel('新密码或秘密', { exact: true }),
     ).toHaveValue('')
-    expect(posts).toBe(1)
+    await expect(
+        drawer.getByLabel('HTTP 基础地址', { exact: true }),
+    ).toHaveValue(`http://127.0.0.1:${gateway.httpPort}/changed/`)
 })

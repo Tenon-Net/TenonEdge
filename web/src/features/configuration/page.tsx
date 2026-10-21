@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { refreshConfigurationHistory } from './history-refresh'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
@@ -169,13 +170,12 @@ export function ConfigurationPage() {
         await refreshConfigurationHistory(queryClient)
     }
     return (
-        <div className="mx-auto max-w-6xl space-y-6">
-            <h1 className="text-2xl font-semibold">
-                {t('configuration.title')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-                {t('configuration.historyBoundary')}
-            </p>
+        <div className="product-page">
+            <PageHeading
+                description={t('configuration.historyBoundary')}
+                title={t('configuration.title')}
+            />
+
             {role === 'administrator' && (
                 <Link
                     className="underline"
@@ -185,102 +185,107 @@ export function ConfigurationPage() {
                 </Link>
             )}
             <ConfigurationError error={summary.error || operations.error} />
-            <ConfigurationRuntime
-                ready={!summary.isFetching && !summary.isPending}
-                canEdit={canEdit}
-                unavailable={
-                    waiting ||
-                    operations.isPending ||
-                    operations.isError ||
-                    !!busy
-                }
-                onBusy={setRetryPending}
-                onAccepted={(value) => {
-                    store.setState({
-                        operationId: value.id,
-                        review: null,
-                        confirmed: false,
-                        notice: 'accepted',
-                        uncertain: false,
-                    })
-                    queryClient.setQueryData(
-                        ['configuration-operation', value.id],
-                        value,
-                    )
-                }}
-            />
-            <section className="space-y-3 rounded border p-4">
-                <p>
-                    {summary.data?.changeCount == null || summary.isError
-                        ? t('configuration.unknownSummary')
-                        : t('configuration.summary', {
-                              count: Number(summary.data.changeCount),
-                          })}
-                </p>
-                <p>
-                    {t('configuration.effective', {
-                        revision:
-                            !summary.data || summary.isError
-                                ? t('configuration.unknown')
-                                : summary.data.effectiveRevision == null
-                                  ? t('configuration.none')
-                                  : `r${summary.data.effectiveRevision}`,
-                    })}
-                </p>
-                {busy && (
-                    <p role="status">
-                        {activeOperation
-                            ? t('configuration.applicationBy', {
-                                  account: activeOperation.account,
-                                  id: activeOperation.id,
-                              })
-                            : t('configuration.pending')}
+            <div className="product-diagnostic-grid product-detail">
+                <ConfigurationRuntime
+                    ready={!summary.isFetching && !summary.isPending}
+                    canEdit={canEdit}
+                    unavailable={
+                        waiting ||
+                        operations.isPending ||
+                        operations.isError ||
+                        !!busy
+                    }
+                    onBusy={setRetryPending}
+                    onAccepted={(value) => {
+                        store.setState({
+                            operationId: value.id,
+                            review: null,
+                            confirmed: false,
+                            notice: 'accepted',
+                            uncertain: false,
+                        })
+                        queryClient.setQueryData(
+                            ['configuration-operation', value.id],
+                            value,
+                        )
+                    }}
+                />
+                <section className="product-panel space-y-3">
+                    <p>
+                        {summary.data?.changeCount == null || summary.isError
+                            ? t('configuration.unknownSummary')
+                            : t('configuration.summary', {
+                                  count: Number(summary.data.changeCount),
+                              })}
                     </p>
-                )}
-                <div className="flex flex-wrap gap-3">
-                    <Button
-                        variant="outline"
-                        disabled={waiting}
-                        onClick={() => void refresh()}
-                    >
-                        {t('configuration.refresh')}
-                    </Button>
-                    {canEdit && (
-                        <>
-                            <Button
-                                disabled={unavailable}
-                                onClick={() => {
-                                    apply.reset()
-                                    discard.reset()
-                                    store.setState({ confirmed: false })
-                                    review.mutate()
-                                }}
-                            >
-                                {t('configuration.review')}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                disabled={
-                                    unavailable ||
-                                    !summary.data?.comparisonAvailable ||
-                                    Number(summary.data.changeCount) === 0 ||
-                                    form.uncertain
-                                }
-                                onClick={() => {
-                                    if (
-                                        window.confirm(
-                                            t('configuration.discardConfirm'),
-                                        )
-                                    )
-                                        discard.mutate()
-                                }}
-                            >
-                                {t('configuration.discard')}
-                            </Button>
-                        </>
+                    <p>
+                        {t('configuration.effective', {
+                            revision:
+                                !summary.data || summary.isError
+                                    ? t('configuration.unknown')
+                                    : summary.data.effectiveRevision == null
+                                      ? t('configuration.none')
+                                      : `r${summary.data.effectiveRevision}`,
+                        })}
+                    </p>
+                    {busy && (
+                        <p role="status">
+                            {activeOperation
+                                ? t('configuration.applicationBy', {
+                                      account: activeOperation.account,
+                                      id: activeOperation.id,
+                                  })
+                                : t('configuration.pending')}
+                        </p>
                     )}
-                </div>
-            </section>
+                    <div className="flex flex-wrap gap-3">
+                        <Button
+                            variant="outline"
+                            disabled={waiting}
+                            onClick={() => void refresh()}
+                        >
+                            {t('configuration.refresh')}
+                        </Button>
+                        {canEdit && (
+                            <>
+                                <Button
+                                    disabled={unavailable}
+                                    onClick={() => {
+                                        apply.reset()
+                                        discard.reset()
+                                        store.setState({ confirmed: false })
+                                        review.mutate()
+                                    }}
+                                >
+                                    {t('configuration.review')}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    disabled={
+                                        unavailable ||
+                                        !summary.data?.comparisonAvailable ||
+                                        Number(summary.data.changeCount) ===
+                                            0 ||
+                                        form.uncertain
+                                    }
+                                    onClick={() => {
+                                        if (
+                                            window.confirm(
+                                                t(
+                                                    'configuration.discardConfirm',
+                                                ),
+                                            )
+                                        )
+                                            discard.mutate()
+                                    }}
+                                >
+                                    {t('configuration.discard')}
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </section>
+            </div>
             <ConfigurationError
                 error={review.error || apply.error || discard.error}
             />
@@ -303,9 +308,9 @@ export function ConfigurationPage() {
                             : 'configuration.rollbackTitle',
                         { revision: form.review.targetRevision },
                     )}
-                    className="space-y-4 rounded border p-4"
+                    className="product-panel space-y-4"
                 >
-                    <h2 className="text-xl font-semibold">
+                    <h2 className="text-base font-semibold">
                         {t(
                             form.review.targetRevision == null
                                 ? 'configuration.reviewTitle'
@@ -386,7 +391,7 @@ export function ConfigurationPage() {
                     className="space-y-3"
                     aria-label={t('configuration.currentOperation')}
                 >
-                    <h2 className="text-xl font-semibold">
+                    <h2 className="text-base font-semibold">
                         {t('configuration.currentOperation')}
                     </h2>
                     {operation.error && (
@@ -442,7 +447,7 @@ export function ConfigurationPage() {
                 }}
             />
             <section className="space-y-3">
-                <h2 className="text-xl font-semibold">
+                <h2 className="text-base font-semibold">
                     {t('configuration.operations')}
                 </h2>
                 {operations.data?.length === 0 && (

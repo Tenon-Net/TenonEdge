@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-20",
+  "scope": "app",
+  "designSystem": "design.md",
+  "font": {
+    "family": "system-ui, -apple-system, Segoe UI, sans-serif",
+    "source": "web/src/styles/index.css:23"
+  },
+  "palette": {
+    "theme": "existing shadcn-admin slate light/dark",
+    "source": "web/src/styles/theme.css:1"
+  },
+  "tokens": "web/tokens.css",
+  "spacing": "Tailwind 4, 4px base; semantic shared --space-* tokens",
+  "framework": "React 19 / Vite / TanStack Router and Query",
+  "motion": "No new animation library; existing component feedback retained",
+  "preserved": [
+    "brand assets",
+    "shadcn-admin fixed source and MIT notice",
+    "local sessions and roles",
+    "existing routes and API",
+    "dashboard palette"
+  ]
+}

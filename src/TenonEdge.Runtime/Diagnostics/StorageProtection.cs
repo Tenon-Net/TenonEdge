@@ -1,7 +1,7 @@
 namespace TenonEdge.Runtime.Diagnostics;
 
 /// <summary>磁盘实际可用空间，不以 payload 配额代替文件系统余量。</summary>
-public sealed record StorageSpace(long TotalBytes, long AvailableBytes);
+public sealed record StorageSpace(long TotalBytes, long AvailableBytes, string? FileSystem = null);
 
 /// <summary>无法读取空间时也暂停新增入队；删除和已提交记录的发送不受影响。</summary>
 public sealed record StorageProtectionStatus(bool RejectNewRecords, bool SpaceUnknown, StorageSpace? Space);
@@ -54,7 +54,12 @@ public sealed class StorageProtection
         try
         {
             var drive = new DriveInfo(directory);
-            return new(drive.TotalSize, drive.AvailableFreeSpace);
+            var space = new StorageSpace(drive.TotalSize, drive.AvailableFreeSpace);
+            // Calibration metadata must not invalidate otherwise readable free space.
+            try
+            { return space with { FileSystem = drive.DriveFormat }; }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+            { return space; }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {

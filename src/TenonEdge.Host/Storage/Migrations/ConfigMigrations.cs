@@ -459,5 +459,82 @@ internal static class ConfigMigrations
             )
             """,
         ]),
+        new(35, "extension_delivery_migration_intents", [
+            // 扩展输出沿用原迁移意图，不再将协议限制为两个内置值。
+            // 子表有外键：先复制两表，先删旧子表再删旧父表；全程保持外键校验与原迁移事务。
+            """
+            CREATE TABLE delivery_migration_intent_v35 (
+                intent_id TEXT NOT NULL PRIMARY KEY,
+                config_store_id TEXT NOT NULL,
+                revision INTEGER NOT NULL,
+                source_revision INTEGER NOT NULL,
+                connection_id INTEGER NOT NULL,
+                protocol TEXT NOT NULL CHECK(length(protocol) BETWEEN 1 AND 64
+                    AND substr(protocol, 1, 1) GLOB '[a-z]' AND protocol NOT GLOB '*[^a-z0-9.-]*'
+                    AND instr(protocol, char(0)) = 0),
+                old_fingerprint TEXT NOT NULL,
+                source_summary TEXT NOT NULL,
+                target_recipient TEXT NOT NULL,
+                account_name TEXT NOT NULL,
+                source_ip TEXT,
+                registered_at INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('waiting', 'rejected', 'completed')),
+                last_operation_id TEXT,
+                target_fingerprint TEXT,
+                target_summary TEXT,
+                token_name TEXT,
+                UNIQUE(revision, connection_id)
+            )
+            """,
+            """
+            INSERT INTO delivery_migration_intent_v35 (intent_id, config_store_id, revision, source_revision, connection_id,
+                protocol, old_fingerprint, source_summary, target_recipient, account_name, source_ip, registered_at, status,
+                last_operation_id, target_fingerprint, target_summary, token_name)
+            SELECT intent_id, config_store_id, revision, source_revision, connection_id,
+                protocol, old_fingerprint, source_summary, target_recipient, account_name, source_ip, registered_at, status,
+                last_operation_id, target_fingerprint, target_summary, token_name FROM delivery_migration_intent
+            """,
+            """
+            CREATE TABLE delivery_migration_v35 (
+                operation_id TEXT NOT NULL PRIMARY KEY,
+                config_store_id TEXT NOT NULL,
+                request_hash TEXT NOT NULL,
+                mode TEXT NOT NULL CHECK(mode IN ('selected', 'oldTarget')),
+                revision INTEGER NOT NULL,
+                source_connection_id INTEGER NOT NULL,
+                target_connection_id INTEGER NOT NULL,
+                source_summary TEXT NOT NULL,
+                target_summary TEXT NOT NULL,
+                requested_records INTEGER,
+                account_name TEXT NOT NULL,
+                source_ip TEXT,
+                started_at INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('started', 'completed', 'rejected', 'interrupted')),
+                migration_id INTEGER,
+                affected_records INTEGER,
+                completed_at INTEGER,
+                error_code TEXT,
+                intent_id TEXT REFERENCES delivery_migration_intent_v35(intent_id),
+                token_name TEXT
+            )
+            """,
+            """
+            INSERT INTO delivery_migration_v35 (operation_id, config_store_id, request_hash, mode, revision,
+                source_connection_id, target_connection_id, source_summary, target_summary, requested_records,
+                account_name, source_ip, started_at, status, migration_id, affected_records, completed_at, error_code, intent_id, token_name)
+            SELECT operation_id, config_store_id, request_hash, mode, revision,
+                source_connection_id, target_connection_id, source_summary, target_summary, requested_records,
+                account_name, source_ip, started_at, status, migration_id, affected_records, completed_at, error_code, intent_id, token_name
+            FROM delivery_migration
+            """,
+            "DROP TABLE delivery_migration",
+            "DROP TABLE delivery_migration_intent",
+            "ALTER TABLE delivery_migration_intent_v35 RENAME TO delivery_migration_intent",
+            "ALTER TABLE delivery_migration_v35 RENAME TO delivery_migration",
+            "CREATE INDEX ix_delivery_migration_intent_waiting ON delivery_migration_intent(status, revision, connection_id)",
+            "CREATE INDEX ix_delivery_migration_intent_order ON delivery_migration_intent(config_store_id, connection_id, revision) WHERE status = 'waiting'",
+            "CREATE INDEX ix_delivery_migration_status_started ON delivery_migration(status, started_at)",
+            "CREATE INDEX ix_delivery_migration_intent_attempt ON delivery_migration(intent_id, started_at)",
+        ]),
     ];
 }

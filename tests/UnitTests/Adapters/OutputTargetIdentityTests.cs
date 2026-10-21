@@ -20,7 +20,7 @@ public sealed class OutputTargetIdentityTests
         var credentials = new ChangingCredentials();
         var target = Target(mqtt, credentials);
         credentials.Descriptions = 0;
-        credentials.AllowSecrets = false; // Only MQTT factory preparation may resolve a secret. Capture/format must not.
+        credentials.AllowSecrets = false; // Factory preparation resolves credentials. Capture/format must not.
         credentials.ChangeAfterDescribe = true;
         string fingerprint, summary;
         if (formatting)
@@ -153,6 +153,8 @@ public sealed class OutputTargetIdentityTests
         }
         public MqttCredential? ResolveMqtt(long connectionId, string recipient) => AllowSecrets
             ? new(Username, Secret, Marker, Version) : throw new InvalidOperationException("Capture must not resolve secrets.");
-        public HttpCredential? ResolveHttp(long connectionId, string recipient) => throw new InvalidOperationException("Capture must not resolve secrets.");
+        public HttpCredential? ResolveHttp(long connectionId, string recipient) => AllowSecrets
+            ? new(new(HttpCredentialKind.Basic, Username, null, Marker, Version), Secret)
+            : throw new InvalidOperationException("Capture must not resolve secrets.");
     }
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { useTranslation } from './i18n'
+// Shared view primitives use the calling page's registered resources.
+import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'
 
@@ -25,11 +26,8 @@ export function DiagnosticPanel({
 }) {
     const { t } = useTranslation()
     return (
-        <section
-            aria-label={title}
-            className="space-y-4 rounded-lg border bg-card p-5"
-        >
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        <section aria-label={title} className="product-panel space-y-3">
+            <div className="product-panel-header">
                 <h2 className="text-lg font-semibold">{title}</h2>
                 <Button
                     variant="outline"

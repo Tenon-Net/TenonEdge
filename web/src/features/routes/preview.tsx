@@ -16,6 +16,7 @@ import {
 
 import { RecentSamples, type RecentMessage } from './recent-samples'
 import { RouteTestSend } from './test-send'
+import { previewErrorNodes, type PreviewNodeIssues } from './node-errors'
 
 const routes = createRouteApi(api)
 type Response = Awaited<ReturnType<typeof routes.preview>>
@@ -37,6 +38,7 @@ type Props = {
     disabled: boolean
     draft?: PreviewDraft
     locate: (id: string) => void
+    onIssues?: (issues: PreviewNodeIssues | undefined) => void
 }
 export function RoutePreview({
     document,
@@ -44,6 +46,7 @@ export function RoutePreview({
     disabled,
     draft,
     locate,
+    onIssues,
 }: Props) {
     const { t } = useTranslation()
     const [store] = useState(() => draft ?? createPreviewDraft())
@@ -128,6 +131,7 @@ export function RoutePreview({
         )
             return
         request.current?.abort()
+        onIssues?.(undefined)
         const controller = new AbortController()
         request.current = controller
         const captured = {
@@ -160,8 +164,18 @@ export function RoutePreview({
                         sample,
                         controller.signal,
                     )
-            if (!controller.signal.aborted)
+            if (!controller.signal.aborted) {
                 setResult({ ...captured, pending: false, data })
+                if (data.version === version)
+                    onIssues?.({
+                        document,
+                        version,
+                        source,
+                        sample,
+                        signal: controller.signal,
+                        nodes: previewErrorNodes(document, data),
+                    })
+            }
         } catch (error) {
             if (!controller.signal.aborted)
                 setResult({ ...captured, pending: false, error })
@@ -321,6 +335,7 @@ export function RoutePreview({
                         variant="outline"
                         onClick={() => {
                             request.current?.abort()
+                            onIssues?.(undefined)
                             setResult(undefined)
                         }}
                     >
@@ -333,6 +348,7 @@ export function RoutePreview({
                     disabled={disabled}
                     onClick={() => {
                         request.current?.abort()
+                        onIssues?.(undefined)
                         setResult(undefined)
                         store.setState({ sample: '' })
                     }}

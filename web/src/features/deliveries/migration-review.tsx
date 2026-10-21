@@ -49,7 +49,7 @@ export function MigrationReviewPanel({ review }: { review: MigrationReview }) {
     return (
         <section
             aria-label={t('migration.review')}
-            className="space-y-4 rounded border p-4"
+            className="product-panel space-y-4"
         >
             <h2 className="text-lg font-semibold">{t('migration.review')}</h2>
             <p>

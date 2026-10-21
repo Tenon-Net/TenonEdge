@@ -1,3 +1,5 @@
+using TenonEdge.Runtime.Deliveries;
+
 namespace TenonEdge.Runtime.Outputs;
 
 internal sealed partial class OutputSenderState
@@ -24,10 +26,12 @@ internal sealed partial class OutputSenderState
         return pause;
     }
 
-    internal async Task WaitForQueuePauseAsync(CancellationToken token)
+    internal async Task WaitForQueuePauseAsync(DeliveryCache deliveries, TimeProvider time, CancellationToken token)
     {
         if (Volatile.Read(ref _queuePause) is not { } pause)
         { return; }
+        // 在确认暂停前排空全部 ACK 回执：已成功发送的记录不能被人工清空或迁移为待发。
+        await CommitAcknowledgementsAsync(deliveries, time, drain: true, token);
         pause.Reached.TrySetResult();
         await pause.Released.Task.WaitAsync(token);
     }

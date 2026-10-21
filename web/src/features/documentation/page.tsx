@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from './i18n'
@@ -25,13 +26,13 @@ export function DocumentationPage() {
             ),
         ) ?? []
     return (
-        <div className="space-y-5">
-            <h1 className="text-2xl font-semibold">
-                {t('documentation.title')}
-            </h1>
-            <p className="max-w-4xl text-sm text-muted-foreground">
-                {t('documentation.notice')}
-            </p>
+        <div className="product-page">
+            <PageHeading
+                hideTitle
+                description={t('documentation.notice')}
+                title={t('documentation.title')}
+            />
+
             <div className="flex flex-wrap items-center gap-4">
                 <Button
                     disabled={query.isFetching}
@@ -74,7 +75,7 @@ export function DocumentationPage() {
                         })}
                     </p>
                     {!operations.length && <p>{t('documentation.empty')}</p>}
-                    <div className="space-y-2">
+                    <div className="divide-y rounded-lg border">
                         {operations.map((op) => (
                             <details
                                 key={op.key}
@@ -86,11 +87,18 @@ export function DocumentationPage() {
                                             current === op.key ? null : current,
                                         )
                                 }}
-                                className="rounded border p-3"
+                                className="p-3"
                             >
                                 <summary className="cursor-pointer break-all text-sm">
-                                    <strong>{op.method}</strong>{' '}
-                                    <code>{op.path}</code> {op.summary}
+                                    <span className="mr-2 inline-block min-w-16 rounded border bg-muted px-2 py-1 text-center text-xs font-semibold">
+                                        {op.method}
+                                    </span>{' '}
+                                    <code className="font-medium">
+                                        {op.path}
+                                    </code>
+                                    <span className="mt-1 block text-muted-foreground sm:ml-20">
+                                        {op.summary}
+                                    </span>
                                 </summary>
                                 {selected === op.key && (
                                     <pre

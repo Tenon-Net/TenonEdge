@@ -251,7 +251,10 @@ internal sealed partial class DeliveryStore
         var settings = ApplySettings(connection);
         var schemaVersion = Migrate(connection);
         var configStoreId = EnsureMeta(connection);
-        _info = new DeliveryStoreInfo(_options.DatabasePath, version, settings.JournalMode, settings.Synchronous, schemaVersion, configStoreId);
+        _info = new DeliveryStoreInfo(_options.DatabasePath, version, settings.JournalMode, settings.Synchronous, schemaVersion, configStoreId,
+            Convert.ToInt64(Scalar(connection, "PRAGMA page_size;"), CultureInfo.InvariantCulture),
+            Convert.ToInt64(Scalar(connection, "PRAGMA wal_autocheckpoint;"), CultureInfo.InvariantCulture),
+            Convert.ToInt64(Scalar(connection, "PRAGMA auto_vacuum;"), CultureInfo.InvariantCulture));
         return _info;
     }
 
@@ -379,12 +382,12 @@ internal sealed partial class DeliveryStore
         return command;
     }
 
-    /// <summary>为写者准备按 seq 删除的语句。</summary>
+    /// <summary>为写者准备按 seq 删除的语句，并返回实际删除行的配额信息；不读取正文。</summary>
     public static SqliteCommand CreateDeleteCommand(SqliteConnection connection, SqliteTransaction transaction)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "DELETE FROM delivery WHERE seq = $seq;";
+        command.CommandText = "DELETE FROM delivery WHERE seq = $seq RETURNING connection_id, byte_size, state;";
         command.Parameters.Add(new SqliteParameter { ParameterName = "$seq" });
         return command;
     }

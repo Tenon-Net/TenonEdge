@@ -14,6 +14,11 @@ const point: TrendPoint = {
     storageFailedRecordAttempts: '0',
 }
 const status: Diagnostics = {
+    configuration: {
+        effectiveRevision: '1',
+        appliedBy: 'fixture',
+        appliedAt: '2026-10-13T00:00:00Z',
+    },
     coordinator: {
         queueOperationInProgress: false,
         state: 'active',

@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useState } from 'react'
 import { create } from 'zustand'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
@@ -158,10 +159,8 @@ function Migration() {
         }
     }
     return (
-        <div className="mx-auto max-w-6xl space-y-6">
-            <h1 className="text-2xl font-semibold">
-                {t('configurationMigration.title')}
-            </h1>
+        <div className="product-page">
+            <PageHeading title={t('configurationMigration.title')} />
             <nav className="flex flex-wrap gap-4">
                 <Link to="/configuration" className="underline">
                     {t('configurationMigration.back')}
@@ -203,7 +202,7 @@ function Migration() {
                         {t('configurationMigration.readDraft')}
                     </Button>
                     {draft && (
-                        <section className="space-y-4 rounded border p-4">
+                        <section className="product-panel space-y-4">
                             <ReviewContents review={draft} />
                             {[
                                 ...new Set(
@@ -268,9 +267,9 @@ function Migration() {
             {review && (
                 <section
                     aria-label={t('configurationMigration.prepared')}
-                    className="space-y-5 rounded border p-4"
+                    className="product-panel space-y-5"
                 >
-                    <h2 className="text-xl font-semibold">
+                    <h2 className="text-base font-semibold">
                         {t('configurationMigration.prepared')}
                     </h2>
                     <p>
@@ -283,7 +282,7 @@ function Migration() {
                     {review.targets.map((target) => (
                         <section
                             key={target.intentId}
-                            className="space-y-3 rounded border p-4"
+                            className="product-panel space-y-3"
                         >
                             <h3 className="font-semibold">
                                 {t('configurationMigration.target', {
@@ -358,7 +357,7 @@ function Migration() {
                 </section>
             )}
             {attempt && (
-                <section className="space-y-3 rounded border p-4">
+                <section className="product-panel space-y-3">
                     <p className="break-all font-mono">
                         {t('configurationMigration.operation', { id: attempt })}
                     </p>

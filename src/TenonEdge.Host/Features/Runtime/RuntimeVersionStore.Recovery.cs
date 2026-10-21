@@ -105,7 +105,7 @@ internal sealed partial class RuntimeVersionStore
         foreach (var connection in draft.Connections.Where(connection => connection.Module is not null))
         {
             if (client.Queryable<ModuleCredentialRecord>().InSingle(connection.Id) is not null &&
-                moduleCredentials.ResolveModule(connection.Module!.Snapshot(connection.Id)) is null)
+                moduleCredentials.ResolveModule(connection.Module!.Snapshot(connection.Id, draft.Connections.ToDictionary(value => value.Id), draft.CredentialConnections?.ToHashSet())) is null)
             { throw new DraftWriteException("configuration.rollbackCredentialMissing"); }
         }
         foreach (var connection in draft.Connections.Where(connection => connection.Http is not null))
@@ -151,6 +151,13 @@ internal sealed partial class RuntimeVersionStore
                 if (settings.QueueOnly)
                 { queueOnly.Add(id); continue; }
                 accepts = (_, address) => address == settings.Path;
+            }
+            else if (OutputTransportRoute.Read(unit.Configuration, unit.Id.Kind) is { } route)
+            {
+                id = unit.Configuration.GetProperty("connectionId").GetInt64();
+                if (unit.Configuration.TryGetProperty("queueOnly", out var only) && only.ValueKind == JsonValueKind.True)
+                { queueOnly.Add(id); continue; }
+                accepts = (device, address) => address == route.AddressFor(device);
             }
             else
             { continue; }

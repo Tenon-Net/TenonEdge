@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-10-20",
+    "scope": "app-shell",
+    "macrostructure": "Existing product workspaces",
+    "theme": "existing shadcn-admin slate light/dark",
+    "enrichment": "none",
+    "brief": "Confirmed separated sidebar/content surfaces and no visible duplicate menu titles on top-level pages; preserve contextual headings and accessible page names."
+  },
+  {
+    "date": "2026-10-20",
+    "scope": "app",
+    "macrostructure": "Workbench / resource list / operational detail / categorized settings",
+    "theme": "existing shadcn-admin",
+    "enrichment": "none",
+    "brief": "Confirmed shared product redesign, preserving actual routes, permissions, API and editing ownership; subordinate visual contract in design.md."
+  },
+  {
+    "date": "2026-10-20",
+    "scope": "overview",
+    "macrostructure": "Operations dashboard",
+    "theme": "existing shadcn-admin",
+    "enrichment": "none",
+    "brief": "Compact real gateway metrics and charts; preserve existing layout, theme, routes and permissions."
+  }
+]

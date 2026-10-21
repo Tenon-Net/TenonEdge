@@ -116,6 +116,256 @@ async function refresh(page: Page) {
         .click()
 }
 
+test('connection deletion confirms once, removes the draft and never sends a second DELETE', async ({
+    browser,
+}) => {
+    const f = await fixture(browser)
+    try {
+        const { page } = f
+        const saved = await f.write('post', '/connections', {
+            expectedVersion: '0',
+            key: 'unused',
+            name: 'Unused receiver',
+            kind: 'http',
+            http: { baseAddress: f.target },
+        })
+        const deleted: string[] = []
+        page.on('request', (request) => {
+            if (request.method() === 'DELETE')
+                deleted.push(new URL(request.url()).pathname)
+        })
+        await page.goto('/connections')
+        const row = page.getByRole('row').filter({ hasText: 'Unused receiver' })
+        await row.getByRole('button', { name: '删除连接', exact: true }).click()
+        const review = page.getByRole('region', {
+            name: '删除前核对',
+            exact: true,
+        })
+        const confirm = review.getByRole('button', {
+            name: '确认删除',
+            exact: true,
+        })
+        await expect(confirm).toBeEnabled()
+        expect(deleted).toHaveLength(0)
+        page.once('dialog', (dialog) => dialog.dismiss())
+        await confirm.click()
+        await expect(confirm).toBeEnabled()
+        expect(deleted).toHaveLength(0)
+        const response = page.waitForResponse(
+            (value) => value.request().method() === 'DELETE',
+        )
+        page.once('dialog', (dialog) => dialog.accept())
+        await confirm.click()
+        const result = await response
+        expect(result.status()).toBe(200)
+        const removed = await result.json()
+        await expect(row).toHaveCount(0)
+        await expect(page.getByRole('status')).toHaveText(
+            '已删除草稿连接，尚未应用。',
+        )
+        expect(deleted).toEqual([`${root}/connections/${saved.connection.id}`])
+        const current = await (
+            await page.request.get(root + '/connections')
+        ).json()
+        expect(current.version).toBe(removed.version)
+        expect(current.version).not.toBe(saved.version)
+        expect(current.connections).toEqual([])
+        await refresh(page)
+        await expect(
+            page.getByText('没有匹配的连接。', { exact: true }),
+        ).toBeVisible()
+        expect(deleted).toHaveLength(1)
+    } finally {
+        await f.close()
+    }
+})
+
+test('connection deletion rejects failed review and a reference added after confirmation preparation', async ({
+    browser,
+}) => {
+    const f = await fixture(browser)
+    try {
+        const { page } = f
+        const saved = await f.write('post', '/connections', {
+            expectedVersion: '0',
+            key: 'referenced',
+            name: 'Protected receiver',
+            kind: 'http',
+            http: { baseAddress: f.target },
+        })
+        let deletes = 0
+        page.on('request', (request) => {
+            if (request.method() === 'DELETE') deletes++
+        })
+        const pattern = `**/connections/${saved.connection.id}/deletion-review?*`
+        await page.route(pattern, (route) =>
+            route.fulfill({
+                status: 500,
+                contentType: 'application/problem+json',
+                body: '{}',
+            }),
+        )
+        await page.goto('/connections')
+        const row = page
+            .getByRole('row')
+            .filter({ hasText: 'Protected receiver' })
+        await row.getByRole('button', { name: '删除连接', exact: true }).click()
+        const review = page.getByRole('region', {
+            name: '删除前核对',
+            exact: true,
+        })
+        const confirm = review.getByRole('button', {
+            name: '确认删除',
+            exact: true,
+        })
+        await expect(review.getByRole('alert')).toBeVisible()
+        await expect(confirm).toHaveCount(0)
+        expect(deletes).toBe(0)
+        await page.unroute(pattern)
+        await review
+            .getByRole('button', { name: '重新核对', exact: true })
+            .click()
+        await expect(confirm).toBeEnabled()
+        // Another client adds a real reference after the successful review.
+        const device = await f.write('post', '/devices', {
+            expectedVersion: saved.version,
+            key: 'meter',
+            name: 'Referenced meter',
+            kind: 'http',
+            connectionId: saved.connection.id,
+        })
+        const response = page.waitForResponse(
+            (value) => value.request().method() === 'DELETE',
+        )
+        page.once('dialog', (dialog) => dialog.accept())
+        await confirm.click()
+        expect((await response).status()).toBe(409)
+        await expect(
+            review.getByText('操作结果未知。请重新读取，不要重放删除。', {
+                exact: true,
+            }),
+        ).toBeVisible()
+        await expect(confirm).toHaveCount(0)
+        const current = await (
+            await page.request.get(root + '/connections')
+        ).json()
+        expect(current.version).toBe(device.version)
+        expect(
+            current.connections.map((item: { id: number }) => item.id),
+        ).toEqual([saved.connection.id])
+        await review.getByRole('button', { name: '取消', exact: true }).click()
+        await refresh(page)
+        await row.getByRole('button', { name: '删除连接', exact: true }).click()
+        await expect(review).toContainText('Referenced meter')
+        await expect(review).toContainText('仍有引用或积存记录，不能删除。')
+        await expect(confirm).toBeDisabled()
+        expect(deletes).toBe(1)
+    } finally {
+        await f.close()
+    }
+})
+
+test('connection deletion with committed but lost reply stays consumed until explicit reread, without replay', async ({
+    browser,
+}) => {
+    const f = await fixture(browser)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    try {
+        const { page } = f
+        const saved = await f.write('post', '/connections', {
+            expectedVersion: '0',
+            key: 'lost-reply',
+            name: 'Lost reply receiver',
+            kind: 'http',
+            http: { baseAddress: f.target },
+        })
+        let deletes = 0
+        let signalCommitted!: () => void
+        let committedVersion: string | undefined
+        const committed = new Promise<void>((resolve) => {
+            signalCommitted = resolve
+        })
+        page.on('request', (request) => {
+            if (request.method() === 'DELETE') deletes++
+        })
+        await page.route(
+            `**/connections/${saved.connection.id}?*`,
+            async (route) => {
+                if (route.request().method() !== 'DELETE')
+                    return route.fallback()
+                const response = await route.fetch()
+                expect(response.status()).toBe(200)
+                committedVersion = (await response.json()).version
+                signalCommitted()
+                await held
+                await route.abort('failed')
+            },
+        )
+        await page.goto('/connections')
+        const row = page
+            .getByRole('row')
+            .filter({ hasText: 'Lost reply receiver' })
+        await row.getByRole('button', { name: '删除连接', exact: true }).click()
+        const review = page.getByRole('region', {
+            name: '删除前核对',
+            exact: true,
+        })
+        const confirm = review.getByRole('button', {
+            name: '确认删除',
+            exact: true,
+        })
+        await expect(confirm).toBeEnabled()
+        page.once('dialog', (dialog) => dialog.accept())
+        await confirm.click()
+        await committed
+        await expect(
+            review.getByRole('button', { name: '取消', exact: true }),
+        ).toBeDisabled()
+        await expect(
+            review.getByRole('button', { name: '重新核对', exact: true }),
+        ).toBeDisabled()
+        expect(deletes).toBe(1)
+        release()
+        await expect(
+            review.getByText('操作结果未知。请重新读取，不要重放删除。', {
+                exact: true,
+            }),
+        ).toBeVisible()
+        await expect(confirm).toHaveCount(0)
+        const response = page.waitForResponse((value) =>
+            new URL(value.url()).pathname.endsWith('/deletion-review'),
+        )
+        await review
+            .getByRole('button', { name: '重新核对', exact: true })
+            .click()
+        // The old draft version is no longer current. Only a fresh list can
+        // confirm the result; refetch must not send another deletion.
+        expect((await response).status()).toBe(409)
+        await expect(review.getByRole('alert')).toBeVisible()
+        await expect(confirm).toHaveCount(0)
+        await review.getByRole('button', { name: '取消', exact: true }).click()
+        await refresh(page)
+        await expect(row).toHaveCount(0)
+        const current = await (
+            await page.request.get(root + '/connections')
+        ).json()
+        expect(current.version).toBe(committedVersion)
+        expect(current.version).not.toBe(saved.version)
+        expect(current.connections).toEqual([])
+        await page.reload()
+        await expect(
+            page.getByText('没有匹配的连接。', { exact: true }),
+        ).toBeVisible()
+        expect(deletes).toBe(1)
+    } finally {
+        release()
+        await f.close()
+    }
+})
+
 // UI compatibility guard only: this response fixture is not evidence of a
 // module configuration form or protocol operation through the browser.
 test('unknown module remains inspectable but never opens the built-in protocol editor', async ({
@@ -345,6 +595,43 @@ test('connection list separates effective and draft data, observes real HTTP fai
                         .pendingCount,
             )
             .toBeGreaterThan(0)
+        const deletion = page.waitForResponse(
+            (value) =>
+                new URL(value.url()).pathname ===
+                `${root}/connections/${id}/deletion-review`,
+        )
+        await row.getByRole('button', { name: '删除连接', exact: true }).click()
+        const deletionResponse = await deletion
+        expect(deletionResponse.status()).toBe(200)
+        const deletionData = await deletionResponse.json()
+        expect(deletionData.canDelete).toBe(false)
+        expect(Number(deletionData.pendingCount)).toBeGreaterThan(0)
+        const deletionPanel = page.getByRole('region', {
+            name: '删除前核对',
+            exact: true,
+        })
+        await expect(deletionPanel).toContainText('Meter')
+        await expect(deletionPanel).toContainText('Route')
+        await expect(deletionPanel).toContainText(
+            `待发 ${deletionData.pendingCount}`,
+        )
+        await expect(deletionPanel).toContainText('失败 0')
+        await expect(deletionPanel).toContainText('隔离 0')
+        await deletionPanel
+            .locator('summary')
+            .filter({ hasText: /^r1 / })
+            .click()
+        await expect(deletionPanel).toContainText('input.http')
+        await expect(deletionPanel).toContainText('output.http')
+        await expect(
+            deletionPanel.getByRole('button', {
+                name: '确认删除',
+                exact: true,
+            }),
+        ).toBeDisabled()
+        await deletionPanel
+            .getByRole('button', { name: '取消', exact: true })
+            .click()
         // Communication failure does not hide already queued records or expose the peer body.
         f.fail(true)
         await expect(row.getByText('降级', { exact: true })).toBeVisible({
@@ -357,42 +644,42 @@ test('connection list separates effective and draft data, observes real HTTP fai
             timeout: 20_000,
         })
         await expect(row).toContainText('http.status') // last error survives recovery
-        const deletion = await (
+        const recoveredDeletion = await (
             await page.request.get(
                 root +
                     `/connections/${id}/deletion-review?expectedVersion=${off.version}`,
             )
         ).json()
         await row.getByRole('button', { name: '删除连接', exact: true }).click()
-        const deletionPanel = page.getByRole('region', {
+        const recoveredDeletionPanel = page.getByRole('region', {
             name: '删除前核对',
             exact: true,
         })
-        await expect(deletionPanel).toBeVisible()
-        await expect(deletionPanel).toContainText('Meter')
-        await expect(deletionPanel).toContainText('来源 read')
-        await expect(deletionPanel).toContainText('来源 disabled')
-        await expect(deletionPanel).toContainText('output.http/route/')
-        await expect(deletionPanel).toContainText('保留运行版本')
-        await expect(deletionPanel).toContainText(
-            `待发 ${deletion.pendingCount}`,
+        await expect(recoveredDeletionPanel).toBeVisible()
+        await expect(recoveredDeletionPanel).toContainText('Meter')
+        await expect(recoveredDeletionPanel).toContainText('来源 read')
+        await expect(recoveredDeletionPanel).toContainText('来源 disabled')
+        await expect(recoveredDeletionPanel).toContainText('output.http/route/')
+        await expect(recoveredDeletionPanel).toContainText('保留运行版本')
+        await expect(recoveredDeletionPanel).toContainText(
+            `待发 ${recoveredDeletion.pendingCount}`,
         )
-        await expect(deletionPanel).toContainText(
-            `失败 ${deletion.failedCount}`,
+        await expect(recoveredDeletionPanel).toContainText(
+            `失败 ${recoveredDeletion.failedCount}`,
         )
-        await expect(deletionPanel).toContainText(
-            `隔离 ${deletion.quarantinedCount}`,
+        await expect(recoveredDeletionPanel).toContainText(
+            `隔离 ${recoveredDeletion.quarantinedCount}`,
         )
-        await expect(deletionPanel).toContainText(
+        await expect(recoveredDeletionPanel).toContainText(
             '仍有引用或积存记录，不能删除。',
         )
         await expect(
-            deletionPanel.getByRole('button', {
+            recoveredDeletionPanel.getByRole('button', {
                 name: '确认删除',
                 exact: true,
             }),
         ).toBeDisabled()
-        await deletionPanel
+        await recoveredDeletionPanel
             .getByRole('button', { name: '取消', exact: true })
             .click()
         const changed = await write('put', `/connections/${id}`, {

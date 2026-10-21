@@ -9,7 +9,7 @@ const password = 'Proxy-rules-8341!'
 const panel = (page: Page) =>
     page.getByRole('region', { name: '受信任的反向代理', exact: true })
 async function setup(page: Page) {
-    await page.goto('/system')
+    await page.goto('/system?section=network')
     await page.getByLabel('账号', { exact: true }).fill('proxy-admin')
     await page.getByLabel('密码', { exact: true }).fill(password)
     await page.getByLabel('确认密码', { exact: true }).fill(password)
@@ -98,7 +98,7 @@ test('proxy trust editor confirms risk, persists normalized rules and cannot cha
         host = await startOwnedHost(data, 0, args)
         context = await browser.newContext({ baseURL: host.url })
         page = await context.newPage()
-        await page.goto('/system')
+        await page.goto('/system?section=network')
         await page.getByLabel('账号', { exact: true }).fill('proxy-admin')
         await page.getByLabel('密码', { exact: true }).fill(password)
         await page.getByRole('button', { name: '登录', exact: true }).click()
@@ -127,7 +127,7 @@ test('proxy trust editor confirms risk, persists normalized rules and cannot cha
             const other = await browser.newContext({ baseURL: host.url })
             try {
                 const user = await other.newPage()
-                await user.goto('/system')
+                await user.goto('/system?section=network')
                 await user.getByLabel('账号', { exact: true }).fill(role)
                 await user.getByLabel('密码', { exact: true }).fill(password)
                 await user

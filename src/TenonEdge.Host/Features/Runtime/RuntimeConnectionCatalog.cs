@@ -4,6 +4,7 @@ using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
+using TenonEdge.Host.Features.Parameters;
 using TenonEdge.Host.Features.Routes;
 
 namespace TenonEdge.Host.Features.Runtime;
@@ -91,6 +92,7 @@ internal sealed class RuntimeConnectionCatalog
     {
         var users = new List<(long Id, ConnectionListUser User)>();
         var devices = checkpoint.Devices.ToDictionary(device => device.Id);
+        var connections = checkpoint.Connections.ToDictionary(connection => connection.Id);
         foreach (var source in checkpoint.Inputs)
         {
             if (!devices.TryGetValue(source.DeviceId, out var device))
@@ -100,7 +102,7 @@ internal sealed class RuntimeConnectionCatalog
             var user = new ConnectionListUser("input", key, device.Name + " / " + source.Name,
                 device.Enabled && source.Enabled, active?.Invoke(kind, key) == true);
             var ids = source.Module?.ConnectionIds ?? (device.ConnectionId is { } connectionId ? [connectionId] : Enumerable.Empty<long>());
-            foreach (var id in ids.Distinct())
+            foreach (var id in ModuleDraftConnections.ReadIds(ids, connections))
             { users.Add((id, user)); }
         }
         foreach (var route in checkpoint.Routes)
@@ -110,9 +112,16 @@ internal sealed class RuntimeConnectionCatalog
                 var key = route.Key + "/" + node.Id;
                 var user = new ConnectionListUser("output", key, route.Name + " / " + node.Name,
                     route.Enabled, active?.Invoke(node.Type, key) == true);
-                foreach (var reference in RouteGraphFormat.References(route.Graph with { Nodes = [node] }))
-                { users.Add((reference.TargetId, user)); }
+                foreach (var id in ModuleDraftConnections.ReadIds(RouteGraphFormat.References(route.Graph with { Nodes = [node] }).Select(value => value.TargetId), connections))
+                { users.Add((id, user)); }
             }
+        }
+        var activeConnections = users.Where(item => item.User.Active).Select(item => item.Id).ToHashSet();
+        foreach (var connection in checkpoint.Connections.Where(value => value.Module is not null))
+        {
+            var user = new ConnectionListUser("connection", connection.Key, connection.Name, connection.Enabled, activeConnections.Contains(connection.Id));
+            foreach (var id in connection.Module!.ConnectionIds.Distinct())
+            { users.Add((id, user)); }
         }
         return users.GroupBy(item => item.Id).ToDictionary(group => group.Key,
             group => group.Select(item => item.User).Distinct().OrderBy(item => item.Kind, StringComparer.Ordinal)

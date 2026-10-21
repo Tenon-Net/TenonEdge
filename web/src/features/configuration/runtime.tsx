@@ -84,9 +84,9 @@ export function ConfigurationRuntime({
     return (
         <section
             aria-label={t('configuration.runtimeTitle')}
-            className="space-y-3 rounded border p-4"
+            className="product-panel space-y-3"
         >
-            <h2 className="text-xl font-semibold">
+            <h2 className="text-base font-semibold">
                 {t('configuration.runtimeTitle')}
             </h2>
             <ConfigurationError

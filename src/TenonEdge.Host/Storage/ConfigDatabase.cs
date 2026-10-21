@@ -23,6 +23,12 @@ internal sealed class ConfigDatabase : IDisposable
     public const int CommandTimeoutSeconds = 30;
 
     private readonly SqlSugarScope _scope;
+    // 同一配置库的检查/观测事件沿用统一入口；不是请求上下文、连接或活跃事务。
+    // Scope 与独立客户端均使用它，保留原 CopyNew 的统一事件行为。
+    private readonly AopEvents _events = new()
+    {
+        CheckConnectionExecuted = (connection, _) => SqliteConnectionSettings.Apply(connection),
+    };
 
     public ConfigDatabase(DataDirectoryLock dataDirectory)
     {
@@ -37,18 +43,7 @@ internal sealed class ConfigDatabase : IDisposable
         }.ToString();
 
         _scope = new SqlSugarScope(
-            new ConnectionConfig
-            {
-                DbType = DbType.Sqlite,
-                ConnectionString = ConnectionString,
-                IsAutoCloseConnection = true,
-
-                // 放在连接配置中而不是 configAction 里：CopyNew 复制连接配置，但不重放 configAction。
-                AopEvents = new AopEvents
-                {
-                    CheckConnectionExecuted = (connection, _) => SqliteConnectionSettings.Apply(connection),
-                },
-            },
+            CreateConnectionConfig(),
             client => client.Ado.CommandTimeOut = CommandTimeoutSeconds);
     }
 
@@ -58,8 +53,22 @@ internal sealed class ConfigDatabase : IDisposable
 
     public ISqlSugarClient Client => _scope;
 
-    /// <summary>为一个并发分支创建独立客户端（复制连接配置与命令超时）；调用方负责释放。</summary>
-    public SqlSugarClient CreateIsolatedClient() => _scope.CopyNew();
+    /// <summary>从统一配置创建独立客户端，不查找 Scope 的异步上下文；调用方负责释放。</summary>
+    public SqlSugarClient CreateIsolatedClient()
+    {
+        var client = new SqlSugarClient(CreateConnectionConfig());
+        client.Ado.CommandTimeOut = CommandTimeoutSeconds;
+        return client;
+    }
+
+    private ConnectionConfig CreateConnectionConfig() => new()
+    {
+        DbType = DbType.Sqlite,
+        ConnectionString = ConnectionString,
+        IsAutoCloseConnection = true,
+        // 连接配置和超时独立；检查/观测事件由配置库统一持有，每次连接检查保持幂等。
+        AopEvents = _events,
+    };
 
     /// <summary>
     /// 在独立客户端上执行一个写事务：正常返回时提交，抛出异常时回滚并重新抛出。

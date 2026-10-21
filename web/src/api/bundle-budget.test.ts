@@ -67,6 +67,7 @@ it('enforces the cumulative budget even when each chunk is small', () => {
 it.each([
     'src/features/connections/strings.ts',
     'src/features/auth/auth-form.tsx',
+    'src/features/auth/auth-layout.tsx',
     'src/components/layout/workspace.tsx',
     'node_modules/zod/v4/core.js',
     'node_modules/@xyflow/react/index.js',

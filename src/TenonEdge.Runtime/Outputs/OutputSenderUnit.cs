@@ -6,7 +6,7 @@ using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.Runtime.Outputs;
 
-/// <summary>目标内存状态跨监督者重建保留；最多一条发送结果等待提交。</summary>
+/// <summary>目标内存状态跨监督者重建保留；确认编号有界积存，失败结果串行提交。</summary>
 internal sealed partial class OutputSenderState
 {
     private OutputSenderDiagnostics _diagnostics = new("normal", null, null, null, null, null, null, null);
@@ -79,7 +79,6 @@ internal sealed partial class OutputSenderState
     public long? QuarantiningSeq { get; set; }
     public string? ReconciledFingerprint { get; set; }
     public string? ResumeVersion { get; set; }
-    public long? AcknowledgedSeq { get; set; }
     public FailureRequest? PendingFailure { get; set; }
     public long? RecheckHeadSeq { get; set; }
     public int ConsecutiveRejects { get; set; }
@@ -117,16 +116,11 @@ internal sealed class OutputSenderUnit(
         _ = _adapter.Value;
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (state.AcknowledgedSeq is { } acknowledged)
-            {
-                await RequireCommitAsync(await deliveries.DeleteAsync([acknowledged], stoppingToken),
-                    "已确认记录删除未提交，重试删除而不重发。", stoppingToken);
-                state.AcknowledgedSeq = null;
-                continue;
-            }
+            await state.CommitAcknowledgementsAsync(deliveries, time, drain: false, stoppingToken);
 
             if (state.PendingFailure is { } failure)
             {
+                await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
                 // 每次提交创建独立 completion；重试绝对次数/条件状态转换不会重复计数。
                 var request = new FailureRequest(failure.Seq, failure.FailureCount, failure.Error, failure.Terminal, failure.Poison, failure.ResponseSummary);
                 await RequireCommitAsync(await deliveries.RecordFailureAsync(request, stoppingToken),
@@ -143,6 +137,7 @@ internal sealed class OutputSenderUnit(
 
             if (state.QuarantiningSeq is { } quarantineSeq)
             {
+                await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
                 await RequireCommitAsync(await deliveries.QuarantineAsync(quarantineSeq, DeliveryQuarantineReasons.TargetChanged, stoppingToken),
                     "隔离状态未提交，保持停止发送。", stoppingToken);
                 state.QuarantiningSeq = null;
@@ -150,7 +145,7 @@ internal sealed class OutputSenderUnit(
             }
 
             // 管理操作只能在原发送结果已持久化后取得队列；暂停期间不释放适配器或创建第二个发送者。
-            await state.WaitForQueuePauseAsync(stoppingToken);
+            await state.WaitForQueuePauseAsync(deliveries, time, stoppingToken);
             // 版本交接可能同时取消旧循环并释放跨提交屏障；不能因 Released 先完成而再取一条旧目标记录。
             stoppingToken.ThrowIfCancellationRequested();
             state.ApplyQueueProbeReset();
@@ -158,6 +153,7 @@ internal sealed class OutputSenderUnit(
             var fingerprint = target.CurrentFingerprint;
             if (state.ReconciledFingerprint != fingerprint)
             {
+                await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
                 await RequireCommitAsync(await deliveries.ReconcileAsync(new Dictionary<long, string> { [target.ConnectionId] = fingerprint },
                     quarantineMissing: false, stoppingToken), "目标身份隔离未提交，保持停止发送。", stoppingToken);
                 state.ReconciledFingerprint = fingerprint;
@@ -167,6 +163,7 @@ internal sealed class OutputSenderUnit(
             var control = controls?.Read(target.ConnectionId);
             if (control?.ManuallyPaused == true)
             {
+                await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
                 state.ReportState("manuallyPaused", pauseReason: "管理员手动暂停。");
                 await Task.Delay(TimeSpan.FromMilliseconds(250), time, stoppingToken);
                 continue;
@@ -184,6 +181,7 @@ internal sealed class OutputSenderUnit(
 
             if (state.SuspendedVersion is { } suspended)
             {
+                await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
                 if (target.CredentialVersion == suspended)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(250), time, stoppingToken);
@@ -234,11 +232,11 @@ internal sealed class OutputSenderUnit(
                 state.ReportState("normal");
             }
 
-            var pending = deliveries.ReadPending(target.ConnectionId, 0, 1);
-            var head = pending.Count == 0 ? null : pending[0];
+            var head = state.ReadUnacknowledgedHead(deliveries, target.ConnectionId);
             state.ReportHead(head?.Seq);
             if (head is null)
             {
+                await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
                 await Task.Delay(TimeSpan.FromMilliseconds(100), time, stoppingToken);
                 continue;
             }
@@ -276,7 +274,7 @@ internal sealed class OutputSenderUnit(
             switch (result.Status)
             {
                 case OutputSendStatus.Ack:
-                    state.AcknowledgedSeq = record.Seq;
+                    state.Acknowledge(record.Seq, head.Seq);
                     state.ConsecutiveRejects = 0;
                     state.ConsecutiveRetries = 0;
                     if (record.Seq != head.Seq)

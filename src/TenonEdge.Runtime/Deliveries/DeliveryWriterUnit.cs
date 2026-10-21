@@ -226,18 +226,22 @@ internal sealed partial class DeliveryWriterUnit(
             using var transaction = connection.BeginTransaction();
             using var insert = DeliveryStore.CreateInsertCommand(connection, transaction);
             using var delete = DeliveryStore.CreateDeleteCommand(connection, transaction);
+            var admission = new DeliveryAdmissionBudget(connection, transaction);
             for (var i = 0; i < batch.Count; i++)
             {
+                if (batch[i] is not (InsertRequest or DeleteRequest))
+                { admission.Invalidate(); }
                 transaction.Save(savepoint);
                 try
                 {
-                    results[i] = Execute(batch[i], insert, delete, createdAt);
+                    results[i] = Execute(batch[i], insert, delete, createdAt, admission);
                     transaction.Release(savepoint);
                 }
                 catch (SqliteException exception) when (batch[i] is InsertRequest && exception.SqliteErrorCode == SQLitePCL.raw.SQLITE_CONSTRAINT)
                 {
                     transaction.Rollback(savepoint);
                     transaction.Release(savepoint);
+                    admission.Invalidate();
                     results[i] = DeliveryWriteResult.Rejected($"数据错误，本请求未写入：{exception.Message}");
                     rejected += batch[i].RecordCount;
                     LogRequestRejected(logger, exception, batch[i].RecordCount);
@@ -289,7 +293,7 @@ internal sealed partial class DeliveryWriterUnit(
         return true;
     }
 
-    private DeliveryWriteResult Execute(WriteRequest request, SqliteCommand insert, SqliteCommand delete, long createdAt)
+    private DeliveryWriteResult Execute(WriteRequest request, SqliteCommand insert, SqliteCommand delete, long createdAt, DeliveryAdmissionBudget admission)
     {
         switch (request)
         {
@@ -306,9 +310,10 @@ internal sealed partial class DeliveryWriterUnit(
                 var quotaRejected = 0;
                 foreach (var draft in inserting.Drafts)
                 {
-                    if (queue.Store.Admit(insert.Connection!, insert.Transaction!, draft))
+                    if (queue.Store.Admit(insert.Connection!, insert.Transaction!, draft, admission))
                     {
                         seqs.Add(DeliveryStore.Insert(insert, draft, createdAt));
+                        admission.Inserted(draft);
                         insertedIds.Add(draft.DeliveryId);
                     }
                     else
@@ -323,7 +328,12 @@ internal sealed partial class DeliveryWriterUnit(
                 foreach (var seq in deleting.Seqs)
                 {
                     delete.Parameters["$seq"].Value = seq;
-                    count += delete.ExecuteNonQuery();
+                    using var reader = delete.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        admission.Deleted(reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2));
+                        count++;
+                    }
                 }
 
                 return DeliveryWriteResult.Deleted(count);

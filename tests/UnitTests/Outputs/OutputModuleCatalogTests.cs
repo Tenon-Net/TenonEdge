@@ -75,7 +75,7 @@ public sealed class OutputModuleCatalogTests
     {
         var module = new Module("wire")
         {
-            Config = Json("""{"connectionId":11,"inputs":["meter/source"],"address":"wire://localhost:19001"}"""),
+            Config = Json("""{"connectionId":11,"inputs":["meter/source"],"address":"wire://localhost:19001","transportRoute":{"recipient":"wire://localhost:19001","addressTemplate":"events/{deviceKey}"}}"""),
         };
         var connectionSchema = new ParameterSchema("connection.wire", ParameterScope.Connection,
         [
@@ -91,6 +91,45 @@ public sealed class OutputModuleCatalogTests
         Assert.Equal(11, protocol.Configuration.GetProperty("connectionId").GetInt64());
         Assert.Equal("meter/source", protocol.Configuration.GetProperty("inputs")[0].GetString());
         Assert.Equal("wire://localhost:19001", protocol.Configuration.GetProperty("address").GetString());
+        module.Config = Json(module.Config.GetRawText().Replace("events/{deviceKey}", "other/{deviceKey}", StringComparison.Ordinal));
+        Assert.Throws<ArgumentException>(() => catalog.Validate(frozen));
+        module.Config = Json("""{"connectionId":11,"inputs":["meter/source"]}""");
+        Assert.Throws<ArgumentException>(() => catalog.WithFrozenProtocol(Unit("wire")));
+        Assert.Equal("events/{deviceKey}", OutputTransportRoute.Read(OutputModuleCatalog.ReadProtocol(frozen)!.Configuration, "output.wire")!.AddressTemplate);
+    }
+
+    [Fact]
+    public void OutputAuxiliaryConnectionDescendantsKeepOriginalTargetAndJoinHistoryProtection()
+    {
+        var module = new Module("http")
+        {
+            Parameters = new("output.test", ParameterScope.Output,
+                [new("connection", "Connection", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = ["http"] },
+                 new("auxiliary", "Auxiliary", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = ["wrapper"] }])
+        };
+        var definitions = new ConnectionModuleCatalog([new("wrapper", 1, "Wrapper", new("wrapper", ParameterScope.Connection,
+            [new("upstream", "Upstream", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = ["http"] }]))]);
+        var source = Change(Unit(), config =>
+        {
+            config["outputModule"]!["parameters"]!["auxiliary"] = "12";
+            config["outputModule"]!["connections"]!["auxiliary"] = JsonNode.Parse("""
+                {"connectionId":12,"kind":"wrapper","configuration":{"connectionModule":{"version":1,
+                  "parameters":{"upstream":"13"},"connections":{"upstream":{"connectionId":13,"kind":"http",
+                  "configuration":{"baseAddress":"http://auxiliary/"}}}}}}
+                """);
+        });
+        var catalog = new OutputModuleCatalog([module], definitions);
+        var frozen = catalog.WithFrozenProtocol(source);
+        var admitted = RuntimePlanDocument.Parse(Document(frozen), outputs: catalog);
+        Assert.Equal(11, OutputModuleCatalog.ReadProtocol(frozen)!.Configuration.GetProperty("connectionId").GetInt64());
+        Assert.Equal([11L, 12L, 13L], RuntimeConnectionReferences.ReadIds(frozen).Distinct().Order());
+        Assert.Equal(admitted.Canonical, RuntimePlanDocument.ParseStored(admitted.Canonical).Canonical);
+        Assert.Throws<RouteTopologyException>(() => new RouteCompilationLimits(Connections: 2).Check(admitted));
+        new RouteCompilationLimits(Connections: 3).Check(admitted);
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.Parse(admitted.Canonical, outputs: new([module])));
+        var conflict = new RuntimeUnitPlan(RuntimeUnitId.Create("output.http", "other"),
+            Json("""{"connectionId":13,"inputs":["meter/source"],"baseAddress":"http://different/","path":"send"}"""));
+        Assert.Throws<RuntimePlanDocumentException>(() => RuntimePlanDocument.ParseStored(Document(frozen, conflict)));
     }
 
     [Fact]

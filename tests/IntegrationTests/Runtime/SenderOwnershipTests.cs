@@ -50,7 +50,7 @@ public sealed class SenderOwnershipTests
             Assert.Equal(0, Volatile.Read(ref builds));
             old.ReleaseSend.TrySetResult(); // Ignores cancellation and ACKs after the stop timeout.
             await old.Disposing.Task.WaitAsync(deadline, token);
-            Assert.NotNull(state.AcknowledgedSeq);
+            Assert.Equal(1, state.PendingAcknowledgementCount);
             var pending = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
             Assert.Equal(1, pending.Revision);
             Assert.Equal(0, Volatile.Read(ref builds));

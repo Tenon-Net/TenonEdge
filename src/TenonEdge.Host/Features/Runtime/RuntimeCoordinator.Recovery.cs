@@ -1,3 +1,4 @@
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Audit;
@@ -20,6 +21,7 @@ internal sealed partial class RuntimeCoordinator
         {
             "output.http" => (long?)HttpOutputSettings.Parse(unit.Configuration).ConnectionId,
             "output.mqtt" => MqttOutputSettings.Parse(unit.Configuration).ConnectionId,
+            _ when OutputTransportRoute.Read(unit.Configuration, unit.Id.Kind) is not null => unit.Configuration.GetProperty("connectionId").GetInt64(),
             _ => null,
         }).Where(id => id is not null).Select(id => id!.Value).Distinct().Order().ToArray();
         var targets = new List<RuntimeRecoveryTarget>();

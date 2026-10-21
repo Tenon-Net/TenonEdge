@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Host.Features.Devices;
@@ -21,6 +22,60 @@ public sealed class RuntimeOutputEndpointTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static DeliveryDraft Draft(long connection) => new(Guid.NewGuid(), connection, Guid.NewGuid(), "device", 1,
         "{\"secret\":\"output-private-body\"}"u8.ToArray(), "private-fingerprint", "private-recipient", "private-address");
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("tmpfs")]
+    [InlineData("ext4")]
+    public async Task ActiveCapacityReportsActualCalibrationApplicabilityWithoutChangingStorageProtection(string? filesystem)
+    {
+        using var data = TemporaryDirectory.Create();
+        await using var factory = new FixedDataDirectoryApplicationFactory(data.Path, configureServices: services =>
+        {
+            services.RemoveAll<DeliveryCache>();
+            services.AddSingleton(provider => new DeliveryCache(new()
+            {
+                DatabasePath = Path.Combine(provider.GetRequiredService<DataDirectoryLock>().Directory.Root, DeliveryCacheOptions.FileName),
+                ConfigStoreId = provider.GetRequiredService<GatewayIdentity>().ConfigStoreId,
+            }, provider.GetRequiredService<TimeProvider>(), () => new(100_000_000_000, 90_000_000_000, filesystem)));
+        });
+        var services = factory.Services;
+        TestAccounts.Create(services, "viewer", ApiRequests.StrongPassword, UserRole.Viewer);
+        var device = services.GetRequiredService<DeviceDraftStore>().Write(null, new("0", "meter", "Meter", DeviceKind.Simulator), "test", null);
+        var input = services.GetRequiredService<InputDraftStore>().Write(device.Device.Id, null,
+            new(device.Version, "sample", "Sample", Simulator: new(SampleJson: "{\"v\":42}")), "test", null);
+        var connection = services.GetRequiredService<ConnectionDraftStore>().Write(null,
+            new(input.Version, "http", "HTTP", ConnectionKind.Http, Http: new("http://localhost/")), "test", null);
+        var graph = new RouteGraph(1,
+            [new("in", "input.simulator", 1, "Input", JsonSerializer.SerializeToElement(new { sourceIds = new[] { input.Input.Id } })),
+             new("out", "output.http", 1, "Output", JsonSerializer.SerializeToElement(new { connectionId = connection.Connection.Id }))],
+            [new("in", "out")], new([]));
+        var route = services.GetRequiredService<RouteDraftStore>().Write(null, new(connection.Version, "route", "Route", true, graph), "test", null);
+        services.GetRequiredService<OutputControlStore>().Write(connection.Connection.Id, new(true, true), "fixture", null);
+        Assert.True((await services.GetRequiredService<RuntimeCoordinator>().ApplyDraftAsync(route.Version, "test", null, Token)).Activated);
+        var cache = services.GetRequiredService<DeliveryCache>();
+        await OutputPipelineTests.UntilAsync(() => cache.OutputTraffic.Read(connection.Connection.Id).RecordsPerSecond > 0);
+        using var client = await factory.CreateLoggedInClientAsync("viewer", Token);
+        var page = await client.GetJsonAsync(Root, Token);
+        var item = Assert.Single(page.GetProperty("items").EnumerateArray());
+        var capacity = item.GetProperty("capacity");
+        Assert.True(capacity.GetProperty("quotaUpperBoundSeconds").GetDouble() > 0);
+        Assert.False(page.GetProperty("storageProtection").GetProperty("rejectNewRecords").GetBoolean());
+        Assert.Equal(filesystem, page.GetProperty("storageProtection").GetProperty("space").GetProperty("fileSystem").GetString());
+        var status = capacity.GetProperty("calibration").GetProperty("status").GetString();
+        if (filesystem == "ext4" && OperatingSystem.IsLinux())
+        {
+            Assert.Equal("applicable", status);
+            Assert.True(capacity.GetProperty("seconds").GetDouble() > 0);
+            Assert.Equal("linux-ext4-sqlite-3.53.3-queue9-v1", capacity.GetProperty("calibration").GetProperty("profile").GetString());
+        }
+        else
+        {
+            Assert.Equal(filesystem is null ? "environmentUnknown" : "unsupportedEnvironment", status);
+            Assert.Equal(JsonValueKind.Null, capacity.GetProperty("seconds").ValueKind);
+            Assert.Equal(JsonValueKind.Null, capacity.GetProperty("calibration").GetProperty("amplification").ValueKind);
+        }
+    }
 
     [Theory]
     [InlineData("Administrator")]

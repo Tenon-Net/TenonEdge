@@ -635,7 +635,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "查看运行状态、存储保护和累计计数",
+        "summary": "查看运行状态、持久有效版本的应用人/时间、存储保护和累计计数",
         "operationId": "getRuntimeStatus",
         "responses": {
           "200": {
@@ -11390,6 +11390,97 @@
         }
       }
     },
+    "/api/edge-admin/v1/routes/{routeId}/runtime": {
+      "get": {
+        "tags": [
+          "Routes"
+        ],
+        "summary": "查看有效路线各节点的循环与有界路径观测；不返回正文，不触发采集或发送",
+        "operationId": "getRouteNodeRuntime",
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteRuntimePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/edge-admin/v1/routes/{routeId}/copy": {
       "post": {
         "tags": [
@@ -13864,7 +13955,8 @@
           "failedCount",
           "quarantinedCount",
           "moreDeliveries",
-          "canDelete"
+          "canDelete",
+          "connections"
         ],
         "type": "object",
         "properties": {
@@ -13932,6 +14024,12 @@
           },
           "canDelete": {
             "type": "boolean"
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionDraftReference"
+            }
           }
         }
       },
@@ -14050,6 +14148,28 @@
             "items": {
               "$ref": "#/components/schemas/ConnectionDraft"
             }
+          }
+        }
+      },
+      "ConnectionDraftReference": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
           }
         }
       },
@@ -16172,6 +16292,33 @@
           },
           "configStoreId": {
             "type": "string"
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": 0
+          },
+          "walAutoCheckpoint": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": 0
+          },
+          "autoVacuum": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64",
+            "default": -1
           }
         }
       },
@@ -16536,6 +16683,34 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "DiskCapacityCalibration": {
+        "required": [
+          "status",
+          "profile",
+          "amplification"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "profile": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "amplification": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -18380,6 +18555,20 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/JsonElement"
+          },
+          "connections": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int64"
+            }
           }
         },
         "additionalProperties": false
@@ -19384,6 +19573,16 @@
             "items": {
               "$ref": "#/components/schemas/CapacityConstraint"
             }
+          },
+          "calibration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DiskCapacityCalibration"
+              }
+            ]
           }
         }
       },
@@ -19431,7 +19630,8 @@
           "kind",
           "version",
           "displayName",
-          "parameters"
+          "parameters",
+          "targetConnectionKinds"
         ],
         "type": "object",
         "properties": {
@@ -19451,6 +19651,12 @@
           },
           "parameters": {
             "$ref": "#/components/schemas/ParameterSchema"
+          },
+          "targetConnectionKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -19836,6 +20042,24 @@
               "null",
               "boolean"
             ]
+          },
+          "minimumRecordBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maximumRecordBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -20176,7 +20400,7 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ModuleConnectionDraft"
+                "$ref": "#/components/schemas/PortableModuleConnection"
               }
             ]
           }
@@ -20370,6 +20594,40 @@
                 "$ref": "#/components/schemas/PortableModuleSource"
               }
             ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortableModuleConnection": {
+        "required": [
+          "kind",
+          "version",
+          "parameters"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parameters": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "connections": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false
@@ -21310,6 +21568,112 @@
         },
         "additionalProperties": false
       },
+      "RouteNodeRuntimeInfo": {
+        "required": [
+          "id",
+          "kind",
+          "version",
+          "state",
+          "inputs",
+          "runningInputs",
+          "faultedInputs",
+          "paths",
+          "observedPaths",
+          "failedPaths",
+          "unknownPaths",
+          "lastObservedAt",
+          "lastOutcome"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "state": {
+            "type": "string"
+          },
+          "inputs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "runningInputs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "faultedInputs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "paths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "observedPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failedPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "unknownPaths": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lastObservedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "RoutePreviewField": {
         "required": [
           "key",
@@ -21729,6 +22093,43 @@
           }
         },
         "additionalProperties": false
+      },
+      "RouteRuntimePage": {
+        "required": [
+          "draftVersion",
+          "revision",
+          "applied",
+          "capturedAt",
+          "nodes"
+        ],
+        "type": "object",
+        "properties": {
+          "draftVersion": {
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteNodeRuntimeInfo"
+            }
+          }
+        }
       },
       "RouteSamplePreviewResult": {
         "required": [
@@ -22530,7 +22931,8 @@
           "clockSyncState",
           "persistentCounters",
           "inFlight",
-          "unpersistedCounters"
+          "unpersistedCounters",
+          "configuration"
         ],
         "type": "object",
         "properties": {
@@ -22576,6 +22978,48 @@
               ],
               "format": "int64"
             }
+          },
+          "configuration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RuntimeEffectiveConfiguration"
+              }
+            ]
+          }
+        }
+      },
+      "RuntimeEffectiveConfiguration": {
+        "required": [
+          "effectiveRevision",
+          "appliedBy",
+          "appliedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "effectiveRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "appliedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "appliedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -23874,6 +24318,12 @@
               "string"
             ],
             "format": "int64"
+          },
+          "fileSystem": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

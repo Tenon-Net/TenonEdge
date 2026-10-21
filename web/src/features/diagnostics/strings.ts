@@ -4,6 +4,13 @@ export const diagnosticsStrings = {
     state: '运行状态',
     revision: '当前运行版本',
     noRevision: '尚无运行版本',
+    effectiveRevision: '持久有效版本',
+    noEffectiveRevision: '尚无有效配置',
+    appliedBy: '有效版本应用人',
+    appliedAt: '有效版本应用时间',
+    versionNotice:
+        '应用信息对应已持久提交的有效版本；切换或运行失败时，当前运行版本可能不同，不表示全部运行单元已启动。',
+    statusUnknown: '无法刷新，当前运行状态与有效版本未知；请重新读取核对。',
     refresh: '刷新本区域',
     lastRefresh: '上次成功刷新：{{time}}',
     empty: '暂无记录',
@@ -65,8 +72,7 @@ export const diagnosticsStrings = {
     unpersisted: '尚未持久化计数（进程退出可能丢失）',
     counter: '计数代码',
     value: '计数值',
-    counterNotice:
-        '代码按服务端原样展示；不是当前队列条数。按规则丢弃与异常分类汇总仍待补齐。',
+    counterNotice: '以下为累计事件次数；当前积存请查看发送缓存。',
     queueFault: '发送缓存存储异常',
     trends: '最近一小时趋势',
     trendNotice:
@@ -117,6 +123,4 @@ export const diagnosticsStrings = {
     deviceStep: '建立设备与来源',
     route: '画数据路线',
     apply: '确认应用',
-    partialNotice:
-        '此处显示真实运行单元与已有诊断数据；设备汇总与当前值已接入，输出目标队列详情仍在补齐，不以运行单元数量代替设备数。',
 }

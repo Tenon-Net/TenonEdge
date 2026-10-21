@@ -1,43 +1,46 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { startWorkflowGateway } from './support/gateway-workflow'
+import {
+    adminPassword,
+    temporaryPassword,
+    createUser,
+    login,
+    applyRoute,
+} from './support/workflow-ui'
 
 const root = '/api/edge-admin/v1'
-const adminPassword = 'Workflow-admin-8416!'
-const temporaryPassword = 'Workflow-temporary-4618!'
-const userPassword = 'Workflow-personal-8164!'
 const receiverSecret = 'Workflow-receiver-fixture-3187!'
 
-async function createUser(page: Page, username: string, role: string) {
-    await page.goto('/users')
-    await page.getByRole('button', { name: '新建用户', exact: true }).click()
-    await page.getByLabel('用户账号', { exact: true }).fill(username)
-    await page.getByLabel('显示名', { exact: true }).fill(username)
-    await page.getByLabel('角色', { exact: true }).selectOption(role)
-    await page.getByLabel('临时密码', { exact: true }).fill(temporaryPassword)
-    await page.getByRole('button', { name: '核对操作', exact: true }).click()
-    await page.getByLabel('我已核对账号与操作，确认执行').check()
-    await page.getByRole('button', { name: '确认执行', exact: true }).click()
-    await expect(page.getByRole('status')).toHaveText('用户操作已完成。')
-}
-async function login(
+async function expectAppliedOverview(
     page: Page,
-    username: string,
-    password: string,
-    temporary = false,
+    configuration: {
+        effectiveRevision: number
+        appliedBy: string
+        appliedAt: string
+    },
 ) {
     await page.goto('/')
-    await page.getByLabel('账号', { exact: true }).fill(username)
-    await page.getByLabel('密码', { exact: true }).fill(password)
-    await page.getByRole('button', { name: '登录', exact: true }).click()
-    if (temporary) {
-        await page.getByLabel('原密码', { exact: true }).fill(password)
-        await page.getByLabel('新密码', { exact: true }).fill(userPassword)
-        await page
-            .getByRole('button', { name: '保存新密码', exact: true })
-            .click()
-    }
-    await expect(page.getByRole('navigation')).toBeVisible()
+    const state = page.getByRole('region', { name: '运行状态', exact: true })
+    await state.getByText('配置与网关信息', { exact: true }).click()
+    const fact = (name: string) =>
+        state.getByText(name, { exact: true }).locator('..').locator('dd')
+    await expect(fact('持久有效版本')).toHaveText(
+        `r${configuration.effectiveRevision}`,
+    )
+    await expect(fact('有效版本应用人')).toHaveText(configuration.appliedBy)
+    const at = await page.evaluate(
+        (value) => new Date(value).toLocaleString('zh-CN', { hour12: false }),
+        configuration.appliedAt,
+    )
+    await expect(fact('有效版本应用时间')).toHaveText(at)
+    await expect(
+        page.getByRole('region', { name: '最近一小时趋势', exact: true }),
+    ).toBeVisible()
+    await expect(
+        page.getByRole('region', { name: '最近异常', exact: true }),
+    ).toBeVisible()
 }
+
 async function createConnections(
     page: Page,
     modbusPort: number,
@@ -250,32 +253,6 @@ async function previewRoute(page: Page) {
     await expect(preview).toContainText('198.5')
     await expect(preview).toContainText('1 条路径中 1 条计算成功')
 }
-async function applyRoute(page: Page) {
-    await page.goto('/configuration')
-    await page
-        .getByRole('button', { name: '查看应用变更清单', exact: true })
-        .click()
-    await page
-        .getByLabel('我已检查变更及影响，确认应用这份草稿', { exact: true })
-        .check()
-    await page
-        .getByRole('button', { name: '确认应用配置', exact: true })
-        .click()
-    await expect(
-        page
-            .getByText('配置已提交并激活。后续运行健康情况仍须查看诊断。', {
-                exact: true,
-            })
-            .first(),
-    ).toBeVisible()
-    await page.goto('/routes')
-    const row = page.locator('li').filter({ hasText: '电表采集转发' })
-    await expect(row).toContainText('有效配置')
-    await row.getByRole('button', { name: '打开 电表采集转发' }).click()
-    const runtimeStatus = page.getByText(/运行协调状态：运行中/)
-    await expect(runtimeStatus).toContainText('与有效运行配置一致')
-}
-
 for (const creator of ['administrator', 'configurator'] as const) {
     test(`no JSON workflow: ${creator} configures Modbus to HTTP; viewer boundaries, browser exit and Host restart`, async ({
         browser,
@@ -375,6 +352,58 @@ for (const creator of ['administrator', 'configurator'] as const) {
                 await page.request.get(root + '/configuration/draft')
             ).json()
             expect(applied.effectiveRevision).toBe(1)
+            const configuration = (
+                await (await page.request.get(root + '/runtime/status')).json()
+            ).configuration
+            expect(configuration.effectiveRevision).toBe(1)
+            expect(configuration.appliedBy).toBe(
+                creator === 'configurator'
+                    ? 'workflow-editor'
+                    : 'workflow-admin',
+            )
+            const versions = await (
+                await page.request.get(root + '/configuration/versions')
+            ).json()
+            expect(Date.parse(configuration.appliedAt)).toBe(
+                versions[0].activatedAt,
+            )
+            await expectAppliedOverview(page, configuration)
+            await page.goto('/routes')
+            await page
+                .getByRole('button', { name: '打开 电表采集转发', exact: true })
+                .click()
+            const effective = page.getByText(/本路线：与有效运行配置一致/)
+            await expect(effective).toBeVisible()
+            const localName = page.getByLabel('路线名称', { exact: true })
+            await localName.fill('本地未保存路线')
+            await expect(effective).toHaveCount(0)
+            await expect(localName).toHaveValue('本地未保存路线')
+            await localName.fill('电表采集转发')
+            await expect(effective).toBeVisible()
+            // A failed list refresh must withdraw the old healthy badge without
+            // reloading the canvas or pretending cached data is a fresh match.
+            let failRouteList = true
+            const routeListUrl = gateway.url + root + '/routes'
+            await page.route(routeListUrl, async (route) => {
+                if (failRouteList && route.request().method() === 'GET')
+                    return route.fulfill({
+                        status: 500,
+                        contentType: 'application/problem+json',
+                        body: '{"title":"fixture route read failure","status":500}',
+                    })
+                return route.continue()
+            })
+            await page
+                .getByRole('button', { name: '重新查询', exact: true })
+                .click()
+            await expect(effective).toHaveCount(0)
+            await expect(localName).toHaveValue('电表采集转发')
+            failRouteList = false
+            await page
+                .getByRole('button', { name: '重新查询', exact: true })
+                .click()
+            await expect(effective).toBeVisible()
+            await page.unroute(routeListUrl)
             await page.goto('/runtime/devices')
             await page
                 .getByRole('button', { name: '查看 现场电表', exact: true })
@@ -420,6 +449,14 @@ for (const creator of ['administrator', 'configurator'] as const) {
             expect(gateway.reads.length).toBeGreaterThan(readsBeforeRestart)
             page = await launch()
             await login(page, 'workflow-viewer', temporaryPassword, true)
+            expect(
+                (
+                    await (
+                        await page.request.get(root + '/runtime/status')
+                    ).json()
+                ).configuration,
+            ).toEqual(configuration)
+            await expectAppliedOverview(page, configuration)
             await page.goto('/connections')
             await expect(
                 page.getByRole('button', { name: '新建连接', exact: true }),
@@ -431,6 +468,19 @@ for (const creator of ['administrator', 'configurator'] as const) {
             await page
                 .getByRole('button', { name: '打开 电表采集转发', exact: true })
                 .click()
+            await page.locator('.react-flow__node').first().click()
+            await expect(
+                page.getByRole('button', {
+                    name: '在侧栏新建连接',
+                    exact: true,
+                }),
+            ).toHaveCount(0)
+            await expect(
+                page.getByRole('button', {
+                    name: '在侧栏新建设备 / 来源',
+                    exact: true,
+                }),
+            ).toHaveCount(0)
             await expect(
                 page.getByRole('button', { name: '保存路线草稿', exact: true }),
             ).toBeDisabled()

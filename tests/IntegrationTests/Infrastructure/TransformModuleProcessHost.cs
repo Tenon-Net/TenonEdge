@@ -29,12 +29,23 @@ internal static class TransformModuleProcessHost
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("mqtt"))
                 .AddSingleton<IInputModuleFactory>(new TestProtocolInputModule("modbus"))
                 .AddSingleton(BrowserConnection())
+                .AddSingleton(TestNestedHttpModule.Connection)
+                .AddSingleton<IInputModuleFactory>(provider => new TestNestedHttpModule(
+                    provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single()))
                 .AddSingleton<IInputModuleFactory>(provider => new CredentialWireModule(
                     provider.GetRequiredService<IModuleCredentialResolver>(), provider.GetRequiredService<ISharedConnections>(),
                     provider.GetRequiredService<IOutboundConnector>())
                 { Automatic = true })
                 .AddSingleton<IOutputModuleFactory>(BrowserOutput("http"))
                 .AddSingleton<IOutputModuleFactory>(BrowserOutput("mqtt"))
+                .AddSingleton(TestWireOutputModule.Definition)
+                .AddSingleton<IOutputModuleFactory, TestWireOutputModule>()
+                .AddSingleton<IOutputAdapterFactory, TestWireOutputTransport>()
+                .AddSingleton<IOutputModuleFactory, TestAuthenticatedWireOutputModule>()
+                .AddSingleton<IOutputAdapterFactory>(provider => new TestWireOutputTransport(
+                    provider.GetRequiredService<ISharedConnections>(), provider.GetRequiredService<IOutboundConnector>(),
+                    provider.GetRequiredService<IModuleCredentialResolver>())
+                { Protocol = "authwire", CredentialField = "auth" })
                 .AddSingleton<IInputModuleFactory>(provider => new InputModuleConnectionTests.HttpReferenceModule(
                     provider.GetServices<IInputUnitFactory>().OfType<HttpInputFactory>().Single())
                 { PeriodMs = 1000 }));

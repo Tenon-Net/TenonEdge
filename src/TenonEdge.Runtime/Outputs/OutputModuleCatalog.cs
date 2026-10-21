@@ -9,11 +9,12 @@ using TenonEdge.Runtime.Modules;
 
 namespace TenonEdge.Runtime.Outputs;
 
-public sealed record OutputModuleDefinition(string Kind, int Version, string DisplayName, ParameterSchema Parameters);
+public sealed record OutputModuleDefinition(string Kind, int Version, string DisplayName, ParameterSchema Parameters,
+    ImmutableArray<string> TargetConnectionKinds);
 
 /// <summary>版本化输出声明、准入和原工厂视图；历史读取不运行已安装或已卸载的模块。
 /// 发送/重试/隔离仍由原输出目标、注册的传输工厂和队列实现，本目录不创建后台任务。</summary>
-public sealed class OutputModuleCatalog
+public sealed partial class OutputModuleCatalog
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> Outer = new(StringComparer.Ordinal)
@@ -22,13 +23,22 @@ public sealed class OutputModuleCatalog
     private readonly ImmutableDictionary<(string Kind, int Version), IOutputModuleFactory> _modules;
     private readonly ConnectionModuleCatalog _connections;
     private readonly IModuleCredentialResolver? _credentials;
+    private readonly ImmutableDictionary<string, IOutputAdapterFactory> _transports;
     public ImmutableArray<OutputModuleDefinition> Modules { get; }
     internal ImmutableArray<IOutputAdapterFactory> Factories { get; }
 
-    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null)
+    public OutputModuleCatalog(IEnumerable<IOutputModuleFactory> modules, ConnectionModuleCatalog? connections = null, IModuleCredentialResolver? credentials = null,
+        IEnumerable<IOutputAdapterFactory>? transports = null, IEnumerable<string>? planTransportKinds = null)
     {
         _credentials = credentials;
         _connections = connections ?? ConnectionModuleCatalog.Empty;
+        var directTransports = (transports ?? []).ToArray();
+        _transports = directTransports.Where(factory => IsModuleKind(factory.Kind))
+            .ToImmutableDictionary(factory => factory.Kind, StringComparer.Ordinal);
+        var available = directTransports.Select(factory => factory.Kind).Concat(planTransportKinds ?? [])
+            .Where(kind => kind is "output.http" or "output.mqtt" || IsModuleKind(kind))
+            .Select(kind => kind[7..]).ToHashSet(StringComparer.Ordinal);
+        available.IntersectWith(_connections.Modules.Select(module => module.Kind).Concat(["http", "mqtt"]));
         ArgumentNullException.ThrowIfNull(modules);
         var entries = ImmutableDictionary.CreateBuilder<(string, int), IOutputModuleFactory>();
         foreach (var module in modules)
@@ -41,7 +51,10 @@ public sealed class OutputModuleCatalog
         }
         _modules = entries.ToImmutable();
         Modules = _modules.Values.OrderBy(module => module.Kind, StringComparer.Ordinal).ThenBy(module => module.Version)
-            .Select(module => new OutputModuleDefinition(module.Kind, module.Version, module.DisplayName, module.Parameters)).ToImmutableArray();
+            .Select(module => new OutputModuleDefinition(module.Kind, module.Version, module.DisplayName, module.Parameters,
+                module.Parameters.Parameters.Where(field => field.Type == ParameterType.ConnectionReference)
+                    .SelectMany(field => field.ConnectionKinds).Where(available.Contains).Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal).ToImmutableArray())).ToImmutableArray();
         Factories = BindPlanFactories(ImmutableDictionary<string, IOutputAdapterFactory>.Empty);
     }
 
@@ -72,6 +85,8 @@ public sealed class OutputModuleCatalog
 
     public void Validate(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("queueOutput", out _))
+        { ValidateQueue(unit); return; }
         if (!unit.Configuration.TryGetProperty("outputModule", out _) && !_modules.Keys.Any(key => key.Kind == unit.Id.Kind))
         { return; }
         try
@@ -87,11 +102,14 @@ public sealed class OutputModuleCatalog
 
     public static void ValidateStoredShape(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("queueOutput", out _))
+        { _ = ReadQueueProtocol(unit); return; }
         if (unit.Configuration.TryGetProperty("outputModule", out _))
         { _ = Read(unit); _ = ReadContext(unit); _ = ReadProtocol(unit) ?? throw Invalid(); }
     }
 
     public static ImmutableDictionary<string, ModuleConnectionSnapshot> ReadConnections(RuntimeUnitPlan unit) =>
+        unit.Configuration.TryGetProperty("queueOutput", out _) ? ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty.Add("target", ReadQueueConnection(unit)) :
         unit.Configuration.TryGetProperty("outputModule", out var envelope) ? ModuleConnections.Read(envelope) : ImmutableDictionary<string, ModuleConnectionSnapshot>.Empty;
 
     public static OutputModuleContext ReadContext(RuntimeUnitPlan unit)
@@ -106,6 +124,8 @@ public sealed class OutputModuleCatalog
 
     public static RuntimeUnitPlan? ReadProtocol(RuntimeUnitPlan unit)
     {
+        if (unit.Configuration.TryGetProperty("queueOutput", out _))
+        { return ReadQueueProtocol(unit); }
         if (!unit.Configuration.TryGetProperty("outputModule", out var envelope) || !envelope.TryGetProperty("protocol", out var protocol))
         { return null; }
         if (protocol.ValueKind != JsonValueKind.Object || protocol.EnumerateObject().Count() != 2 ||
@@ -120,6 +140,8 @@ public sealed class OutputModuleCatalog
         var binding = module.BindProtocol(parameters, context);
         if (binding is null)
         { throw Invalid(); }
+        if (binding.Kind is not ("output.http" or "output.mqtt"))
+        { _ = OutputTransportRoute.Read(binding.Configuration, binding.Kind, required: true); }
         return CheckProtocol(unit, binding.Kind, binding.Configuration, context);
     }
 
@@ -134,6 +156,7 @@ public sealed class OutputModuleCatalog
             config.TryGetProperty("mapping", out _) || config.TryGetProperty("mappingStages", out _) || config.TryGetProperty("transformStages", out _) ||
             config.TryGetProperty("queueOnly", out var queueOnly) && queueOnly.ValueKind != JsonValueKind.False)
         { throw Invalid(); }
+        _ = OutputTransportRoute.Read(config, kind);
         return new(RuntimeUnitId.Create(kind, unit.Id.Key), config);
     }
 

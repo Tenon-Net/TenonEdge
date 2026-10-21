@@ -44,7 +44,11 @@ export function MigrationSelection({
         ? (targets.data.items.filter(
               (item) =>
                   item.active &&
-                  ['http', 'mqtt'].includes(item.kind ?? '') &&
+                  // This is the effective output unit kind, which may be a module,
+                  // not its transport protocol. Preparation checks each frozen
+                  // record against the target's real protocol and current identity.
+                  !!item.kind &&
+                  item.kind !== 'tenon' &&
                   String(item.connectionId) !== source,
           ) ?? [])
         : []

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SqlSugar;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Credentials;
@@ -37,6 +38,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         {
             ConfigurationDraft.CheckVersion(client, expectedVersion);
             var draft = Read(client, id) ?? throw new DraftWriteException("connection.notFound");
+            var connections = ReferencingConnections(client, id);
             var deviceDrafts = client.Queryable<DeviceDraftRecord>().ToList().Select(DeviceDraftStore.Decode).ToArray();
             var inputDrafts = client.Queryable<InputDraftRecord>().ToList().Select(InputDraftStore.Decode).ToArray();
             var devices = deviceDrafts.Where(device => device.ConnectionId == id || inputDrafts.Any(input =>
@@ -64,7 +66,7 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             var snapshots = pointers.Select(value => value.Revision!.Value).Distinct().Select(revision =>
                 client.Queryable<RuntimeSnapshotRecord>().InSingle(revision)
                     ?? throw new RuntimePlanDocumentException("运行版本引用缺失。")).ToArray();
-            return (draft, devices, routes, pointers, snapshots);
+            return (draft, devices, routes, connections, pointers, snapshots);
         });
         var versions = captured.snapshots.Select(snapshot =>
         {
@@ -77,15 +79,13 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         var counts = deliveries.GetTargetStateCounts(id);
         return new(expectedVersion, id, captured.draft.Key, captured.draft.Name, captured.devices, captured.routes, versions,
             counts.Pending, counts.Failed, counts.Quarantined, false,
-            captured.devices.Length == 0 && captured.routes.Length == 0 && versions.Length == 0 && counts.Pending == 0 && counts.Failed == 0 && counts.Quarantined == 0);
+            captured.connections.Length == 0 && captured.devices.Length == 0 && captured.routes.Length == 0 && versions.Length == 0 && counts.Pending == 0 && counts.Failed == 0 && counts.Quarantined == 0, captured.connections);
     }
 
     public ConnectionDraftResult Write(long? existingId, ConnectionDraftRequest request, AuditAccount account, string? sourceIp)
     {
         var id = existingId ?? ids.NextId();
         var draft = ConnectionDraftValidation.Normalize(id, request);
-        if (draft.Module is { } module)
-        { _ = modules.Freeze(id, module.Kind, module.Version, module.Parameters); }
         var content = JsonSerializer.Serialize(draft, Json);
         return database.InTransaction(client =>
         {
@@ -103,6 +103,12 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
             }
             if (client.Queryable<ConnectionDraftRecord>().Any(row => row.BusinessKey == draft.Key && row.Id != id))
             { throw new DraftWriteException("connection.duplicateKey"); }
+            if (draft.Module is { } module)
+            {
+                var available = ReadAll(client);
+                available[id] = draft;
+                modules.Validate(module.Snapshot(id, available));
+            }
             DeviceDraftStore.ValidateConnectionChange(client, draft);
             var row = new ConnectionDraftRecord { Id = id, BusinessKey = draft.Key, Content = content };
             if (existing is null)
@@ -128,6 +134,8 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         { throw new DraftWriteException("connection.deviceReferenced"); }
         if (RouteDraftStore.HasReference(client, "connection", id))
         { throw new DraftWriteException("connection.routeReferenced"); }
+        if (ReferencingConnections(client, id).Length != 0)
+        { throw new DraftWriteException("connection.connectionReferenced"); }
         // 种子仍可存在，不允许删掉被保留运行版本使用的编号。
         if (HasRetainedReference(client, id))
         { throw new DraftWriteException("connection.referenced"); }
@@ -165,6 +173,25 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
         return false;
     }
 
+    // Only bounded metadata is materialized. Deletion must remain available to
+    // reduce an oversized draft; it does not need a complete configuration freeze.
+    private static ConnectionDraftReference[] ReferencingConnections(SqlSugarClient client, long id) => client.Ado.SqlQuery<ConnectionDraftReference>("""
+        SELECT c.id AS Id, c.business_key AS Key, json_extract(c.content, '$.name') AS Name,
+               json_extract(c.content, '$.enabled') AS Enabled
+        FROM connection_draft c WHERE EXISTS (
+            SELECT 1 FROM json_each(c.content, '$.module.connections') r WHERE CAST(r.value AS INTEGER) = @id)
+        ORDER BY c.id
+        """, new SugarParameter("@id", id)).ToArray();
+
+    internal static Dictionary<long, ConnectionDraft> ReadAll(SqlSugarClient client)
+    {
+        ConfigurationCheckpoint.CheckSize(client);
+        return client.Queryable<ConnectionDraftRecord>().ToList().Select(Decode).ToDictionary(value => value.Id);
+    }
+
+    internal static ModuleConnectionSnapshot Freeze(SqlSugarClient client, ConnectionDraft draft) =>
+        draft.Module!.Snapshot(draft.Id, ReadAll(client), client.Queryable<MqttCredentialRecord>().Select(row => row.ConnectionId).ToList().ToHashSet());
+
     internal static ConnectionDraft? Read(SqlSugarClient client, long id) =>
         client.Queryable<ConnectionDraftRecord>().InSingle(id) is { } row ? Decode(row) : null;
 
@@ -180,7 +207,14 @@ internal sealed class ConnectionDraftStore(ConfigDatabase database, SnowflakeIdG
 
 internal sealed record ConnectionDeletionReview(string Version, long Id, string Key, string Name,
     ConnectionDeviceReference[] Devices, ConnectionRouteReference[] Routes, ConnectionVersionReference[] Versions,
-    long PendingCount, long FailedCount, long QuarantinedCount, bool MoreDeliveries, bool CanDelete);
+    long PendingCount, long FailedCount, long QuarantinedCount, bool MoreDeliveries, bool CanDelete, ConnectionDraftReference[] Connections);
+internal sealed class ConnectionDraftReference
+{
+    public long Id { get; set; }
+    public string Key { get; set; } = "";
+    public string Name { get; set; } = "";
+    public bool Enabled { get; set; }
+}
 internal sealed class ConnectionDeviceReference
 {
     public long Id { get; set; }

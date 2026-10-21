@@ -1,6 +1,7 @@
+import { PageHeading } from '../../components/layout/page'
 import { DeviceDeletionPanel } from './deletion-review'
 import { businessKeyPattern } from '../../lib/business-key'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useStore } from 'zustand'
 import { Link, useBlocker } from '@tanstack/react-router'
 import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
@@ -27,6 +28,7 @@ export function DevicesPage({
     onOpenInputs,
 }: { onReturn?: () => void; onOpenInputs?: (id: number) => void } = {}) {
     const { t } = useTranslation()
+    const unitHelpId = useId()
     const activeMutations = useIsMutating()
     const role = useSession((s) => s.value?.role)
     const canEdit = role === 'administrator' || role === 'configurator'
@@ -170,7 +172,7 @@ export function DevicesPage({
         if (form) edit({ ...form, ...value })
     }
     return (
-        <section className="space-y-4">
+        <section className="product-page">
             {onReturn && (
                 <Button
                     type="button"
@@ -184,15 +186,18 @@ export function DevicesPage({
                     {t('routes.inline.return')}
                 </Button>
             )}
-            <h1 className="text-2xl font-semibold">{t('devices.title')}</h1>
+            <PageHeading
+                hideTitle={!onReturn}
+                level={onReturn ? 2 : 1}
+                description={t('devices.notice')}
+                title={t('devices.title')}
+            />
             {!onReturn && (
                 <Link to="/runtime/devices" className="underline">
                     {t('currentValues.title')}
                 </Link>
             )}
-            <p className="text-sm text-muted-foreground">
-                {t('devices.notice')}
-            </p>
+
             <ErrorMessage
                 error={query.error ?? connections.error ?? mutation.error}
             />
@@ -204,7 +209,7 @@ export function DevicesPage({
                 <p role="alert">{t('devices.versionsDiffer')}</p>
             )}
             {notice && <p role="status">{notice}</p>}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
                 <Button
                     variant="outline"
                     disabled={
@@ -229,8 +234,20 @@ export function DevicesPage({
             <p className="text-xs text-muted-foreground">
                 {t('devices.version', { version: query.data?.version ?? '—' })}
             </p>
-            <div className="grid gap-5 lg:grid-cols-[20rem_1fr]">
-                <aside className="space-y-3">
+            <div
+                className={
+                    form && query.data?.devices.length === 0
+                        ? ''
+                        : 'product-workbench'
+                }
+            >
+                <aside
+                    className={
+                        form && query.data?.devices.length === 0
+                            ? 'hidden'
+                            : 'product-rail space-y-3'
+                    }
+                >
                     <label className="block">
                         {t('devices.search')}
                         <input
@@ -292,7 +309,7 @@ export function DevicesPage({
                 </aside>
                 {form && (
                     <form
-                        className="space-y-4 rounded border p-4"
+                        className="product-panel w-full max-w-5xl space-y-4"
                         onSubmit={(e) => {
                             e.preventDefault()
                             if (canEdit && !busy && !moduleBlocked)
@@ -525,25 +542,37 @@ export function DevicesPage({
                                 )}
                             {form.kind === 'modbus' && (
                                 <>
-                                    <label>
-                                        {t('devices.unitId')}
-                                        <input
-                                            className={fieldClass}
-                                            type="number"
-                                            min={0}
-                                            max={255}
-                                            step={1}
-                                            required
-                                            value={form.unitId ?? ''}
-                                            onChange={(e) =>
-                                                patch({
-                                                    unitId: e.target.value
-                                                        ? Number(e.target.value)
-                                                        : null,
-                                                })
-                                            }
-                                        />
-                                    </label>
+                                    <div>
+                                        <label>
+                                            {t('devices.unitId')}
+                                            <input
+                                                className={fieldClass}
+                                                type="number"
+                                                min={0}
+                                                max={255}
+                                                step={1}
+                                                required
+                                                aria-describedby={unitHelpId}
+                                                value={form.unitId ?? ''}
+                                                onChange={(e) =>
+                                                    patch({
+                                                        unitId: e.target.value
+                                                            ? Number(
+                                                                  e.target
+                                                                      .value,
+                                                              )
+                                                            : null,
+                                                    })
+                                                }
+                                            />
+                                        </label>
+                                        <p
+                                            id={unitHelpId}
+                                            className="mt-1 text-xs leading-relaxed text-muted-foreground"
+                                        >
+                                            {t('devices.unitIdHelp')}
+                                        </p>
+                                    </div>
                                     <label>
                                         {t('devices.notation')}
                                         <select

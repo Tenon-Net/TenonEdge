@@ -75,7 +75,7 @@ export const connectionStrings = {
         effectiveOnly: '仅存在于有效配置；无可编辑草稿',
         users: '有效引用（{{count}}）',
         draftUsers: '草稿引用（{{count}}）',
-        userKinds: { input: '输入', output: '输出' },
+        userKinds: { input: '输入', output: '输出', connection: '连接' },
         userDisabled: '（配置停用）',
         userInactive: '（不在当前执行计划）',
         lastSuccess: '最后通信成功',
@@ -222,6 +222,7 @@ export const connectionStrings = {
         unavailable: '引用核对不可用或正在读取；在完整核对成功前不能删除。',
         unknown: '操作结果未知。请重新读取，不要重放删除。',
         devices: '设备及来源（{{count}}）',
+        connections: '引用此连接的连接草稿（{{count}}）',
         deviceConnection: '设备连接',
         source: '来源 {{key}}',
         routes: '路线草稿（{{count}}）',
@@ -235,7 +236,7 @@ export const connectionStrings = {
         quarantined: '隔离 {{count}}',
         blocked: '仍有引用或积存记录，不能删除。',
         confirm: '确认删除',
-        confirmMessage: '确认删除连接草稿 {{name}}？服务端将再次核对全部条件。',
+        prompt: '确认删除连接草稿 {{name}}？服务端将再次核对全部条件。',
         refresh: '重新核对',
         cancel: '取消',
     },
@@ -246,6 +247,8 @@ export const connectionStrings = {
     filter: '协议筛选',
     all: '全部协议',
     key: '连接 key',
+    keyFormat:
+        '内部引用标识，例如 plc_01。以英文字母或数字开头，可用字母、数字、下划线、短横线和点，最多 64 个字符；创建后不可修改。',
     name: '连接名称',
     kind: '协议类型',
     target: '目标',
@@ -282,6 +285,8 @@ export const connectionStrings = {
 
 export const credentialStrings = {
     title: '连接认证凭证',
+    staleDraft:
+        '连接草稿版本已变化或暂不可核对；未保存的凭证材料仍绑定原先打开的连接，不会转给新的接收方。请核对并重新载入连接后再操作凭证。',
     notice: '凭证与草稿分开保存，成功后立即生效，不需要应用。秘密从不回显；更换接收方默认需要重新填写。客户端证书用于身份认证，服务器信任须在独立的管理员表单中设置。',
     configured: '已设置',
     empty: '未设置',

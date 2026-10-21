@@ -1,3 +1,13 @@
+import { PageHeading } from '../../components/layout/page'
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+    TableCaption,
+} from '../../components/ui/table'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from './i18n'
@@ -38,11 +48,15 @@ export function AuditPage() {
     })
     if (!allowed) return <p role="alert">{t('audit.adminOnly')}</p>
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('audit.title')}</h1>
-            <p className="text-muted-foreground">{t('audit.notice')}</p>
+        <div className="product-page">
+            <PageHeading
+                hideTitle
+                description={t('audit.notice')}
+                title={t('audit.title')}
+            />
+
             <form
-                className="flex flex-wrap items-end gap-3"
+                className="product-toolbar"
                 onSubmit={(event) => {
                     event.preventDefault()
                     try {
@@ -92,27 +106,27 @@ export function AuditPage() {
             {!query.error && query.data && (
                 <>
                     <div className="overflow-x-auto rounded-lg border">
-                        <table className="w-full text-left text-sm">
-                            <caption className="sr-only">
+                        <Table className="w-full text-left text-sm">
+                            <TableCaption className="sr-only">
                                 {t('audit.title')}
-                            </caption>
-                            <thead className="bg-muted">
-                                <tr>
+                            </TableCaption>
+                            <TableHeader className="bg-muted">
+                                <TableRow>
                                     {columns.map((c) => (
-                                        <th key={c} className="p-3">
+                                        <TableHead key={c} className="p-3">
                                             {t(`audit.columns.${c}`)}
-                                        </th>
+                                        </TableHead>
                                     ))}
-                                </tr>
-                            </thead>
-                            <tbody>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
                                 {query.data.items.map((row) => (
-                                    <tr
+                                    <TableRow
                                         key={row.id}
                                         className="border-t align-top"
                                     >
                                         {columns.map((c) => (
-                                            <td
+                                            <TableCell
                                                 key={c}
                                                 className="max-w-sm break-words p-3"
                                             >
@@ -132,12 +146,12 @@ export function AuditPage() {
                                                     : c === 'occurredAt'
                                                       ? dateText(row.occurredAt)
                                                       : (row[c] ?? '—')}
-                                            </td>
+                                            </TableCell>
                                         ))}
-                                    </tr>
+                                    </TableRow>
                                 ))}
-                            </tbody>
-                        </table>
+                            </TableBody>
+                        </Table>
                     </div>
                     {!query.data.items.length && <p>{t('audit.empty')}</p>}
                     <div className="flex gap-3">

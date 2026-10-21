@@ -12,7 +12,7 @@ using TenonEdge.Host.Features.Connections;
 namespace TenonEdge.IntegrationTests.Infrastructure;
 
 /// <summary>测试侧声明/纯委托：没有客户端、线程或第二套计划工厂。</summary>
-internal sealed class TestProtocolInputModule(string protocol) : IInputModuleFactory
+internal sealed class TestProtocolInputModule(string protocol, bool referenceWrapper = false) : IInputModuleFactory
 {
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -23,13 +23,15 @@ internal sealed class TestProtocolInputModule(string protocol) : IInputModuleFac
     public int Version => 1;
     public bool UsesDurableHandoff => protocol == "mqtt";
     public ParameterSchema Parameters { get; } = new("input.test" + protocol, ParameterScope.Input,
-        [new("connection", "连接", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [protocol] },
+        [new("connection", "连接", ParameterType.ConnectionReference) { Required = true, ConnectionKinds = [referenceWrapper ? "wrapper" : protocol] },
             protocol == "mqtt" ? new("topic", "主题", ParameterType.Text) { Required = true, MaximumLength = 65535 }
                 : new("unit", "从站", ParameterType.Number) { Required = true, WholeNumber = true, MinimumJson = "0", MaximumJson = "255" }]);
     public ImmutableArray<InputModuleField> Describe(JsonElement parameters) => [new("value", FieldType.Integer, "count")];
     public InputProtocolBinding BindProtocol(JsonElement parameters, IReadOnlyDictionary<string, ModuleConnectionSnapshot> connections)
     {
         var connection = connections["connection"];
+        if (referenceWrapper)
+        { connection = ModuleConnectionReferences.Read(connection.Configuration.GetProperty("connectionModule"))["upstream"]; }
         if (protocol == "mqtt")
         {
             var settings = connection.Configuration.Deserialize<MqttInputSettings>(Json)! with

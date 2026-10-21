@@ -11,6 +11,40 @@ public sealed class OutputTrafficHistoryTests
         "{}"u8.ToArray(), "fp", "summary", "topic");
 
     [Fact]
+    public void CalibrationUsesObservedExtremaInTheSameSixBucketRateWindowNotAnAverageOrPayloadCopy()
+    {
+        var time = new FakeTimeProvider();
+        var history = new OutputTrafficHistory(time);
+        history.RetainTargets([1]);
+        var small = Draft(1);
+        var large = new DeliveryDraft(Guid.NewGuid(), 1, Guid.NewGuid(), "meter", 1,
+            new byte[DeliveryDraft.MaximumPayloadBytes], "fp", "summary", "topic",
+            headers: new Dictionary<string, string> { ["X-Size"] = new string('h', 1024) });
+        history.Generated([small, large]);
+        time.Advance(TimeSpan.FromSeconds(10));
+        history.Sample();
+        Assert.Equal(small.ByteSize, history.Read(1).MinimumRecordBytes);
+        Assert.Equal(large.ByteSize, history.Read(1, includePoints: false).MaximumRecordBytes);
+        for (var index = 0; index < 5; index++)
+        {
+            history.Generated([small]);
+            time.Advance(TimeSpan.FromSeconds(10));
+            history.Sample();
+        }
+        Assert.Equal(large.ByteSize, history.Read(1).MaximumRecordBytes);
+        history.Generated([small]);
+        time.Advance(TimeSpan.FromSeconds(10));
+        history.Sample();
+        Assert.Equal(small.ByteSize, history.Read(1).MaximumRecordBytes);
+        time.Advance(TimeSpan.FromSeconds(21));
+        Assert.Null(history.Read(1).MinimumRecordBytes);
+        Assert.Null(history.Read(1).MaximumRecordBytes);
+        history.RetainTargets([]);
+        history.RetainTargets([1]);
+        Assert.Null(history.Read(1).MaximumRecordBytes);
+    }
+
+    [Fact]
     public void TargetActivationOffsetAndTimerJitterDoNotSkipTheMonitorSamplingBucket()
     {
         var time = new FakeTimeProvider();

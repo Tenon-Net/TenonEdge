@@ -46,9 +46,8 @@ internal sealed partial class InputDraftStore(ConfigDatabase database, Snowflake
             var siblings = ReadForDevice(client, deviceId).Where(other => other.Id != id).ToArray();
             var references = siblings.SelectMany(other => other.Module?.ConnectionIds ?? [])
                 .Concat(request.Module?.ConnectionIds ?? []).Distinct().ToArray();
-            var connections = references.Length == 0 ? [] : client.Queryable<ConnectionDraftRecord>()
-                .Where(row => references.Contains(row.Id)).ToList().Select(ConnectionDraftStore.Decode).ToArray();
-            return (Device: device, Connections: connections.ToDictionary(value => value.Id),
+            var connections = references.Length == 0 ? [] : ConnectionDraftStore.ReadAll(client);
+            return (Device: device, Connections: connections,
                 Connection: device.ConnectionId is { } connectionId ? ConnectionDraftStore.Read(client, connectionId) : null,
                 Siblings: siblings);
         });

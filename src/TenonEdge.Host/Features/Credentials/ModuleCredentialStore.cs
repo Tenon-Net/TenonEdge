@@ -70,7 +70,7 @@ internal sealed class ModuleCredentialStore(ConfigDatabase database, IDataProtec
         { throw new ArgumentException("请核对可见账户。"); }
         var captured = database.InTransaction(client =>
         {
-            var connection = RequireDraft(client, id, request.ExpectedDraftVersion).Module!.Snapshot(id);
+            var connection = ConnectionDraftStore.Freeze(client, RequireDraft(client, id, request.ExpectedDraftVersion));
             var definition = BoundDefinition(connection);
             var parameters = ModuleConnectionSnapshot.ReadModuleConfiguration(connection).Parameters;
             var row = client.Queryable<ModuleCredentialRecord>().InSingle(id);
@@ -122,7 +122,7 @@ internal sealed class ModuleCredentialStore(ConfigDatabase database, IDataProtec
         var pending = deliveries.HasUndelivered(id);
         return database.InTransaction(client =>
         {
-            var connection = RequireDraft(client, id, request.ExpectedDraftVersion).Module!.Snapshot(id);
+            var connection = ConnectionDraftStore.Freeze(client, RequireDraft(client, id, request.ExpectedDraftVersion));
             var definition = BoundDefinition(connection);
             var recipient = definition.RecipientIdentity(ModuleConnectionSnapshot.ReadModuleConfiguration(connection).Parameters);
             if (client.Queryable<HttpCredentialRecord>().InSingle(id) is not null || client.Queryable<MqttCredentialRecord>().InSingle(id) is not null)
@@ -232,7 +232,13 @@ internal sealed class ModuleCredentialStore(ConfigDatabase database, IDataProtec
     {
         var values = Unprotect(row);
         var draft = ConnectionDraftStore.Read(client, row.ConnectionId);
-        var matches = draft?.Module is { } module && Resolve(row, module.Snapshot(row.ConnectionId)) is not null;
+        var matches = false;
+        if (draft?.Module is not null)
+        {
+            try
+            { matches = Resolve(row, ConnectionDraftStore.Freeze(client, draft)) is not null; }
+            catch (Exception error) when (error is ArgumentException or JsonException) { matches = false; }
+        }
         return new(row.ConnectionId, Identity(row), values is not null, values?.Keys.Order(StringComparer.Ordinal).ToArray() ?? [],
             matches, ConfigurationDraft.ReadVersion(client), DateTimeOffset.FromUnixTimeMilliseconds(row.UpdatedAt));
     }

@@ -34,7 +34,7 @@ const owned = test.extend<{
     },
 })
 async function setup(page: Page, url: string) {
-    await page.goto(url + '/system')
+    await page.goto(url + '/system?section=transfer')
     await page.getByLabel('账号', { exact: true }).fill('import-admin')
     await page.getByLabel('密码', { exact: true }).fill(password)
     await page.getByLabel('确认密码', { exact: true }).fill(password)
@@ -433,7 +433,7 @@ owned(
         const context = await browser.newContext({ baseURL: importHost.url })
         try {
             const other = await context.newPage()
-            await other.goto(importHost.url + '/system')
+            await other.goto(importHost.url + '/system?section=transfer')
             await other.getByLabel('账号', { exact: true }).fill('import-admin')
             await other.getByLabel('密码', { exact: true }).fill(password)
             await other
@@ -454,7 +454,7 @@ owned(
             await other.request.post(root + '/auth/logout', {
                 headers: await headers(other),
             })
-            await other.goto(importHost.url + '/system')
+            await other.goto(importHost.url + '/system?section=transfer')
             await other
                 .getByLabel('账号', { exact: true })
                 .fill('import-viewer')
@@ -509,7 +509,7 @@ owned(
             await other.request.post(root + '/auth/logout', {
                 headers: await headers(other),
             })
-            await other.goto(importHost.url + '/system')
+            await other.goto(importHost.url + '/system?section=transfer')
             await other
                 .getByLabel('账号', { exact: true })
                 .fill('import-configurator')

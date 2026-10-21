@@ -275,3 +275,67 @@ test('a failed route keeps navigation usable and recovers only after an explicit
     ).toBeVisible()
     expect(observed.writes).toEqual([root + '/setup'])
 })
+
+test('theme menu loads on keyboard demand without changing entered login material', async ({
+    page,
+    gateway,
+}) => {
+    const observed = requests(page, gateway.url)
+    await page.goto(gateway.url)
+    await page.getByLabel('账号', { exact: true }).fill('theme-fixture')
+    await page.getByLabel('密码', { exact: true }).fill('Unsaved-theme-3841!')
+    expect(observed.scripts.has(asset('src/components/theme-switch.tsx'))).toBe(
+        false,
+    )
+    const trigger = page.getByRole('button', { name: '切换主题', exact: true })
+    await trigger.focus()
+    await trigger.press('ArrowDown')
+    await page.getByRole('menuitem', { name: '深色', exact: true }).click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
+    expect(observed.scripts.has(asset('src/components/theme-switch.tsx'))).toBe(
+        true,
+    )
+    await trigger.click()
+    await page.getByRole('menuitem', { name: '浅色', exact: true }).click()
+    await expect(page.locator('html')).not.toHaveClass(/dark/)
+    await expect(page.getByLabel('账号', { exact: true })).toHaveValue(
+        'theme-fixture',
+    )
+    await expect(page.getByLabel('密码', { exact: true })).toHaveValue(
+        'Unsaved-theme-3841!',
+    )
+    expect(observed.writes).toEqual([])
+})
+
+test('failed optional theme menu keeps the login form and never retries or submits it', async ({
+    page,
+    gateway,
+}) => {
+    let attempts = 0
+    await page.route(
+        `**/${asset('src/components/theme-switch.tsx')}`,
+        (route) => {
+            attempts++
+            return route.abort('failed')
+        },
+    )
+    const observed = requests(page, gateway.url)
+    await page.goto(gateway.url)
+    await page.getByLabel('账号', { exact: true }).fill('theme-fixture')
+    await page.getByLabel('密码', { exact: true }).fill('Unsaved-theme-3841!')
+    await page.getByRole('button', { name: '切换主题', exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveText(
+        '主题菜单暂时无法加载，其他操作不受影响。',
+    )
+    await expect(page.getByLabel('账号', { exact: true })).toHaveValue(
+        'theme-fixture',
+    )
+    await expect(page.getByLabel('密码', { exact: true })).toHaveValue(
+        'Unsaved-theme-3841!',
+    )
+    await expect(
+        page.getByRole('button', { name: '创建管理员并登录', exact: true }),
+    ).toBeEnabled()
+    expect(attempts).toBe(1)
+    expect(observed.writes).toEqual([])
+})

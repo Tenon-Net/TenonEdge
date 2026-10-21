@@ -1,3 +1,5 @@
+using System.Text.Json;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Deliveries;
@@ -52,6 +54,11 @@ internal sealed partial class RuntimeVersionStore
             {
                 var settings = MqttOutputSettings.Parse(unit.Configuration);
                 yield return (settings.ConnectionId, "mqtt", settings.Recipient, settings.Topic, settings.QueueOnly);
+            }
+            else if (OutputTransportRoute.Read(unit.Configuration, unit.Id.Kind) is { } route)
+            {
+                yield return (unit.Configuration.GetProperty("connectionId").GetInt64(), unit.Id.Kind[7..], route.Recipient, route.AddressTemplate,
+                    unit.Configuration.TryGetProperty("queueOnly", out var queueOnly) && queueOnly.ValueKind == JsonValueKind.True);
             }
         }
     }

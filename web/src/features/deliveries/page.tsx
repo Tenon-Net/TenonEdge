@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -60,339 +61,389 @@ function Records({ connectionId }: { connectionId?: string }) {
         ),
     )
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('deliveries.title')}</h1>
-            <p className="text-sm text-muted-foreground">
-                {t('deliveries.notice')}
-            </p>
-            <DiagnosticPanel title={t('deliveries.records')} query={query}>
-                <fieldset disabled={operationLocked}>
-                    <form
-                        className="flex flex-wrap items-end gap-3"
-                        onSubmit={(event) => {
-                            event.preventDefault()
-                            try {
-                                setFilter(readFilter(draft))
-                                setCursors([])
+        <div className="product-page">
+            <PageHeading
+                hideTitle
+                description={t('deliveries.notice')}
+                title={t('deliveries.title')}
+            />
+
+            <div
+                className={`product-split ${canReadBody && selected ? 'has-detail' : ''}`}
+            >
+                <div className="product-list space-y-4">
+                    <DiagnosticPanel
+                        title={t('deliveries.records')}
+                        query={query}
+                    >
+                        <fieldset disabled={operationLocked}>
+                            <form
+                                className="product-toolbar"
+                                onSubmit={(event) => {
+                                    event.preventDefault()
+                                    try {
+                                        setFilter(readFilter(draft))
+                                        setCursors([])
+                                        check([])
+                                        select(undefined)
+                                        setInvalid(false)
+                                    } catch {
+                                        setInvalid(true)
+                                    }
+                                }}
+                            >
+                                <div className="space-y-1 text-sm">
+                                    <label htmlFor="delivery-area">
+                                        {t('deliveries.area')}
+                                    </label>
+                                    <select
+                                        id="delivery-area"
+                                        className="block h-9 rounded-md border bg-background px-3"
+                                        value={draft.state}
+                                        onChange={(event) =>
+                                            setDraft({
+                                                ...draft,
+                                                state: event.target
+                                                    .value as DeliveryArea,
+                                            })
+                                        }
+                                    >
+                                        <option value="failed">
+                                            {t('deliveries.failed')}
+                                        </option>
+                                        <option value="quarantined">
+                                            {t('deliveries.quarantined')}
+                                        </option>
+                                    </select>
+                                </div>
+                                {(
+                                    [
+                                        'connectionId',
+                                        'deviceKey',
+                                        'reason',
+                                        'from',
+                                        'to',
+                                    ] as const
+                                ).map((key) => (
+                                    <label
+                                        key={key}
+                                        className="space-y-1 text-sm"
+                                    >
+                                        {t(`deliveries.${key}`)}
+                                        <Input
+                                            type={
+                                                key === 'from' || key === 'to'
+                                                    ? 'datetime-local'
+                                                    : 'text'
+                                            }
+                                            maxLength={
+                                                key === 'reason' ? 1024 : 128
+                                            }
+                                            value={draft[key]}
+                                            onChange={(event) =>
+                                                setDraft({
+                                                    ...draft,
+                                                    [key]: event.target.value,
+                                                })
+                                            }
+                                        />
+                                    </label>
+                                ))}
+                                <Button type="submit">
+                                    {t('deliveries.filter')}
+                                </Button>
+                            </form>
+                        </fieldset>
+                        <p className="text-sm text-muted-foreground">
+                            {t('deliveries.filterNotice')}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                            {t('deliveries.failureNotice')}
+                        </p>
+                        {invalid && (
+                            <p role="alert">{t('deliveries.invalid')}</p>
+                        )}
+                        {!canReadBody && <p>{t('deliveries.viewer')}</p>}
+                        {query.data && (
+                            <>
+                                <p className="font-semibold">
+                                    {t(`deliveries.${filter.state}`)}
+                                </p>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead>
+                                            <tr>
+                                                {canSelect && (
+                                                    <th className="p-2">
+                                                        {t('deliveries.select')}
+                                                    </th>
+                                                )}
+                                                {[
+                                                    'target',
+                                                    'identity',
+                                                    'cause',
+                                                    'failureCount',
+                                                    'times',
+                                                    'source',
+                                                ].map((key) => (
+                                                    <th
+                                                        key={key}
+                                                        className="p-2"
+                                                    >
+                                                        {t(`deliveries.${key}`)}
+                                                    </th>
+                                                ))}
+                                                {canReadBody && <th />}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {query.data.items.map((item) => (
+                                                <tr
+                                                    className="border-t align-top"
+                                                    key={item.deliveryId}
+                                                >
+                                                    {canSelect && (
+                                                        <td className="p-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                aria-label={t(
+                                                                    'deliveries.selectRecord',
+                                                                    {
+                                                                        id: item.deliveryId,
+                                                                    },
+                                                                )}
+                                                                checked={checked.some(
+                                                                    (entry) =>
+                                                                        entry.sequence ===
+                                                                            item.sequence &&
+                                                                        entry.deliveryId ===
+                                                                            item.deliveryId,
+                                                                )}
+                                                                disabled={
+                                                                    operationLocked ||
+                                                                    query.isFetching ||
+                                                                    !!query.error
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    check(
+                                                                        event
+                                                                            .target
+                                                                            .checked
+                                                                            ? [
+                                                                                  ...visibleChecked,
+                                                                                  item,
+                                                                              ]
+                                                                            : visibleChecked.filter(
+                                                                                  (
+                                                                                      entry,
+                                                                                  ) =>
+                                                                                      entry.deliveryId !==
+                                                                                      item.deliveryId,
+                                                                              ),
+                                                                    )
+                                                                }
+                                                            />
+                                                        </td>
+                                                    )}
+                                                    <td className="p-2">
+                                                        <p>
+                                                            {item.connectionId}
+                                                        </p>
+                                                        <p>{item.deviceKey}</p>
+                                                        <small>
+                                                            {t(
+                                                                'deliveries.bytes',
+                                                                {
+                                                                    bytes: item.byteSize,
+                                                                },
+                                                            )}
+                                                        </small>
+                                                    </td>
+                                                    <td className="max-w-48 p-2 break-all">
+                                                        <p>{item.deliveryId}</p>
+                                                        <p>#{item.sequence}</p>
+                                                    </td>
+                                                    <td className="max-w-xs p-2 break-words whitespace-pre-wrap">
+                                                        {item.quarantineReason && (
+                                                            <p>
+                                                                {t(
+                                                                    `deliveries.reasons.${item.quarantineReason}`,
+                                                                    {
+                                                                        defaultValue:
+                                                                            item.quarantineReason,
+                                                                    },
+                                                                )}
+                                                            </p>
+                                                        )}
+                                                        {item.lastError ||
+                                                            (!item.quarantineReason &&
+                                                                t(
+                                                                    'deliveries.unknownReason',
+                                                                ))}
+                                                    </td>
+                                                    <td className="p-2">
+                                                        {item.failureCount}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        <p>
+                                                            {dateText(
+                                                                item.createdAt,
+                                                            )}
+                                                        </p>
+                                                        <p>
+                                                            {dateText(
+                                                                item.failedAt,
+                                                            )}
+                                                        </p>
+                                                        {item.clockAnomaly && (
+                                                            <p>
+                                                                {t(
+                                                                    'deliveries.clockAnomaly',
+                                                                )}
+                                                            </p>
+                                                        )}
+                                                    </td>
+                                                    <td className="max-w-48 p-2 break-words">
+                                                        <p>
+                                                            {t(
+                                                                'deliveries.revision',
+                                                                {
+                                                                    revision:
+                                                                        item.revision,
+                                                                    route:
+                                                                        item.routeId ??
+                                                                        '—',
+                                                                },
+                                                            )}
+                                                        </p>
+                                                        {item.nodeLabel ?? '—'}
+                                                    </td>
+                                                    {canReadBody && (
+                                                        <td className="p-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                aria-label={t(
+                                                                    'deliveries.view',
+                                                                    {
+                                                                        id: item.deliveryId,
+                                                                    },
+                                                                )}
+                                                                disabled={
+                                                                    query.isFetching ||
+                                                                    !!query.error
+                                                                }
+                                                                onClick={() =>
+                                                                    select(item)
+                                                                }
+                                                            >
+                                                                {t(
+                                                                    'deliveries.viewShort',
+                                                                )}
+                                                            </Button>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {query.data.items.length === 0 && (
+                                    <p>{t('deliveries.empty')}</p>
+                                )}
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        variant="outline"
+                                        disabled={
+                                            operationLocked ||
+                                            !cursors.length ||
+                                            query.isFetching
+                                        }
+                                        onClick={() => {
+                                            check([])
+                                            setCursors(cursors.slice(0, -1))
+                                            select(undefined)
+                                        }}
+                                    >
+                                        {t('diagnostics.previous')}
+                                    </Button>
+                                    <span>
+                                        {t('diagnostics.page', {
+                                            page: cursors.length + 1,
+                                        })}
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        disabled={
+                                            operationLocked ||
+                                            query.data.nextSequence === null ||
+                                            query.isFetching ||
+                                            !!query.error
+                                        }
+                                        onClick={() => {
+                                            if (
+                                                query.data?.nextSequence != null
+                                            ) {
+                                                check([])
+                                                setCursors([
+                                                    ...cursors,
+                                                    String(
+                                                        query.data.nextSequence,
+                                                    ),
+                                                ])
+                                                select(undefined)
+                                            }
+                                        }}
+                                    >
+                                        {t('diagnostics.next')}
+                                    </Button>
+                                </div>
+                            </>
+                        )}
+                    </DiagnosticPanel>
+                    {canSelect && (
+                        <DeliveryRecordActions
+                            key={JSON.stringify([filter, after])}
+                            filter={filter}
+                            canRetry={canRetry}
+                            canCleanup={canCleanup}
+                            selected={visibleChecked}
+                            unavailable={
+                                query.isFetching ||
+                                !!query.error ||
+                                !query.data?.items.length
+                            }
+                            lock={lockOperation}
+                            reset={() => {
                                 check([])
                                 select(undefined)
-                                setInvalid(false)
-                            } catch {
-                                setInvalid(true)
+                                void query.refetch()
+                            }}
+                        />
+                    )}
+                    {canCleanup && (
+                        <DeliveryExport
+                            filter={filter}
+                            unavailable={
+                                operationLocked ||
+                                query.isFetching ||
+                                !!query.error
                             }
-                        }}
-                    >
-                        <div className="space-y-1 text-sm">
-                            <label htmlFor="delivery-area">
-                                {t('deliveries.area')}
-                            </label>
-                            <select
-                                id="delivery-area"
-                                className="block h-9 rounded-md border bg-background px-3"
-                                value={draft.state}
-                                onChange={(event) =>
-                                    setDraft({
-                                        ...draft,
-                                        state: event.target
-                                            .value as DeliveryArea,
-                                    })
-                                }
-                            >
-                                <option value="failed">
-                                    {t('deliveries.failed')}
-                                </option>
-                                <option value="quarantined">
-                                    {t('deliveries.quarantined')}
-                                </option>
-                            </select>
-                        </div>
-                        {(
-                            [
-                                'connectionId',
-                                'deviceKey',
-                                'reason',
-                                'from',
-                                'to',
-                            ] as const
-                        ).map((key) => (
-                            <label key={key} className="space-y-1 text-sm">
-                                {t(`deliveries.${key}`)}
-                                <Input
-                                    type={
-                                        key === 'from' || key === 'to'
-                                            ? 'datetime-local'
-                                            : 'text'
-                                    }
-                                    maxLength={key === 'reason' ? 1024 : 128}
-                                    value={draft[key]}
-                                    onChange={(event) =>
-                                        setDraft({
-                                            ...draft,
-                                            [key]: event.target.value,
-                                        })
-                                    }
-                                />
-                            </label>
-                        ))}
-                        <Button type="submit">{t('deliveries.filter')}</Button>
-                    </form>
-                </fieldset>
-                <p className="text-sm text-muted-foreground">
-                    {t('deliveries.filterNotice')}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                    {t('deliveries.failureNotice')}
-                </p>
-                {invalid && <p role="alert">{t('deliveries.invalid')}</p>}
-                {!canReadBody && <p>{t('deliveries.viewer')}</p>}
-                {query.data && (
-                    <>
-                        <p className="font-semibold">
-                            {t(`deliveries.${filter.state}`)}
-                        </p>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr>
-                                        {canSelect && (
-                                            <th className="p-2">
-                                                {t('deliveries.select')}
-                                            </th>
-                                        )}
-                                        {[
-                                            'target',
-                                            'identity',
-                                            'cause',
-                                            'failureCount',
-                                            'times',
-                                            'source',
-                                        ].map((key) => (
-                                            <th key={key} className="p-2">
-                                                {t(`deliveries.${key}`)}
-                                            </th>
-                                        ))}
-                                        {canReadBody && <th />}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {query.data.items.map((item) => (
-                                        <tr
-                                            className="border-t align-top"
-                                            key={item.deliveryId}
-                                        >
-                                            {canSelect && (
-                                                <td className="p-2">
-                                                    <input
-                                                        type="checkbox"
-                                                        aria-label={t(
-                                                            'deliveries.selectRecord',
-                                                            {
-                                                                id: item.deliveryId,
-                                                            },
-                                                        )}
-                                                        checked={checked.some(
-                                                            (entry) =>
-                                                                entry.sequence ===
-                                                                    item.sequence &&
-                                                                entry.deliveryId ===
-                                                                    item.deliveryId,
-                                                        )}
-                                                        disabled={
-                                                            operationLocked ||
-                                                            query.isFetching ||
-                                                            !!query.error
-                                                        }
-                                                        onChange={(event) =>
-                                                            check(
-                                                                event.target
-                                                                    .checked
-                                                                    ? [
-                                                                          ...visibleChecked,
-                                                                          item,
-                                                                      ]
-                                                                    : visibleChecked.filter(
-                                                                          (
-                                                                              entry,
-                                                                          ) =>
-                                                                              entry.deliveryId !==
-                                                                              item.deliveryId,
-                                                                      ),
-                                                            )
-                                                        }
-                                                    />
-                                                </td>
-                                            )}
-                                            <td className="p-2">
-                                                <p>{item.connectionId}</p>
-                                                <p>{item.deviceKey}</p>
-                                                <small>
-                                                    {t('deliveries.bytes', {
-                                                        bytes: item.byteSize,
-                                                    })}
-                                                </small>
-                                            </td>
-                                            <td className="max-w-48 p-2 break-all">
-                                                <p>{item.deliveryId}</p>
-                                                <p>#{item.sequence}</p>
-                                            </td>
-                                            <td className="max-w-xs p-2 break-words whitespace-pre-wrap">
-                                                {item.quarantineReason && (
-                                                    <p>
-                                                        {t(
-                                                            `deliveries.reasons.${item.quarantineReason}`,
-                                                            {
-                                                                defaultValue:
-                                                                    item.quarantineReason,
-                                                            },
-                                                        )}
-                                                    </p>
-                                                )}
-                                                {item.lastError ||
-                                                    (!item.quarantineReason &&
-                                                        t(
-                                                            'deliveries.unknownReason',
-                                                        ))}
-                                            </td>
-                                            <td className="p-2">
-                                                {item.failureCount}
-                                            </td>
-                                            <td className="p-2 whitespace-nowrap">
-                                                <p>
-                                                    {dateText(item.createdAt)}
-                                                </p>
-                                                <p>{dateText(item.failedAt)}</p>
-                                                {item.clockAnomaly && (
-                                                    <p>
-                                                        {t(
-                                                            'deliveries.clockAnomaly',
-                                                        )}
-                                                    </p>
-                                                )}
-                                            </td>
-                                            <td className="max-w-48 p-2 break-words">
-                                                <p>
-                                                    {t('deliveries.revision', {
-                                                        revision: item.revision,
-                                                        route:
-                                                            item.routeId ?? '—',
-                                                    })}
-                                                </p>
-                                                {item.nodeLabel ?? '—'}
-                                            </td>
-                                            {canReadBody && (
-                                                <td className="p-2">
-                                                    <Button
-                                                        variant="outline"
-                                                        aria-label={t(
-                                                            'deliveries.view',
-                                                            {
-                                                                id: item.deliveryId,
-                                                            },
-                                                        )}
-                                                        disabled={
-                                                            query.isFetching ||
-                                                            !!query.error
-                                                        }
-                                                        onClick={() =>
-                                                            select(item)
-                                                        }
-                                                    >
-                                                        {t(
-                                                            'deliveries.viewShort',
-                                                        )}
-                                                    </Button>
-                                                </td>
-                                            )}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        {query.data.items.length === 0 && (
-                            <p>{t('deliveries.empty')}</p>
-                        )}
-                        <div className="flex items-center gap-3">
-                            <Button
-                                variant="outline"
-                                disabled={
-                                    operationLocked ||
-                                    !cursors.length ||
-                                    query.isFetching
-                                }
-                                onClick={() => {
-                                    check([])
-                                    setCursors(cursors.slice(0, -1))
-                                    select(undefined)
-                                }}
-                            >
-                                {t('diagnostics.previous')}
-                            </Button>
-                            <span>
-                                {t('diagnostics.page', {
-                                    page: cursors.length + 1,
-                                })}
-                            </span>
-                            <Button
-                                variant="outline"
-                                disabled={
-                                    operationLocked ||
-                                    query.data.nextSequence === null ||
-                                    query.isFetching ||
-                                    !!query.error
-                                }
-                                onClick={() => {
-                                    if (query.data?.nextSequence != null) {
-                                        check([])
-                                        setCursors([
-                                            ...cursors,
-                                            String(query.data.nextSequence),
-                                        ])
-                                        select(undefined)
-                                    }
-                                }}
-                            >
-                                {t('diagnostics.next')}
-                            </Button>
-                        </div>
-                    </>
-                )}
-            </DiagnosticPanel>
-            {canSelect && (
-                <DeliveryRecordActions
-                    key={JSON.stringify([filter, after])}
-                    filter={filter}
-                    canRetry={canRetry}
-                    canCleanup={canCleanup}
-                    selected={visibleChecked}
-                    unavailable={
-                        query.isFetching ||
-                        !!query.error ||
-                        !query.data?.items.length
-                    }
-                    lock={lockOperation}
-                    reset={() => {
-                        check([])
-                        select(undefined)
-                        void query.refetch()
-                    }}
-                />
-            )}
-            {canCleanup && (
-                <DeliveryExport
-                    filter={filter}
-                    unavailable={
-                        operationLocked || query.isFetching || !!query.error
-                    }
-                />
-            )}
-            {canReadBody && selected && (
-                <Body
-                    key={`${filter.state}/${selected.deliveryId}`}
-                    id={selected.deliveryId}
-                    state={filter.state}
-                    close={() => select(undefined)}
-                />
-            )}
+                        />
+                    )}
+                </div>
+                <div className="product-detail">
+                    {canReadBody && selected && (
+                        <Body
+                            key={`${filter.state}/${selected.deliveryId}`}
+                            id={selected.deliveryId}
+                            state={filter.state}
+                            close={() => select(undefined)}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
     )
 }

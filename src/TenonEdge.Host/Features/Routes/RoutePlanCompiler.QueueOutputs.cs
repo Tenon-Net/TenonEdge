@@ -6,6 +6,7 @@ using TenonEdge.Adapters.Mqtt;
 using TenonEdge.Host.Features.Configuration;
 using TenonEdge.Host.Features.Connections;
 using TenonEdge.Host.Features.Runtime;
+using TenonEdge.Runtime.Outputs;
 
 namespace TenonEdge.Host.Features.Routes;
 
@@ -47,17 +48,35 @@ internal static partial class RoutePlanCompiler
     }
 
     private static IEnumerable<RuntimeUnitPlan> QueueOutputs(IEnumerable<ConnectionDraft> connections,
-        IReadOnlyList<RuntimeUnitPlan> units, Func<long, bool?> usesPassword, CancellationToken token)
+        IReadOnlyList<RuntimeUnitPlan> units, Func<long, bool?> usesPassword, CancellationToken token, OutputModuleCatalog? outputs = null)
     {
         var all = connections.ToArray();
         if (all.Length > 500 || all.Any(value => value is null) || all.Select(value => value.Id).Distinct().Count() != all.Length)
         { throw Error("plan.configuration", ""); }
-        var targets = units.Select(RuntimeConnectionReferences.Protocol).Where(unit => unit.Id.Kind is "output.mqtt" or "output.http")
+        var targets = units.Select(RuntimeConnectionReferences.Protocol).Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal) &&
+            unit.Configuration.TryGetProperty("connectionId", out _))
             .Select(unit => unit.Configuration.GetProperty("connectionId").GetInt64()).ToHashSet();
         foreach (var connection in all.OrderBy(value => value.Key, StringComparer.Ordinal))
         {
             token.ThrowIfCancellationRequested();
-            if (!connection.Enabled || targets.Contains(connection.Id) || connection.Kind is not (ConnectionKind.Mqtt or ConnectionKind.Http))
+            if (!connection.Enabled || targets.Contains(connection.Id))
+            { continue; }
+            if (connection.Kind == ConnectionKind.Module && connection.Module is { } module && outputs is not null)
+            {
+                RuntimeUnitPlan? queue;
+                try
+                {
+                    if (!BusinessKeys.IsValid(connection.Key))
+                    { throw new ArgumentException("连接 key 无效。"); }
+                    queue = outputs.WithQueueProtocol(RuntimeUnitId.Create("output." + module.Kind, "queue/" + connection.Key + "/sender"), module.Snapshot(connection.Id, all.ToDictionary(value => value.Id), all.Where(value => usesPassword(value.Id) == true).Select(value => value.Id).ToHashSet(), requireEnabled: true));
+                }
+                catch (Exception error) when (ConfigurationError(error))
+                { throw Error("output.configuration", ""); }
+                if (queue is not null)
+                { yield return queue; }
+                continue;
+            }
+            if (connection.Kind is not (ConnectionKind.Mqtt or ConnectionKind.Http))
             { continue; }
             // 三段标识与正常路线的两段标识不重合；是连接的发送接续单元，不增加路线/来源/路径计数。
             if (!BusinessKeys.IsValid(connection.Key))

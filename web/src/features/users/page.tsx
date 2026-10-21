@@ -1,3 +1,12 @@
+import { PageHeading } from '../../components/layout/page'
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
@@ -128,12 +137,13 @@ export function UsersPage() {
     const blocked = busy || needsRead || !!query.error || !!form
     if (!canManage) return <p role="alert">{t('users.administratorOnly')}</p>
     return (
-        <section className="space-y-5">
+        <section className="product-page">
             <div>
-                <h1 className="text-2xl font-semibold">{t('users.title')}</h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    {t('users.description')}
-                </p>
+                <PageHeading
+                    hideTitle
+                    description={t('users.description')}
+                    title={t('users.title')}
+                />
             </div>
             <ErrorMessage error={query.error} />
             <ErrorMessage error={mutation.error} />
@@ -158,415 +168,473 @@ export function UsersPage() {
                     {t('users.refresh')}
                 </Button>
             </div>
-            {query.isPending && <p>{t('loading')}</p>}
-            {query.data && (
-                <div className="overflow-x-auto rounded-md border">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-muted">
-                            <tr>
-                                {[
-                                    'account',
-                                    'displayName',
-                                    'role',
-                                    'state',
-                                    'lastLogin',
-                                    'ip',
-                                ].map((key) => (
-                                    <th key={key} className="p-3">
-                                        {t(`users.${key}`)}
-                                    </th>
-                                ))}
-                                <th className="p-3">
-                                    {t('users.operation', { action: '' })}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {query.data.items.map((user) => (
-                                <tr
-                                    key={user.id}
-                                    className="border-t align-top"
-                                >
-                                    <td className="p-3 font-medium">
-                                        {user.accountName}
-                                    </td>
-                                    <td className="p-3">
-                                        {user.displayName ?? '—'}
-                                    </td>
-                                    <td className="p-3">
-                                        {t(`roles.${user.role}`)}
-                                    </td>
-                                    <td className="p-3">
-                                        <p>
-                                            {t(
-                                                user.isEnabled
-                                                    ? 'users.enabledState'
-                                                    : 'users.disabledState',
-                                            )}
-                                        </p>
-                                        {user.lockedUntil && (
-                                            <p>
-                                                {t('users.locked', {
-                                                    time: formatTime(
-                                                        user.lockedUntil,
-                                                    ),
-                                                })}
-                                            </p>
-                                        )}
-                                        {user.mustChangePassword && (
-                                            <p>{t('users.mustChange')}</p>
-                                        )}
-                                    </td>
-                                    <td className="p-3">
-                                        {formatTime(user.lastLoginAt)}
-                                    </td>
-                                    <td className="p-3">
-                                        {user.lastLoginIp ?? t('users.unknown')}
-                                    </td>
-                                    <td className="p-3">
-                                        <div className="flex max-w-xs flex-wrap gap-2">
-                                            {(
-                                                [
-                                                    'update',
-                                                    'password',
-                                                    'unlock',
-                                                    'end-sessions',
-                                                    'delete',
-                                                ] satisfies UserAction[]
-                                            ).map((action) => (
-                                                <Button
-                                                    key={action}
-                                                    size="sm"
-                                                    variant="outline"
-                                                    disabled={
-                                                        blocked ||
-                                                        (action === 'delete' &&
-                                                            user.accountName ===
-                                                                session?.accountName) ||
-                                                        (action === 'unlock' &&
-                                                            !user.lockedUntil)
-                                                    }
-                                                    onClick={() =>
-                                                        open(action, user)
-                                                    }
-                                                >
-                                                    {t(`users.${action}`)}
-                                                </Button>
-                                            ))}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-            <div className="flex gap-2">
-                <Button
-                    variant="outline"
-                    disabled={busy || !!form || after === 0}
-                    onClick={() => setAfter(0)}
-                >
-                    {t('users.first')}
-                </Button>
-                <Button
-                    variant="outline"
-                    disabled={busy || !!form || !query.data?.nextCursor}
-                    onClick={() => setAfter(Number(query.data!.nextCursor))}
-                >
-                    {t('users.next')}
-                </Button>
-            </div>
-            {form && (
-                <section
-                    className="max-w-xl space-y-4 rounded-md border p-5"
-                    aria-label={t(
-                        review ? 'users.confirmTitle' : `users.${form.action}`,
-                    )}
-                >
-                    <h2 className="text-lg font-semibold">
-                        {t(
-                            review
-                                ? 'users.confirmTitle'
-                                : `users.${form.action}`,
-                        )}
-                    </h2>
-                    <p>{t('users.securityWarning')}</p>
-                    {(form.action === 'create' ||
-                        form.action === 'password') && (
-                        <p>{t('users.passwordWarning')}</p>
-                    )}
-                    {form.action === 'delete' && (
-                        <p>{t('users.deleteWarning')}</p>
-                    )}
-                    {review ? (
-                        <>
-                            <p>
-                                {t('users.target', {
-                                    account: form.accountName,
-                                })}
-                            </p>
-                            <p>
-                                {t('users.operation', {
-                                    action: t(`users.${form.action}`),
-                                })}
-                            </p>
-                            {(form.action === 'create' ||
-                                form.action === 'update') && (
-                                <p>
-                                    {t('users.settings', {
-                                        name: form.displayName || '—',
-                                        role: t(`roles.${form.role}`),
-                                        state: t(
-                                            form.isEnabled
-                                                ? 'users.enabledState'
-                                                : 'users.disabledState',
-                                        ),
-                                    })}
-                                </p>
-                            )}
-                            {needsTokenChoice && (
-                                <section
-                                    className="space-y-3"
-                                    aria-label={t('tokens.creatorTitle')}
-                                >
-                                    <h3 className="font-semibold">
-                                        {t('tokens.creatorTitle')}
-                                    </h3>
-                                    <p>{t('tokens.creatorWarning')}</p>
-                                    <ErrorMessage error={tokenReview.error} />
-                                    {tokenReview.isFetching && (
-                                        <p>{t('loading')}</p>
-                                    )}
-                                    {tokenReview.data && (
-                                        <TokenTable
-                                            items={tokenReview.data.items}
-                                        />
-                                    )}
-                                    {tokenReview.data &&
-                                        tokenReview.data.items.length > 0 && (
-                                            <fieldset className="space-y-2">
-                                                <label className="flex items-start gap-2">
-                                                    <input
-                                                        type="radio"
-                                                        name="creator-tokens-choice"
-                                                        checked={
-                                                            revokeTokens?.revoke ===
-                                                                false &&
-                                                            revokeTokens.version ===
-                                                                tokenReview.data
-                                                                    ?.version
-                                                        }
-                                                        onChange={() => {
-                                                            setRevokeTokens({
-                                                                version:
-                                                                    tokenReview
-                                                                        .data!
-                                                                        .version,
-                                                                revoke: false,
-                                                            })
-                                                            setConfirmed(false)
-                                                        }}
-                                                    />
-                                                    {t('tokens.keep')}
-                                                </label>
-                                                <label className="flex items-start gap-2">
-                                                    <input
-                                                        type="radio"
-                                                        name="creator-tokens-choice"
-                                                        checked={
-                                                            revokeTokens?.revoke ===
-                                                                true &&
-                                                            revokeTokens.version ===
-                                                                tokenReview.data
-                                                                    ?.version
-                                                        }
-                                                        onChange={() => {
-                                                            setRevokeTokens({
-                                                                version:
-                                                                    tokenReview
-                                                                        .data!
-                                                                        .version,
-                                                                revoke: true,
-                                                            })
-                                                            setConfirmed(false)
-                                                        }}
-                                                    />
-                                                    {t('tokens.allRevoke')}
-                                                </label>
-                                            </fieldset>
-                                        )}
-                                    {tokenReview.error && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => {
-                                                setRevokeTokens(null)
-                                                setConfirmed(false)
-                                                void tokenReview.refetch()
-                                            }}
+            <div className={`product-split ${form ? 'has-detail' : ''}`}>
+                <div className="product-list space-y-3">
+                    {query.isPending && <p>{t('loading')}</p>}
+                    {query.data && (
+                        <div className="overflow-x-auto rounded-md border">
+                            <Table className="w-full text-left text-sm">
+                                <TableHeader className="bg-muted">
+                                    <TableRow>
+                                        {[
+                                            'account',
+                                            'displayName',
+                                            'role',
+                                            'state',
+                                            'lastLogin',
+                                            'ip',
+                                        ].map((key) => (
+                                            <TableHead
+                                                key={key}
+                                                className="p-3"
+                                            >
+                                                {t(`users.${key}`)}
+                                            </TableHead>
+                                        ))}
+                                        <TableHead className="p-3">
+                                            {t('users.operation', {
+                                                action: '',
+                                            })}
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {query.data.items.map((user) => (
+                                        <TableRow
+                                            key={user.id}
+                                            className="border-t align-top"
                                         >
-                                            {t('tokens.refresh')}
-                                        </Button>
-                                    )}
-                                </section>
-                            )}
-                            <label className="flex items-start gap-2">
-                                <input
-                                    type="checkbox"
-                                    checked={confirmed}
-                                    onChange={(event) =>
-                                        setConfirmed(event.target.checked)
-                                    }
-                                />
-                                {t('users.confirmation')}
-                            </label>
-                            <Button
-                                disabled={
-                                    !confirmed ||
-                                    mutation.isPending ||
-                                    !tokenChoiceReady
-                                }
-                                onClick={() => {
-                                    if (sending.current) return
-                                    sending.current = true
-                                    mutation.mutate()
-                                }}
-                            >
-                                {t('users.confirm')}
-                            </Button>
-                        </>
-                    ) : (
-                        <form
-                            className="space-y-4"
-                            onSubmit={(event) => {
-                                event.preventDefault()
-                                setReview(true)
-                                setConfirmed(false)
-                            }}
+                                            <TableCell className="p-3 font-medium">
+                                                {user.accountName}
+                                            </TableCell>
+                                            <TableCell className="p-3">
+                                                {user.displayName ?? '—'}
+                                            </TableCell>
+                                            <TableCell className="p-3">
+                                                {t(`roles.${user.role}`)}
+                                            </TableCell>
+                                            <TableCell className="p-3">
+                                                <p>
+                                                    {t(
+                                                        user.isEnabled
+                                                            ? 'users.enabledState'
+                                                            : 'users.disabledState',
+                                                    )}
+                                                </p>
+                                                {user.lockedUntil && (
+                                                    <p>
+                                                        {t('users.locked', {
+                                                            time: formatTime(
+                                                                user.lockedUntil,
+                                                            ),
+                                                        })}
+                                                    </p>
+                                                )}
+                                                {user.mustChangePassword && (
+                                                    <p>
+                                                        {t('users.mustChange')}
+                                                    </p>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="p-3">
+                                                {formatTime(user.lastLoginAt)}
+                                            </TableCell>
+                                            <TableCell className="p-3">
+                                                {user.lastLoginIp ??
+                                                    t('users.unknown')}
+                                            </TableCell>
+                                            <TableCell className="p-3">
+                                                <div className="flex max-w-xs flex-wrap gap-2">
+                                                    {(
+                                                        [
+                                                            'update',
+                                                            'password',
+                                                            'unlock',
+                                                            'end-sessions',
+                                                            'delete',
+                                                        ] satisfies UserAction[]
+                                                    ).map((action) => (
+                                                        <Button
+                                                            key={action}
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={
+                                                                blocked ||
+                                                                (action ===
+                                                                    'delete' &&
+                                                                    user.accountName ===
+                                                                        session?.accountName) ||
+                                                                (action ===
+                                                                    'unlock' &&
+                                                                    !user.lockedUntil)
+                                                            }
+                                                            onClick={() =>
+                                                                open(
+                                                                    action,
+                                                                    user,
+                                                                )
+                                                            }
+                                                        >
+                                                            {t(
+                                                                `users.${action}`,
+                                                            )}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            variant="outline"
+                            disabled={busy || !!form || after === 0}
+                            onClick={() => setAfter(0)}
                         >
-                            <label className="block">
-                                {t('users.account')}
-                                <input
-                                    className={fieldClass}
-                                    value={form.accountName}
-                                    readOnly={form.action !== 'create'}
-                                    onChange={(event) =>
-                                        edit('accountName', event.target.value)
-                                    }
-                                    required
-                                    minLength={3}
-                                    maxLength={32}
-                                    pattern="[A-Za-z0-9._\-]{3,32}"
-                                    autoComplete="off"
-                                />
-                            </label>
+                            {t('users.first')}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            disabled={busy || !!form || !query.data?.nextCursor}
+                            onClick={() =>
+                                setAfter(Number(query.data!.nextCursor))
+                            }
+                        >
+                            {t('users.next')}
+                        </Button>
+                    </div>
+                </div>
+                <div className="product-detail">
+                    {form && (
+                        <section
+                            className="product-panel space-y-4"
+                            aria-label={t(
+                                review
+                                    ? 'users.confirmTitle'
+                                    : `users.${form.action}`,
+                            )}
+                        >
+                            <h2 className="text-lg font-semibold">
+                                {t(
+                                    review
+                                        ? 'users.confirmTitle'
+                                        : `users.${form.action}`,
+                                )}
+                            </h2>
+                            <p>{t('users.securityWarning')}</p>
                             {(form.action === 'create' ||
-                                form.action === 'update') && (
+                                form.action === 'password') && (
+                                <p>{t('users.passwordWarning')}</p>
+                            )}
+                            {form.action === 'delete' && (
+                                <p>{t('users.deleteWarning')}</p>
+                            )}
+                            {review ? (
                                 <>
-                                    <label className="block">
-                                        {t('users.displayName')}
-                                        <input
-                                            className={fieldClass}
-                                            value={form.displayName}
-                                            onChange={(event) =>
-                                                edit(
-                                                    'displayName',
-                                                    event.target.value,
-                                                )
-                                            }
-                                            maxLength={128}
-                                        />
-                                    </label>
-                                    <label className="block">
-                                        {t('users.role')}
-                                        <select
-                                            aria-label={t('users.role')}
-                                            className={fieldClass}
-                                            value={form.role}
-                                            onChange={(event) => {
-                                                const role = event.target.value
-                                                if (
-                                                    role === 'administrator' ||
-                                                    role === 'configurator' ||
-                                                    role === 'viewer'
-                                                )
-                                                    edit('role', role)
-                                            }}
+                                    <p>
+                                        {t('users.target', {
+                                            account: form.accountName,
+                                        })}
+                                    </p>
+                                    <p>
+                                        {t('users.operation', {
+                                            action: t(`users.${form.action}`),
+                                        })}
+                                    </p>
+                                    {(form.action === 'create' ||
+                                        form.action === 'update') && (
+                                        <p>
+                                            {t('users.settings', {
+                                                name: form.displayName || '—',
+                                                role: t(`roles.${form.role}`),
+                                                state: t(
+                                                    form.isEnabled
+                                                        ? 'users.enabledState'
+                                                        : 'users.disabledState',
+                                                ),
+                                            })}
+                                        </p>
+                                    )}
+                                    {needsTokenChoice && (
+                                        <section
+                                            className="space-y-3"
+                                            aria-label={t(
+                                                'tokens.creatorTitle',
+                                            )}
                                         >
-                                            {(
-                                                [
-                                                    'administrator',
-                                                    'configurator',
-                                                    'viewer',
-                                                ] as const
-                                            ).map((role) => (
-                                                <option key={role} value={role}>
-                                                    {t(`roles.${role}`)}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                    <label className="flex items-center gap-2">
+                                            <h3 className="font-semibold">
+                                                {t('tokens.creatorTitle')}
+                                            </h3>
+                                            <p>{t('tokens.creatorWarning')}</p>
+                                            <ErrorMessage
+                                                error={tokenReview.error}
+                                            />
+                                            {tokenReview.isFetching && (
+                                                <p>{t('loading')}</p>
+                                            )}
+                                            {tokenReview.data && (
+                                                <TokenTable
+                                                    items={
+                                                        tokenReview.data.items
+                                                    }
+                                                />
+                                            )}
+                                            {tokenReview.data &&
+                                                tokenReview.data.items.length >
+                                                    0 && (
+                                                    <fieldset className="space-y-2">
+                                                        <label className="flex items-start gap-2">
+                                                            <input
+                                                                type="radio"
+                                                                name="creator-tokens-choice"
+                                                                checked={
+                                                                    revokeTokens?.revoke ===
+                                                                        false &&
+                                                                    revokeTokens.version ===
+                                                                        tokenReview
+                                                                            .data
+                                                                            ?.version
+                                                                }
+                                                                onChange={() => {
+                                                                    setRevokeTokens(
+                                                                        {
+                                                                            version:
+                                                                                tokenReview
+                                                                                    .data!
+                                                                                    .version,
+                                                                            revoke: false,
+                                                                        },
+                                                                    )
+                                                                    setConfirmed(
+                                                                        false,
+                                                                    )
+                                                                }}
+                                                            />
+                                                            {t('tokens.keep')}
+                                                        </label>
+                                                        <label className="flex items-start gap-2">
+                                                            <input
+                                                                type="radio"
+                                                                name="creator-tokens-choice"
+                                                                checked={
+                                                                    revokeTokens?.revoke ===
+                                                                        true &&
+                                                                    revokeTokens.version ===
+                                                                        tokenReview
+                                                                            .data
+                                                                            ?.version
+                                                                }
+                                                                onChange={() => {
+                                                                    setRevokeTokens(
+                                                                        {
+                                                                            version:
+                                                                                tokenReview
+                                                                                    .data!
+                                                                                    .version,
+                                                                            revoke: true,
+                                                                        },
+                                                                    )
+                                                                    setConfirmed(
+                                                                        false,
+                                                                    )
+                                                                }}
+                                                            />
+                                                            {t(
+                                                                'tokens.allRevoke',
+                                                            )}
+                                                        </label>
+                                                    </fieldset>
+                                                )}
+                                            {tokenReview.error && (
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => {
+                                                        setRevokeTokens(null)
+                                                        setConfirmed(false)
+                                                        void tokenReview.refetch()
+                                                    }}
+                                                >
+                                                    {t('tokens.refresh')}
+                                                </Button>
+                                            )}
+                                        </section>
+                                    )}
+                                    <label className="flex items-start gap-2">
                                         <input
                                             type="checkbox"
-                                            checked={form.isEnabled}
+                                            checked={confirmed}
                                             onChange={(event) =>
-                                                edit(
-                                                    'isEnabled',
+                                                setConfirmed(
                                                     event.target.checked,
                                                 )
                                             }
                                         />
-                                        {t('users.enabled')}
+                                        {t('users.confirmation')}
                                     </label>
-                                </>
-                            )}
-                            {(form.action === 'create' ||
-                                form.action === 'password') && (
-                                <label className="block">
-                                    {t('users.temporaryPassword')}
-                                    <input
-                                        className={fieldClass}
-                                        type="password"
-                                        aria-label={t(
-                                            'users.temporaryPassword',
-                                        )}
-                                        aria-describedby="users-password-help"
-                                        value={form.temporaryPassword}
-                                        onChange={(event) =>
-                                            edit(
-                                                'temporaryPassword',
-                                                event.target.value,
-                                            )
+                                    <Button
+                                        disabled={
+                                            !confirmed ||
+                                            mutation.isPending ||
+                                            !tokenChoiceReady
                                         }
-                                        autoComplete="new-password"
-                                        required
-                                        minLength={8}
-                                        maxLength={128}
-                                    />
-                                    <span
-                                        id="users-password-help"
-                                        className="text-sm text-muted-foreground"
+                                        onClick={() => {
+                                            if (sending.current) return
+                                            sending.current = true
+                                            mutation.mutate()
+                                        }}
                                     >
-                                        {t('users.passwordHelp')}
-                                    </span>
-                                </label>
+                                        {t('users.confirm')}
+                                    </Button>
+                                </>
+                            ) : (
+                                <form
+                                    className="space-y-4"
+                                    onSubmit={(event) => {
+                                        event.preventDefault()
+                                        setReview(true)
+                                        setConfirmed(false)
+                                    }}
+                                >
+                                    <label className="block">
+                                        {t('users.account')}
+                                        <input
+                                            className={fieldClass}
+                                            value={form.accountName}
+                                            readOnly={form.action !== 'create'}
+                                            onChange={(event) =>
+                                                edit(
+                                                    'accountName',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            required
+                                            minLength={3}
+                                            maxLength={32}
+                                            pattern="[A-Za-z0-9._\-]{3,32}"
+                                            autoComplete="off"
+                                        />
+                                    </label>
+                                    {(form.action === 'create' ||
+                                        form.action === 'update') && (
+                                        <>
+                                            <label className="block">
+                                                {t('users.displayName')}
+                                                <input
+                                                    className={fieldClass}
+                                                    value={form.displayName}
+                                                    onChange={(event) =>
+                                                        edit(
+                                                            'displayName',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    maxLength={128}
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                {t('users.role')}
+                                                <select
+                                                    aria-label={t('users.role')}
+                                                    className={fieldClass}
+                                                    value={form.role}
+                                                    onChange={(event) => {
+                                                        const role =
+                                                            event.target.value
+                                                        if (
+                                                            role ===
+                                                                'administrator' ||
+                                                            role ===
+                                                                'configurator' ||
+                                                            role === 'viewer'
+                                                        )
+                                                            edit('role', role)
+                                                    }}
+                                                >
+                                                    {(
+                                                        [
+                                                            'administrator',
+                                                            'configurator',
+                                                            'viewer',
+                                                        ] as const
+                                                    ).map((role) => (
+                                                        <option
+                                                            key={role}
+                                                            value={role}
+                                                        >
+                                                            {t(`roles.${role}`)}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
+                                            <label className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={form.isEnabled}
+                                                    onChange={(event) =>
+                                                        edit(
+                                                            'isEnabled',
+                                                            event.target
+                                                                .checked,
+                                                        )
+                                                    }
+                                                />
+                                                {t('users.enabled')}
+                                            </label>
+                                        </>
+                                    )}
+                                    {(form.action === 'create' ||
+                                        form.action === 'password') && (
+                                        <label className="block">
+                                            {t('users.temporaryPassword')}
+                                            <input
+                                                className={fieldClass}
+                                                type="password"
+                                                aria-label={t(
+                                                    'users.temporaryPassword',
+                                                )}
+                                                aria-describedby="users-password-help"
+                                                value={form.temporaryPassword}
+                                                onChange={(event) =>
+                                                    edit(
+                                                        'temporaryPassword',
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                autoComplete="new-password"
+                                                required
+                                                minLength={8}
+                                                maxLength={128}
+                                            />
+                                            <span
+                                                id="users-password-help"
+                                                className="text-sm text-muted-foreground"
+                                            >
+                                                {t('users.passwordHelp')}
+                                            </span>
+                                        </label>
+                                    )}
+                                    <Button type="submit">
+                                        {t('users.review')}
+                                    </Button>
+                                </form>
                             )}
-                            <Button type="submit">{t('users.review')}</Button>
-                        </form>
+                            <Button
+                                variant="outline"
+                                disabled={mutation.isPending}
+                                onClick={() => {
+                                    editor.setState({ form: null })
+                                    setReview(false)
+                                }}
+                            >
+                                {t('users.cancel')}
+                            </Button>
+                        </section>
                     )}
-                    <Button
-                        variant="outline"
-                        disabled={mutation.isPending}
-                        onClick={() => {
-                            editor.setState({ form: null })
-                            setReview(false)
-                        }}
-                    >
-                        {t('users.cancel')}
-                    </Button>
-                </section>
-            )}
+                </div>
+            </div>
         </section>
     )
 }

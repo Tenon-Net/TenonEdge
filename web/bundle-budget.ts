@@ -65,7 +65,7 @@ export function checkBundle(report: BundleReport) {
         .filter((file) => report.initial.files.includes(file.file))
         .flatMap((file) => file.modules)
         .filter((id) =>
-            /src\/features\/.*strings\.ts$|src\/features\/auth\/auth-form\.tsx$|src\/components\/layout\/workspace\.tsx$|node_modules\/(?:zod|react-hook-form|@xyflow|@tanstack\/react-(?:table|virtual))\//.test(
+            /src\/features\/.*strings\.ts$|src\/features\/auth\/(?:auth-form|auth-layout)\.tsx$|src\/components\/layout\/workspace\.tsx$|node_modules\/(?:zod|react-hook-form|@xyflow|@tanstack\/react-(?:table|virtual))\//.test(
                 id,
             ),
         )

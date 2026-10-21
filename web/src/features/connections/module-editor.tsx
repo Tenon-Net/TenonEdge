@@ -5,7 +5,7 @@ import { api, queryClient } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'
 import { ParameterFields } from '../parameters/fields'
-import { parameterIssues } from '../parameters/model'
+import type { ParameterConnection } from '../parameters/model'
 import {
     transformConfig,
     transformValues,
@@ -14,6 +14,8 @@ import {
 import { businessKeyPattern } from '../../lib/business-key'
 import {
     moduleConnectionRequest,
+    moduleConnectionIssues,
+    changeModuleConnectionReference,
     selectConnectionModule,
     type ConnectionModule,
     type ModuleConnectionForm,
@@ -25,6 +27,8 @@ export function ModuleConnectionEditor({
     form,
     definitions,
     ready,
+    connections,
+    connectionsReady,
     canEdit,
     blocked,
     onChange,
@@ -36,6 +40,8 @@ export function ModuleConnectionEditor({
     form: ModuleConnectionForm
     definitions: ConnectionModule[]
     ready: boolean
+    connections: readonly ParameterConnection[]
+    connectionsReady: boolean
     canEdit: boolean
     blocked: boolean
     onChange: (value: ModuleConnectionForm) => void
@@ -50,13 +56,20 @@ export function ModuleConnectionEditor({
             item.kind === form.kind &&
             Number(item.version) === form.moduleVersion,
     )
-    const nested = definition?.parameters.parameters?.some(
+    const hasReferences = definition?.parameters.parameters?.some(
         (field) => field.type === 'connectionReference',
     )
     const [showIssues, setShowIssues] = useState(false)
     const [needsReload, setNeedsReload] = useState(false)
     const [notice, setNotice] = useState('')
-    const values = transformValues(form.parameters)
+    const values = { ...transformValues(form.parameters), ...form.connections }
+    // A scalar with a reference field's name is invalid, not a selected connection.
+    for (const field of definition?.parameters.parameters ?? [])
+        if (field.type === 'connectionReference')
+            values[field.name] = form.connections[field.name]
+    const availableConnections = connections.filter(
+        (item) => item.id !== String(form.id),
+    )
     // Draft structural validation is intentionally separate from credential readiness.
     const schema = definition && {
         ...definition.parameters,
@@ -64,7 +77,9 @@ export function ModuleConnectionEditor({
             (field) => field.type !== 'credential',
         ),
     }
-    const issues = schema ? parameterIssues(schema, values) : []
+    const issues = definition
+        ? moduleConnectionIssues(form, definition, connections)
+        : []
     const operation = useMutation({
         retry: false,
         mutationFn: async () => {
@@ -95,7 +110,7 @@ export function ModuleConnectionEditor({
         needsReload ||
         !ready ||
         !definition ||
-        !!nested
+        (!!hasReferences && !connectionsReady)
     return (
         <form
             className="space-y-4 rounded-md border p-4"
@@ -111,7 +126,14 @@ export function ModuleConnectionEditor({
             {!ready || !definition ? (
                 <p role="alert">{t('moduleConnections.unavailable')}</p>
             ) : null}
-            {nested && <p role="alert">{t('moduleConnections.nested')}</p>}
+            {hasReferences && !connectionsReady && (
+                <p role="alert">
+                    {t('moduleConnections.referencesUnavailable')}
+                </p>
+            )}
+            {showIssues && issues.length > 0 && (
+                <p role="alert">{t('moduleConnections.invalidParameters')}</p>
+            )}
             <fieldset
                 disabled={
                     !canEdit || blocked || operation.isPending || needsReload
@@ -211,29 +233,55 @@ export function ModuleConnectionEditor({
                     />{' '}
                     {t('connections.enabled')}
                 </label>
-                <fieldset className="contents" disabled={!ready || !!nested}>
+                <fieldset
+                    className="contents"
+                    disabled={!ready || (!!hasReferences && !connectionsReady)}
+                >
                     {schema && (
                         <ParameterFields
                             schema={schema}
                             values={values}
+                            connections={availableConnections}
                             issues={showIssues ? issues : []}
-                            onChange={(name, value) =>
-                                onChange({
-                                    ...form,
-                                    parameters: transformConfig(
-                                        form.parameters,
-                                        schema,
-                                        { [name]: value },
-                                    ),
-                                })
-                            }
+                            onChange={(name, value) => {
+                                if (
+                                    schema.parameters?.some(
+                                        (field) =>
+                                            field.name === name &&
+                                            field.type ===
+                                                'connectionReference',
+                                    )
+                                ) {
+                                    if (
+                                        connectionsReady &&
+                                        typeof value === 'string'
+                                    )
+                                        onChange(
+                                            changeModuleConnectionReference(
+                                                form,
+                                                name,
+                                                value,
+                                            ),
+                                        )
+                                } else
+                                    onChange({
+                                        ...form,
+                                        parameters: transformConfig(
+                                            form.parameters,
+                                            schema,
+                                            { [name]: value },
+                                        ),
+                                    })
+                            }}
                         />
                     )}
                 </fieldset>
             </fieldset>
-            {(!canEdit || !definition || nested) && (
+            {(!canEdit || !definition) && (
                 <pre className="overflow-auto whitespace-pre-wrap">
                     {form.parameters}
+                    {'\n'}
+                    {JSON.stringify(form.connections)}
                 </pre>
             )}
             <ErrorMessage error={operation.error} />

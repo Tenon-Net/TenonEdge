@@ -1,3 +1,12 @@
+import { PageHeading } from '../../components/layout/page'
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -58,92 +67,106 @@ export function RuntimeDevicesPage() {
     const [selected, select] = useState('')
     const device = query.data?.devices.find((item) => item.key === selected)
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">
-                {t('currentValues.title')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-                {t('currentValues.notice')}
-            </p>
-            <DiagnosticPanel title={t('currentValues.summary')} query={query}>
-                <p>
-                    {t('currentValues.revision', {
-                        revision: query.data?.revision ?? '—',
-                    })}
-                </p>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead>
-                            <tr>
-                                {['device', 'protocol', 'state', 'action'].map(
-                                    (key) => (
-                                        <th className="p-2" key={key}>
-                                            {t(`currentValues.${key}`)}
-                                        </th>
-                                    ),
-                                )}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {query.data?.devices.map((item) => (
-                                <tr key={item.key} className="border-t">
-                                    <td className="p-2">
-                                        {item.name}{' '}
-                                        <span className="text-muted-foreground">
-                                            {item.key}
-                                        </span>
-                                        {item.removedFromDraft && (
-                                            <p>{t('currentValues.removed')}</p>
-                                        )}
-                                    </td>
-                                    <td className="p-2">{item.kind}</td>
-                                    <td className="p-2">
-                                        {t(
-                                            `currentValues.health.${item.health}`,
-                                            { defaultValue: item.health },
-                                        )}
-                                    </td>
-                                    <td className="p-2">
-                                        <Button
-                                            variant="outline"
-                                            disabled={item.draftOnly}
-                                            onClick={() => select(item.key)}
-                                        >
-                                            {t('currentValues.view', {
-                                                name: item.name,
-                                            })}
-                                        </Button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                {query.data && (
-                    <p className="text-xs text-muted-foreground">
-                        {t('currentValues.cache', {
-                            fields: query.data.cache.fields,
-                            bytes: query.data.cache.chargedBytes,
-                            evictions: query.data.cache.evictions,
+        <div className="product-page">
+            <PageHeading
+                description={t('currentValues.notice')}
+                title={t('currentValues.title')}
+            />
+
+            <div className={`product-split ${device ? 'has-detail' : ''}`}>
+                <DiagnosticPanel
+                    title={t('currentValues.summary')}
+                    query={query}
+                >
+                    <p>
+                        {t('currentValues.revision', {
+                            revision: query.data?.revision ?? '—',
                         })}
                     </p>
+                    <div className="overflow-x-auto">
+                        <Table className="w-full text-left text-sm">
+                            <TableHeader>
+                                <TableRow>
+                                    {[
+                                        'device',
+                                        'protocol',
+                                        'state',
+                                        'action',
+                                    ].map((key) => (
+                                        <TableHead className="p-2" key={key}>
+                                            {t(`currentValues.${key}`)}
+                                        </TableHead>
+                                    ))}
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {query.data?.devices.map((item) => (
+                                    <TableRow
+                                        key={item.key}
+                                        className="border-t"
+                                    >
+                                        <TableCell className="p-2">
+                                            {item.name}{' '}
+                                            <span className="text-muted-foreground">
+                                                {item.key}
+                                            </span>
+                                            {item.removedFromDraft && (
+                                                <p>
+                                                    {t('currentValues.removed')}
+                                                </p>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="p-2">
+                                            {item.kind}
+                                        </TableCell>
+                                        <TableCell className="p-2">
+                                            {t(
+                                                `currentValues.health.${item.health}`,
+                                                { defaultValue: item.health },
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="p-2">
+                                            <Button
+                                                variant="outline"
+                                                disabled={item.draftOnly}
+                                                onClick={() => select(item.key)}
+                                            >
+                                                {t('currentValues.view', {
+                                                    name: item.name,
+                                                })}
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                    {query.data && (
+                        <p className="text-xs text-muted-foreground">
+                            {t('currentValues.cache', {
+                                fields: query.data.cache.fields,
+                                bytes: query.data.cache.chargedBytes,
+                                evictions: query.data.cache.evictions,
+                            })}
+                        </p>
+                    )}
+                    {query.data?.devices.length === 0 && (
+                        <p>{t('currentValues.empty')}</p>
+                    )}
+                </DiagnosticPanel>
+                {device && query.data?.revision != null && (
+                    <div
+                        key={`${device.key}/${query.data.revision}`}
+                        className="space-y-5"
+                    >
+                        <h2 className="text-xl font-semibold">{device.name}</h2>
+                        <SourceValues
+                            device={device}
+                            revision={String(query.data.revision)}
+                        />
+                    </div>
                 )}
-                {query.data?.devices.length === 0 && (
-                    <p>{t('currentValues.empty')}</p>
-                )}
-            </DiagnosticPanel>
-            {device && query.data?.revision != null && (
-                <div
-                    key={`${device.key}/${query.data.revision}`}
-                    className="space-y-5"
-                >
-                    <h2 className="text-xl font-semibold">{device.name}</h2>
-                    <SourceValues
-                        device={device}
-                        revision={String(query.data.revision)}
-                    />
-                </div>
-            )}
+            </div>
         </div>
     )
 }
@@ -245,9 +268,9 @@ function PointValues({
                 {t('currentValues.expiryNotice')}
             </p>
             <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                    <thead>
-                        <tr>
+                <Table className="w-full text-left text-sm">
+                    <TableHeader>
+                        <TableRow>
                             {[
                                 'field',
                                 'value',
@@ -256,24 +279,24 @@ function PointValues({
                                 'collectedAt',
                                 'receivedAt',
                             ].map((key) => (
-                                <th className="p-2" key={key}>
+                                <TableHead className="p-2" key={key}>
                                     {t(`currentValues.${key}`)}
-                                </th>
+                                </TableHead>
                             ))}
-                        </tr>
-                    </thead>
-                    <tbody>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
                         {query.data?.items.map((item) => (
-                            <tr
+                            <TableRow
                                 key={item.key}
                                 className={`border-t align-top ${item.value.isStale ? 'text-muted-foreground' : ''}`}
                                 data-stale={item.value.isStale}
                             >
-                                <td className="p-2">
+                                <TableCell className="p-2">
                                     {item.key}
                                     {item.name && <p>{item.name}</p>}
-                                </td>
-                                <td className="max-w-md p-2 break-words whitespace-pre-wrap">
+                                </TableCell>
+                                <TableCell className="max-w-md p-2 break-words whitespace-pre-wrap">
                                     <span>{item.value.text ?? '—'}</span>
                                     {item.value.type && (
                                         <p className="text-xs">
@@ -283,9 +306,11 @@ function PointValues({
                                     {item.value.isStale && (
                                         <p>{t('currentValues.stale')}</p>
                                     )}
-                                </td>
-                                <td className="p-2">{item.unit ?? '—'}</td>
-                                <td className="p-2">
+                                </TableCell>
+                                <TableCell className="p-2">
+                                    {item.unit ?? '—'}
+                                </TableCell>
+                                <TableCell className="p-2">
                                     {t(
                                         `currentValues.qualityNames.${item.value.quality}`,
                                         { defaultValue: item.value.quality },
@@ -301,20 +326,20 @@ function PointValues({
                                             )}
                                         </p>
                                     )}
-                                </td>
-                                <td className="p-2">
+                                </TableCell>
+                                <TableCell className="p-2">
                                     {dateText(item.value.collectedAt)}
                                     {item.value.timeSource && (
                                         <p>{item.value.timeSource}</p>
                                     )}
-                                </td>
-                                <td className="p-2">
+                                </TableCell>
+                                <TableCell className="p-2">
                                     {dateText(item.value.receivedAt)}
-                                </td>
-                            </tr>
+                                </TableCell>
+                            </TableRow>
                         ))}
-                    </tbody>
-                </table>
+                    </TableBody>
+                </Table>
             </div>
             {query.data?.items.length === 0 && (
                 <p>{t('currentValues.noFields')}</p>

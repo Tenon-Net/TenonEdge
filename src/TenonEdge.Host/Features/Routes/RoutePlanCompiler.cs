@@ -43,7 +43,7 @@ internal static partial class RoutePlanCompiler
         {
             token.ThrowIfCancellationRequested();
             try
-            { _ = snapshot.ConnectionsCatalog.Freeze(connection.Id, connection.Module!.Kind, connection.Module.Version, connection.Module.Parameters); }
+            { snapshot.ConnectionsCatalog.Validate(connection.Module!.Snapshot(connection.Id, snapshot.Connections, snapshot.MqttCredentials, requireEnabled: true)); }
             catch (Exception error) when (ConfigurationError(error)) { throw Error("plan.configuration", ""); }
         }
         var routes = snapshot.Routes.Where(route => route.Enabled).OrderBy(route => route.Key, StringComparer.Ordinal).ToArray();
@@ -132,7 +132,7 @@ internal static partial class RoutePlanCompiler
                 catch (Exception error) when (ConfigurationError(error)) { throw Error("output.configuration", route.Key, output.Id); }
             }
         }
-        foreach (var queue in QueueOutputs(snapshot.Connections.Values, units, id => snapshot.MqttCredentials.Contains(id), token))
+        foreach (var queue in QueueOutputs(snapshot.Connections.Values, units, id => snapshot.MqttCredentials.Contains(id), token, snapshot.OutputsCatalog))
         { Add(queue, "", queue.Id.Key); }
         token.ThrowIfCancellationRequested();
         var serialized = JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 1, units = units.Select(unit => new { kind = unit.Id.Kind, key = unit.Id.Key, unit.Configuration }) }, RouteSourceCompiler.Json);

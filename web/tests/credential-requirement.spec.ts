@@ -110,11 +110,18 @@ with sqlite3.connect(sys.argv[1]) as db:
             .click()
         // Updated global version invalidates this editor rather than silently
         // reusing an old token. The operator explicitly opens the fresh draft.
+        await expect(panel.getByRole('alert')).toHaveText(
+            '连接草稿版本已变化或暂不可核对；未保存的凭证材料仍绑定原先打开的连接，不会转给新的接收方。请核对并重新载入连接后再操作凭证。',
+        )
         await expect(
-            page.getByText('先保存或重新载入连接草稿，再编辑它的凭证。', {
+            panel.getByLabel('新密码或秘密', { exact: true }),
+        ).toBeDisabled()
+        await expect(
+            panel.getByRole('button', {
+                name: '核对凭证变更（不保存）',
                 exact: true,
             }),
-        ).toBeVisible()
+        ).toBeDisabled()
         const after = await (
             await page.request.get(root + '/connections')
         ).json()

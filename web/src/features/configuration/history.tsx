@@ -62,10 +62,10 @@ export function ConfigurationHistory({
     })
     return (
         <section
-            className="space-y-4 rounded border p-4"
+            className="product-panel space-y-4"
             aria-label={t('configuration.history')}
         >
-            <h2 className="text-xl font-semibold">
+            <h2 className="text-base font-semibold">
                 {t('configuration.history')}
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -79,37 +79,44 @@ export function ConfigurationHistory({
                 versions.data?.map((version) => (
                     <article
                         key={String(version.revision)}
-                        className="space-y-2 rounded border p-3"
+                        className="grid items-start gap-3 border-b py-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
                         data-version={String(version.revision)}
                     >
-                        <p>
-                            r{version.revision} ·{' '}
-                            {t(`configuration.versionStates.${version.state}`, {
-                                defaultValue: version.state,
-                            })}{' '}
-                            ·{' '}
-                            {t(`configuration.origins.${version.origin}`, {
-                                defaultValue: version.origin,
-                            })}{' '}
-                            · {version.createdBy} ·{' '}
-                            {new Date(Number(version.createdAt)).toLocaleString(
-                                'zh-CN',
+                        <div className="space-y-1">
+                            <p>
+                                r{version.revision} ·{' '}
+                                {t(
+                                    `configuration.versionStates.${version.state}`,
+                                    {
+                                        defaultValue: version.state,
+                                    },
+                                )}{' '}
+                                ·{' '}
+                                {t(`configuration.origins.${version.origin}`, {
+                                    defaultValue: version.origin,
+                                })}{' '}
+                                · {version.createdBy} ·{' '}
+                                {new Date(
+                                    Number(version.createdAt),
+                                ).toLocaleString('zh-CN')}
+                            </p>
+                            <p className="text-sm">
+                                {t('configuration.appliedAt', {
+                                    time:
+                                        version.activatedAt == null
+                                            ? t('configuration.none')
+                                            : new Date(
+                                                  Number(version.activatedAt),
+                                              ).toLocaleString('zh-CN'),
+                                })}
+                            </p>
+                        </div>
+                        <div className="space-y-1">
+                            <p>{version.changeDescription}</p>
+                            {version.notEffectiveReason && (
+                                <p>{version.notEffectiveReason}</p>
                             )}
-                        </p>
-                        <p className="text-sm">
-                            {t('configuration.appliedAt', {
-                                time:
-                                    version.activatedAt == null
-                                        ? t('configuration.none')
-                                        : new Date(
-                                              Number(version.activatedAt),
-                                          ).toLocaleString('zh-CN'),
-                            })}
-                        </p>
-                        <p>{version.changeDescription}</p>
-                        {version.notEffectiveReason && (
-                            <p>{version.notEffectiveReason}</p>
-                        )}
+                        </div>
                         <Button
                             variant="outline"
                             onClick={() =>

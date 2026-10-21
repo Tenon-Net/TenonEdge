@@ -159,6 +159,7 @@ internal sealed class TestScalarInputModule : IInputModuleFactory
     public string DisplayName => "测试标量输入";
     public bool Emit { get; init; } = true;
     public bool UsesDurableHandoff { get; init; }
+    public SemaphoreSlim? Samples { get; init; }
     public TaskCompletionSource<InputHandoffStatus> Handoff { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public RuntimeUnitId? RecoveryId { get; private set; }
     public JsonElement RecoveryParameters { get; private set; }
@@ -193,8 +194,10 @@ internal sealed class TestScalarInputModule : IInputModuleFactory
         {
             await context.WaitForActivationAsync(stoppingToken);
             Interlocked.Increment(ref owner._starts);
-            if (owner.Emit)
+            while (owner.Emit)
             {
+                if (owner.Samples is { } samples)
+                { await samples.WaitAsync(stoppingToken); }
                 ValueTask<EdgeMessage?> Sample(CancellationToken token)
                 {
                     token.ThrowIfCancellationRequested();
@@ -207,6 +210,8 @@ internal sealed class TestScalarInputModule : IInputModuleFactory
                 else
                 { await context.Messages.ProduceAsync(4096, Sample, stoppingToken); }
                 context.Reads.ReadCompleted(context.Time.GetUtcNow(), 0);
+                if (owner.Samples is null)
+                { break; }
             }
             await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
         }

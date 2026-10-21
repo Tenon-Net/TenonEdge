@@ -209,7 +209,7 @@ export function OutputControls({
                         />
                         {t('outputControls.confirm')}
                     </label>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button
                             disabled={
                                 !confirmed || busy || unavailable || uncertain

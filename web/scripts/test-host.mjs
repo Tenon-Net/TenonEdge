@@ -11,7 +11,7 @@ const child = spawn(
     'dotnet',
     [
         join(root, 'src/TenonEdge.Host/bin/Release/net10.0/TenonEdge.Host.dll'),
-        `--webroot=${join(root, 'web/dist')}`,
+        `--webroot=${process.env.TENONEDGE_TEST_WEBROOT ?? join(root, 'web/dist')}`,
         `--TenonEdge:DataDirectory=${data}`,
         '--TenonEdge:Http:Address=0.0.0.0',
         `--TenonEdge:Http:Port=${url.port}`,

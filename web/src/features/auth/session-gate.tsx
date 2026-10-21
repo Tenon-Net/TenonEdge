@@ -14,7 +14,9 @@ import {
     CardDescription,
 } from '../../components/ui/card'
 import { PageBoundary } from '../../components/page-boundary'
-
+const AuthLayout = lazy(() =>
+    import('./auth-layout').then(({ AuthLayout }) => ({ default: AuthLayout })),
+)
 const Workspace = lazy(() =>
     import('../../components/layout/workspace').then(({ Workspace }) => ({
         default: Workspace,
@@ -44,32 +46,33 @@ export function SessionGate() {
     })
     if (session && !session.mustChangePassword)
         return (
-            <>
-                {sessionQuery.error && (
-                    <div className="space-y-2 border-b p-3">
-                        <ErrorMessage error={sessionQuery.error} />
-                        <p className="text-xs text-muted-foreground">
-                            {t('lastSessionRefresh', {
-                                time: sessionQuery.dataUpdatedAt
-                                    ? new Date(
-                                          sessionQuery.dataUpdatedAt,
-                                      ).toLocaleString('zh-CN')
-                                    : t('neverRefreshed'),
-                            })}
-                        </p>
-                        <Button
-                            variant="outline"
-                            disabled={sessionQuery.isFetching}
-                            onClick={() => void sessionQuery.refetch()}
-                        >
-                            {t('retry')}
-                        </Button>
-                    </div>
-                )}
-                <PageBoundary>
-                    <Workspace />
-                </PageBoundary>
-            </>
+            <PageBoundary>
+                <Workspace
+                    sessionNotice={
+                        sessionQuery.error && (
+                            <div className="space-y-2 border-b p-3">
+                                <ErrorMessage error={sessionQuery.error} />
+                                <p className="text-xs text-muted-foreground">
+                                    {t('lastSessionRefresh', {
+                                        time: sessionQuery.dataUpdatedAt
+                                            ? new Date(
+                                                  sessionQuery.dataUpdatedAt,
+                                              ).toLocaleString('zh-CN')
+                                            : t('neverRefreshed'),
+                                    })}
+                                </p>
+                                <Button
+                                    variant="outline"
+                                    disabled={sessionQuery.isFetching}
+                                    onClick={() => void sessionQuery.refetch()}
+                                >
+                                    {t('retry')}
+                                </Button>
+                            </div>
+                        )
+                    }
+                />
+            </PageBoundary>
         )
     const setup = setupQuery.data
     const mode = session?.mustChangePassword
@@ -83,31 +86,18 @@ export function SessionGate() {
         (mode === 'setup' || mode === 'reset') && setup?.windowOpen === false
     const error = sessionQuery.error ?? setupQuery.error
     return (
-        <main className="flex min-h-svh items-center justify-center bg-muted/40 px-4 py-12">
-            <div className="w-full max-w-md space-y-6">
-                <div className="text-center">
-                    <img
-                        className="mx-auto mb-3 size-14"
-                        src="/icon-128.png"
-                        alt=""
-                    />
-                    <h1 className="text-xl font-semibold">{t('product')}</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {t('subtitle')}
-                    </p>
-                </div>
-                <Card>
+        <PageBoundary>
+            <AuthLayout>
+                <Card className="gap-4 border shadow-none">
                     <CardHeader>
-                        <CardTitle>{t(mode)}</CardTitle>
-                        <CardDescription>
-                            {session?.mustChangePassword &&
-                                t('temporaryPassword')}
-                            {location.protocol === 'http:' && (
-                                <span className="block">
-                                    {t('httpWarning')} {t('httpsInstructions')}
-                                </span>
-                            )}
-                        </CardDescription>
+                        <CardTitle className="text-lg tracking-tight">
+                            {t(mode)}
+                        </CardTitle>
+                        {session?.mustChangePassword && (
+                            <CardDescription>
+                                {t('temporaryPassword')}
+                            </CardDescription>
+                        )}
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <ErrorMessage error={error} />
@@ -167,7 +157,7 @@ export function SessionGate() {
                         {session?.mustChangePassword && <LogoutButton />}
                     </CardContent>
                 </Card>
-            </div>
-        </main>
+            </AuthLayout>
+        </PageBoundary>
     )
 }

@@ -99,6 +99,28 @@ export async function mqttOutputPeer(topic: string) {
         await expect.poll(() => output, { timeout: 10_000 }).toContain('SUBACK')
         return {
             port,
+            async publish(
+                inputTopic: string,
+                payload: string,
+                retained = false,
+            ) {
+                await docker([
+                    'exec',
+                    name,
+                    'timeout',
+                    '3',
+                    'mosquitto_pub',
+                    '-h',
+                    '127.0.0.1',
+                    '-t',
+                    inputTopic,
+                    '-m',
+                    payload,
+                    '-q',
+                    '1',
+                    ...(retained ? ['-r'] : []),
+                ])
+            },
             bodies: () =>
                 output
                     .split('\n')

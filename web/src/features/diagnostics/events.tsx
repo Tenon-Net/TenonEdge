@@ -1,3 +1,11 @@
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from './i18n'
@@ -108,9 +116,9 @@ export function RuntimeEvents() {
             {query.data && (
                 <>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead>
-                                <tr>
+                        <Table className="w-full text-left text-sm">
+                            <TableHeader>
+                                <TableRow>
                                     {[
                                         'first',
                                         'last',
@@ -120,43 +128,45 @@ export function RuntimeEvents() {
                                         'message',
                                         'occurrences',
                                     ].map((key) => (
-                                        <th key={key} className="p-2">
+                                        <TableHead key={key} className="p-2">
                                             {t(`diagnostics.${key}`)}
-                                        </th>
+                                        </TableHead>
                                     ))}
-                                </tr>
-                            </thead>
-                            <tbody>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
                                 {query.data.items.map((item) => (
-                                    <tr
+                                    <TableRow
                                         key={String(item.id)}
                                         className="border-t align-top"
                                     >
-                                        <td className="p-2 whitespace-nowrap">
+                                        <TableCell className="p-2 whitespace-nowrap">
                                             {dateText(item.firstOccurredAt)}
-                                        </td>
-                                        <td className="p-2 whitespace-nowrap">
+                                        </TableCell>
+                                        <TableCell className="p-2 whitespace-nowrap">
                                             {dateText(item.lastOccurredAt)}
-                                        </td>
-                                        <td className="p-2">
+                                        </TableCell>
+                                        <TableCell className="p-2">
                                             {t(
                                                 `diagnostics.levels.${item.level}`,
                                             )}
-                                        </td>
-                                        <td className="p-2">{item.type}</td>
-                                        <td className="p-2">
+                                        </TableCell>
+                                        <TableCell className="p-2">
+                                            {item.type}
+                                        </TableCell>
+                                        <TableCell className="p-2">
                                             {item.target || '—'}
-                                        </td>
-                                        <td className="max-w-lg p-2 break-words whitespace-pre-wrap">
+                                        </TableCell>
+                                        <TableCell className="max-w-lg p-2 break-words whitespace-pre-wrap">
                                             {item.message}
-                                        </td>
-                                        <td className="p-2">
+                                        </TableCell>
+                                        <TableCell className="p-2">
                                             {item.occurrenceCount}
-                                        </td>
-                                    </tr>
+                                        </TableCell>
+                                    </TableRow>
                                 ))}
-                            </tbody>
-                        </table>
+                            </TableBody>
+                        </Table>
                     </div>
                     {query.data.items.length === 0 && (
                         <p>{t('diagnostics.empty')}</p>

@@ -45,12 +45,45 @@ const module: OutputModule = {
     version: 2,
     displayName: 'Example',
     parameters: schema,
+    targetConnectionKinds: ['http'],
 }
 const original =
     '{"connectionId":9007199254740991,"parameters":{"path":"events","precision":9007199254740993,"optional":null},"connections":{"connection":9007199254740991}}'
 const connections = [{ id: '9007199254740991', kind: 'http', name: 'Target' }]
 
 describe('output module lossless draft form', () => {
+    it.each(['null', '"wire"', '[1]', '[null]'])(
+        'rejects malformed target capabilities %s without a built-in fallback',
+        (json) => {
+            expect(() =>
+                validateOutputModules([
+                    { ...module, targetConnectionKinds: JSON.parse(json) },
+                ]),
+            ).toThrow()
+        },
+    )
+    it('accepts declared extension targets without hardcoding the built-in protocols', () => {
+        const wire = {
+            ...module,
+            targetConnectionKinds: ['wire'],
+            parameters: {
+                ...schema,
+                parameters: [
+                    {
+                        name: 'sink',
+                        displayName: 'Sink',
+                        type: 'connectionReference' as const,
+                        connectionKinds: ['wire'],
+                    },
+                ],
+            },
+        }
+        expect(validateOutputModules([wire])).toEqual([wire])
+        const missing = JSON.parse(JSON.stringify(wire))
+        delete missing.targetConnectionKinds
+        expect(() => validateOutputModules([missing])).toThrow()
+    })
+
     it('keeps exact default numbers and explicit reference/target selection separate', () => {
         const text = outputModuleDefaults(schema)
         expect(text).toBe(
@@ -159,6 +192,22 @@ describe('output module lossless draft form', () => {
 })
 
 describe('versioned output module canvas discovery and history', () => {
+    it.each([['mqtt'], ['wire'], ['http', 'http'], ['']])(
+        'rejects undeclared or duplicate transport metadata %j',
+        (...kinds) => {
+            expect(() =>
+                validateOutputModules([
+                    { ...module, targetConnectionKinds: kinds },
+                ]),
+            ).toThrow()
+        },
+    )
+    it('keeps an empty installed transport set empty rather than guessing built-ins', () => {
+        expect(
+            validateOutputModules([{ ...module, targetConnectionKinds: [] }])[0]
+                .targetConnectionKinds,
+        ).toEqual([])
+    })
     it('accepts declared versions, never built-in overrides or credential controls', () => {
         expect(
             validateOutputModules([module, { ...module, version: 3 }]),

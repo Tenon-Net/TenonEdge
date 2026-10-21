@@ -1,3 +1,4 @@
+import { PageHelp } from '../../components/layout/page'
 import { TransformEditor } from './transform-editor'
 import { useTransformModules } from './transform-query'
 import { useInputModules } from '../inputs/module-query'
@@ -12,7 +13,10 @@ import { useOutputModules } from './output-module-query'
 import { OutputModuleEditor } from './output-module-editor'
 import { outputModuleDefaults, type OutputModule } from './output-module-model'
 import { RoutePreview } from '../routes/preview'
-import type { PreviewDraft } from '../routes/preview-model'
+import { createPreviewDraft, type PreviewDraft } from '../routes/preview-model'
+import { localNodeErrors, type PreviewNodeIssues } from '../routes/node-errors'
+import type { NodeRuntime } from '../routes/node-runtime'
+import { NodeStatus, NodeTypeIcon } from './node-status'
 import { FieldAnalysis, useFieldAnalysis } from '../routes/field-analysis'
 import { MappingEditor } from '../routes/mapping-editor'
 import { OutputEditor } from '../routes/output-editor'
@@ -45,23 +49,34 @@ import {
 import { createGraphEditor } from './store'
 
 type CanvasNode = Node<
-    { name: string; kind: NodeKind; label: string },
+    {
+        name: string
+        kind: NodeKind
+        label: string
+        runtime?: NodeRuntime
+        invalid: boolean
+        persisted: boolean
+    },
     'gateway'
 >
 function GatewayNode({ data, selected }: NodeProps<CanvasNode>) {
-    const { t } = useTranslation()
     return (
         <div
-            className={`w-48 rounded-md border bg-background p-3 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+            className={`w-48 rounded-md border bg-background p-3 shadow-sm ${selected ? 'ring-2 ring-primary' : ''} ${data.invalid ? 'border-destructive' : ''}`}
         >
             {!data.kind.startsWith('input.') && (
                 <Handle type="target" position={HandlePosition.Left} />
             )}
-            <div className="truncate font-medium">{data.name}</div>
-            <div className="text-xs text-muted-foreground">{data.label}</div>
-            <div className="text-xs text-muted-foreground">
-                {t('canvas.unbound')}
+            <div className="flex items-center gap-1 font-medium">
+                <NodeTypeIcon kind={data.kind} />
+                <span className="truncate">{data.name}</span>
             </div>
+            <div className="text-xs text-muted-foreground">{data.label}</div>
+            <NodeStatus
+                runtime={data.runtime}
+                invalid={data.invalid}
+                persisted={data.persisted}
+            />
             {!data.kind.startsWith('output.') && (
                 <Handle type="source" position={HandlePosition.Right} />
             )}
@@ -78,6 +93,8 @@ type CanvasProps = {
     onPendingChange?: (pending: boolean) => void
     onCreateReference?: (kind: 'connection' | 'device') => void
     runtimeSummary?: string
+    nodeRuntime?: Map<string, NodeRuntime>
+    compiledErrorNodes?: string[]
 }
 function CanvasWorkspace({
     editor,
@@ -88,9 +105,15 @@ function CanvasWorkspace({
     onPendingChange,
     onCreateReference,
     runtimeSummary,
+    nodeRuntime,
+    compiledErrorNodes,
 }: CanvasProps) {
     const { t } = useTranslation()
+    const canvasElement = useRef<HTMLDivElement>(null)
     const [store] = useState(() => editor ?? createGraphEditor())
+    const [previewStore] = useState(() => previewDraft ?? createPreviewDraft())
+    const previewInput = useStore(previewStore)
+    const [previewIssues, setPreviewIssues] = useState<PreviewNodeIssues>()
     const modules = useTransformModules(persisted)
     const inputModules = useInputModules(persisted)
     const outputModules = useOutputModules(persisted)
@@ -99,12 +122,14 @@ function CanvasWorkspace({
     const inputsAvailable = inputModules.isSuccess && !inputModules.isFetching
     const available = modules.isSuccess && !modules.isFetching
     const palette = [
-        ...nodeKinds.map((kind) => ({
-            kind,
-            version: 1,
-            label: t(`canvas.kinds.${kind}`),
-            configText: undefined as string | undefined,
-        })),
+        ...nodeKinds
+            .filter((kind) => kind !== 'output.tenon')
+            .map((kind) => ({
+                kind,
+                version: 1,
+                label: t(`canvas.kinds.${kind}`),
+                configText: undefined as string | undefined,
+            })),
         ...(inputsAvailable ? (inputModules.data ?? []) : []).flatMap(
             (module) =>
                 isNodeKind(module.kind)
@@ -201,6 +226,35 @@ function CanvasWorkspace({
         selected.length === 1 ? selected[0].id : undefined,
         version,
     )
+    const errorNodes = useMemo(() => {
+        const ids = localNodeErrors(doc)
+        for (const id of compiledErrorNodes ?? []) ids.add(id)
+        if (!pendingConfig) {
+            for (const issue of analysis.current?.page?.issues ?? [])
+                if (issue.nodeId) ids.add(issue.nodeId)
+        }
+        if (
+            !readOnly &&
+            !pendingConfig &&
+            previewIssues?.document === doc &&
+            previewIssues.version === version &&
+            previewIssues.source === previewInput.source &&
+            previewIssues.sample === previewInput.sample &&
+            !previewIssues.signal.aborted
+        ) {
+            for (const id of previewIssues.nodes) ids.add(id)
+        }
+        return ids
+    }, [
+        doc,
+        compiledErrorNodes,
+        pendingConfig,
+        analysis.current,
+        readOnly,
+        previewIssues,
+        version,
+        previewInput,
+    ])
     const nodes = useMemo<CanvasNode[]>(
         () =>
             doc.definition.nodes.map((n) => ({
@@ -209,6 +263,9 @@ function CanvasWorkspace({
                 data: {
                     name: n.name,
                     kind: n.kind,
+                    runtime: nodeRuntime?.get(n.id),
+                    invalid: errorNodes.has(n.id),
+                    persisted,
                     label:
                         nodeKinds.some((kind) => kind === n.kind) &&
                         (n.version ?? 1) === 1
@@ -229,6 +286,9 @@ function CanvasWorkspace({
             modules.data,
             inputModules.data,
             outputModules.data,
+            nodeRuntime,
+            errorNodes,
+            persisted,
             t,
         ],
     )
@@ -237,8 +297,18 @@ function CanvasWorkspace({
             doc.definition.edges.map((e) => ({
                 ...e,
                 selected: state.selectedEdges.includes(e.id),
+                ...(errorNodes.has(e.source) || errorNodes.has(e.target)
+                    ? {
+                          className: 'route-edge-error',
+                          style: { stroke: 'var(--destructive)' },
+                          ariaLabel: t('canvas.nodeStatus.errorEdge', {
+                              source: e.source,
+                              target: e.target,
+                          }),
+                      }
+                    : {}),
             })),
-        [doc, state.selectedEdges],
+        [doc, state.selectedEdges, errorNodes, t],
     )
     const attempt = (action: () => void, accepting = false) => {
         if (readOnly || (pendingConfig && !accepting)) return false
@@ -333,19 +403,23 @@ function CanvasWorkspace({
     }
     const dangling = topologyHints(doc)
     return (
-        <section className="space-y-3" onKeyDown={keyboard}>
-            <h1 className="text-2xl font-semibold">
-                {t(persisted ? 'routes.canvas' : 'canvas.title')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-                {t(persisted ? 'routes.canvasNotice' : 'canvas.notice')}
-            </p>
+        <section className="@container/canvas space-y-3" onKeyDown={keyboard}>
+            {persisted ? (
+                <h2 className="text-base font-semibold">
+                    {t('routes.canvas')}
+                </h2>
+            ) : (
+                <h1 className="text-lg font-semibold">{t('canvas.title')}</h1>
+            )}
             {persisted && runtimeSummary && (
                 <p role="status" aria-label={t('canvas.runtimeStatus')}>
                     {runtimeSummary}
                 </p>
             )}
-            <p className="text-sm">{t('canvas.help')}</p>
+            <PageHelp>
+                <p>{t(persisted ? 'routes.canvasNotice' : 'canvas.notice')}</p>
+                <p>{t('canvas.help')}</p>
+            </PageHelp>
             <div className="flex flex-wrap gap-2">
                 <Button
                     variant="outline"
@@ -394,9 +468,9 @@ function CanvasWorkspace({
                     })}
                 </span>
             </div>
-            <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)_220px]">
+            <div className="grid items-start gap-3 @min-[42rem]/canvas:grid-cols-[11rem_minmax(0,1fr)] @min-[66rem]/canvas:grid-cols-[11rem_minmax(0,1fr)_16rem]">
                 <aside
-                    className="space-y-3 rounded-md border p-3"
+                    className="space-y-3 rounded-md border p-3 @min-[42rem]/canvas:max-h-[min(65svh,720px)] @min-[42rem]/canvas:overflow-y-auto"
                     aria-label={t('canvas.palette')}
                 >
                     {persisted && (
@@ -470,22 +544,35 @@ function CanvasWorkspace({
                                                 event.dataTransfer.effectAllowed =
                                                     'copy'
                                             }}
-                                            onClick={() =>
-                                                add(
-                                                    item,
+                                            onClick={() => {
+                                                const canvas =
+                                                    canvasElement.current
+                                                if (!canvas) return
+                                                // A long palette can scroll the canvas off screen.
+                                                // Place in its actual viewport, not at a fixed browser Y.
+                                                canvas.scrollIntoView({
+                                                    block: 'nearest',
+                                                    inline: 'nearest',
+                                                    behavior: 'instant',
+                                                })
+                                                const bounds =
+                                                    canvas.getBoundingClientRect()
+                                                const center =
                                                     flow.screenToFlowPosition({
                                                         x:
-                                                            window.innerWidth /
-                                                                2 +
-                                                            (nodes.length % 5) *
-                                                                24,
+                                                            bounds.left +
+                                                            bounds.width / 2,
                                                         y:
-                                                            360 +
-                                                            (nodes.length % 5) *
-                                                                24,
-                                                    }),
-                                                )
-                                            }
+                                                            bounds.top +
+                                                            bounds.height / 2,
+                                                    })
+                                                const offset =
+                                                    (nodes.length % 5) * 24
+                                                add(item, {
+                                                    x: center.x - 96 + offset,
+                                                    y: center.y - 60 + offset,
+                                                })
+                                            }}
                                         >
                                             {item.label}
                                         </button>
@@ -495,7 +582,8 @@ function CanvasWorkspace({
                     )}
                 </aside>
                 <div
-                    className="h-[600px] min-w-0 rounded-md border"
+                    ref={canvasElement}
+                    className="h-[min(65svh,720px)] min-h-96 min-w-0 rounded-md border bg-muted/20"
                     aria-label={t('canvas.graph')}
                     tabIndex={0}
                     onDragOver={(event) => {
@@ -601,12 +689,23 @@ function CanvasWorkspace({
                         }}
                     >
                         <Background />
-                        <Controls showInteractive={false} />
+                        <Controls
+                            showInteractive={false}
+                            onFitView={() => {
+                                // Reveal the whole working area as well as fitting
+                                // its graph, after editing an off-screen form.
+                                canvasElement.current?.scrollIntoView({
+                                    block: 'center',
+                                    inline: 'nearest',
+                                    behavior: 'instant',
+                                })
+                            }}
+                        />
                         <MiniMap pannable zoomable />
                     </ReactFlow>
                 </div>
                 <aside
-                    className="space-y-3 rounded-md border p-3"
+                    className="space-y-3 rounded-md border p-3 @min-[42rem]/canvas:col-span-2 @min-[66rem]/canvas:col-span-1 @min-[66rem]/canvas:max-h-[min(65svh,720px)] @min-[66rem]/canvas:overflow-y-auto"
                     aria-label={t('canvas.properties')}
                 >
                     <h2 className="font-medium">{t('canvas.properties')}</h2>
@@ -658,7 +757,11 @@ function CanvasWorkspace({
                             <Button type="submit" disabled={readOnly}>
                                 {t('canvas.applyName')}
                             </Button>
-                            <p className="text-sm">{t('canvas.unbound')}</p>
+                            <NodeStatus
+                                runtime={nodeRuntime?.get(selected[0].id)}
+                                invalid={errorNodes.has(selected[0].id)}
+                                persisted={persisted}
+                            />
                         </form>
                     ) : (
                         <p>{t('canvas.selectOne')}</p>
@@ -918,7 +1021,8 @@ function CanvasWorkspace({
                 <RoutePreview
                     document={doc}
                     version={version}
-                    draft={previewDraft}
+                    draft={previewStore}
+                    onIssues={setPreviewIssues}
                     disabled={readOnly || pendingConfig}
                     locate={(id) => {
                         if (
@@ -957,8 +1061,24 @@ function CanvasWorkspace({
                         })}
                     </p>
                 )}
+                {!!errorNodes.size && (
+                    <ul className="text-sm text-destructive">
+                        {doc.definition.nodes
+                            .filter((node) => errorNodes.has(node.id))
+                            .map((node) => (
+                                <li key={node.id}>
+                                    {node.name}:{' '}
+                                    {t('canvas.nodeStatus.invalid')}
+                                </li>
+                            ))}
+                    </ul>
+                )}
                 <p className="text-sm text-muted-foreground">
-                    {t('canvas.topologyOnly')}
+                    {t(
+                        persisted
+                            ? 'canvas.topologyWithPreview'
+                            : 'canvas.topologyOnly',
+                    )}
                 </p>
                 <details>
                     <summary>{t('canvas.json')}</summary>

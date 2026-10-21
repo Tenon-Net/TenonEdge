@@ -43,7 +43,7 @@ export const pointStrings = {
     enabledFalse: '停用',
     notSet: '未设置',
     bitType: '寄存器取位',
-    timing: '最近粘贴处理 {{paste}} ms；全表校验 {{validation}} ms（当前浏览器观测，非验收阈值）',
+    timing: '最近粘贴处理 {{paste}} ms；全表校验 {{validation}} ms',
     fields: {
         key: 'key',
         name: '显示名称',

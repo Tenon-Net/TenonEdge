@@ -12,6 +12,26 @@ for (const [path, entry] of Object.entries(lock.packages)) {
     const files = (await readdir(directory))
         .filter((file) => /^(licen[cs]e|copying|notice)(\.|$)/i.test(file))
         .sort()
+    // This published package declares MIT but omits the license text. The
+    // maintainer's fixed-source text and provenance are recorded in THIRD_PARTY.
+    if (
+        !files.length &&
+        metadata.name === 'react-remove-scroll-bar' &&
+        entry.version === '2.3.8' &&
+        metadata.license === 'MIT'
+    ) {
+        const text = await readFile(
+            new URL(
+                '../public/licenses/react-remove-scroll-bar-2.3.8-MIT.txt',
+                import.meta.url,
+            ),
+            'utf8',
+        )
+        sections.push(
+            `${metadata.name}@${entry.version} (MIT)\nLICENSE (upstream 8ca9ba5ea52de03308fe8ced94f7b159a44d28ff)\n${text}`,
+        )
+        continue
+    }
     if (!files.length)
         throw new Error(`No license text found: ${metadata.name}`)
     const texts = await Promise.all(

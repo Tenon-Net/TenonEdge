@@ -1,4 +1,6 @@
 export const deviceStrings = {
+    unitIdHelp:
+        '设备手册中的从站地址，多数设备为 1。Modbus TCP 可填 0–255；RTU over TCP 为 1–247。',
     keySuggestion:
         '新设备按名称建议 key：拉丁字符转为小写，非 ASCII 字符以 u 加 Unicode 编号表示；避开当前列表中的重名。手工修改后不再跟随名称，刷新不覆盖编辑。建议不预留标识，保存仍由服务器核对唯一性。',
     suggestKey: '重新按名称生成 key',

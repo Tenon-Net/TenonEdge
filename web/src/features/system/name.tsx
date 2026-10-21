@@ -99,7 +99,7 @@ export function GatewayNameEditor() {
                 {t('systemSettings.name.title')}
             </h2>
             <p className="text-sm">{t('systemSettings.name.notice')}</p>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Button
                     variant="outline"
                     disabled={busy || query.isFetching}
@@ -168,7 +168,7 @@ export function GatewayNameEditor() {
                     {invalid && (
                         <p role="alert">{t('systemSettings.name.invalid')}</p>
                     )}
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                         <Button type="submit" disabled={blocked || !confirmed}>
                             {t('systemSettings.name.save')}
                         </Button>

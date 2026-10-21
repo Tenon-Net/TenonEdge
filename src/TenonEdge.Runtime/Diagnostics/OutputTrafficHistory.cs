@@ -6,7 +6,8 @@ namespace TenonEdge.Runtime.Diagnostics;
 public sealed record OutputTrafficPoint(DateTimeOffset At, double DurationSeconds, long Generated, long GeneratedBytes,
     long Sent, long SendFailures);
 public sealed record OutputTrafficSnapshot(long ConnectionId, OutputTrafficPoint[] Points, double? RecordsPerSecond,
-    double? BytesPerSecond, double? WindowSeconds, bool? Accumulating);
+    double? BytesPerSecond, double? WindowSeconds, bool? Accumulating,
+    long? MinimumRecordBytes = null, long? MaximumRecordBytes = null);
 
 /// <summary>只计本进程实际生成的冻结记录和协议发送结果，不从队列净增长反推生成速率。
 /// 当前计划最多500个连接，每连接最多360个10秒点；不访问SQLite或保存消息，离开页面仍采样。
@@ -42,7 +43,13 @@ public sealed class OutputTrafficHistory(TimeProvider time)
             foreach (var draft in drafts)
             {
                 if (_targets.TryGetValue(draft.ConnectionId, out var target))
-                { target.Generated++; target.Bytes = checked(target.Bytes + draft.ByteSize); }
+                {
+                    var bytes = draft.ByteSize;
+                    target.Generated++;
+                    target.Bytes = checked(target.Bytes + bytes);
+                    target.MinimumRecordBytes = Math.Min(target.MinimumRecordBytes ?? bytes, bytes);
+                    target.MaximumRecordBytes = Math.Max(target.MaximumRecordBytes ?? bytes, bytes);
+                }
             }
         }
     }
@@ -78,7 +85,8 @@ public sealed class OutputTrafficHistory(TimeProvider time)
                     { target.Points.Dequeue(); }
                     target.Points.Enqueue((now, new(time.GetUtcNow(), duration.TotalSeconds,
                         target.Generated - target.PreviousGenerated, target.Bytes - target.PreviousBytes,
-                        target.Sent - target.PreviousSent, target.Failures - target.PreviousFailures)));
+                        target.Sent - target.PreviousSent, target.Failures - target.PreviousFailures),
+                        target.MinimumRecordBytes, target.MaximumRecordBytes));
                 }
                 target.PreviousAt = now;
                 target.PreviousBucket = bucket;
@@ -86,6 +94,7 @@ public sealed class OutputTrafficHistory(TimeProvider time)
                 target.PreviousBytes = target.Bytes;
                 target.PreviousSent = target.Sent;
                 target.PreviousFailures = target.Failures;
+                target.MinimumRecordBytes = target.MaximumRecordBytes = null;
             }
         }
     }
@@ -101,11 +110,12 @@ public sealed class OutputTrafficHistory(TimeProvider time)
             var points = includePoints ? target.Points.Select(item => item.Point).ToArray() : [];
             if (target.Points.Count == 0 || time.GetElapsedTime(target.PreviousAt, now) > 2 * RuntimeTrendHistory.Interval)
             { return new(connectionId, points, null, null, null, null); }
-            var recent = target.Points.TakeLast(6).Select(item => item.Point).ToArray();
-            var seconds = recent.Sum(point => point.DurationSeconds);
-            return new(connectionId, points, recent.Sum(point => (double)point.Generated) / seconds,
-                recent.Sum(point => (double)point.GeneratedBytes) / seconds, seconds,
-                recent.Sum(point => (double)point.Generated) > recent.Sum(point => (double)point.Sent));
+            var recent = target.Points.TakeLast(6).ToArray();
+            var seconds = recent.Sum(item => item.Point.DurationSeconds);
+            return new(connectionId, points, recent.Sum(item => (double)item.Point.Generated) / seconds,
+                recent.Sum(item => (double)item.Point.GeneratedBytes) / seconds, seconds,
+                recent.Sum(item => (double)item.Point.Generated) > recent.Sum(item => (double)item.Point.Sent),
+                recent.Min(item => item.MinimumRecordBytes), recent.Max(item => item.MaximumRecordBytes));
         }
     }
 
@@ -118,10 +128,11 @@ public sealed class OutputTrafficHistory(TimeProvider time)
 
     private sealed class Bucket(long timestamp, long bucket)
     {
-        internal readonly Queue<(long Stamp, OutputTrafficPoint Point)> Points = new();
+        internal readonly Queue<(long Stamp, OutputTrafficPoint Point, long? MinimumRecordBytes, long? MaximumRecordBytes)> Points = new();
         internal long PreviousAt = timestamp;
         internal long PreviousBucket = bucket;
         internal long Generated, Bytes, Sent, Failures;
         internal long PreviousGenerated, PreviousBytes, PreviousSent, PreviousFailures;
+        internal long? MinimumRecordBytes, MaximumRecordBytes;
     }
 }

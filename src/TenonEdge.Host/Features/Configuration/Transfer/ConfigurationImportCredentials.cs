@@ -49,7 +49,7 @@ internal static class ConfigurationImportCredentials
     {
         try
         {
-            return connection.Module is { } module ? modules?.Definition(module.Snapshot(connection.Id)).RecipientIdentity(module.Parameters) : null;
+            return connection.Module is { } module ? modules?.Definition(module.Kind, module.Version).RecipientIdentity(module.Parameters) : null;
         }
         catch (ArgumentException) { return null; }
     }

@@ -8,7 +8,7 @@ export function ConfigurationHeader() {
     return (
         <Link
             to="/configuration"
-            className="rounded border px-3 py-2 text-sm hover:bg-accent"
+            className="inline-flex min-h-8 items-center rounded-md border bg-background px-3 py-1.5 text-xs font-medium shadow-xs hover:bg-accent max-sm:basis-full"
         >
             {query.isError || query.data?.changeCount == null
                 ? t('shell.unknownSummary')

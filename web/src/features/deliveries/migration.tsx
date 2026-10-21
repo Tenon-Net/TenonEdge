@@ -1,3 +1,4 @@
+import { PageHeading } from '../../components/layout/page'
 import { useState } from 'react'
 import { create } from 'zustand'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
@@ -26,8 +27,8 @@ export function DeliveryMigrationPage() {
     return role === 'administrator' ? (
         <Migration />
     ) : (
-        <div className="space-y-4">
-            <h1>{t('migration.title')}</h1>
+        <div className="product-page">
+            <PageHeading title={t('migration.title')} />
             <p role="alert">{t('migration.adminOnly')}</p>
             <Link className="underline" to="/runtime/outputs">
                 {t('migration.back')}
@@ -136,8 +137,8 @@ function Migration() {
         }
     }
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('migration.title')}</h1>
+        <div className="product-page">
+            <PageHeading title={t('migration.title')} />
             <Link className="underline" to="/runtime/outputs">
                 {t('migration.back')}
             </Link>
@@ -239,7 +240,7 @@ function Migration() {
             )}
             {attempt && (
                 <section
-                    className="space-y-3 rounded border p-4"
+                    className="product-panel space-y-3"
                     aria-label={t('migration.lookup')}
                 >
                     <h2 className="font-semibold">{t('migration.lookup')}</h2>

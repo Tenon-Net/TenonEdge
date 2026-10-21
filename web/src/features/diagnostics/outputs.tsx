@@ -1,7 +1,17 @@
+import { PageHeading } from '../../components/layout/page'
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableRow,
+    TableHead,
+    TableCell,
+} from '../../components/ui/table'
 import { useSession } from '../../lib/session'
 import { OutputControls } from '../deliveries/controls'
 import { ClearPending } from '../deliveries/clear-pending'
 import { LossCounters } from './loss-counters'
+import { CapacityCalibration } from './capacity-calibration'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -68,11 +78,12 @@ export function RuntimeOutputsPage() {
     const page = query.data
     const revision = String(page?.revision ?? 0)
     return (
-        <div className="space-y-6">
-            <h1 className="text-2xl font-semibold">{t('outputs.title')}</h1>
-            <p className="text-sm text-muted-foreground">
-                {t('outputs.notice')}
-            </p>
+        <div className="product-page">
+            <PageHeading
+                description={t('outputs.notice')}
+                title={t('outputs.title')}
+            />
+
             <DiagnosticPanel title={t('outputs.summary')} query={query}>
                 <p>
                     {t('outputs.revision', { revision: page?.revision ?? '—' })}
@@ -104,29 +115,32 @@ export function RuntimeOutputsPage() {
                             {t('outputs.stateNotice')}
                         </p>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr>
+                            <Table className="w-full text-left text-sm">
+                                <TableHeader>
+                                    <TableRow>
                                         {[
                                             'target',
                                             'state',
                                             ...usageKeys,
                                             'capacity',
                                         ].map((key) => (
-                                            <th className="p-2" key={key}>
+                                            <TableHead
+                                                className="p-2"
+                                                key={key}
+                                            >
                                                 {t(`outputs.${key}`)}
-                                            </th>
+                                            </TableHead>
                                         ))}
-                                        <th />
-                                    </tr>
-                                </thead>
-                                <tbody>
+                                        <TableHead />
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
                                     {page.items.map((item) => (
-                                        <tr
+                                        <TableRow
                                             className="border-t"
                                             key={item.connectionId}
                                         >
-                                            <td className="p-2">
+                                            <TableCell className="p-2">
                                                 {item.name ??
                                                     t('outputs.noName')}
                                                 <small className="block">
@@ -139,8 +153,8 @@ export function RuntimeOutputsPage() {
                                                         {t('outputs.orphan')}
                                                     </small>
                                                 )}
-                                            </td>
-                                            <td className="p-2">
+                                            </TableCell>
+                                            <TableCell className="p-2">
                                                 {t(
                                                     `outputs.states.${item.state}`,
                                                     {
@@ -148,18 +162,21 @@ export function RuntimeOutputsPage() {
                                                             item.state,
                                                     },
                                                 )}
-                                            </td>
+                                            </TableCell>
                                             {usageKeys.map((key) => (
-                                                <td className="p-2" key={key}>
+                                                <TableCell
+                                                    className="p-2"
+                                                    key={key}
+                                                >
                                                     {item.queue.usage[key]}
-                                                </td>
+                                                </TableCell>
                                             ))}
-                                            <td className="max-w-xs p-2">
+                                            <TableCell className="max-w-xs p-2">
                                                 <CapacityBrief
                                                     capacity={item.capacity}
                                                 />
-                                            </td>
-                                            <td className="p-2">
+                                            </TableCell>
+                                            <TableCell className="p-2">
                                                 <Button
                                                     variant="outline"
                                                     onClick={() =>
@@ -174,11 +191,11 @@ export function RuntimeOutputsPage() {
                                                         id: item.connectionId,
                                                     })}
                                                 </Button>
-                                            </td>
-                                        </tr>
+                                            </TableCell>
+                                        </TableRow>
                                     ))}
-                                </tbody>
-                            </table>
+                                </TableBody>
+                            </Table>
                         </div>
                         {page.items.length === 0 && <p>{t('outputs.empty')}</p>}
                     </>
@@ -234,7 +251,6 @@ export function RuntimeOutputsPage() {
                     </>
                 )}
             </DiagnosticPanel>
-            <LossCounters />
             {selected && page && (
                 <OutputDetail
                     key={`${revision}/${selected}`}
@@ -242,6 +258,7 @@ export function RuntimeOutputsPage() {
                     revision={revision}
                 />
             )}
+            <LossCounters />
         </div>
     )
 }
@@ -418,6 +435,9 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                         <p className="text-sm text-muted-foreground">
                             {t('outputs.capacityNotice')}
                         </p>
+                        <CapacityCalibration
+                            calibration={item.capacity.calibration}
+                        />
                         <dl className="grid gap-4 sm:grid-cols-3">
                             {(
                                 [
@@ -438,39 +458,39 @@ function OutputDetail({ id, revision }: { id: string; revision: string }) {
                                 />
                             ))}
                         </dl>
-                        <table className="w-full text-left text-sm">
-                            <thead>
-                                <tr>
-                                    <th className="p-2">
+                        <Table className="w-full text-left text-sm">
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="p-2">
                                         {t('outputs.constraint')}
-                                    </th>
-                                    <th className="p-2">
+                                    </TableHead>
+                                    <TableHead className="p-2">
                                         {t('outputs.duration')}
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
                                 {item.capacity.constraints.map((constraint) => (
-                                    <tr
+                                    <TableRow
                                         key={constraint.kind}
                                         className="border-t"
                                     >
-                                        <td className="p-2">
+                                        <TableCell className="p-2">
                                             {t(
                                                 `outputs.kinds.${constraint.kind}`,
                                             )}
-                                        </td>
-                                        <td className="p-2">
+                                        </TableCell>
+                                        <TableCell className="p-2">
                                             {constraint.seconds == null
                                                 ? t(
                                                       `outputs.statuses.${constraint.status}`,
                                                   )
                                                 : `${seconds(constraint.seconds)} · ${t(`outputs.statuses.${constraint.status}`)}`}
-                                        </td>
-                                    </tr>
+                                        </TableCell>
+                                    </TableRow>
                                 ))}
-                            </tbody>
-                        </table>
+                            </TableBody>
+                        </Table>
                     </section>
                     <Link
                         className="underline"
@@ -572,36 +592,45 @@ function OutputTrend({ traffic }: { traffic: RuntimeOutputInfo['traffic'] }) {
                             {t('diagnostics.trendDetails')}
                         </summary>
                         <div className="max-h-80 overflow-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead>
-                                    <tr>
+                            <Table className="w-full text-left text-sm">
+                                <TableHeader>
+                                    <TableRow>
                                         {['at', 'durationSeconds', ...keys].map(
                                             (key) => (
-                                                <th className="p-2" key={key}>
+                                                <TableHead
+                                                    className="p-2"
+                                                    key={key}
+                                                >
                                                     {t(`outputs.${key}`)}
-                                                </th>
+                                                </TableHead>
                                             ),
                                         )}
-                                    </tr>
-                                </thead>
-                                <tbody>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
                                     {points.map((point, index) => (
-                                        <tr key={index} className="border-t">
-                                            <td className="p-2">
+                                        <TableRow
+                                            key={index}
+                                            className="border-t"
+                                        >
+                                            <TableCell className="p-2">
                                                 {dateText(point.at)}
-                                            </td>
-                                            <td className="p-2">
+                                            </TableCell>
+                                            <TableCell className="p-2">
                                                 {point.durationSeconds}
-                                            </td>
+                                            </TableCell>
                                             {keys.map((key) => (
-                                                <td className="p-2" key={key}>
+                                                <TableCell
+                                                    className="p-2"
+                                                    key={key}
+                                                >
                                                     {point[key]}
-                                                </td>
+                                                </TableCell>
                                             ))}
-                                        </tr>
+                                        </TableRow>
                                     ))}
-                                </tbody>
-                            </table>
+                                </TableBody>
+                            </Table>
                         </div>
                     </details>
                 </>

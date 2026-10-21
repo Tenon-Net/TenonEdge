@@ -8,6 +8,17 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
+                pageLayout: {
+                    help: '使用说明',
+                    sections: '设置分类',
+                    basic: '基本信息',
+                    network: '网络与访问',
+                    resources: '运行与存储',
+                    transfer: '配置导入导出',
+                    security: '账号安全',
+                    notFound: '未找到页面',
+                    notFoundHelp: '请检查访问地址，或返回总览。',
+                },
                 previousLogin: '上次登录：{{time}}；来源 IP：{{ip}}',
                 noPreviousLogin: '上次登录：无记录',
                 shell: {
@@ -69,13 +80,8 @@ void i18n.use(initReactI18next).init({
                 required: '请填写此项。',
                 setupClosed: '设置窗口已关闭，请在主机上重启服务后再试。',
                 windowCloses: '设置窗口关闭时间：{{time}}',
-                httpWarning:
-                    '当前使用 HTTP，密码会明文传输。请仅在可信管理网络使用，建议通过 HTTPS 访问。',
-                httpsInstructions:
-                    '密码、会话和凭证可能被同网段设备截获。请使用管理员提供的 HTTPS 地址（默认端口 8443），核对证书后重新登录；两种协议的登录不通用。',
                 temporaryPassword: '当前账号必须先修改临时密码，才能继续操作。',
                 workspace: '总览',
-                authenticated: '已连接到真实网关',
                 accountDetail: '当前账号：{{name}}',
                 roles: {
                     administrator: '管理员',
@@ -89,6 +95,21 @@ void i18n.use(initReactI18next).init({
                 showNavigation: '展开导航',
                 hideNavigation: '收起导航',
                 navigation: '主导航',
+                navigationDescription: '选择要查看的网关功能。',
+                navigationGroups: {
+                    configuration: '接入配置',
+                    operations: '运行监控',
+                    management: '系统管理',
+                },
+                close: '关闭',
+                skipToContent: '跳至主要内容',
+                theme: {
+                    title: '切换主题',
+                    unavailable: '主题菜单暂时无法加载，其他操作不受影响。',
+                    light: '浅色',
+                    dark: '深色',
+                    system: '跟随系统',
+                },
             },
         },
     },

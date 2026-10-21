@@ -6,6 +6,7 @@ using TenonEdge.Abstractions.Messages;
 using TenonEdge.Adapters.Http;
 using TenonEdge.Adapters.Modbus;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Parameters;
 
 namespace TenonEdge.Host.Features.Connections;
 
@@ -13,18 +14,31 @@ internal enum ConnectionKind { Modbus, Mqtt, Http, Module }
 
 /// <summary>明确的连接类型/版本与非秘密标量。历史读取只核对结构，新准入另经本机声明目录。</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record ModuleConnectionDraft(string Kind, int Version, JsonElement Parameters)
+internal sealed record ModuleConnectionDraft(string Kind, int Version, JsonElement Parameters,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Dictionary<string, long>? Connections = null)
 {
-    internal ModuleConnectionSnapshot Snapshot(long id) => new(id, Kind,
-        JsonSerializer.SerializeToElement(new { connectionModule = new { version = Version, parameters = Parameters } }));
+    internal IEnumerable<long> ConnectionIds => Connections?.Values ?? Enumerable.Empty<long>();
+
+    internal ModuleConnectionSnapshot Snapshot(long id, IReadOnlyDictionary<long, ConnectionDraft>? available = null,
+        IReadOnlySet<long>? mqttCredentials = null, bool requireEnabled = false)
+    {
+        var candidate = available?.ToDictionary() ?? [];
+        candidate[id] = candidate.TryGetValue(id, out var current)
+            ? current with { Module = this }
+            : new(id, "module", "Module", ConnectionKind.Module, true, null, null, null, this);
+        return ModuleDraftConnections.Freeze(id, candidate, mqttCredentials, requireEnabled);
+    }
 
     internal ModuleConnectionDraft Normalize(long id)
     {
         if (Parameters.ValueKind != JsonValueKind.Object ||
             System.Text.Encoding.UTF8.GetByteCount(Parameters.GetRawText()) > TenonEdge.Abstractions.Parameters.ParameterSchema.MaximumConfigurationBytes)
         { throw new ArgumentException("连接模块参数须为有界的非秘密标量对象。"); }
-        _ = ModuleConnectionSnapshot.ReadModuleConfiguration(Snapshot(id));
-        return this with { Parameters = Parameters.Clone() };
+        // Shape-only history/export admission does not look up mutable connections.
+        var parameters = ModuleDraftConnections.Combine(Parameters, Connections);
+        _ = ModuleConnectionSnapshot.ReadModuleConfiguration(new(id, Kind,
+            JsonSerializer.SerializeToElement(new { connectionModule = new { version = Version, parameters } })));
+        return this with { Parameters = Parameters.Clone(), Connections = Connections?.ToDictionary(StringComparer.Ordinal) };
     }
 }
 

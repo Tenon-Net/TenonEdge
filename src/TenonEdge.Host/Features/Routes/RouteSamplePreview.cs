@@ -22,7 +22,8 @@ internal sealed record RouteSamplePreviewResult(string Version, long SourceId, G
     public override string ToString() => "Route sample preview (body omitted)";
 }
 
-/// <summary>仅执行已取得样本的纯映射/组装。没有运行单元工厂、连接管理、凭证提供者、发送器或队列依赖。</summary>
+/// <summary>仅执行已取得样本的纯映射/组装；扩展复用原工厂的纯格式化入口。
+/// 不构建运行单元，不借用连接、不解析凭证、不发送或入队。</summary>
 internal static class RouteSamplePreview
 {
     // A caller must separately acquire/authorize a sample. This function never samples a device.
@@ -111,7 +112,8 @@ internal static class RouteSamplePreview
                 // Shared compiler performs exactly the same connection, header, topic and payload checks.
                 // No mapping stages here: they were already executed above, once per path.
                 var configuration = RoutePlanCompiler.Output(output, [selected.Source.UnitId.Key], [], snapshot, route.Key);
-                var protocol = RuntimeConnectionReferences.Protocol(new(RuntimeUnitId.Create(output.Type, route.Key + "/" + output.Id), configuration));
+                var unit = new RuntimeUnitPlan(RuntimeUnitId.Create(output.Type, route.Key + "/" + output.Id), configuration);
+                var protocol = RuntimeConnectionReferences.Protocol(unit);
                 configuration = protocol.Configuration;
                 RoutePlanCompiler.ValidateOutputFields(output with { Config = configuration }, fields, route.Key, sourceId);
                 phase = "output.payload";
@@ -125,12 +127,21 @@ internal static class RouteSamplePreview
                     display.Output(state, activeNode, protocol.Id.Kind, deliveryId, settings.Path, null,
                         settings.Headers.SetItem("Idempotency-Key", deliveryId.ToString("D")).SetItem("Content-Type", "application/json"), body, testSendId);
                 }
-                else
+                else if (protocol.Id.Kind == "output.mqtt")
                 {
                     var settings = MqttOutputSettings.Parse(configuration);
                     body = OutputPayloadFormat.Parse(settings.Payload).Serialize(message, deliveryId);
                     display.Output(state, activeNode, protocol.Id.Kind, deliveryId, settings.TopicFor(message.DeviceKey), settings.Qos,
                         ImmutableDictionary<string, string>.Empty, body, testSendId);
+                }
+                else
+                {
+                    var content = snapshot.OutputsCatalog.FormatMessage(unit, message, deliveryId, token);
+                    if (content is null)
+                    { throw Error("output.previewUnsupported", activeNode, sourceId); }
+                    body = content.Payload.ToArray();
+                    display.Output(state, activeNode, protocol.Id.Kind, deliveryId, content.Address, content.QualityOfService,
+                        content.Headers ?? ImmutableDictionary<string, string>.Empty, body);
                 }
                 if (state.Output?.TestSendId is { } capturedId &&
                     !capture!.TryAdd(capturedId, snapshot.Version, sourceId, sample.SourceMessageId, sample.CollectedAt,

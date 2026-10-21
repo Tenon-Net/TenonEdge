@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Abstractions.Messages;
 using TenonEdge.Abstractions.Plans;
 using TenonEdge.Adapters.Http;
@@ -128,7 +129,8 @@ internal static class RouteSourceCompiler
             default:
                 throw new ArgumentException("未知来源类型。");
         }
-        var moduleEnabled = input.Module?.ConnectionIds.All(reference => connections?.GetValueOrDefault(reference)?.Enabled == true) ?? true;
+        var moduleEnabled = input.Module is null || ModuleConnectionReferences.Flatten(
+            InputModuleCatalog.ReadConnections(new(id, configuration)).Values).All(reference => connections?.GetValueOrDefault(reference.ConnectionId)?.Enabled == true);
         return new(new(input.Id, id, input.Enabled && device.Enabled && (connection?.Enabled ?? true) && moduleEnabled, fields, input.Module?.Version ?? 1), new(id, configuration));
     }
 

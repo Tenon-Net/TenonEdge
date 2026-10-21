@@ -6,6 +6,7 @@ import {
     migrationSelection,
     migrationQuota,
     validateMigrationReview,
+    validateMigrationIdentity,
     type MigrationReview,
 } from './migration-api'
 import type { DeliveryItem } from './api'
@@ -94,6 +95,44 @@ function client(fetcher: typeof fetch) {
         }),
     )
 }
+it('accepts same-protocol extension preparation without relaxing identity or protocol comparisons', async () => {
+    const prepared = review()
+    prepared.target = {
+        ...prepared.target,
+        protocol: 'authwire',
+        address: 'authwire://new.test:9000',
+        authentication: 'module',
+    }
+    prepared.sources[0].recipient = {
+        ...prepared.sources[0].recipient,
+        protocol: 'authwire',
+        address: 'authwire://old.test:9000',
+        authentication: 'module',
+    }
+    const api = client(async () => new Response(JSON.stringify(prepared)))
+    expect((await api.prepare(source, '12', [item()])).target.protocol).toBe(
+        'authwire',
+    )
+    prepared.sources[0].recipient.protocol = 'otherwire'
+    expect(() => validateMigrationReview(prepared)).toThrow(
+        'migration-protocol',
+    )
+})
+it.each([
+    '',
+    'HTTP',
+    '1wire',
+    'wire/x',
+    'wire_name',
+    'wire\n',
+    'wire\0',
+    '无线',
+    'a'.repeat(65),
+])('rejects invalid migration protocol %j', (protocol) => {
+    expect(() =>
+        validateMigrationIdentity({ ...review().target, protocol }),
+    ).toThrow('migration-identity')
+})
 it('keeps exact Int64 cursors and migration generations without ever loading body or posting untrusted fingerprints', async () => {
     const requests: Request[] = []
     const api = client(async (input) => {

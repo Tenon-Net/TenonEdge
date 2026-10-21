@@ -212,7 +212,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 查看运行状态、存储保护和累计计数 */
+        /** 查看运行状态、持久有效版本的应用人/时间、存储保护和累计计数 */
         get: operations["getRuntimeStatus"];
         put?: never;
         post?: never;
@@ -2361,6 +2361,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/edge-admin/v1/routes/{routeId}/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看有效路线各节点的循环与有界路径观测；不返回正文，不触发采集或发送 */
+        get: operations["getRouteNodeRuntime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/edge-admin/v1/routes/{routeId}/copy": {
         parameters: {
             query?: never;
@@ -2881,6 +2898,7 @@ export interface components {
             quarantinedCount: number | string;
             moreDeliveries: boolean;
             canDelete: boolean;
+            connections: components["schemas"]["ConnectionDraftReference"][];
         };
         ConnectionDeviceReference: {
             /** Format: int64 */
@@ -2904,6 +2922,13 @@ export interface components {
         ConnectionDraftList: {
             version: string;
             connections: components["schemas"]["ConnectionDraft"][];
+        };
+        ConnectionDraftReference: {
+            /** Format: int64 */
+            id?: number | string;
+            key?: string;
+            name?: string;
+            enabled?: boolean;
         };
         ConnectionDraftRequest: {
             expectedVersion: string;
@@ -3390,6 +3415,21 @@ export interface components {
             /** Format: int32 */
             schemaVersion: number | string;
             configStoreId: string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            pageSize: number | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            walAutoCheckpoint: number | string;
+            /**
+             * Format: int64
+             * @default -1
+             */
+            autoVacuum: number | string;
         };
         DeliveryTargetQueueReport: {
             /** Format: int64 */
@@ -3475,6 +3515,12 @@ export interface components {
             revision: number | string;
             positions: string[];
             units: string[];
+        };
+        DiskCapacityCalibration: {
+            status: string;
+            profile: null | string;
+            /** Format: double */
+            amplification: null | number | string;
         };
         DiskSpaceInfo: {
             /** Format: int64 */
@@ -3897,6 +3943,9 @@ export interface components {
             /** Format: int32 */
             version: number | string;
             parameters: components["schemas"]["JsonElement"];
+            connections?: null | {
+                [key: string]: number | string;
+            };
         };
         ModuleCredentialIdentity: {
             kind: string;
@@ -4122,6 +4171,7 @@ export interface components {
             quotaUpperBoundSeconds: null | number | string;
             quotaLimitingConstraint: null | string;
             constraints: components["schemas"]["CapacityConstraint"][];
+            calibration?: null | components["schemas"]["DiskCapacityCalibration"];
         };
         OutputControlRequest: {
             paused: boolean;
@@ -4138,6 +4188,7 @@ export interface components {
             version: number | string;
             displayName: string;
             parameters: components["schemas"]["ParameterSchema"];
+            targetConnectionKinds: string[];
         };
         OutputQueueLimits: {
             /** Format: int32 */
@@ -4221,6 +4272,10 @@ export interface components {
             /** Format: double */
             windowSeconds: null | number | string;
             accumulating: null | boolean;
+            /** Format: int64 */
+            minimumRecordBytes?: null | number | string;
+            /** Format: int64 */
+            maximumRecordBytes?: null | number | string;
         };
         ParameterDefinition: {
             name: string;
@@ -4288,7 +4343,7 @@ export interface components {
             mqtt: null | components["schemas"]["MqttConnectionDraft"];
             http: null | components["schemas"]["HttpConnectionDraft"];
             credential: null | components["schemas"]["PortableCredentialRequirement"];
-            module?: null | components["schemas"]["ModuleConnectionDraft"];
+            module?: null | components["schemas"]["PortableModuleConnection"];
         };
         PortableCredentialRequirement: {
             status: string;
@@ -4324,6 +4379,15 @@ export interface components {
             http: null | components["schemas"]["HttpSourceDraft"];
             simulator: null | components["schemas"]["SimulatorSourceDraft"];
             module?: null | components["schemas"]["PortableModuleSource"];
+        };
+        PortableModuleConnection: {
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            parameters: components["schemas"]["JsonElement"];
+            connections?: null | {
+                [key: string]: string;
+            };
         };
         PortableModuleSource: {
             kind: string;
@@ -4545,6 +4609,30 @@ export interface components {
             /** Format: double */
             y: number | string;
         };
+        RouteNodeRuntimeInfo: {
+            id: string;
+            kind: string;
+            /** Format: int32 */
+            version: number | string;
+            state: string;
+            /** Format: int32 */
+            inputs: number | string;
+            /** Format: int32 */
+            runningInputs: number | string;
+            /** Format: int32 */
+            faultedInputs: number | string;
+            /** Format: int32 */
+            paths: number | string;
+            /** Format: int32 */
+            observedPaths: number | string;
+            /** Format: int32 */
+            failedPaths: number | string;
+            /** Format: int32 */
+            unknownPaths: number | string;
+            /** Format: date-time */
+            lastObservedAt: null | string;
+            lastOutcome: null | string;
+        };
         RoutePreviewField: {
             key: string;
             type: string;
@@ -4638,6 +4726,15 @@ export interface components {
             revision: string;
             /** Format: uuid */
             sourceMessageId: string;
+        };
+        RouteRuntimePage: {
+            draftVersion: string;
+            /** Format: int64 */
+            revision: null | number | string;
+            applied: boolean;
+            /** Format: date-time */
+            capturedAt: string;
+            nodes: components["schemas"]["RouteNodeRuntimeInfo"][];
         };
         RouteSamplePreviewResult: {
             version: string;
@@ -4832,6 +4929,14 @@ export interface components {
             unpersistedCounters: {
                 [key: string]: number | string;
             };
+            configuration: null | components["schemas"]["RuntimeEffectiveConfiguration"];
+        };
+        RuntimeEffectiveConfiguration: {
+            /** Format: int64 */
+            effectiveRevision: null | number | string;
+            appliedBy: null | string;
+            /** Format: date-time */
+            appliedAt: null | string;
         };
         RuntimeEventItem: {
             /** Format: int64 */
@@ -5167,6 +5272,7 @@ export interface components {
             totalBytes: number | string;
             /** Format: int64 */
             availableBytes: number | string;
+            fileSystem?: null | string;
         };
         SystemInfoResponse: {
             version: string;
@@ -14174,6 +14280,75 @@ export interface operations {
             };
             /** @description Payload Too Large */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getRouteNodeRuntime: {
+        parameters: {
+            query: {
+                expectedVersion: string;
+            };
+            header?: never;
+            path: {
+                routeId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteRuntimePage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

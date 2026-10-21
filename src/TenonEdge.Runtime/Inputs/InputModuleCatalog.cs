@@ -139,7 +139,7 @@ public sealed class InputModuleCatalog
         try
         {
             var binding = module.BindProtocol(parameters, ReadConnections(unit));
-            if (binding is null && ReadConnections(unit).Values.Any(connection => connection.Kind is "mqtt" or "modbus"))
+            if (binding is null && ModuleConnectionReferences.Flatten(ReadConnections(unit).Values).Any(connection => connection.Kind is "mqtt" or "modbus"))
             { throw Invalid(); }
             return binding is null ? null : CheckProtocol(unit, binding.Kind, binding.Configuration);
         }
@@ -163,7 +163,7 @@ public sealed class InputModuleCatalog
         if (kind is not ("input.http" or "input.mqtt" or "input.modbus") || config.ValueKind != JsonValueKind.Object ||
             Encoding.UTF8.GetByteCount(config.GetRawText()) > 1024 * 1024 ||
             !config.TryGetProperty("connectionId", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt64(out var number) ||
-            !ReadConnections(unit).Values.Any(connection => connection.ConnectionId == number && "input." + connection.Kind == kind))
+            !ModuleConnectionReferences.Flatten(ReadConnections(unit).Values).Any(connection => connection.ConnectionId == number && "input." + connection.Kind == kind))
         { throw Invalid(); }
         return new(RuntimeUnitId.Create(kind, unit.Id.Key), config);
     }
