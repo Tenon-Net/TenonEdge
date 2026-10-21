@@ -21,8 +21,14 @@ internal sealed class HttpCredentialStore(
     public HttpCredentialIdentity? DescribeHttp(long connectionId)
     {
         using var client = database.CreateIsolatedClient();
-        var record = client.Queryable<HttpCredentialRecord>().InSingle(connectionId);
-        return record is null ? null : Identity(record);
+        // 热路径仍每次读取当前身份；固定参数化投影避免逐条构造 ORM 查询，也不读取受保护的秘密。
+        using var reader = client.Ado.GetDataReader("""
+            SELECT kind, username, name, account_marker, version, certificate_subject
+            FROM http_credential WHERE connection_id = @id
+            """, new SugarParameter("@id", connectionId));
+        return !reader.Read() ? null : new((HttpCredentialKind)reader.GetInt32(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5));
     }
 
     public HttpCredential? ResolveHttp(long connectionId, string recipient)

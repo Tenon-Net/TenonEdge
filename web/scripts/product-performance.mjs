@@ -21,11 +21,16 @@ if (!evidence) throw new Error('TENONEDGE_QA_RESULTS is required')
 const smoke = process.env.TENONEDGE_QA_SMOKE === '1'
 const inputCount = Number(process.env.TENONEDGE_QA_INPUTS ?? 50)
 const periodMs = Number(process.env.TENONEDGE_QA_PERIOD_MS ?? 1000)
-if (!Number.isInteger(inputCount) || inputCount < 1 || inputCount > 100)
-    throw new Error('TENONEDGE_QA_INPUTS must be an integer from 1 to 100')
-if (!Number.isInteger(periodMs) || periodMs < 100 || periodMs > 60_000)
+const outageSeconds = Number(process.env.TENONEDGE_QA_OUTAGE_SECONDS ?? 15)
+if (!Number.isInteger(inputCount) || inputCount < 1 || inputCount > 2000)
+    throw new Error('TENONEDGE_QA_INPUTS must be an integer from 1 to 2000')
+if (!Number.isInteger(periodMs) || periodMs < 1000 || periodMs > 60_000)
     throw new Error(
-        'TENONEDGE_QA_PERIOD_MS must be an integer from 100 to 60000',
+        'TENONEDGE_QA_PERIOD_MS must be an integer from 1000 to 60000',
+    )
+if (!Number.isInteger(outageSeconds) || outageSeconds < 1 || outageSeconds > 60)
+    throw new Error(
+        'TENONEDGE_QA_OUTAGE_SECONDS must be an integer from 1 to 60',
     )
 const clockTicksPerSecond = Number(
     execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).trim(),
@@ -50,6 +55,7 @@ const report = {
     workload: {
         inputCount,
         periodMs,
+        outageSeconds,
         nominalMessagesPerSecond: (inputCount * 1000) / periodMs,
     },
     environment: {
@@ -71,6 +77,9 @@ const summary = (values) => {
         p95: sorted[
             Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)
         ],
+        p99: sorted[
+            Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.99) - 1)
+        ],
         max: sorted.at(-1),
     }
 }
@@ -84,6 +93,7 @@ let available = true,
     rejected = 0,
     badPayloads = 0
 const accepted = [],
+    deliveryLatencyMs = [],
     ids = new Set()
 let duplicates = 0
 const sockets = new Set()
@@ -102,6 +112,14 @@ const receiver = createServer(async (request, response) => {
     if (ids.has(id)) duplicates++
     ids.add(id)
     accepted.push(performance.now())
+    try {
+        const collectedAt = Date.parse(JSON.parse(body).collectedAt)
+        if (!Number.isFinite(collectedAt)) badPayloads++
+        deliveryLatencyMs.push(Date.now() - collectedAt)
+    } catch {
+        badPayloads++
+        deliveryLatencyMs.push(Number.NaN)
+    }
     response.writeHead(204).end()
 })
 receiver.on('connection', (socket) => {
@@ -403,13 +421,19 @@ try {
                 (accepted.length - count) /
                 ((performance.now() - start) / 1000),
             usage: outputs.usage,
+            counters: outputs.counters,
+            collectedToReceiverMs: summary(deliveryLatencyMs.slice(count)),
         })
         return outputs
     }
     report.beforeSteadyOutputs = await get('/runtime/outputs')
     await stage('steady-software-inputs', smoke ? 2 : 60)
+    if (!smoke)
+        expect(report.stages.at(-1).acceptedPerSecond).toBeGreaterThanOrEqual(
+            report.workload.nominalMessagesPerSecond * 0.95,
+        )
     available = false
-    const outage = await stage('receiver-503-outage', smoke ? 2 : 15)
+    const outage = await stage('receiver-503-outage', smoke ? 2 : outageSeconds)
     expect(Number(outage.usage.pendingCount)).toBeGreaterThan(0)
     available = true
     const recovery = performance.now(),
@@ -443,6 +467,26 @@ try {
         try {
             report.finalRuntime = await get('/runtime/status')
             report.finalOutputs = await get('/runtime/outputs')
+            report.noPolicyLoss = Object.values(
+                report.finalOutputs.counters,
+            ).every((count) => Number(count) === 0)
+            const runtime = report.finalRuntime
+            report.sourceOverruns = [
+                runtime.persistentCounters,
+                runtime.unpersistedCounters,
+            ]
+                .flatMap((counters) => Object.entries(counters))
+                .filter(([name]) => name.endsWith('/overruns'))
+                .reduce((sum, [, count]) => sum + Number(count), 0)
+            report.noStorageLoss =
+                runtime.queue.storageFault === false &&
+                runtime.queue.failedBatches === 0 &&
+                runtime.queue.rejectedRecords === 0 &&
+                [runtime.persistentCounters, runtime.unpersistedCounters].every(
+                    (counters) =>
+                        Number(counters.storageLostSourceMessages ?? 0) === 0 &&
+                        Number(counters.storageLostDeliveryRecords ?? 0) === 0,
+                )
         } catch (error) {
             report.errors.push(`final snapshot: ${error.message}`)
         }
@@ -493,6 +537,9 @@ try {
         report.completed === true &&
         report.hostExitCode === 0 &&
         report.errors.length === 0 &&
+        report.noPolicyLoss === true &&
+        report.noStorageLoss === true &&
+        report.sourceOverruns === 0 &&
         badPayloads === 0 &&
         duplicates === 0
     await writeFile(

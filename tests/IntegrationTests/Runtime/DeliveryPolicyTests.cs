@@ -7,6 +7,99 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class DeliveryPolicyTests
 {
     [Theory]
+    [InlineData("pending")]
+    [InlineData("quarantined")]
+    [InlineData("failed")]
+    public async Task SameCommitDeletionReleasesOnlyActualQuotaAndNeverReleasesMissingOrDuplicateRows(string state)
+    {
+        using var data = TemporaryDirectory.Create();
+        var original = Draft(1);
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, configureCache: options => Options(options,
+            count: 1, global: original.ByteSize * 2));
+        var cache = runtime.Deliveries;
+        var first = cache.EnqueueAsync([original, Draft(2)], Token);
+        var change = state switch
+        {
+            "quarantined" => cache.QuarantineAsync(1, DeliveryQuarantineReasons.TargetChanged, Token),
+            "failed" => cache.RecordFailureAsync(new(1, 0, "test rejected", true, false), Token),
+            _ => null,
+        };
+        // 此请求加载当前事务的目标和全局占用，但因目标/全局满而没有插入。
+        var prime = cache.EnqueueAsync([Draft(2)], Token);
+        var deletion = cache.DeleteAsync([1, 1, 99999], Token);
+        var later = cache.EnqueueAsync([Draft(1), Draft(3)], Token);
+        runtime.StartCore();
+        Assert.True((await first).Committed);
+        if (change is not null)
+        { Assert.True((await change).Committed); }
+        Assert.Equal(1, (await prime).QuotaRejectedRecords);
+        Assert.Equal(1, (await deletion).AffectedRecords);
+        var result = await later;
+        Assert.True(result.Committed);
+        Assert.Single(result.Seqs);
+        Assert.Equal(1, result.QuotaRejectedRecords);
+        Assert.Single(cache.ReadPending(1, 0, 10));
+        Assert.Single(cache.ReadPending(2, 0, 10));
+        Assert.Empty(cache.ReadPending(3, 0, 10));
+        Assert.Equal(1, cache.GetPersistentCounters()["acknowledgedRecords"]);
+        Assert.Equal(1, cache.GetStatus().CommittedBatches);
+    }
+
+    [Fact]
+    public async Task SameCommitAdmissionDiscardsQuotaChangesFromARolledBackRequest()
+    {
+        using var data = TemporaryDirectory.Create();
+        var original = Draft(1);
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, configureCache: options => Options(options,
+            count: 1, global: original.ByteSize * 10));
+        var cache = runtime.Deliveries;
+        var originalInsert = cache.EnqueueAsync([original], Token);
+        var duplicate = new DeliveryDraft(original.DeliveryId, 3, Guid.NewGuid(), original.DeviceKey, original.Revision,
+            original.Payload, original.Fingerprint, original.FingerprintSummary);
+        var rejected = cache.EnqueueAsync([Draft(2), duplicate], Token);
+        var later = cache.EnqueueAsync([Draft(2)], Token);
+        runtime.StartCore();
+        Assert.True((await originalInsert).Committed);
+        Assert.Equal(DeliveryWriteStatus.Rejected, (await rejected).Status);
+        Assert.True((await later).Committed);
+        Assert.Single(cache.ReadPending(1, 0, 10));
+        Assert.Single(cache.ReadPending(2, 0, 10));
+        Assert.Empty(cache.ReadPending(3, 0, 10));
+        Assert.Equal(0, cache.GetQueueTotals(2).QuotaRejected);
+        Assert.Equal(1, cache.GetStatus().CommittedBatches);
+    }
+
+    [Theory]
+    [InlineData("clear")]
+    [InlineData("delete")]
+    [InlineData("failure")]
+    [InlineData("quarantine")]
+    public async Task SameCommitAdmissionRechecksQuotaAfterOtherStateChanges(string change)
+    {
+        using var data = TemporaryDirectory.Create();
+        var original = Draft(1);
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, configureCache: options => Options(options,
+            count: 1, global: original.ByteSize * 2));
+        var cache = runtime.Deliveries;
+        var first = cache.EnqueueAsync([original], Token);
+        var mutation = change switch
+        {
+            "clear" => cache.ClearPendingAsync(1),
+            "delete" => cache.DeleteAsync([1], Token),
+            "failure" => cache.RecordFailureAsync(new(1, 0, "test rejected", true, false), Token),
+            _ => cache.QuarantineAsync(1, DeliveryQuarantineReasons.TargetChanged, Token),
+        };
+        var later = cache.EnqueueAsync([Draft(1)], Token);
+        runtime.StartCore();
+        Assert.True((await first).Committed);
+        Assert.True((await mutation).Committed);
+        Assert.True((await later).Committed);
+        Assert.Single(cache.ReadPending(1, 0, 10));
+        Assert.Equal(0, cache.GetQueueTotals(1).QuotaRejected);
+        Assert.Equal(1, cache.GetStatus().CommittedBatches);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task TargetLimitRejectsOnlyThatTargetsFanoutAndCommitsTheRest(bool bytes)

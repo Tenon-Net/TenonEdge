@@ -11,8 +11,11 @@ internal sealed class OutputControlStore(ConfigDatabase database, AuditTrail aud
     public OutputControlState Read(long connectionId)
     {
         using var client = database.CreateIsolatedClient();
-        var row = client.Queryable<OutputControlRecord>().InSingle(connectionId);
-        return row is null ? new(false, null) : new(row.ManuallyPaused, row.Version);
+        // 保留发送前实时检查，不以缓存替代管理员刚提交的暂停/恢复。
+        using var reader = client.Ado.GetDataReader(
+            "SELECT manually_paused, version FROM output_control WHERE connection_id = @id",
+            new SugarParameter("@id", connectionId));
+        return !reader.Read() ? new(false, null) : new(reader.GetBoolean(0), reader.GetString(1));
     }
 
     public IReadOnlyDictionary<long, OutputControlState> ReadMany(long[] connectionIds)

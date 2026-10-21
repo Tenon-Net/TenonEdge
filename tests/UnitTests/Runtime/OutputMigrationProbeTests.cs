@@ -10,17 +10,17 @@ public sealed class OutputMigrationProbeTests
         var state = new OutputSenderState
         {
             RecheckHeadSeq = 12,
-            AcknowledgedSeq = 99,
             ConsecutiveRejects = 4,
             ConsecutiveRetries = 3,
             RetryDelay = TimeSpan.FromSeconds(10),
             SuspendedVersion = "v1",
         };
+        state.Acknowledge(99, 99);
         state.RequestQueueProbeReset();
         Assert.Equal(12, state.RecheckHeadSeq); // No request-thread mutation of loop-owned fields.
         state.ApplyQueueProbeReset();
         Assert.Null(state.RecheckHeadSeq);
-        Assert.Equal(99, state.AcknowledgedSeq);
+        Assert.Equal(1, state.PendingAcknowledgementCount);
         Assert.Equal(4, state.ConsecutiveRejects);
         Assert.Equal(3, state.ConsecutiveRetries);
         Assert.Equal(TimeSpan.FromSeconds(10), state.RetryDelay);

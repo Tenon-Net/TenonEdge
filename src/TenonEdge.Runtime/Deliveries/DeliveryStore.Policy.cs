@@ -39,24 +39,11 @@ internal sealed partial class DeliveryStore
             reader.GetInt64(5), reader.GetInt64(6), reader.GetInt64(7));
     }
 
-    internal bool Admit(SqliteConnection connection, SqliteTransaction transaction, DeliveryDraft draft)
+    internal bool Admit(SqliteConnection connection, SqliteTransaction transaction, DeliveryDraft draft, DeliveryAdmissionBudget admission)
     {
         var policy = _policy.Read();
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = "SELECT COUNT(*), COALESCE(SUM(byte_size), 0) FROM delivery WHERE connection_id = $id AND state = 'pending'";
-        command.Parameters.AddWithValue("$id", draft.ConnectionId);
-        long count;
-        long bytes;
-        using (var reader = command.ExecuteReader())
-        {
-            reader.Read();
-            count = reader.GetInt64(0);
-            bytes = reader.GetInt64(1);
-        }
-
-        command.CommandText = "SELECT COALESCE(SUM(byte_size), 0) FROM delivery WHERE state IN ('pending', 'quarantined')";
-        var global = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        var (count, bytes) = admission.ReadTarget(draft.ConnectionId);
+        var global = admission.ReadGlobalBytes();
         var globalFull = draft.ByteSize > policy.MaximumQueueBytes - global;
         if (!globalFull && count < policy.MaximumPendingPerTarget && draft.ByteSize <= policy.MaximumPendingBytesPerTarget - bytes)
         {

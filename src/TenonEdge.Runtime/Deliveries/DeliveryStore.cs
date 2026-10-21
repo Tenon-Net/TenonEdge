@@ -374,12 +374,12 @@ internal sealed partial class DeliveryStore
         return command;
     }
 
-    /// <summary>为写者准备按 seq 删除的语句。</summary>
+    /// <summary>为写者准备按 seq 删除的语句，并返回实际删除行的配额信息；不读取正文。</summary>
     public static SqliteCommand CreateDeleteCommand(SqliteConnection connection, SqliteTransaction transaction)
     {
         var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "DELETE FROM delivery WHERE seq = $seq;";
+        command.CommandText = "DELETE FROM delivery WHERE seq = $seq RETURNING connection_id, byte_size, state;";
         command.Parameters.Add(new SqliteParameter { ParameterName = "$seq" });
         return command;
     }

@@ -9057,3 +9057,22 @@ node scripts/verify-results.mjs "$E/unit-final.json" "$E/browser-final.json"
 `frozen-verified.json`核对343个源码/测试/脚本与锁文件，以及77个产物目录文件在最终验证期间未变，并确认性能与最终回归目录逐文件相同。外部outDir保留旧hashed assets，77不是干净发布文件数。当前试用入口于2026-10-20T10:08:58.821984+00:00更新为SHA256 `111bd6465390aad72819476270e9d730413207205c0f3a5cc6abca2dd1b592fd`；原Host/对端PID、startTicks、完整命令和更新前旧入口均核对，保留旧assets并原子替换index，没有重启、重置、登录人工账号或修改人工配置。入口/readyz200；入口及71个JS/CSS资源哈希一致；匿名登录/390px检查的页面错误、外部请求、写请求均0，未新增通用HTTP警告。证据 `preview-update.json` / `preview-assets.json` / `preview-browser.json`，维护者可刷新原 `http://192.168.0.88:18490` 体验。
 
 本轮完成既有T3软件子场景首轮QA与两项体验修复，保留P1单HTTP目标吞吐/恢复风险、P1扇出超时诊断及P2令牌回归不稳定；真实新手任务评估、最低实际浏览器、Excel、设备/客户网络、工控硬件/慢盘、断电、长期soak、实际CI及维护者验收不新增通过证据，继续按§1.1边界。未进入T4/T5/G1；不推送、不发布，不把开发试用静态更新当作GW-27。
+
+
+### 2.322 QA-PERF-01 / T1-03/05/08 / T3-08 输出流水线与配置库热路径优化（2026-10-21）
+
+维护者授权推进高性能专项，并明确批准统一配置工厂直接创建独立 SqlSugarClient，替代高频 CopyNew；保留 SqlSugar、单例 Scope、短操作隔离、WAL / synchronous=FULL 和既有恢复语义。本轮继续只在隔离工作树 `/home/shiny/.cache/tenonedge-inline-references/worktree`、分支 `t3-inline-reference-verification`、基线 `0cee4bb` 实施，不修改或合回原工作区，不推送、发布或重启人工试用服务。
+
+详细定位、失败保留、实现与边界见[输出流水线性能专项](reviews/2026-10-21-output-pipeline-performance.md)。原始证据根 `/home/shiny/.cache/tenonedge-output-pipeline-perf/20261021/`。
+
+交付：有界 ACK/删除提交流水线（每目标 128 个编号/回执，不预取正文、不增加 HTTP 网络并发）；写者单事务内占用快照及实际删除增量更新；等价隔离客户端工厂和配置库级统一检查/观测事件；两处固定参数化非秘密元数据读取，仍实时检查身份与暂停；真实 SQLite 写锁、上限、删除失败重建、管理屏障、配额回滚/混合状态、客户端隔离及强杀原字节 FIFO 回放回归。设计 §2.3/§8.2/§8.4/§22 与后端规范 §4 同步。
+
+最终软件回归：locked restore、格式、Release build 通过，0 warning/error；`post-boundary-unit/unit.trx` **2081/2081**（4 秒），`post-boundary-integration/integration.trx` **2822/2822**（13 分 31 秒），失败/跳过/未执行/取消均 0。`post-boundary-trx-verification.json` 核对真实非零结果；`post-boundary-frozen.json` / `post-boundary-frozen-verification.json` 确认最终 1706 个源码、测试、依赖、Host/测试二进制及冻结 Web 在完整回归与关键性能期间未变。不把更早定向用例相加充当全量。
+
+最终串行关键负载 `post-boundary-{50,500,1000}ps/performance.json`：**50 档 49.994 条/秒、15 秒 503 后 1.369 秒清空；500 档 508.336 条/秒、3 秒 503 后 17.731 秒清空**。两档来源 overrun / 重复 / 坏报文 / 队列策略丢弃 / 存储故障均 0，Host 正常退出；500 恢复后观察阶段末待发 0，稍后的持续输入快照为 19，不描述为始终空队列。**1000 档失败：稳态 812.790 < 950 门槛，末待发 4473、来源 overrun 13443，未执行 503 和恢复阶段。** `post-boundary-summary.json` 保留延迟、CPU/RSS 与时间点；此前近千条但恢复失败的中间版本不能移作最终成绩。原 50 档缺陷修复，500 软件场景通过，但千条档/生产高性能目标和 QA-PERF-01 尚未全部关闭。
+
+保留所有失败边界：初版工厂未共享配置库事件，首轮全量出现 SQL 投影和真实 COMMIT 门失败后取消，无完整 TRX；修复后原断言及新增隔离定向 **12/12**。随后完整 **2821/2822** 的唯一失败，是旧测试把后续请求等同此前 ACK 删除已持久；独立两分支 **1 通过/1 失败** 重现。使用已有 15 秒存储等待工具观察真实删除，保留并补强版本/冻结编号断言，不改产品或超时；相关 12 项、最终两分支 **2/2** 后，重新执行上述完整 2822 项通过，没有把定向重跑补算为全量。完整记录见专项 §4。
+
+`preview-protection-after.json` 核对原 Host/软件对端 PID、startTicks 均未变，匿名 healthz/readyz 200。未重启、部署、登录或修改人工配置；原工作区仅只读核对，不覆盖其其他改动。全部变更仅本地整理，不推送或发布。
+
+100/500/1000 是软件验证档位，不是维护者批准的 SLA；不扩大队列配额、取消 FULL、放宽断言或用来源跳过掩盖吞吐。原 QA-REL-01 扇出超时与 QA-E2E-01 令牌 E2E 不稳定根因仍未闭环；实物、最低工控硬件、掉电、长时 soak、实际平台及远端 CI 无新增通过证据。不进入 T4/T5/G1。

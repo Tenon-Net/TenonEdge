@@ -125,7 +125,7 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
 | 画布 | React Flow（@xyflow/react） | https://reactflow.dev | 只提供前端编辑能力；运行逻辑属于 TenonEdge。节点外观可复用 React Flow UI 组件（https://reactflow.dev/ui ，基于 shadcn/ui 与 Tailwind）；复制组件源码前核实其许可，并按第 17 节记录 |
 | MQTT | MQTTnet（≥ 5.2.0） | https://github.com/dotnet/MQTTnet | 包装在适配器中。v5 已移除 ManagedClient，重连自行实现；默认协议是 MQTT 5.0，须显式指定 3.1.1；PublishAsync 没有默认超时，须传入带超时的取消令牌。不低于 5.2.0：更早的版本在已取消或超时的发布收到迟到的 PUBACK 时会断开连接。持续发布时保活可能检测不到断线（MQTTnet issue #2244，核查时未修复），发布连续超时后由网关主动断开重连。TLS 证书校验显式配置，不依赖库的默认行为。核查来源见 `docs/development-readiness.md` 第 5.1 节 |
 | Modbus | NModbus 3.0.83（T0 比较后，维护者于 2026-10-09 确认） | https://github.com/NModbus/NModbus | 优先验证 Modbus TCP 与 RTU over TCP 的读取、超时和字节序；不直接声明支持所有设备。NModbus 读写超时默认无限、库内默认重试 3 次、Async 方法不支持取消：须显式设置超时，库内重试设为 0 或 1，连接循环使用专用线程。NModbus 还有三点须由适配器处理：从站忙（SlaveDeviceBusy）默认无限重试；TCP 事务号不符时抛异常并重发请求，不跳过旧帧；RTU over TCP 时库在发送前的清空缓冲对网络流无效，残留字节要自行排空。FluentModbus 5.3 起提供 RTU over TCP 客户端（仓库中没有它的测试与文档），异步方法支持取消，但 TCP 客户端不校验事务号。核查来源见 `docs/development-readiness.md` 第 5.1 节 |
-| 配置存储 | SQLite + SqlSugar（SqlSugarCoreNoDrive） | https://github.com/DotNetNext/SqlSugar | 用于 config.db。NoDrive 包不带 SQLite 驱动，由 Host 显式引用 Microsoft.Data.Sqlite；但它经依赖 SystemCommon 带入 SQL Server 驱动及其身份认证组件等传递依赖，许可在 GitHub（MIT）与 NuGet（Apache-2.0）的声明不一致，处理见 `docs/development-readiness.md` D-09。连接检查事件 AopEvents.CheckConnectionExecuting/Executed 是执行 PRAGMA 的候选挂载点，它按每次检查连接触发，不是按物理连接打开，处理须幂等（T0 核实）。SqlSugarScope 单例，同一异步流程内并发执行时用 CopyNew()；不用全局 AOP 填审计字段；CodeFirst 只做新增，非新增变更写版本化迁移；SQLite 存储不等于 SQL 产品功能 |
+| 配置存储 | SQLite + SqlSugar（SqlSugarCoreNoDrive） | https://github.com/DotNetNext/SqlSugar | 用于 config.db。NoDrive 包不带 SQLite 驱动，由 Host 显式引用 Microsoft.Data.Sqlite；但它经依赖 SystemCommon 带入 SQL Server 驱动及其身份认证组件等传递依赖，许可在 GitHub（MIT）与 NuGet（Apache-2.0）的声明不一致，处理见 `docs/development-readiness.md` D-09。连接检查事件 AopEvents.CheckConnectionExecuting/Executed 是执行 PRAGMA 的候选挂载点，它按每次检查连接触发，不是按物理连接打开，处理须幂等（T0 核实）。SqlSugarScope 单例，同一异步流程内并发执行时由统一连接配置工厂直接创建独立 SqlSugarClient（维护者于 2026-10-21 确认替代 CopyNew，避免高频上下文查找）；每份配置均保留配置库统一的连接检查/观测事件与持久化设置，显式设置相同命令超时，由调用方释放，不继承请求上下文或活跃事务；不用全局 AOP 填审计字段；CodeFirst 只做新增，非新增变更写版本化迁移；SQLite 存储不等于 SQL 产品功能 |
 | 发送缓存 | SQLite，直接使用 Microsoft.Data.Sqlite | https://learn.microsoft.com/dotnet/standard/data/sqlite/ | 用于 queue.db，单写者、分组提交。它是 ADO.NET 驱动而不是 ORM，与配置库使用同一个驱动包。实际加载的 SQLite 原生库不得低于 3.51.3：3.7.0 至 3.51.2 有 WAL 重置导致数据库损坏的缺陷（https://www.sqlite.org/wal.html 第 11 节）；Microsoft.Data.Sqlite 10.0.10 及以前默认带 3.49.1，10.0.11 起带 3.53.3。启动时记录实际版本，低于 3.51.3 时拒绝启动运行时，管理界面显示原因；连接池会复用物理连接，PRAGMA 按物理连接设置 |
 | 秘密保护 | ASP.NET Core Data Protection | https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/overview | 固定 SetApplicationName("TenonEdge")；密钥环持久化在数据目录；不清理旧密钥 |
 | 有界内部队列 | System.Threading.Channels | https://learn.microsoft.com/en-us/dotnet/core/extensions/channels | 只做进程内有限缓冲，不把内存队列当持久化；丢弃模式下 TryWrite 仍返回 true，须用 itemDropped 回调计数 |
@@ -551,6 +551,7 @@ HTTP：固定连接与路径、POST JSON、超时、必要的静态请求头。�
 
 - 承诺范围从包含该记录的分组提交返回时开始（本文称“接管”）。输入内存阶段、设备未被采集的变化及磁盘硬件损坏不在此保证内；断电后仍然保留，前提是存储设备如实执行 fsync。各阶段的含义、丢弃分类和故障矩阵见第 8.5 节。
 - 同一进程内，已确认但删除尚未提交的记录由发送者在内存中标记，不再发送。进程在发送后、删除提交前退出，恢复时会重发：可能重复的记录限于最后一个提交间隔内已确认的记录，加上退出时正在发送的记录（不超过各目标的在途上限）。TenonIoT 依靠稳定编号识别重复；不得宣称全链路 exactly-once。
+  - 协议确认与持久删除解耦：确认后可继续发送下一条已持久记录，删除请求仍立即交给原唯一写者组提交，不逐条等待删除落盘。每个目标最多保留 128 个确认编号及其提交回执，不缓存批量正文；达到上限等待提交，已知删除失败则先恢复提交，不继续发送。配额只在持久删除成功后释放。管理清空、迁移和目标身份切换的发送屏障须先排空这些回执，不能把已确认记录误作人工丢弃或交给新目标。此优化不改变 HTTP 请求正文或默认网络在途上限。
 - 输出适配器返回四类结果：
   - Ack：删除记录。平台返回 accepted 或 duplicate 都视为 Ack。
   - Retry（网络错误、超时、HTTP 408/429/5xx、无法识别的响应）：按目标整体退避（指数加抖动，最高 60 秒；遵守合理的 Retry-After 并设上限），只用队头的一条记录探测。
@@ -637,6 +638,7 @@ HTTP：固定连接与路径、POST JSON、超时、必要的静态请求头。�
 | 配置导入文件、点表 CSV | 16 MiB；CSV 5 MiB 或 10,000 行 |
 | 计数落盘间隔 | 最长 10 秒（第 8.5 节） |
 | 每个目标的在途上限 | 通用 HTTP 1（除毒消息探测外保持顺序）；TenonIoT 4；MQTT QoS 1 可流水线发送 |
+| 每个目标确认待持久删除窗口 | 最多 128 个编号/回执；不是网络请求并发数，不提前释放持久队列配额 |
 | 失败区 | 按目标计数，按目标与全局分别设上限，单独保留期；初始值待实测 |
 | 毒消息阈值 | 同一条记录的失败次数累计达到 10（计数规则见第 8.2 节） |
 | 连续被拒暂停阈值 | 同一目标连续 20 条被拒，且其间没有成功 |
@@ -1749,5 +1751,6 @@ application/{applicationId}/device/{devEui}/event/up
 | 开发准备：管理访问（2026-09-29） | 保留“首次访问设置”与“默认 HTTP”，补充残余风险与最小保护；请求协议按实际连接或受信任代理判定；Cookie 按协议分开；API 令牌的创建也只允许经 HTTPS；设置码列为待确认的推荐（readiness D-01、D-02）；曾推荐的“新安装默认只允许 HTTPS”和“备份只允许经 HTTPS”经讨论撤回：以内网为主，强制 HTTPS 增加使用难度，自签证书只防被动截获；记录 Chrome 154 对 HTTP 的默认询问（按局域网 IP 访问不受影响） | §3.3、§10.3、§13 |
 | T2 协议定稿（2026-10-09） | 维护者确认 NModbus 3.0.83；TCP UnitId 0–255 / RTU over TCP 1–247；MQTT 每次建连重订当前主题，接受显式处理保留消息时的重复。修复 Broker 会话存在但订阅回滚造成的漏收，不承诺恢复已丢失消息 | §2.3、§6.1、§6.2；实现证据见 implementation-status §2.88 |
 | T3-06 持久提交边界澄清（2026-10-12） | 维护者确认以 config.db 持久 COMMIT 成功为配置中断恢复边界，不以上层提交方法返回为界。之前恢复旧版，之后恢复新版；新增 COMMIT 已成功但上层调用未返回的独立中断子场景，不改变先提交后激活、单实例、草稿或队列语义 | §7.4；readiness D-07；实现证据见 implementation-status §2.182 |
+| 配置库独立客户端工厂（2026-10-21） | 维护者批准用统一连接配置工厂直接创建独立 SqlSugarClient，替代高频 SqlSugarScope.CopyNew 的上下文查找。保留单例 Scope、SqlSugar、短操作独立客户端、30 秒命令超时、WAL / synchronous=FULL / busy_timeout 回读及事务隔离；不缓存身份/凭证，不引入第二套运行时 | §2.3；后端实施规范 §4；实现证据见 implementation-status §2.322 |
 
 待维护者确认的事项见 `docs/development-readiness.md` 第 4 节；确认前按该节“未确认前按”一列实现，不自行扩展。

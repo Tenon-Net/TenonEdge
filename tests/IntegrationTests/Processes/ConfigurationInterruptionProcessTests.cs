@@ -11,6 +11,7 @@ using TenonEdge.Host.Features.Audit;
 using TenonEdge.Host.Features.Runtime;
 using TenonEdge.Host.Storage;
 using TenonEdge.IntegrationTests.Infrastructure;
+using TenonEdge.IntegrationTests.Runtime;
 
 namespace TenonEdge.IntegrationTests.Processes;
 
@@ -477,6 +478,8 @@ public sealed partial class ConfigurationInterruptionProcessTests(ITestOutputHel
                         if (value == 42)
                         { await AckAsync(peer.GetStream()); continue; }
                         frozen = request;
+                        // 这里只固定未确认的 r2 报文；先观察此前 r1 ACK 的删除已持久化。
+                        await OutputPipelineTests.UntilAsync(() => ReadDeliveries(data.Path).All(row => row.Revision == 2));
                         stored = ReadDeliveries(data.Path)[0];
                         Assert.Equal(2, stored.Revision);
                         Assert.Equal(stored.SourceId, SourceMessageId(frozen));
@@ -542,6 +545,9 @@ public sealed partial class ConfigurationInterruptionProcessTests(ITestOutputHel
                 await AckAsync(collected.GetStream());
             }
             output.WriteLine($"恢复新采样：值 84，sourceMessageId 不在强杀前已提交集合；提交后输入未启动窗口={beforeInputs}，草稿 126 未被应用。");
+            // 收到后续请求不再意味着旧 ACK 的删除已经落盘；按原 15 秒存储回归期限等真实删除，
+            // 不删原版本断言，并额外要求每条已重放/确认的冻结记录确实消失。
+            await OutputPipelineTests.UntilAsync(() => !ReadDeliveries(data.Path).Any(row => committed.Any(old => row.Id == old.Id)));
             Assert.All(ReadDeliveries(data.Path), row => Assert.Equal(2, row.Revision));
             var running = await api.GetJsonAsync(Api + "/runtime/status", Token);
             Assert.Equal(2, running.GetProperty("runtime").GetProperty("activeRevision").GetInt64());
