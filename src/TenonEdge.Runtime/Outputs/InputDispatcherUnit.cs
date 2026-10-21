@@ -90,6 +90,7 @@ internal sealed class InputDispatcherUnit(
                 }
 
                 state.Drafts = drafts;
+                budgetedChannel?.RetainAfterFormatting(state.Message, checked(4096 + drafts.Sum(draft => draft.PendingBudgetBytes)));
                 deliveries.OutputTraffic.Generated(drafts);
             }
 

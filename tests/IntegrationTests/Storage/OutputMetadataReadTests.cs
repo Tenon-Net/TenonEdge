@@ -11,12 +11,18 @@ public sealed class OutputMetadataReadTests
 {
     private const long ConnectionId = 9007199254740991;
 
-    [Fact]
-    public async Task HttpIdentityReadsNullableMetadataAndSeesEachCommittedChangeWithoutResolvingSecrets()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HttpIdentityReadsNullableMetadataAndSeesEachCommittedChangeWithoutResolvingSecrets(bool dedicated)
     {
         await using var factory = new TenonEdgeApplicationFactory();
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
-        var store = factory.Services.GetRequiredService<HttpCredentialStore>();
+        IHttpCredentialResolver source = factory.Services.GetRequiredService<HttpCredentialStore>();
+        using var session = dedicated ? source.OpenSenderReadSession() : null;
+        if (dedicated)
+        { Assert.NotNull(session); }
+        var store = session ?? source;
         Assert.Null(store.DescribeHttp(ConnectionId));
         using var client = database.CreateIsolatedClient();
         var record = new HttpCredentialRecord
@@ -52,12 +58,18 @@ public sealed class OutputMetadataReadTests
         Assert.Null(store.DescribeHttp(ConnectionId));
     }
 
-    [Fact]
-    public async Task OutputControlReadsOnlySelectedConnectionAndSeesCommittedPauseResumeAndDeletion()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OutputControlReadsOnlySelectedConnectionAndSeesCommittedPauseResumeAndDeletion(bool dedicated)
     {
         await using var factory = new TenonEdgeApplicationFactory();
         var database = factory.Services.GetRequiredService<ConfigDatabase>();
-        var store = factory.Services.GetRequiredService<OutputControlStore>();
+        IOutputControl source = factory.Services.GetRequiredService<OutputControlStore>();
+        using var session = dedicated ? source.OpenSenderReadSession() : null;
+        if (dedicated)
+        { Assert.NotNull(session); }
+        var store = session ?? source;
         Assert.Equal(new(false, null), store.Read(ConnectionId));
         using var client = database.CreateIsolatedClient();
         var record = new OutputControlRecord { ConnectionId = ConnectionId, ManuallyPaused = true, Version = "paused" };

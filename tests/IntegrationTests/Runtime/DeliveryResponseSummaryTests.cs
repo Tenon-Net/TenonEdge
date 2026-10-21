@@ -215,7 +215,7 @@ public sealed class DeliveryResponseSummaryTests
             receipt = Assert.IsType<DeliveryMigrationReceipt>(result.Migration);
             await runtime.StopAsync(Token);
         }
-        Sql(data.Path, "ALTER TABLE delivery DROP COLUMN response_summary; PRAGMA user_version=8;");
+        Sql(data.Path, "DROP INDEX ix_delivery_state_connection_bytes; ALTER TABLE delivery DROP COLUMN response_summary; PRAGMA user_version=8;");
         await using var reopened = RuntimeTesting.CreateRuntime([], data.Path);
         reopened.StartCore();
         var record = Assert.Single(reopened.Deliveries.ReadFailed(1, 0, 10));
@@ -223,7 +223,7 @@ public sealed class DeliveryResponseSummaryTests
         Assert.Equal(draft.ByteSize, record.ByteSize);
         Assert.Equal(receipt, reopened.Deliveries.ReadMigrationReceipt(receipt.OperationId));
         Assert.Null(reopened.Deliveries.InspectBody(draft.DeliveryId, DeliveryState.Failed)!.ResponseSummary);
-        Assert.Equal(9, reopened.Deliveries.GetStatus().Store!.SchemaVersion);
+        Assert.Equal(10, reopened.Deliveries.GetStatus().Store!.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, reopened.Deliveries.GetStatus().Store!.ConfigStoreId);
     }
 

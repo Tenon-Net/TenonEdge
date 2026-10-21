@@ -33,12 +33,31 @@ internal sealed class HttpOutputTarget(RuntimeUnitId id, HttpOutputSettings sett
     public IReadOnlyList<string> Inputs => settings.Inputs;
     public string? ClientId => null;
     public string Recipient => settings.BaseAddress;
-    public string CredentialVersion => (credentials.DescribeHttp(ConnectionId)?.Version ?? "anonymous") +
+    public string CredentialVersion => Version(credentials.DescribeHttp(ConnectionId));
+    private string Version(HttpCredentialIdentity? identity) => (identity?.Version ?? "anonymous") +
         (settings.BaseUri.Scheme == "https" && trust?.ResolveTlsTrust(ConnectionId, settings.BaseAddress) is { } value ? ":tls:" + value.Version : "");
     // 16 KiB 静态头、字典节点、幂等编号和摘要UTF-16结果逐路径保留；摘要编码暂存串行复用。
     public long FormattingReservationBytes => 2L * StandardEnvelope.MaximumPayloadBytes + 128 * 1024 +
         2L * OutputMessage.MaximumProtocolMetadataBytes + 2L * OutputRecipientIdentity.MaximumSummaryBytes;
     public string CurrentFingerprint => settings.Fingerprint(credentials.DescribeHttp(ConnectionId));
+    public OutputSendIdentity ReadSendIdentity()
+    {
+        var identity = credentials.DescribeHttp(ConnectionId);
+        return new(settings.Fingerprint(identity), Version(identity));
+    }
+    public IOutputTargetReadSession? OpenSenderReadSession()
+    {
+        var reader = credentials.OpenSenderReadSession();
+        if (reader is null)
+        { return null; }
+        try
+        { return new SenderReadSession(new HttpOutputTarget(id, settings, reader, time, connector, connections, trust), reader); }
+        catch { reader.Dispose(); throw; }
+    }
+    private sealed record SenderReadSession(IOutputTarget Target, IDisposable Reader) : IOutputTargetReadSession
+    {
+        public void Dispose() => Reader.Dispose();
+    }
     public TimeSpan SendTimeout => TimeSpan.FromMilliseconds(settings.TimeoutMs);
     public OutputTargetIdentity CaptureIdentity() => CaptureIdentity(credentials.DescribeHttp(ConnectionId));
     private OutputTargetIdentity CaptureIdentity(HttpCredentialIdentity? identity) =>

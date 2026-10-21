@@ -50,7 +50,12 @@ export async function startWorkflowGateway(
                     count < 1 ||
                     address + count > registers.length
                 ) {
-                    protocolErrors.push('unexpected Modbus request')
+                    // Preserve the exact test-only read frame on failure; a
+                    // generic message cannot distinguish a malformed write,
+                    // wrong framing or an unexpected but well-formed request.
+                    protocolErrors.push(
+                        `unexpected Modbus request ${request.toString('hex')} (protocol=${request.readUInt16BE(2)}, length=${request.readUInt16BE(4)}, unit=${request[6]}, function=${request[7]}, address=${address}, count=${count})`,
+                    )
                     socket.destroy()
                     return
                 }

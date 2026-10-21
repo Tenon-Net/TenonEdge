@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Data.Sqlite;
-using TenonEdge.Abstractions.Plans;
 using TenonEdge.Host.Bootstrap;
 using TenonEdge.Host.Features.Deliveries;
 using TenonEdge.Runtime.Deliveries;
@@ -109,18 +108,6 @@ internal static class RuntimeOutputEndpoints
     private static double? Age(DateTimeOffset? since, DateTimeOffset now) => since is { } value && value <= now ? (now - value).TotalSeconds : null;
     private static ProblemHttpResult Changed() => ApiProblems.Problem(409, "runtime.revisionChanged", "运行版本已切换，请刷新输出列表。");
 
-    private static Dictionary<long, Target> Catalog(RuntimeVersionStore versions, long? revision)
-    {
-        if (revision is null)
-        { return []; }
-        var snapshot = versions.Load(revision.Value) ?? throw new RuntimePlanDocumentException("运行快照不存在。");
-        var (plan, draft) = RuntimeSnapshotDocument.ReadForExecution(snapshot);
-        return plan.Units.Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal))
-            .GroupBy(unit => unit.Configuration.GetProperty("connectionId").GetInt64()).ToDictionary(group => group.Key, group =>
-            {
-                var connection = draft?.Connections.FirstOrDefault(item => item.Id == group.Key);
-                return new Target(connection?.Key, connection?.Name, group.First().Id.Kind[7..], group.Select(unit => unit.Id).ToArray());
-            });
-    }
-    private sealed record Target(string? Key, string? Name, string Kind, RuntimeUnitId[] Units);
+    private static IReadOnlyDictionary<long, RuntimeOutputCatalogEntry> Catalog(RuntimeVersionStore versions, long? revision) =>
+        revision is null ? new Dictionary<long, RuntimeOutputCatalogEntry>() : versions.ReadOutputCatalog(revision.Value);
 }

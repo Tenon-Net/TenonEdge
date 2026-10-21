@@ -29,14 +29,13 @@ internal sealed partial class OutputSenderState
         { _acknowledgedThrough = sequence; }
     }
 
-    internal StoredDelivery? ReadUnacknowledgedHead(DeliveryCache deliveries, long connectionId)
+    internal StoredDelivery? ReadUnacknowledgedHead(DeliveryStore.PendingReader pendingReader)
     {
         while (true)
         {
-            var pending = deliveries.ReadPending(connectionId, _acknowledgedThrough, 1);
-            if (pending.Count == 0)
+            var head = pendingReader.Read(_acknowledgedThrough);
+            if (head is null)
             { return null; }
-            var head = pending[0];
             if (!_acknowledged.Contains(head.Seq))
             { return head; }
             // 毒消息的成功探测可能先确认队头之后的记录；不能用最大 ACK 编号越过未确认队头。

@@ -15,6 +15,7 @@ import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from '@playwright/test'
+import { assertCleanHostExit, observeProcessExit } from './process-exit.mjs'
 
 assert.equal(
     process.platform,
@@ -65,7 +66,7 @@ function start(command, args, env = process.env) {
         stdio: ['ignore', 'pipe', 'pipe'],
     })
     const state = { child, log: '', error: null, exited: null }
-    state.exited = new Promise((resolve) => child.once('close', resolve))
+    state.exited = observeProcessExit(child)
     const collect = (chunk) => {
         state.log = (state.log + chunk.toString()).slice(-65536)
     }
@@ -305,7 +306,8 @@ try {
     if (browser) await browser.close().catch(cleanupFailed)
     let allExited = true
     for (const state of owned.toReversed()) {
-        state.child.kill('SIGTERM')
+        if (state.child.exitCode === null && state.child.signalCode === null)
+            state.child.kill('SIGTERM')
         let exited = await Promise.race([
             state.exited.then(() => true),
             delay(15000, false, { ref: false }),
@@ -319,6 +321,21 @@ try {
             ])
         }
         allExited &&= exited
+        if (exited) {
+            const exit = await state.exited
+            report.processExits ??= []
+            report.processExits.push({
+                command: state.child.spawnfile,
+                ...exit,
+            })
+            if (state.child.spawnfile === 'dotnet') {
+                try {
+                    assertCleanHostExit(exit)
+                } catch (error) {
+                    cleanupFailed(error)
+                }
+            }
+        }
     }
     process.removeListener('exit', terminateOwned)
     for (const [index, state] of owned.entries())

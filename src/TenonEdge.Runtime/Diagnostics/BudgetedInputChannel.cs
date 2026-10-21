@@ -19,6 +19,7 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
     private TaskCompletionSource _space = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Action<EdgeMessage>? _capture;
     private readonly Lock _captureGate = new();
+    private readonly Dictionary<EdgeMessage, long> _retainedCharges = new(ReferenceEqualityComparer.Instance);
     private readonly Lock _spaceGate = new();
     private long _captureFailures;
     internal long CaptureFailures => Interlocked.Read(ref _captureFailures);
@@ -54,11 +55,30 @@ internal sealed class BudgetedInputChannel : Channel<EdgeMessage>
         + (ReserveSerializationWorkspace ? Math.Max(MinimumSerializationReservationBytes, StandardEnvelope.SerializationReservationBytes(MappingWorkingReservationBytes > 0 ? FieldMapping.MaximumResultBytes : sourceBytes)) : 0));
     internal long Charge(EdgeMessage message) => Charge(message.BudgetBytes);
     internal bool HasHandoff(EdgeMessage message) => _handoffs.ContainsKey(message);
+
+    // 所有路径已完成格式化，临时映射/编码空间已不再持有。仅归还未使用的最坏情况预约；
+    // 源消息、冻结记录及写入暂存继续计费到原写者结果，不能用入内存代替持久接管。
+    internal void RetainAfterFormatting(EdgeMessage message, long frozenBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(frozenBytes);
+        lock (_captureGate)
+        {
+            if (_retainedCharges.ContainsKey(message))
+            { return; } // 同一冻结状态跨监督者重建，不重复释放。
+            var original = Charge(message);
+            var retained = checked(message.BudgetBytes + (UsesDurableHandoff ? 1024 : 0) + frozenBytes);
+            if (retained >= original)
+            { return; } // 不增加额度，也不以估算覆盖原来更小的保守预约。
+            _retainedCharges.Add(message, retained);
+            _budget.Release(original - retained);
+        }
+    }
+
     internal void Release(EdgeMessage message, InputHandoffStatus status = InputHandoffStatus.Stopped)
     {
         lock (_captureGate)
         {
-            _budget.Release(Charge(message));
+            _budget.Release(_retainedCharges.Remove(message, out var retained) ? retained : Charge(message));
             if (_handoffs.TryRemove(message, out var completion))
             { completion.TrySetResult(status); }
         }

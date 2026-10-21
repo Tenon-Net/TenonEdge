@@ -4,6 +4,10 @@ namespace TenonEdge.Abstractions.Contracts;
 public interface IOutputControl
 {
     OutputControlState Read(long connectionId);
+    /// <summary>可选的发送者独占实时查询；读取间隙不保留事务，循环结束释放。默认沿用普通查询。</summary>
+    IOutputControlReadSession? OpenSenderReadSession() => null;
 }
+
+public interface IOutputControlReadSession : IOutputControl, IDisposable;
 
 public sealed record OutputControlState(bool ManuallyPaused, string? ResumeVersion);

@@ -9,7 +9,7 @@ public sealed class OutputCapacityEstimatorTests
     private static readonly DeliveryQueueUsage Empty = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     private static readonly StorageProtectionStatus Space = new(false, false, new(100_000_000_000, 90_000_000_000));
 
-    private static readonly DeliveryStoreInfo CalibratedStore = new("/not-read/queue.db", "3.53.3", "wal", 2, 9, "test", 4096, 1000, 0);
+    private static readonly DeliveryStoreInfo CalibratedStore = new("/not-read/queue.db", "3.53.3", "wal", 2, 10, "test", 4096, 1000, 0);
     private static readonly OutputTrafficSnapshot Traffic = new(1, [], 2, 11000, 10, true, 320, 262463);
 
     [Theory]
@@ -44,7 +44,8 @@ public sealed class OutputCapacityEstimatorTests
     public void NativeVersionSchemaAndActualPragmasMustMatchTheMeasurement()
     {
         foreach (var store in new[] {
-            CalibratedStore with { SqliteVersion = "3.51.3" }, CalibratedStore with { SchemaVersion = 10 },
+            CalibratedStore with { SqliteVersion = "3.51.3" }, CalibratedStore with { SchemaVersion = 9 },
+            CalibratedStore with { SchemaVersion = 11 },
             CalibratedStore with { JournalMode = "delete" }, CalibratedStore with { Synchronous = 1 },
             CalibratedStore with { PageSize = 8192 }, CalibratedStore with { WalAutoCheckpoint = 0 },
             CalibratedStore with { AutoVacuum = 1 } })

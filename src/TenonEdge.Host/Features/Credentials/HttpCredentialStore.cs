@@ -15,7 +15,7 @@ using TenonEdge.Runtime.Deliveries;
 namespace TenonEdge.Host.Features.Credentials;
 
 /// <summary>HTTP 当前凭证按连接和基础地址绑定；单例不保留数据库客户端或活跃事务。</summary>
-internal sealed class HttpCredentialStore(
+internal sealed partial class HttpCredentialStore(
     ConfigDatabase database, IDataProtectionProvider protection, DeliveryCache deliveries, AuditTrail audit, TimeProvider time) : IHttpCredentialResolver
 {
     public HttpCredentialIdentity? DescribeHttp(long connectionId)

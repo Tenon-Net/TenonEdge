@@ -12,13 +12,14 @@ namespace TenonEdge.Runtime.Deliveries;
 /// <item>journal_mode=WAL（持久保存在库文件中）。写者的连接与初始化连接显式设置 synchronous=FULL 与 busy_timeout 并回读，
 /// 不依赖原生库的编译默认值（V-07）；读连接只执行查询，不设置 synchronous（它只影响写入的持久性）。
 /// 实际加载的 SQLite 低于 3.51.3 时拒绝打开（WAL 重置缺陷，总设计 §2.3）。</item>
-/// <item>写连接只供唯一的写者使用；读取使用短连接与短事务，WAL 下只能读到已提交的记录，也不阻塞写者。</item>
+/// <item>写连接只供唯一的写者使用；管理查询使用短连接，发送者可独占复用读连接。
+/// 所有读事务在方法返回前结束，WAL 下只能读到已提交的记录，不跨网络发送保留快照。</item>
 /// <item>表结构版本保存在 <c>PRAGMA user_version</c> 中，按版本顺序迁移；由更新版本的程序迁移过的库拒绝打开（不支持降级）。</item>
 /// </list>
 /// </summary>
 internal sealed partial class DeliveryStore
 {
-    public const int SchemaVersion = 9;
+    public const int SchemaVersion = 10;
 
     public const string ExpectedJournalMode = "wal";
 
@@ -145,6 +146,11 @@ internal sealed partial class DeliveryStore
         """
         ALTER TABLE delivery ADD COLUMN response_summary TEXT
             CHECK (response_summary IS NULL OR length(CAST(response_summary AS BLOB)) <= 8192);
+        """,
+        // 版本 10（QA-PERF-01）：配额汇总只读覆盖索引，不反复读取积压正文页。
+        // 不缓存跨事务计数；原 FIFO 索引和同事务配额/写者边界不变。
+        """
+        CREATE INDEX ix_delivery_state_connection_bytes ON delivery (state, connection_id, byte_size);
         """,
     ];
 

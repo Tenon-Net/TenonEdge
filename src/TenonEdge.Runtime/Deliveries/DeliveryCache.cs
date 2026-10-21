@@ -124,6 +124,8 @@ public sealed class DeliveryCache
         return await SubmitAsync(new DeleteRequest([.. seqs]), cancellationToken);
     }
 
+    internal DeliveryStore.PendingReader CreatePendingReader(long connectionId) => Store.CreatePendingReader(connectionId);
+
     /// <summary>按 seq 顺序读取某个目标已提交的待发记录；未提交或已回滚的记录读不到。</summary>
     public IReadOnlyList<StoredDelivery> ReadPending(long connectionId, long afterSeq, int limit) =>
         Store.ReadPending(connectionId, afterSeq, limit);

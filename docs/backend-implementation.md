@@ -15,7 +15,7 @@
 | 能力 | 工程约定 | 尚需验证的部分 |
 |---|---|---|
 | 平台与 Web | .NET 10、ASP.NET Core；管理 API 统一使用按功能分组的 Minimal API | 精确 SDK 与框架补丁在 T0 锁定；发布环境见 V-01 |
-| 配置与队列 | config.db 使用既定 SqlSugarCoreNoDrive 与 Microsoft.Data.Sqlite 组合；queue.db 由 Runtime 直接使用 Microsoft.Data.Sqlite | V-06、V-07；D-09 的依赖与许可问题不在本次替代解决 |
+| 配置与队列 | config.db 使用既定 SqlSugarCoreNoDrive 与 Microsoft.Data.Sqlite 组合；queue.db 由 Runtime 直接使用 Microsoft.Data.Sqlite；发送者专用 config.db 只读通道的受限例外见 §4 | V-06、V-07；D-09 的依赖与许可问题不在本次替代解决 |
 | 协议适配 | MQTTnet；HTTP 使用 .NET HTTP 客户端能力；Modbus 候选仍是 NModbus 与 FluentModbus | V-04、V-05，按原阶段比较、包装和实测，不提前宣布选型通过 |
 | 后台组织 | 一个 BackgroundService 运行时宿主，内部监督运行单元；有界 Channels 与 TimeProvider | 按总设计 §7、§8 分阶段验证 |
 | 安全与 API 契约 | 既定本地 Cookie、固定三种角色、PasswordHasher、Data Protection、ProblemDetails、内置 OpenAPI | V-08、V-11 及现有安全验收 |
@@ -129,9 +129,10 @@ Cookie 写操作的防 CSRF、API Token 的 HTTPS 限制及认证区分，完全
 | 运行时宿主、监督者、连接管理器 | 宿主级单例 | 每个角色只有一个实际实例。需要通过接口查询同一宿主时复用该实例，不能因多次注册产生第二套采集任务 |
 | 运行单元与协议会话 | 由运行时工厂按计划创建，由连接管理/监督者持有 | 不等同于 HTTP 请求作用域；借用者释放租约，不擅自释放共享客户端；同一单元 ID 不并存两个实例 |
 | config.db 的 SqlSugarScope | 沿用总设计的单例约定 | 单例不意味着可以无保护共享事务或并发上下文；同一异步流程内并发由统一连接配置工厂直接创建独立 SqlSugarClient，调用方负责释放（2026-10-21 维护者批准的 CopyNew 等价替代）。Scope 和独立客户端使用各自的配置对象，连接检查/观测事件由同一 ConfigDatabase 统一持有（不跨配置库实例），保持 WAL / FULL / busy_timeout 与命令超时，不共享事务或请求上下文；具体打开、隔离和释放行为由 V-06 回归验证 |
+| 发送者专用 config.db 只读通道（候选验证） | 由单个实际运行中的发送者独占，退出/故障释放；单例仓储只提供工厂 | 维护者于2026-10-21授权验证，完整后端安全回归及重复负载已通过，最新当前188项及两组关联各9项浏览器已通过（implementation-status §2.327—§2.328），但历史模块Host退出null与Modbus异常仍未定位（implementation-status §2.325—§2.326）；当前仅候选验证，暂不正式纳入，证据见 implementation-status §2.324。只复用非池化 ReadOnly 连接与固定参数化预编译身份/暂停 SELECT，显式采用统一 WAL / FULL / busy_timeout / 命令超时校验并启用 query_only；每次读当前已提交值，reader返回/异常即释放短读事务，不跨网络或读取间隙保留快照，不缓存身份、版本、暂停或TLS状态。HTTP身份与暂停读取器各拥有一条连接，不在发送者或格式化之间共享；秘密读取/解密、TLS信任、常规配置访问及全部写入仍沿用原路径。保留循环开始、发送前及适配器内核对，第二次暂停检查仍在发送前身份读取之后；扩展默认兼容原路径，冻结路由包装不得绕过校验。此例外不是替换SqlSugar、扩大连接数承诺或生产性能保证 |
 | 配置操作服务与数据库操作上下文 | HTTP 请求内按需使用 scoped；后台操作使用独立、短生命周期上下文 | 不把请求服务、事务、reader 或 HttpContext 保存在运行时单例中；操作完成及时释放，事务不跨外部网络等待 |
-| queue.db 写者与连接 | 写者由 Runtime 单例管理，写连接仅供该写者使用 | 所有写操作进入同一有界写入路径；读操作使用短连接/短事务；不通过 Host 的配置 ORM 访问队列 |
-| 凭证、绑定和运行参数的只读接口 | Host 提供线程安全实现，供 Runtime 持有 | 需要访问 scoped 存储时由实现内部创建并释放短作用域，只返回值对象；不得返回 ORM 客户端、活跃查询或 HttpContext |
+| queue.db 写者与连接 | 写者由 Runtime 单例管理，写连接仅供该写者使用 | 所有写操作进入同一有界写入路径；管理查询使用短连接/短事务。维护者于2026-10-21确认：每个运行中的发送者可独占复用一个读连接及预编译队头查询，循环退出/故障时由其释放；每次只读取当前已提交队头，读事务在网络发送前结束，不预取正文、不跨发送保留快照或缓存安全状态。FIFO、唯一写者/发送者、管理屏障及实时身份/暂停检查不变；不通过 Host 的配置 ORM 访问队列 |
+| 凭证、绑定和运行参数的只读接口 | Host 提供线程安全实现，供 Runtime 持有 | 需要访问 scoped 存储时由实现内部创建并释放短作用域，常规查询只返回值对象；上行发送者读取scope仅暴露基础契约，不向Runtime/Adapters暴露连接或reader。不得返回 ORM 客户端、活跃查询或 HttpContext |
 | 无状态转换与校验器 | 可共享的无状态对象；需要状态时由运行单元拥有 | 不保存上一个请求或设备的可变数据，不用共享可变 JSON 作为多路径输出 |
 | 密钥保护、时间与日志 | 复用已注册的框架服务 | 不自行创建第二套密钥环、全局日志容器或静态可变时钟 |
 

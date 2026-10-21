@@ -18,7 +18,7 @@ public static class OutputCapacityEstimator
 
     public const long MinimumCalibratedRecordBytes = 320;
     public const long MaximumCalibratedRecordBytes = 262463;
-    public const string CalibrationProfile = "linux-ext4-sqlite-3.53.3-queue9-v1";
+    public const string CalibrationProfile = "linux-ext4-sqlite-3.53.3-queue10-v1";
 
     /// <summary>Use actual store metadata and the same rate-window size range for every accumulating target.
     /// A reference coefficient is not evidence that a different deployment/workload was calibrated.</summary>
@@ -45,7 +45,7 @@ public static class OutputCapacityEstimator
         if (space?.FileSystem is null || store is null)
         { return new("environmentUnknown", null, null); }
         if (!OperatingSystem.IsLinux() || space.FileSystem != "ext4" || store.SqliteVersion != "3.53.3" ||
-            store.SchemaVersion != 9 || store.JournalMode != "wal" || store.Synchronous != 2 ||
+            store.SchemaVersion != 10 || store.JournalMode != "wal" || store.Synchronous != 2 ||
             store.PageSize != 4096 || store.WalAutoCheckpoint != 1000 || store.AutoVacuum != 0)
         { return new("unsupportedEnvironment", null, null); }
         if (accumulating.Count == 0 || accumulating.Any(item => item.BytesPerSecond is null || item.RecordsPerSecond is null ||

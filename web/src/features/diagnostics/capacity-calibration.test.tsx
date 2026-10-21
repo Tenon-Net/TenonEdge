@@ -10,13 +10,13 @@ it.each([3.1254, '3.1254'])(
             <CapacityCalibration
                 calibration={{
                     status: 'applicable',
-                    profile: 'linux-ext4-sqlite-3.53.3-queue9-v1',
+                    profile: 'linux-ext4-sqlite-3.53.3-queue10-v1',
                     amplification,
                 }}
             />,
         )
         expect(html).toContain('经验估算，非保证')
-        expect(html).toContain('linux-ext4-sqlite-3.53.3-queue9-v1')
+        expect(html).toContain('linux-ext4-sqlite-3.53.3-queue10-v1')
         expect(html).toContain('3.125')
     },
 )

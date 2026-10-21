@@ -125,7 +125,7 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
 | 画布 | React Flow（@xyflow/react） | https://reactflow.dev | 只提供前端编辑能力；运行逻辑属于 TenonEdge。节点外观可复用 React Flow UI 组件（https://reactflow.dev/ui ，基于 shadcn/ui 与 Tailwind）；复制组件源码前核实其许可，并按第 17 节记录 |
 | MQTT | MQTTnet（≥ 5.2.0） | https://github.com/dotnet/MQTTnet | 包装在适配器中。v5 已移除 ManagedClient，重连自行实现；默认协议是 MQTT 5.0，须显式指定 3.1.1；PublishAsync 没有默认超时，须传入带超时的取消令牌。不低于 5.2.0：更早的版本在已取消或超时的发布收到迟到的 PUBACK 时会断开连接。持续发布时保活可能检测不到断线（MQTTnet issue #2244，核查时未修复），发布连续超时后由网关主动断开重连。TLS 证书校验显式配置，不依赖库的默认行为。核查来源见 `docs/development-readiness.md` 第 5.1 节 |
 | Modbus | NModbus 3.0.83（T0 比较后，维护者于 2026-10-09 确认） | https://github.com/NModbus/NModbus | 优先验证 Modbus TCP 与 RTU over TCP 的读取、超时和字节序；不直接声明支持所有设备。NModbus 读写超时默认无限、库内默认重试 3 次、Async 方法不支持取消：须显式设置超时，库内重试设为 0 或 1，连接循环使用专用线程。NModbus 还有三点须由适配器处理：从站忙（SlaveDeviceBusy）默认无限重试；TCP 事务号不符时抛异常并重发请求，不跳过旧帧；RTU over TCP 时库在发送前的清空缓冲对网络流无效，残留字节要自行排空。FluentModbus 5.3 起提供 RTU over TCP 客户端（仓库中没有它的测试与文档），异步方法支持取消，但 TCP 客户端不校验事务号。核查来源见 `docs/development-readiness.md` 第 5.1 节 |
-| 配置存储 | SQLite + SqlSugar（SqlSugarCoreNoDrive） | https://github.com/DotNetNext/SqlSugar | 用于 config.db。NoDrive 包不带 SQLite 驱动，由 Host 显式引用 Microsoft.Data.Sqlite；但它经依赖 SystemCommon 带入 SQL Server 驱动及其身份认证组件等传递依赖，许可在 GitHub（MIT）与 NuGet（Apache-2.0）的声明不一致，处理见 `docs/development-readiness.md` D-09。连接检查事件 AopEvents.CheckConnectionExecuting/Executed 是执行 PRAGMA 的候选挂载点，它按每次检查连接触发，不是按物理连接打开，处理须幂等（T0 核实）。SqlSugarScope 单例，同一异步流程内并发执行时由统一连接配置工厂直接创建独立 SqlSugarClient（维护者于 2026-10-21 确认替代 CopyNew，避免高频上下文查找）；每份配置均保留配置库统一的连接检查/观测事件与持久化设置，显式设置相同命令超时，由调用方释放，不继承请求上下文或活跃事务；不用全局 AOP 填审计字段；CodeFirst 只做新增，非新增变更写版本化迁移；SQLite 存储不等于 SQL 产品功能 |
+| 配置存储 | SQLite + SqlSugar（SqlSugarCoreNoDrive） | https://github.com/DotNetNext/SqlSugar | 用于 config.db。NoDrive 包不带 SQLite 驱动，由 Host 显式引用 Microsoft.Data.Sqlite；但它经依赖 SystemCommon 带入 SQL Server 驱动及其身份认证组件等传递依赖，许可在 GitHub（MIT）与 NuGet（Apache-2.0）的声明不一致，处理见 `docs/development-readiness.md` D-09。连接检查事件 AopEvents.CheckConnectionExecuting/Executed 是执行 PRAGMA 的候选挂载点，它按每次检查连接触发，不是按物理连接打开，处理须幂等（T0 核实）。SqlSugarScope 单例，同一异步流程内并发执行时由统一连接配置工厂直接创建独立 SqlSugarClient（维护者于 2026-10-21 确认替代 CopyNew，避免高频上下文查找）；每份配置均保留配置库统一的连接检查/观测事件与持久化设置，显式设置相同命令超时，由调用方释放，不继承请求上下文或活跃事务；发送者专用元数据只读候选的验证边界见 §8.5，尚未正式纳入；常规访问和写入仍用 SqlSugar；不用全局 AOP 填审计字段；CodeFirst 只做新增，非新增变更写版本化迁移；SQLite 存储不等于 SQL 产品功能 |
 | 发送缓存 | SQLite，直接使用 Microsoft.Data.Sqlite | https://learn.microsoft.com/dotnet/standard/data/sqlite/ | 用于 queue.db，单写者、分组提交。它是 ADO.NET 驱动而不是 ORM，与配置库使用同一个驱动包。实际加载的 SQLite 原生库不得低于 3.51.3：3.7.0 至 3.51.2 有 WAL 重置导致数据库损坏的缺陷（https://www.sqlite.org/wal.html 第 11 节）；Microsoft.Data.Sqlite 10.0.10 及以前默认带 3.49.1，10.0.11 起带 3.53.3。启动时记录实际版本，低于 3.51.3 时拒绝启动运行时，管理界面显示原因；连接池会复用物理连接，PRAGMA 按物理连接设置 |
 | 秘密保护 | ASP.NET Core Data Protection | https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/overview | 固定 SetApplicationName("TenonEdge")；密钥环持久化在数据目录；不清理旧密钥 |
 | 有界内部队列 | System.Threading.Channels | https://learn.microsoft.com/en-us/dotnet/core/extensions/channels | 只做进程内有限缓冲，不把内存队列当持久化；丢弃模式下 TryWrite 仍返回 true，须用 itemDropped 回调计数 |
@@ -534,7 +534,7 @@ HTTP：固定连接与路径、POST JSON、超时、必要的静态请求头。�
 
 ### 8.2 发送缓存的最小实现
 
-发送缓存使用独立的 SQLite 文件 queue.db，由 Runtime 直接通过 Microsoft.Data.Sqlite 读写；配置库 config.db 由 Host 通过 SqlSugar 访问。两库分开，写入争用、损坏范围和备份策略互相隔离。不要同时实现文件队列、Redis 队列和多个持久化引擎。
+发送缓存使用独立的 SQLite 文件 queue.db，由 Runtime 直接通过 Microsoft.Data.Sqlite 读写；配置库 config.db 的常规访问和写入由 Host 通过 SqlSugar 完成，发送者专用元数据只读候选的验证边界见 §8.5。两库分开，写入争用、损坏范围和备份策略互相隔离。不要同时实现文件队列、Redis 队列和多个持久化引擎。
 
 投递目标即 Connection，也就是 Broker、HTTP 服务或平台连接。队列分区、发送者、退避与暂停状态、配额、第 8.3 节的身份指纹都以 connectionId 为单位；路线节点只作为统计标签。
 
@@ -545,7 +545,7 @@ HTTP：固定连接与路径、POST JSON、超时、必要的静态请求头。�
 - 已转换的报文，冻结的 topic/path、QoS 和非秘密请求头。凭证不写入记录，发送时从当前 Connection 解析。
 - 目标指纹及其可读摘要（第 8.3 节）、创建时间、失败次数（用于毒消息判定，计数规则见下）、状态（待发、失败区、隔离及隔离原因）、最后错误、迁移编号。退避到期时间和暂停状态属于目标，按 connectionId 保存在内存中；重启后，每个目标先用一条记录探测，成功后再恢复正常发送。管理员的手动暂停是例外：它保存在 config.db 中，重启后保持，只能手动恢复；暂停期间数据照常入队，按配额和保留期处理（`docs/functional-spec.md` 第 8 节）。
 
-写入组织：只有一个写者任务，入库、删除和状态变更都经由它，按短间隔（如 50–100 毫秒）或条数分组提交。journal_mode=WAL，synchronous=FULL。读连接只开短事务。一条源消息扇出到多个目标时，各目标的记录在同一事务中插入；超出配额的目标只记拒绝计数。
+写入组织：只有一个写者任务，入库、删除和状态变更都经由它，按短间隔（如 50–100 毫秒）或条数分组提交。journal_mode=WAL，synchronous=FULL。读连接只开短事务。维护者于2026-10-21澄清：运行中的发送者可独占复用读连接和预编译队头查询，每次仍只读取当前已提交队头，在网络发送前结束读事务，不预取正文或跨发送保留快照；循环退出/故障时释放。管理查询仍使用短连接/短事务，FIFO、管理屏障与实时身份/暂停检查不变。一条源消息扇出到多个目标时，各目标的记录在同一事务中插入；超出配额的目标只记拒绝计数。
 
 流程：生成目标报文 -> 分组提交 -> 发送 -> 获得约定确认 -> 在下一次分组提交中删除，并更新计数。
 
@@ -734,6 +734,9 @@ SQLite 文件/WAL 也需要监控空间和保留磁盘余量，不能只限制�
 | 存储损坏 | 可能丢失；queue.db 损坏按上表处理 | — | 可能丢失 |
 
 config.db 写入量小，同样使用 WAL 和 synchronous=FULL，使配置提交（包括第 7.4 节第 4 步）在断电后仍然有效；SqlSugar 连接上执行 PRAGMA 的方式在 T0 核实。Microsoft.Data.Sqlite 默认带的原生库编译时已把 synchronous 默认值设为 FULL，但仍显式设置并在启动时回读，不依赖所加载原生库的编译选项。config.db 损坏时运行时不启动，从备份恢复（第 10.4 节）。
+
+**发送者专用只读候选验证（2026-10-21，尚未正式纳入）：** 维护者授权验证发送者独占config.db只读连接及预编译身份/暂停查询；完整后端安全回归与重复负载已通过，最新当前188项及两组关联各9项浏览器已通过（implementation-status §2.327—§2.328），但历史模块Host退出null与Modbus异常仍未定位（implementation-status §2.325—§2.326）；当前仅候选验证，暂不正式纳入（implementation-status §2.324）。连接只在实际发送循环开始时取得，退出/故障释放，不由单例仓储持有。采用非池化ReadOnly打开并启用query_only，显式复用统一WAL/FULL/busy_timeout与命令超时校验；每次仍执行固定参数化SELECT，读取当前已提交值，reader在返回/异常时结束短读事务，不跨网络或读取间隙保留快照。HTTP身份及暂停读取器各一条专用连接，不跨发送者或并发格式化共享；不缓存身份、凭证版本、暂停或TLS安全状态。秘密读取/解密、TLS信任、常规配置访问和全部写入仍沿用原路径；循环开始、发送前、适配器内部核对及身份读取之后的第二次暂停检查均保留。扩展默认沿用原查询，冻结路由包装不透传可能绕过核对的scope。此例外不同于SqlSugar独立客户端工厂和queue.db队头读连接，不扩大为通用原生配置仓储或容量/SLA承诺。
+
 
 **附带 Broker 的部署检查**
 
@@ -1752,5 +1755,7 @@ application/{applicationId}/device/{devEui}/event/up
 | T2 协议定稿（2026-10-09） | 维护者确认 NModbus 3.0.83；TCP UnitId 0–255 / RTU over TCP 1–247；MQTT 每次建连重订当前主题，接受显式处理保留消息时的重复。修复 Broker 会话存在但订阅回滚造成的漏收，不承诺恢复已丢失消息 | §2.3、§6.1、§6.2；实现证据见 implementation-status §2.88 |
 | T3-06 持久提交边界澄清（2026-10-12） | 维护者确认以 config.db 持久 COMMIT 成功为配置中断恢复边界，不以上层提交方法返回为界。之前恢复旧版，之后恢复新版；新增 COMMIT 已成功但上层调用未返回的独立中断子场景，不改变先提交后激活、单实例、草稿或队列语义 | §7.4；readiness D-07；实现证据见 implementation-status §2.182 |
 | 配置库独立客户端工厂（2026-10-21） | 维护者批准用统一连接配置工厂直接创建独立 SqlSugarClient，替代高频 SqlSugarScope.CopyNew 的上下文查找。保留单例 Scope、SqlSugar、短操作独立客户端、30 秒命令超时、WAL / synchronous=FULL / busy_timeout 回读及事务隔离；不缓存身份/凭证，不引入第二套运行时 | §2.3；后端实施规范 §4；实现证据见 implementation-status §2.322 |
+| 发送者独占读连接（2026-10-21） | 维护者确认运行中的发送者可独占复用SQLite读连接和预编译队头查询，退出/故障时释放；每次只读当前已提交队头，读事务在网络发送前结束，不预取正文、不跨发送保留快照或缓存安全状态。管理查询仍用短连接/短事务，FIFO、唯一写者/发送者、管理屏障及实时身份/暂停检查不变；不同于配置库客户端工厂替代 | §8发送缓存；后端实施规范 §4；实现及有限软件验证见 implementation-status §2.324；不代表T3验收或生产性能承诺 |
+| 发送者配置库专用只读通道（2026-10-21） | 维护者授权验证；完整后端安全回归及两次600秒原门禁负载通过，最新当前188项及两组关联各9项浏览器已通过（implementation-status §2.327—§2.328），但历史模块Host退出null与Modbus异常仍未定位（implementation-status §2.325—§2.326），当前仅候选验证、暂不正式纳入。只复用非池化只读连接与预编译身份/暂停SELECT，每次仍读当前提交值，读取后结束短事务；不缓存安全状态，不改常规SqlSugar访问/写入、秘密解密、TLS检查或第二次暂停检查；循环退出/故障释放，不增加运行时/发送者。不是生产性能或T3完成批准 | §2.3、§8.5；后端实施规范§4；软件证据及适用边界见 implementation-status §2.324 |
 
 待维护者确认的事项见 `docs/development-readiness.md` 第 4 节；确认前按该节“未确认前按”一列实现，不自行扩展。

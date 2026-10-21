@@ -203,21 +203,35 @@ test('runtime messages show real HTTP input and queued output, preserve raw valu
             timeout: 15_000,
         })
         await expect.poll(() => largeReads).toBeGreaterThanOrEqual(3)
-        const size = await records
+        // Polling can replace the first row between reading its size and clicking.
+        // Capture identity and metadata from one DOM snapshot, then open that
+        // exact record even if a newer sample arrives in the meantime.
+        const selected = await records
             .getByRole('row')
             .nth(1)
-            .getByRole('cell')
-            .nth(4)
-            .innerText()
-        const sizes = /^(\d+) \/ (\d+) B/.exec(size)
+            .evaluate((row) => ({
+                size: row.querySelectorAll('td')[4]?.textContent ?? '',
+                identity:
+                    row.querySelectorAll('td')[1]?.textContent?.trim() ?? '',
+                button: row.querySelector('button')?.textContent?.trim() ?? '',
+            }))
+        expect(selected.button).toMatch(/^查看正文 \d+$/)
+        const sizes = /^(\d+) \/ (\d+) B/.exec(selected.size)
         expect(sizes).not.toBeNull()
         expect(Number(sizes![1])).toBe(64 * 1024)
         // OriginalBytes is the full diagnostic snapshot (including raw JSON), not only the wire body.
         expect(Number(sizes![2])).toBeGreaterThan(1024 * 1024)
+        // Exercise the real refresh race deliberately: the live head advances,
+        // but the body must still belong to the row whose bytes were captured.
+        await expect(
+            records.getByRole('row').nth(1).getByRole('button'),
+        ).not.toHaveText(selected.button)
         await records
-            .getByRole('button', { name: /^查看正文 / })
-            .first()
+            .getByRole('button', { name: selected.button, exact: true })
             .click()
+        await expect(body.getByRole('heading')).toHaveText(
+            `所选记录正文 · ${selected.identity}`,
+        )
         await expect(body).toContainText('已截断；以下可能不是完整 JSON。')
         await expect(body.locator('pre')).toContainText('9223372036854775807')
         expect(Buffer.byteLength(await body.locator('pre').innerText())).toBe(

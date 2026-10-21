@@ -204,14 +204,14 @@ public sealed class DeliveryMigrationHoldTests
             before = Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10));
         }
         // Reconstruct the exact v7 schema (v8 only added these columns/index/table), retaining its real v7 receipt data.
-        Sql(data.Path, "ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; PRAGMA user_version=7;");
+        Sql(data.Path, "DROP INDEX ix_delivery_state_connection_bytes; ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; PRAGMA user_version=7;");
         await using var reopened = RuntimeTesting.CreateRuntime([], data.Path);
         reopened.StartCore();
         Assert.Equal(receipt, reopened.Deliveries.ReadMigrationReceipt(command.OperationId));
         AssertFrozen(before, Assert.Single(reopened.Deliveries.ReadPending(1, 0, 10)));
         Assert.Equal(receipt, (await reopened.Deliveries.MigrateAsync(command)).Migration);
         Assert.Equal(1, reopened.Deliveries.GetPersistentCounters()["manuallyMigratedRecords"]);
-        Assert.Equal(9, reopened.Deliveries.GetStatus().Store!.SchemaVersion);
+        Assert.Equal(10, reopened.Deliveries.GetStatus().Store!.SchemaVersion);
         Assert.Equal(0, Scalar(data.Path, "SELECT COUNT(*) FROM delivery_migration_hold"));
         Assert.Equal(0, Scalar(data.Path, "SELECT COUNT(*) FROM delivery WHERE migration_intent_id IS NOT NULL OR migration_previous_state IS NOT NULL"));
     }

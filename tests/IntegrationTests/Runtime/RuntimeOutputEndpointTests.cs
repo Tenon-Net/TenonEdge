@@ -67,7 +67,7 @@ public sealed class RuntimeOutputEndpointTests
         {
             Assert.Equal("applicable", status);
             Assert.True(capacity.GetProperty("seconds").GetDouble() > 0);
-            Assert.Equal("linux-ext4-sqlite-3.53.3-queue9-v1", capacity.GetProperty("calibration").GetProperty("profile").GetString());
+            Assert.Equal("linux-ext4-sqlite-3.53.3-queue10-v1", capacity.GetProperty("calibration").GetProperty("profile").GetString());
         }
         else
         {

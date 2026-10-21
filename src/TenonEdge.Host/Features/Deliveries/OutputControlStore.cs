@@ -6,7 +6,7 @@ using TenonEdge.Host.Storage;
 
 namespace TenonEdge.Host.Features.Deliveries;
 
-internal sealed class OutputControlStore(ConfigDatabase database, AuditTrail audit, TimeProvider time) : IOutputControl
+internal sealed partial class OutputControlStore(ConfigDatabase database, AuditTrail audit, TimeProvider time) : IOutputControl
 {
     public OutputControlState Read(long connectionId)
     {

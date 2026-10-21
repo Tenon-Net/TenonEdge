@@ -48,7 +48,7 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
             {
                 _ = writer.Cache.GetQueueReport([]);
                 var store = writer.Cache.GetStatus().Store!;
-                Assert.Equal(("3.53.3", 9, 4096L, 1000L, 0L), (store.SqliteVersion, store.SchemaVersion, store.PageSize, store.WalAutoCheckpoint, store.AutoVacuum));
+                Assert.Equal(("3.53.3", 10, 4096L, 1000L, 0L), (store.SqliteVersion, store.SchemaVersion, store.PageSize, store.WalAutoCheckpoint, store.AutoVacuum));
                 output.WriteLine($"filesystem={new DriveInfo(path).DriveFormat}; sqlite={store.SqliteVersion}; schema={store.SchemaVersion}; journal={store.JournalMode}; synchronous={store.Synchronous}; pageSize={store.PageSize}; checkpoint={store.WalAutoCheckpoint}; autoVacuum={store.AutoVacuum}; payload={payloadBytes}; batch={batchSize}; metadata={metadata}; commitMs=50");
                 var payload = new byte[payloadBytes];
                 for (var cycle = 0; cycle < 3; cycle++)
@@ -155,7 +155,7 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
         Assert.True(Version.Parse(info.SqliteVersion) >= new Version(3, 51, 3), info.SqliteVersion);
         Assert.Equal("wal", info.JournalMode);
         Assert.Equal(2, info.Synchronous);
-        Assert.Equal(9, info.SchemaVersion);
+        Assert.Equal(10, info.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, info.ConfigStoreId);
         Assert.Equal(4096, info.PageSize);
         Assert.Equal(1000, info.WalAutoCheckpoint);
@@ -166,7 +166,7 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
         }
 
         using var connection = Open(info.FilePath);
-        Assert.Equal(9L, Scalar(connection, "PRAGMA user_version;"));
+        Assert.Equal(10L, Scalar(connection, "PRAGMA user_version;"));
         Assert.Equal(RuntimeTesting.ConfigStoreId, Scalar(connection, "SELECT config_store_id FROM queue_meta;"));
     }
 
@@ -223,14 +223,14 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
         await using (var first = WriterHarness.Start(directory.Path))
         { Assert.True((await first.EnqueueAsync([draft])).Committed); }
         using (var connection = Open(Path.Combine(directory.Path, "queue.db")))
-        { Execute(connection, "ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; PRAGMA user_version=4;"); }
+        { Execute(connection, "DROP INDEX ix_delivery_state_connection_bytes; ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; PRAGMA user_version=4;"); }
         await using var second = WriterHarness.Start(directory.Path);
         await second.EnqueueAsync([Draft(connectionId: 2)]);
         var stored = Assert.Single(second.Cache.ReadPending(1, 0, 10));
         Assert.Null(stored.ProtocolMetadata);
         Assert.Equal(draft.ByteSize, stored.ByteSize);
         Assert.Equal(draft.Payload.ToArray(), stored.Payload.ToArray());
-        Assert.Equal(9, second.Cache.GetStatus().Store!.SchemaVersion);
+        Assert.Equal(10, second.Cache.GetStatus().Store!.SchemaVersion);
     }
 
     [Fact]
@@ -305,6 +305,185 @@ public sealed class DeliveryCacheTests(ITestOutputHelper output)
         Assert.False(status.StorageFault);
         Assert.Equal((2L, 0L, 0L), (status.RejectedRecords, status.FailedBatches, status.FailedRecords));
         Assert.Empty(writer.Events.OfType(RuntimeEventTypes.StorageFault));
+    }
+
+    [Theory]
+    [InlineData("SELECT COUNT(*), COALESCE(SUM(byte_size), 0) FROM delivery WHERE connection_id = 1 AND state = 'pending'")]
+    [InlineData("SELECT COALESCE(SUM(byte_size), 0) FROM delivery WHERE state IN ('pending', 'quarantined')")]
+    public void QuotaChecksUseACoveringIndexRatherThanLoadingPayloadPages(string sql)
+    {
+        using var directory = TemporaryDirectory.Create();
+        var cache = RuntimeTesting.CreateDeliveryCache(directory.Path);
+        cache.Store.EnsureInitialized();
+        using var connection = Open(cache.Store.FilePath);
+        using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN QUERY PLAN " + sql;
+        using var reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        var plan = reader.GetString(3);
+        output.WriteLine(plan);
+        Assert.Contains("USING COVERING INDEX ix_delivery_state_connection_bytes", plan, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task VersionNineCoveringIndexMigrationPreservesRowsCountersAndFrozenMetadataAcrossTwoOpens()
+    {
+        using var directory = TemporaryDirectory.Create();
+        var drafts = Enumerable.Range(1, 3).Select(i => Draft(payload: $"{{\"value\":{i}}}",
+            headers: new Dictionary<string, string> { ["X-Fixture"] = $"record-{i}" },
+            routeId: i, nodeLabel: $"node-{i}", protocolMetadata: $"{{\"path\":\"frozen-{i}\"}}")).ToArray();
+        long[] sequences;
+        await using (var writer = WriterHarness.Start(directory.Path))
+        {
+            var result = await writer.EnqueueAsync(drafts);
+            Assert.True(result.Committed);
+            sequences = result.Seqs.ToArray();
+            Assert.True((await writer.Cache.RecordFailureAsync(new(sequences[0], 2, "safe retry", false, false),
+                TestContext.Current.CancellationToken)).Committed);
+            Assert.True((await writer.Cache.RecordFailureAsync(new(sequences[1], 3, "safe failure", true, false),
+                TestContext.Current.CancellationToken)).Committed);
+            Assert.True((await writer.Cache.QuarantineAsync(sequences[2], DeliveryQuarantineReasons.TargetChanged,
+                TestContext.Current.CancellationToken)).Committed);
+        }
+
+        var path = Path.Combine(directory.Path, DeliveryCacheOptions.FileName);
+        using var connection = Open(path);
+        Execute(connection, "DROP INDEX ix_delivery_state_connection_bytes; PRAGMA user_version=9;");
+        var before = Snapshot();
+        for (var open = 0; open < 2; open++)
+        {
+            var cache = RuntimeTesting.CreateDeliveryCache(directory.Path);
+            cache.Store.EnsureInitialized();
+            Assert.Equal(10L, Scalar(connection, "PRAGMA user_version;"));
+            Assert.Equal(1L, Scalar(connection, "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ix_delivery_state_connection_bytes';"));
+            Assert.Equal(before, Snapshot());
+            Assert.Single(cache.ReadPending(1, 0, 10));
+            Assert.Single(cache.ReadFailed(1, 0, 10));
+            Assert.Single(cache.ReadQuarantined(1, 0, 10));
+            cache.Store.ClearReadPool();
+        }
+
+        string[] Snapshot()
+        {
+            var rows = new List<string>();
+            foreach (var table in new[] { "delivery", "queue_meta", "delivery_failure_totals", "delivery_queue_totals", "queue_counters", "delivery_migration_receipt", "delivery_migration_hold", "sqlite_sequence" })
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = $"SELECT * FROM {table} ORDER BY rowid;";
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    var values = new object?[reader.FieldCount];
+                    for (var column = 0; column < values.Length; column++)
+                    { values[column] = reader.IsDBNull(column) ? null : reader.GetValue(column); }
+                    rows.Add(table + ":" + System.Text.Json.JsonSerializer.Serialize(values));
+                }
+            }
+            return rows.ToArray();
+        }
+    }
+
+    [Fact]
+    public async Task PreparedHeadReaderSeesOnlyCurrentCommittedState()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var writer = WriterHarness.Start(directory.Path);
+        var first = (await writer.EnqueueAsync([Draft()])).Seqs.Single();
+        using var heads = writer.Cache.CreatePendingReader(1);
+        using var otherTarget = writer.Cache.CreatePendingReader(2);
+        Assert.Equal(first, heads.Read(0)!.Seq);
+        Assert.Null(otherTarget.Read(0));
+
+        using var connection = Open(writer.Cache.Store.FilePath);
+        using (var transaction = connection.BeginTransaction())
+        {
+            Execute(connection, $"UPDATE delivery SET state = 'quarantined' WHERE seq = {first}", transaction);
+            Assert.Equal(first, heads.Read(0)!.Seq);
+            transaction.Rollback();
+        }
+        Assert.Equal(first, heads.Read(0)!.Seq);
+        using (var transaction = connection.BeginTransaction())
+        {
+            Execute(connection, $"UPDATE delivery SET state = 'quarantined' WHERE seq = {first}", transaction);
+            Assert.Equal(first, heads.Read(0)!.Seq);
+            transaction.Commit();
+        }
+        Assert.Null(heads.Read(0));
+        var next = (await writer.EnqueueAsync([Draft()])).Seqs.Single();
+        Assert.Equal(next, heads.Read(0)!.Seq);
+        Assert.Null(heads.Read(next));
+        Assert.Null(otherTarget.Read(0));
+    }
+
+    [Fact]
+    public async Task PreparedHeadReaderDoesNotPinWalBetweenReadsAndCanBeDisposedTwice()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var writer = WriterHarness.Start(directory.Path);
+        var first = (await writer.EnqueueAsync([Draft()])).Seqs.Single();
+        using var heads = writer.Cache.CreatePendingReader(1);
+        Assert.Equal(first, heads.Read(0)!.Seq);
+        using (var connection = Open(writer.Cache.Store.FilePath))
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            using var result = command.ExecuteReader();
+            Assert.True(result.Read());
+            Assert.Equal(0, result.GetInt64(0)); // No read snapshot survives Read().
+        }
+        Assert.True((await writer.DeleteAsync([first])).Committed);
+        Assert.Null(heads.Read(0));
+        var next = (await writer.EnqueueAsync([Draft()])).Seqs.Single();
+        Assert.Equal(next, heads.Read(0)!.Seq);
+        heads.Dispose();
+        heads.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => heads.Read(0));
+    }
+
+    [Fact]
+    public async Task PreparedHeadReadExecutesOnlyOneStatementWithoutExplicitTransactionCommands()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var writer = WriterHarness.Start(directory.Path);
+        var first = (await writer.EnqueueAsync([Draft()])).Seqs.Single();
+        using var connection = Open(writer.Cache.Store.FilePath);
+        using var heads = new DeliveryStore.PendingReader(connection, 1);
+        var statements = new List<string>();
+        SQLitePCL.raw.sqlite3_trace(connection.Handle, (_, sql) => statements.Add(sql), null);
+
+        Assert.Equal(first, heads.Read(0)!.Seq);
+        Assert.Equal(1, SQLitePCL.raw.sqlite3_get_autocommit(connection.Handle));
+        Assert.StartsWith("SELECT ", Assert.Single(statements), StringComparison.Ordinal);
+
+        statements.Clear();
+        Assert.Null(heads.Read(first));
+        Assert.Equal(1, SQLitePCL.raw.sqlite3_get_autocommit(connection.Handle));
+        Assert.StartsWith("SELECT ", Assert.Single(statements), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PreparedHeadReadReleasesItsSnapshotAfterRecordDecodingThrows()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var writer = WriterHarness.Start(directory.Path);
+        var draft = Draft();
+        var sequence = (await writer.EnqueueAsync([draft])).Seqs.Single();
+        using var heads = writer.Cache.CreatePendingReader(1);
+        using var connection = Open(writer.Cache.Store.FilePath);
+        Execute(connection, $"UPDATE delivery SET delivery_id = 'invalid-guid' WHERE seq = {sequence}");
+
+        Assert.Throws<FormatException>(() => heads.Read(0));
+        Execute(connection, $"UPDATE delivery SET delivery_id = '{draft.DeliveryId:D}' WHERE seq = {sequence}");
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            using var result = command.ExecuteReader();
+            Assert.True(result.Read());
+            Assert.Equal(0, result.GetInt64(0));
+        }
+        Assert.Equal(draft.DeliveryId, heads.Read(0)!.DeliveryId);
+        Assert.True((await writer.DeleteAsync([sequence])).Committed);
+        Assert.Null(heads.Read(0));
     }
 
     [Fact]

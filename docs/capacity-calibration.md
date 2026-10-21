@@ -17,10 +17,10 @@ T_磁盘 = (实际可用空间 − max(字节预留, 总空间 × 预留比例))
 
 逻辑字节采用原 `DeliveryDraft.ByteSize`，包括冻结报文、地址、头、协议元数据和既有逐条开销，不只是 payload。16 KiB/条用于有限样本中观测到的 WAL/索引逐条更新工作余量；它不是逐条实际占用值，也不是通过把任意文件大小除以当前条数得到的系数。全局逻辑配额仍只计待发与隔离，失败区有原独立配额。
 
-档案 `linux-ext4-sqlite-3.53.3-queue9-v1` 仅在以下信息同时匹配时采用：
+当前档案 `linux-ext4-sqlite-3.53.3-queue10-v1` 仅在以下信息同时匹配时采用；queue9 档案保留为历史证据，不自动沿用于新 schema：
 
 - 实际运行于 Linux，队列所在文件系统回读为 ext4；
-- 实际 SQLite 为 **3.53.3**、queue schema 9、WAL、synchronous=FULL（2）；
+- 实际 SQLite 为 **3.53.3**、queue schema 10、WAL、synchronous=FULL（2）；
 - 初始化时实际回读 `page_size=4096`、`wal_autocheckpoint=1000`、`auto_vacuum=0`；
 - 参与估算的每个目标都具有有效生成速率；有新增字节的目标，其同一速率窗口内所有记录的逻辑大小极值均在 **320—262463 B**。使用极值而非平均值，不能让另一个目标的越界记录被混合平均掩盖；
 - 至少观测到非零生成字节；无记录样本时不宣称适用，也不显示无限时长。
@@ -63,10 +63,10 @@ dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release 
   --results-directory <本次独立证据目录>
 ```
 
-本轮环境：Ubuntu 26.04、Linux x86_64 kernel 7.0.0-31-generic、SDK 10.0.401/runtime 10.0.12、SQLite 3.53.3、ext4；测试同时回读实际 PRAGMA。最终绿例、API/网页测试和失败记录以[实施状态 §2.303](implementation-status.md#2303-t3-07-容量模型适用性实测与页面修正2026-10-19)为准。
+历史 queue9 测量环境：Ubuntu 26.04、Linux x86_64 kernel 7.0.0-31-generic、SDK 10.0.401/runtime 10.0.12、SQLite 3.53.3、ext4；测试同时回读实际 PRAGMA。该版绿例、API/网页测试和失败记录见[实施状态 §2.303](implementation-status.md#2303-t3-07-容量模型适用性实测与页面修正2026-10-19)。当前 queue10 重测见下节。
 
 
-本轮新模型绿例 **9/9 通过、0 失败/跳过**（9.2027 分钟）；以下是各组采样点中的最大增长值，不是瞬时高水位保证：
+历史 queue9 新模型绿例 **9/9 通过、0 失败/跳过**（9.2027 分钟）；以下是各组采样点中的最大增长值，不是瞬时高水位保证：
 
 | payload B | 每批条数 | 大头/元数据 | 逻辑字节/条 | 实测增长 k | 模型等效 k |
 |---:|---:|---|---:|---:|---:|
@@ -81,6 +81,28 @@ dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release 
 | 262144 | 300 | 否 | 262463 | 2.010305 | 2.362424 |
 
 原始绿例：`/home/shiny/.cache/tenonedge-capacity-scope/measurement-green-v1/measurement.trx` 及同目录 `run.log`、`test-source.patch`、`assemblies.sha256`。两次运行的小记录峰值略有差异，不能以单次数字作为固定行为。
+
+## queue10 覆盖索引后的独立重测（2026-10-21）
+
+schema10 增加 `(state, connection_id, byte_size)` 覆盖索引后，没有扩大旧 queue9 档案的适用条件。先保持选择器拒绝新 schema，在实际 queue10/ext4/SQLite 3.53.3 上按上述原写者、50 ms 分组提交、三轮插入/删除/checkpoint 方法重新执行九组矩阵。实际回读 WAL/FULL、page_size=4096、wal_autocheckpoint=1000、auto_vacuum=0；**9/9 通过、0 失败/跳过，8.1055 分钟**：
+
+| payload B | 每批条数 | 大头/元数据 | 逻辑字节/条 | 实测增长 k | 模型等效 k |
+|---:|---:|---|---:|---:|---:|
+| 1 | 1 | 否 | 320 | 44.155583 | 53.500000 |
+| 1 | 1 | 是 | 24916 | 1.568256 | 2.957569 |
+| 1 | 300 | 否 | 320 | 2.747000 | 53.500000 |
+| 1024 | 1 | 否 | 1343 | 11.415815 | 14.499553 |
+| 1024 | 300 | 否 | 1343 | 1.912316 | 14.499553 |
+| 65536 | 1 | 否 | 65855 | 1.217819 | 2.548789 |
+| 65536 | 300 | 否 | 65855 | 2.019642 | 2.548789 |
+| 262144 | 1 | 否 | 262463 | 1.054601 | 2.362424 |
+| 262144 | 300 | 否 | 262463 | 2.010566 | 2.362424 |
+
+据这次新测量登记独立档案 `linux-ext4-sqlite-3.53.3-queue10-v1`；模型仍为 `2.3 × B + 16384 × R`、逻辑大小范围仍为 320—262463 B，不改变硬配额或保护策略，不把有限样本当作安全上界。旧 schema9 与未来 schema11 继续明确拒绝，不按版本递增推断适用。
+
+同次迁移回归 **3/3**，包括 schema9 存量待发/失败/隔离记录两次打开迁移：逐字段核对八张表的所有记录、二进制正文、计数、冻结元数据与 sqlite_sequence，确认新索引唯一存在，未重建或清空队列。
+
+原始证据根目录：`/home/shiny/.cache/tenonedge-product-integration/evidence/20261021/thousand-loop/`，其中 `schema10-capacity-matrix-02/measurement.trx`、`run.log`、`source-and-assemblies.sha256`、`migration/migration.trx` 及汇总 `schema10-capacity-summary.json`。首次迁移测试编译使用了不存在的属性，日志保留在 `schema10-capacity-matrix-01/`；它是测试构建错误，不是产品迁移失败。档案注册前的真实红例保存在 `schema10-profile-red/`：Unit 9 失败/12 通过、API 1 失败/2 通过，新 schema 尚不匹配旧选择器；最终注册验证见实施状态 §2.324。
 
 ## 误差与未覆盖范围
 

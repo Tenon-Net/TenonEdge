@@ -9,6 +9,7 @@ import { networkInterfaces, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { assertCleanHostExit, observeProcessExit } from './process-exit.mjs'
 
 assert.equal(
     process.platform,
@@ -78,7 +79,7 @@ host.stderr.on('data', collect)
 host.once('error', (error) => {
     hostError = error
 })
-const hostExited = new Promise((res) => host.once('close', res))
+const hostExited = observeProcessExit(host)
 const stopOnExit = () => host.kill('SIGTERM')
 process.once('exit', stopOnExit)
 const elementKey = 'element-6066-11e4-a52e-4f735466cecf'
@@ -559,7 +560,7 @@ try {
         await command(`/session/${session}`, undefined, 'DELETE').catch(
             cleanupFailed,
         )
-    host.kill('SIGTERM')
+    if (host.exitCode === null && host.signalCode === null) host.kill('SIGTERM')
     let exited = await Promise.race([
         hostExited.then(() => true),
         delay(15000, false, { ref: false }),
@@ -572,11 +573,17 @@ try {
             delay(5000, false, { ref: false }),
         ])
     }
-    if (exited)
+    if (exited) {
+        report.hostExit = await hostExited
+        try {
+            assertCleanHostExit(report.hostExit)
+        } catch (error) {
+            cleanupFailed(error)
+        }
         await rm(temporary, { recursive: true, force: true }).catch(
             cleanupFailed,
         )
-    else
+    } else
         cleanupFailed(
             new Error(`Owned Host exit unconfirmed; preserve ${temporary}`),
         )

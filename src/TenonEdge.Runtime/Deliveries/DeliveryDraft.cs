@@ -91,6 +91,10 @@ public sealed class DeliveryDraft
         + (Headers is null ? 0 : Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(Headers)))
         + Encoding.UTF8.GetByteCount(ProtocolMetadata ?? string.Empty);
 
+    // 冻结完成后、写者结果确定前的保守内存预约，不是队列配额或 SQLite 文件尺寸。
+    // 4 份逻辑字节覆盖冻结副本、写者正文副本、UTF-16/UTF-8 文本与绑定暂存；另保留对象/字典节点。
+    internal long PendingBudgetBytes => checked(4 * ByteSize + 4096 + 128L * (Headers?.Count ?? 0));
+
     public Guid DeliveryId { get; }
 
     /// <summary>投递目标即连接（总设计 §8.2）：队列分区、发送者、退避、配额与指纹都以它为单位。</summary>

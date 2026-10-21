@@ -112,13 +112,13 @@ public sealed class DeliveryFailureStoreTests
         }
 
         // 还原 T1-03/04 的真实表结构，再由新版启动迁移。
-        Sql(directory.Path, "ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; DROP TABLE queue_counters; DROP INDEX ix_delivery_state_created; DROP TABLE delivery_queue_totals; ALTER TABLE delivery DROP COLUMN byte_size; ALTER TABLE delivery DROP COLUMN clock_anomaly; DROP INDEX ix_delivery_failed_at; ALTER TABLE delivery DROP COLUMN failed_at; DROP TABLE delivery_failure_totals; PRAGMA user_version = 1;");
+        Sql(directory.Path, "DROP INDEX ix_delivery_state_connection_bytes; ALTER TABLE delivery DROP COLUMN response_summary; DROP INDEX ix_delivery_migration_intent; ALTER TABLE delivery DROP COLUMN migration_intent_id; ALTER TABLE delivery DROP COLUMN migration_previous_state; DROP TABLE delivery_migration_hold; DROP TABLE delivery_migration_receipt; ALTER TABLE delivery DROP COLUMN last_retried_at; ALTER TABLE delivery DROP COLUMN protocol_metadata; DROP TABLE queue_counters; DROP INDEX ix_delivery_state_created; DROP TABLE delivery_queue_totals; ALTER TABLE delivery DROP COLUMN byte_size; ALTER TABLE delivery DROP COLUMN clock_anomaly; DROP INDEX ix_delivery_failed_at; ALTER TABLE delivery DROP COLUMN failed_at; DROP TABLE delivery_failure_totals; PRAGMA user_version = 1;");
         var cache = RuntimeTesting.CreateDeliveryCache(directory.Path);
         var record = Assert.Single(cache.ReadPending(1, 0, 10));
         Assert.Equal(draft.DeliveryId, record.DeliveryId);
         Assert.Equal(draft.Payload.ToArray(), record.Payload.ToArray());
         Assert.Null(record.FailedAt);
-        Assert.Equal(9, cache.GetStatus().Store!.SchemaVersion);
+        Assert.Equal(10, cache.GetStatus().Store!.SchemaVersion);
         Assert.Equal(RuntimeTesting.ConfigStoreId, cache.GetStatus().Store!.ConfigStoreId);
         cache.Store.ClearReadPool();
     }

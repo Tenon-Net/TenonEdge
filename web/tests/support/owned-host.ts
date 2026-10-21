@@ -100,20 +100,30 @@ export async function startOwnedHost(
     child.once('exit', (code) =>
         failed(new Error(`owned-host-exited ${code}\n${output}`)),
     )
+    const exitDiagnostic = () =>
+        `pid=${child.pid}; code=${child.exitCode}; signal=${child.signalCode ?? 'none'}`
     const stop = async () => {
         if (child.exitCode === null && child.signalCode === null)
             child.kill('SIGTERM')
+        let code: number | null
         try {
-            return await bounded(
+            code = await bounded(
                 exited,
                 15_000,
-                () => `owned-host-stop-timeout\n${output}`,
+                () => `owned-host-stop-timeout ${exitDiagnostic()}\n${output}`,
             )
         } catch (error) {
             child.kill('SIGKILL')
             await exited
             throw error
         }
+        // Never discard the signal when Node reports a null exit code. Keep the
+        // original strict clean-exit requirement, including in finally cleanup.
+        if (code !== 0)
+            throw new Error(
+                `owned-host-stop-failed ${exitDiagnostic()}\n${output}`,
+            )
+        return code
     }
     try {
         const url = await bounded(

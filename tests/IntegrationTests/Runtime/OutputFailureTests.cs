@@ -15,6 +15,122 @@ namespace TenonEdge.IntegrationTests.Runtime;
 public sealed class OutputFailureTests
 {
     [Fact]
+    public async Task SenderOwnsFreshReadScopesAndPauseAfterIdentityStillPreventsSending()
+    {
+        await using var h = await Harness.CreateAsync(1);
+        var scopedTarget = new TestTarget();
+        using var targetScope = new TargetReadSession(scopedTarget);
+        using var controlScope = new ControlReadSession();
+        var opens = 0;
+        h.Target.OnOpenSession = () => { opens++; return targetScope; };
+        h.Target.Fingerprint = "must-not-read-the-unscoped-target";
+        h.Controls = new TestControls
+        {
+            OnOpenSession = () => controlScope,
+            BeforeRead = () => throw new InvalidOperationException("Must use sender control scope"),
+        };
+        var pause = true;
+        scopedTarget.OnReadSendIdentity = () =>
+        {
+            if (pause)
+            { controlScope.State = new(true, "pause-at-identity"); }
+            return new("fingerprint", "current");
+        };
+        h.Start();
+        Assert.Equal(1, opens);
+        await Until(() => h.State.Diagnostics.State == "manuallyPaused");
+        Assert.Empty(scopedTarget.Calls);
+        Assert.Single(h.Cache.ReadPending(1, 0, 10));
+        Assert.Equal(0, targetScope.Disposals);
+        Assert.Equal(0, controlScope.Disposals);
+        pause = false;
+        controlScope.State = new(false, "explicit-resume");
+        await Until(() => h.Cache.GetStatus().DeletedRecords == 1);
+        Assert.Single(scopedTarget.Calls);
+        Assert.Empty(h.Target.Calls);
+        await h.StopAsync();
+        Assert.Equal(1, targetScope.Disposals);
+        Assert.Equal(1, controlScope.Disposals);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SenderReleasesReadScopesWhenOpeningControlOrReadingIdentityThrows(bool openingControl)
+    {
+        await using var h = await Harness.CreateAsync(1);
+        var scopedTarget = new TestTarget { OnReadFingerprint = () => throw new IOException("fixture read failure") };
+        h.Target.OnReadFingerprint = () => throw new IOException("fixture unscoped read failure");
+        using var targetScope = new TargetReadSession(scopedTarget);
+        using var controlScope = new ControlReadSession();
+        h.Target.OnOpenSession = () => targetScope;
+        var controls = new TestControls { OnOpenSession = () => openingControl ? throw new IOException("fixture open failure") : controlScope };
+        await using var sender = new OutputSenderUnit(h.Target, h.State, h.Cache, TimeProvider.System, h.Events,
+            new RestartBackoff(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(2), 0, () => 0), controls);
+        await Assert.ThrowsAsync<IOException>(() => sender.RunAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, targetScope.Disposals);
+        Assert.Equal(openingControl ? 0 : 1, controlScope.Disposals);
+        Assert.Empty(scopedTarget.Calls);
+    }
+
+    [Fact]
+    public async Task SenderUsesFreshSendIdentityAndKeepsItsVersionWhenSuspending()
+    {
+        await using var h = await Harness.CreateAsync(1);
+        var reads = 0;
+        h.Target.OnReadSendIdentity = () =>
+        {
+            reads++;
+            h.Target.Version = "captured";
+            return new("fingerprint", "captured");
+        };
+        h.Target.OnSend = _ => new(OutputSendStatus.SuspendTarget, "safe authentication failure");
+        h.Start();
+        await Until(() => h.Events.OfType("output.suspended").Count == 1);
+        Assert.Equal("captured", h.State.SuspendedVersion);
+        Assert.Equal(1, reads);
+        Assert.Single(h.Target.Calls);
+    }
+
+    [Fact]
+    public async Task ChangedSendIdentityQuarantinesTheFrozenHeadWithoutSendingIt()
+    {
+        await using var h = await Harness.CreateAsync(1);
+        h.Target.OnReadSendIdentity = () =>
+        {
+            h.Target.Fingerprint = "changed-at-send-check";
+            return new(h.Target.Fingerprint, "new-version");
+        };
+        h.Start();
+        await Until(() => h.Cache.GetQueueTotals(1).PendingCount == 0);
+        Assert.Empty(h.Target.Calls);
+        Assert.Single(h.Cache.ReadQuarantined(1, 0, 10));
+    }
+
+    [Fact]
+    public async Task PauseCommittedWhileReadingSendIdentityStillPreventsTheSendUntilExplicitResume()
+    {
+        await using var h = await Harness.CreateAsync(1);
+        var controls = new TestControls();
+        h.Controls = controls;
+        var pause = true;
+        h.Target.OnReadSendIdentity = () =>
+        {
+            if (pause)
+            { controls.State = new(true, "paused-at-identity"); }
+            return new("fingerprint", h.Target.Version);
+        };
+        h.Start();
+        await Until(() => h.State.Diagnostics.State == "manuallyPaused");
+        Assert.Empty(h.Target.Calls);
+        Assert.Single(h.Cache.ReadPending(1, 0, 10));
+        pause = false;
+        controls.State = new(false, "explicit-resume");
+        await Until(() => h.Cache.GetStatus().DeletedRecords == 1);
+        Assert.Single(h.Target.Calls);
+    }
+
+    [Fact]
     public async Task RejectionMovesOnlyOneRecordAndFreezesItsDataAcrossRestart()
     {
         await using var h = await Harness.CreateAsync(2);
@@ -356,6 +472,8 @@ public sealed class OutputFailureTests
 
     private sealed class TestControls : IOutputControl
     {
+        public Func<IOutputControlReadSession?>? OnOpenSession { get; set; }
+        public IOutputControlReadSession? OpenSenderReadSession() => OnOpenSession?.Invoke();
         public OutputControlState State { get; set; } = new(false, null);
         public Action? BeforeRead { get; set; }
         public OutputControlState Read(long connectionId)
@@ -363,6 +481,21 @@ public sealed class OutputFailureTests
             BeforeRead?.Invoke();
             return State;
         }
+    }
+
+    private sealed class TargetReadSession(IOutputTarget target) : IOutputTargetReadSession
+    {
+        public IOutputTarget Target => target;
+        public int Disposals { get; private set; }
+        public void Dispose() => Disposals++;
+    }
+
+    private sealed class ControlReadSession : IOutputControlReadSession
+    {
+        public OutputControlState State { get; set; } = new(false, null);
+        public int Disposals { get; private set; }
+        public OutputControlState Read(long connectionId) => State;
+        public void Dispose() => Disposals++;
     }
 
     private static Task Until(Func<bool> condition) => OutputPipelineTests.UntilAsync(condition);
@@ -454,6 +587,11 @@ public sealed class OutputFailureTests
 
     private sealed class TestTarget : IOutputTarget
     {
+        public Func<IOutputTargetReadSession?>? OnOpenSession { get; set; }
+        public IOutputTargetReadSession? OpenSenderReadSession() => OnOpenSession?.Invoke();
+        public Func<string>? OnReadFingerprint { get; set; }
+        public Func<OutputSendIdentity>? OnReadSendIdentity { get; set; }
+        public OutputSendIdentity ReadSendIdentity() => OnReadSendIdentity?.Invoke() ?? new(CurrentFingerprint, CredentialVersion);
         public Func<byte, OutputSendResult> OnSend { get; set; } = _ => new(OutputSendStatus.Ack);
         public ConcurrentQueue<byte> Calls { get; } = new();
         public string Version { get; set; } = "initial";
@@ -463,7 +601,7 @@ public sealed class OutputFailureTests
         public string ClientId => "client";
         public string Recipient => "mqtt://localhost";
         public string Fingerprint { get; set; } = "fingerprint";
-        public string CurrentFingerprint => Fingerprint;
+        public string CurrentFingerprint => OnReadFingerprint?.Invoke() ?? Fingerprint;
         public string CredentialVersion => Version;
         public IReadOnlyList<string> Inputs => [];
         public OutputMessage CreateMessage(EdgeMessage message, Guid deliveryId) => throw new NotSupportedException();

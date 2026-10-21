@@ -14,6 +14,12 @@ public interface IOutputTarget
     string Recipient { get; }
     string CredentialVersion { get; }
     string CurrentFingerprint { get; }
+    /// <summary>发送前实时读取指纹与凭证版本；协议可从一次元数据读取生成二者，不缓存到下一次发送。
+    /// 默认沿用既有属性，兼容未提供合并读取的扩展；不替代循环开始或适配器内部的身份复核。</summary>
+    OutputSendIdentity ReadSendIdentity() => new(CurrentFingerprint, CredentialVersion);
+    /// <summary>可选的发送者独占读取范围。只在循环开始取得，退出即释放；不缓存安全状态。
+    /// 默认保持原目标路径，扩展包装不自动转发，避免绕过冻结路由校验。</summary>
+    IOutputTargetReadSession? OpenSenderReadSession() => null;
     /// <summary>一次捕获同代的指纹与非秘密接收方；不解密、不连接。未实现的扩展默认不可核对，不猜测身份。</summary>
     OutputTargetIdentity? CaptureIdentity() => null;
     /// <summary>单次发送的期限。管理迁移等待原在途结果落库，不按宿主默认停止期限截断较长的合法发送。</summary>
@@ -31,11 +37,20 @@ public interface IOutputTarget
     bool QuiesceWithInputs => false;
 }
 
+/// <summary>仅由一个运行中的发送者使用；Target 的适配器及身份核对使用此读取范围，不能用于并发格式化。</summary>
+public interface IOutputTargetReadSession : IDisposable
+{
+    IOutputTarget Target { get; }
+}
+
 /// <summary>由一个被监督的发送者独占；循环结束之后才释放。协议类型不越过适配器边界。</summary>
 public interface IOutputAdapter : IAsyncDisposable
 {
     Task<OutputSendResult> SendAsync(OutputMessage message, CancellationToken cancellationToken);
 }
+
+/// <summary>一次发送前的非秘密核对值，不是凭证、持久快照或跨发送缓存。</summary>
+public sealed record OutputSendIdentity(string Fingerprint, string CredentialVersion);
 
 public sealed record OutputMessage(ReadOnlyMemory<byte> Payload, string Address, int? QualityOfService, string Fingerprint, string FingerprintSummary,
     IReadOnlyDictionary<string, string>? Headers = null, string? ProtocolMetadata = null)

@@ -105,7 +105,7 @@ internal sealed class OutputSenderUnit(
 {
     internal const int PoisonThreshold = 10;
     internal const int RejectThreshold = 20;
-    private readonly Lazy<IOutputAdapter> _adapter = new(target.CreateAdapter);
+    private IOutputAdapter? _adapter;
     public RuntimeUnitId Id => target.Id;
 
     public async Task RunAsync(CancellationToken stoppingToken)
@@ -113,7 +113,12 @@ internal sealed class OutputSenderUnit(
         stoppingToken.ThrowIfCancellationRequested();
         state.ReportUnit(Id);
         // 准备草稿不借用运行中的物理连接；只有监督者实际启动本实例后才取得租约。
-        _ = _adapter.Value;
+        using var targetReads = target.OpenSenderReadSession();
+        using var controlReads = controls?.OpenSenderReadSession();
+        var senderTarget = targetReads?.Target ?? target;
+        var senderControls = controlReads ?? controls;
+        _adapter = senderTarget.CreateAdapter();
+        using var pendingReader = deliveries.CreatePendingReader(target.ConnectionId);
         while (!stoppingToken.IsCancellationRequested)
         {
             await state.CommitAcknowledgementsAsync(deliveries, time, drain: false, stoppingToken);
@@ -150,7 +155,7 @@ internal sealed class OutputSenderUnit(
             stoppingToken.ThrowIfCancellationRequested();
             state.ApplyQueueProbeReset();
 
-            var fingerprint = target.CurrentFingerprint;
+            var fingerprint = senderTarget.CurrentFingerprint;
             if (state.ReconciledFingerprint != fingerprint)
             {
                 await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
@@ -160,7 +165,7 @@ internal sealed class OutputSenderUnit(
                 state.RecheckHeadSeq = null;
             }
 
-            var control = controls?.Read(target.ConnectionId);
+            var control = senderControls?.Read(target.ConnectionId);
             if (control?.ManuallyPaused == true)
             {
                 await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
@@ -182,7 +187,7 @@ internal sealed class OutputSenderUnit(
             if (state.SuspendedVersion is { } suspended)
             {
                 await state.CommitAcknowledgementsAsync(deliveries, time, drain: true, stoppingToken);
-                if (target.CredentialVersion == suspended)
+                if (senderTarget.CredentialVersion == suspended)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(250), time, stoppingToken);
                     continue;
@@ -206,7 +211,7 @@ internal sealed class OutputSenderUnit(
                     {
                         if (state.QueuePauseRequested)
                         { queuePause = true; break; }
-                        var currentControl = controls?.Read(target.ConnectionId);
+                        var currentControl = senderControls?.Read(target.ConnectionId);
                         if (currentControl?.ManuallyPaused == true || currentControl is not null && currentControl.ResumeVersion != state.ResumeVersion || state.ImmediateRetryRequested)
                         {
                             break;
@@ -232,7 +237,7 @@ internal sealed class OutputSenderUnit(
                 state.ReportState("normal");
             }
 
-            var head = state.ReadUnacknowledgedHead(deliveries, target.ConnectionId);
+            var head = state.ReadUnacknowledgedHead(pendingReader);
             state.ReportHead(head?.Seq);
             if (head is null)
             {
@@ -246,19 +251,21 @@ internal sealed class OutputSenderUnit(
                 ? deliveries.ReadPoisonProbe(target.ConnectionId, head.Seq, PoisonThreshold) ?? head
                 : head;
             state.RecheckHeadSeq = null;
-            if (record.Fingerprint != target.CurrentFingerprint)
+            // 指纹与暂停绑定的版本来自同一次发送前核对；不保留到下次，协议适配器仍独立复核当前身份。
+            var sendIdentity = senderTarget.ReadSendIdentity();
+            if (record.Fingerprint != sendIdentity.Fingerprint)
             {
                 state.QuarantiningSeq = record.Seq;
                 continue;
             }
 
             // 退避等待期间可能收到手动暂停；发送前再读一次。
-            if (controls?.Read(target.ConnectionId).ManuallyPaused == true)
+            if (senderControls?.Read(target.ConnectionId).ManuallyPaused == true)
             {
                 continue;
             }
 
-            var version = target.CredentialVersion;
+            var version = sendIdentity.CredentialVersion;
             var result = await SendAsync(record, stoppingToken);
             if (result.FingerprintMismatch)
             {
@@ -317,7 +324,7 @@ internal sealed class OutputSenderUnit(
     {
         try
         {
-            var result = await _adapter.Value.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService,
+            var result = await _adapter!.SendAsync(new OutputMessage(record.Payload, record.TargetAddress!, record.QualityOfService,
                 record.Fingerprint, record.FingerprintSummary, record.Headers, record.ProtocolMetadata), token);
             return Enum.IsDefined(result.Status) ? result : new(OutputSendStatus.Retry, "输出返回未知结果。", CountsTowardPoison: true);
         }
@@ -354,5 +361,5 @@ internal sealed class OutputSenderUnit(
         }
     }
 
-    public ValueTask DisposeAsync() => _adapter.IsValueCreated ? _adapter.Value.DisposeAsync() : ValueTask.CompletedTask;
+    public ValueTask DisposeAsync() => _adapter?.DisposeAsync() ?? ValueTask.CompletedTask;
 }

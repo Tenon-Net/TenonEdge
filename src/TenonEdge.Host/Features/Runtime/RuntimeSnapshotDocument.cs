@@ -39,9 +39,7 @@ internal sealed record RuntimeSnapshotDocument(int SchemaVersion, string Content
 
     public static (RuntimePlanDocument Plan, ConfigurationCheckpoint? Draft) Read(RuntimeSnapshotRecord snapshot)
     {
-        CheckSize(snapshot.Content);
-        if (RuntimePlanDocument.HashOf(snapshot.Content) != snapshot.ContentHash)
-        { throw new RuntimePlanDocumentException("内容哈希不符"); }
+        VerifyIntegrity(snapshot);
         if (snapshot.SchemaVersion == 1)
         { return (RuntimePlanDocument.ParseStored(Encoding.UTF8.GetBytes(snapshot.Content)), null); }
         if (snapshot.SchemaVersion != 2)
@@ -55,6 +53,13 @@ internal sealed record RuntimeSnapshotDocument(int SchemaVersion, string Content
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         { throw new RuntimePlanDocumentException("完整配置快照格式无效。"); }
+    }
+
+    internal static void VerifyIntegrity(RuntimeSnapshotRecord snapshot)
+    {
+        CheckSize(snapshot.Content);
+        if (RuntimePlanDocument.HashOf(snapshot.Content) != snapshot.ContentHash)
+        { throw new RuntimePlanDocumentException("内容哈希不符"); }
     }
 
     private static void CheckSize(string content)

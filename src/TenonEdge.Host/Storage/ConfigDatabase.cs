@@ -70,6 +70,32 @@ internal sealed class ConfigDatabase : IDisposable
         AopEvents = _events,
     };
 
+    /// <summary>候选验证：由单个发送者独占，只读连接不入池。每次查询结束即释放读快照，调用方负责释放连接。</summary>
+    public SqliteConnection OpenSenderReadConnection()
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder(ConnectionString)
+        {
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString());
+        try
+        {
+            connection.Open();
+            // 显式复用统一物理连接校验，而不是绕开 SqlSugar AOP 后依赖驱动默认值。
+            SqliteConnectionSettings.Apply(connection);
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA query_only = ON; PRAGMA query_only;";
+            if (Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) != 1)
+            { throw new InvalidOperationException("发送者配置读取连接未启用只读保护。"); }
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>
     /// 在独立客户端上执行一个写事务：正常返回时提交，抛出异常时回滚并重新抛出。
     /// 事务以 BEGIN IMMEDIATE 开始，写事务依次排队；不要在其中等待外部网络或执行耗时计算。

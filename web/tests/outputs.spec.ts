@@ -149,7 +149,7 @@ for (const deployment of [
             if (fileSystem === 'ext4') {
                 expect(capacity.calibration.status).toBe('applicable')
                 expect(capacity.calibration.profile).toBe(
-                    'linux-ext4-sqlite-3.53.3-queue9-v1',
+                    'linux-ext4-sqlite-3.53.3-queue10-v1',
                 )
                 expect(traffic.minimumRecordBytes).toBeGreaterThanOrEqual(320)
                 expect(traffic.maximumRecordBytes).toBeLessThanOrEqual(262463)

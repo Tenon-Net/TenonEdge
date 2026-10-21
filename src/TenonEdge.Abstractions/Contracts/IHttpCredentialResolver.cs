@@ -5,7 +5,11 @@ public interface IHttpCredentialResolver
 {
     HttpCredentialIdentity? DescribeHttp(long connectionId);
     HttpCredential? ResolveHttp(long connectionId, string recipient);
+    /// <summary>可选的独占非秘密元数据查询；每次实时读库，秘密仍通过原解析器读取、解密。</summary>
+    IHttpCredentialReadSession? OpenSenderReadSession() => null;
 }
+
+public interface IHttpCredentialReadSession : IHttpCredentialResolver, IDisposable;
 
 public enum HttpCredentialKind { Basic, Bearer, ApiKeyHeader, ApiKeyQuery, ClientCertificate }
 public sealed record HttpCredentialIdentity(HttpCredentialKind Kind, string? Username, string? Name, string AccountMarker, string Version,
