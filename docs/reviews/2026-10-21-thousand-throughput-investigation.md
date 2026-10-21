@@ -367,3 +367,7 @@ Modbus场景复制后加入有界原始帧观测，20次均通过、40次合法�
 `native-browser-followup-01`有限序列exit0：当前产品实际Firefox128 HTTP/HTTPS各6/6，59670/61584 ms；实际Chrome155默认HTTP3/3，6652 ms。三个产品Host均exit0/signal=null；自有Chrome同样exit0，驱动由执行器明确SIGTERM停止并记录signal15。FirefoxHTTPS先未信任拒绝，再核对自有Host指纹、在独立profile登记信任并回读，始终acceptInsecureCerts=false；Chrome不改变HTTPS特性、证书检查或sandbox要求。各组报告、截图、日志、归档校验及2142文件冻结核对均保留，全部自有PID已退出，缓存helper恢复。完整Web845及静态检查通过；相对上一完整回归只变更独立冒烟脚本/辅助方法与测试，产品/Release/web/dist不变。详见实施状态§2.328。
 
 当前软件回归与重复千条场景已有通过证据；不把当前绿色当作历史停止/Modbus/MQTT偶发的根因修复，不把本机匿名单HTTP外推成生产SLA。保留实际Chrome111/Edge111/Safari16.4、真实Excel、实际CI及维护者退出门槛；只读通道仍为候选验证。接续仅整理本地提交，不推送或改动人工服务。
+
+### 本地候选提交
+
+2026-10-22已将本轮53个限定范围文件整理提交为`6e9b0e7`（`t3-product-integration`）。暂存源哈希与提交树逐份一致，提交后2142冻结核对通过，证据`native-browser-followup-01/commit-audit.json`。没有推送、发布、部署或修改两个原工作树及人工服务；只读元数据通道仍为待评估候选，不用本地提交代替风险接受或T3外部验收。统一入口为实施状态§2.329。
