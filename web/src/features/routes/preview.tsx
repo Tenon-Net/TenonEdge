@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from 'zustand'
 import { useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { api } from '../../lib/session'
 import { ApiError } from '../../api/errors'
 import { Button } from '../../components/ui/button'

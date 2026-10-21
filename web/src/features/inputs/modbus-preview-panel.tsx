@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import type { components } from '../../api/schema'
 import { api } from '../../lib/session'
 import { ApiError } from '../../api/errors'

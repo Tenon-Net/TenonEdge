@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { ConnectionsPage } from '../connections/page'
 import { DevicesPage } from '../devices/page'
 import { DeviceInputsPage } from '../inputs/page'

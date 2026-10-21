@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import type { BodyPreview } from './api'
 
 /** This is response body data, fetched only by the existing editor-only body request. */

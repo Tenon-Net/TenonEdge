@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import { api, queryClient, useSession } from '../../lib/session'

@@ -11,12 +11,12 @@ export function ConfigurationHeader() {
             className="rounded border px-3 py-2 text-sm hover:bg-accent"
         >
             {query.isError || query.data?.changeCount == null
-                ? t('configuration.unknownSummary')
-                : t('configuration.summary', {
+                ? t('shell.unknownSummary')
+                : t('shell.summary', {
                       count: Number(query.data.changeCount),
                   })}
             {' · '}
-            {t('configuration.title')}
+            {t('shell.configuration')}
         </Link>
     )
 }

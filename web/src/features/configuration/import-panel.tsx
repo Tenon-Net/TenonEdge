@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { api, useSession } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { ChangeDetails, ConfigurationError } from './view'

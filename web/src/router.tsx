@@ -3,17 +3,27 @@ import {
     createRoute,
     createRouter,
     Link,
-    lazyRouteComponent,
 } from '@tanstack/react-router'
+import { lazy, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SessionGate } from './features/auth/session-gate'
-import { AuthForm } from './features/auth/auth-form'
+import { LazyAuthForm } from './features/auth/lazy-auth-form'
+import { PageLoadError, PageLoading } from './components/page-boundary'
+
+// Router component.preload runs before SessionGate can authenticate. React.lazy
+// waits for the authorized Outlet to render and never reloads the document on failure.
+function lazyPage<Name extends string>(
+    load: () => Promise<Record<Name, ComponentType>>,
+    name: Name,
+) {
+    return lazy(() => load().then((module) => ({ default: module[name] })))
+}
 function AccountPage() {
     const { t } = useTranslation()
     return (
         <div className="max-w-md space-y-6">
             <h1 className="text-2xl font-semibold">{t('passwordChange')}</h1>
-            <AuthForm mode="passwordChange" />
+            <LazyAuthForm mode="passwordChange" />
         </div>
     )
 }
@@ -33,7 +43,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/diagnostics/overview'),
         'OverviewPage',
     ),
@@ -41,15 +51,12 @@ const indexRoute = createRoute({
 const usersRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/users',
-    component: lazyRouteComponent(
-        () => import('./features/users/page'),
-        'UsersPage',
-    ),
+    component: lazyPage(() => import('./features/users/page'), 'UsersPage'),
 })
 const documentationRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/api-docs',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/documentation/page'),
         'DocumentationPage',
     ),
@@ -57,26 +64,17 @@ const documentationRoute = createRoute({
 const systemRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/system',
-    component: lazyRouteComponent(
-        () => import('./features/system/page'),
-        'SystemPage',
-    ),
+    component: lazyPage(() => import('./features/system/page'), 'SystemPage'),
 })
 const auditRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/audit',
-    component: lazyRouteComponent(
-        () => import('./features/audit/page'),
-        'AuditPage',
-    ),
+    component: lazyPage(() => import('./features/audit/page'), 'AuditPage'),
 })
 const tokensRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/tokens',
-    component: lazyRouteComponent(
-        () => import('./features/tokens/page'),
-        'TokensPage',
-    ),
+    component: lazyPage(() => import('./features/tokens/page'), 'TokensPage'),
 })
 const accountRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -86,7 +84,7 @@ const accountRoute = createRoute({
 const pointsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/prototypes/points',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/points/editor'),
         'PointEditor',
     ),
@@ -94,7 +92,7 @@ const pointsRoute = createRoute({
 const canvasRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/prototypes/canvas',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/canvas/editor'),
         'CanvasEditor',
     ),
@@ -102,7 +100,7 @@ const canvasRoute = createRoute({
 const connectionsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/connections',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/connections/page'),
         'ConnectionsPage',
     ),
@@ -110,31 +108,22 @@ const connectionsRoute = createRoute({
 const devicesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/devices',
-    component: lazyRouteComponent(
-        () => import('./features/devices/page'),
-        'DevicesPage',
-    ),
+    component: lazyPage(() => import('./features/devices/page'), 'DevicesPage'),
 })
 const inputsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/devices/$deviceId/inputs',
-    component: lazyRouteComponent(
-        () => import('./features/inputs/page'),
-        'InputsPage',
-    ),
+    component: lazyPage(() => import('./features/inputs/page'), 'InputsPage'),
 })
 const routesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/routes',
-    component: lazyRouteComponent(
-        () => import('./features/routes/page'),
-        'RoutesPage',
-    ),
+    component: lazyPage(() => import('./features/routes/page'), 'RoutesPage'),
 })
 const configurationRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/configuration',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/configuration/page'),
         'ConfigurationPage',
     ),
@@ -162,7 +151,7 @@ const configurationMigrationRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/configuration/migrations',
     validateSearch: migrationSearch,
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/configuration/migration'),
         'ConfigurationMigrationPage',
     ),
@@ -171,7 +160,7 @@ const configurationMigrationIntentsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/configuration/migration-intents',
     validateSearch: migrationSearch,
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/configuration/migration-intents'),
         'ConfigurationMigrationIntentsPage',
     ),
@@ -179,7 +168,7 @@ const configurationMigrationIntentsRoute = createRoute({
 const diagnosticsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/diagnostics',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/diagnostics/page'),
         'DiagnosticsPage',
     ),
@@ -187,7 +176,7 @@ const diagnosticsRoute = createRoute({
 const runtimeMessagesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/runtime/messages',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/diagnostics/messages'),
         'RuntimeMessagesPage',
     ),
@@ -195,7 +184,7 @@ const runtimeMessagesRoute = createRoute({
 const runtimeDevicesRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/runtime/devices',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/diagnostics/current-values'),
         'RuntimeDevicesPage',
     ),
@@ -203,7 +192,7 @@ const runtimeDevicesRoute = createRoute({
 const runtimeOutputsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: '/runtime/outputs',
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/diagnostics/outputs'),
         'RuntimeOutputsPage',
     ),
@@ -223,7 +212,7 @@ const deliveryRecordsRoute = createRoute({
                     : undefined,
         }
     },
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/deliveries/page'),
         'DeliveryRecordsPage',
     ),
@@ -249,7 +238,7 @@ const deliveryMigrationRoute = createRoute({
                     : undefined,
         }
     },
-    component: lazyRouteComponent(
+    component: lazyPage(
         () => import('./features/deliveries/migration'),
         'DeliveryMigrationPage',
     ),
@@ -280,6 +269,10 @@ export const router = createRouter({
         routesRoute,
     ]),
     defaultPreload: false,
+    // Route-owned boundaries follow the committed match, so a failed page does
+    // not trap the Outlet or require a document reload to open another page.
+    defaultErrorComponent: PageLoadError,
+    defaultPendingComponent: PageLoading,
 })
 declare module '@tanstack/react-router' {
     interface Register {

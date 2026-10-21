@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { ApiError } from '../../api/errors'
 import { ErrorMessage } from '../auth/error-message'
 import {

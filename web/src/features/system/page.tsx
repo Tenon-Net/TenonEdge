@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { ConfigurationImportPanel } from '../configuration/import-panel'
 import { ConfigurationExportPanel } from '../configuration/export-panel'
 import { useSystemInfo } from '../diagnostics/queries'

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import type { DraftSummary, Operation } from './api'
 import { ConfigurationRecovery } from './recovery'
-import { configuration } from './queries'
+import { configuration } from './client'
 import { ChangeDetails, ConfigurationError } from './view'
 
 export function ConfigurationHistory({

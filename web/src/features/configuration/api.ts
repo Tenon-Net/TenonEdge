@@ -1,10 +1,14 @@
+import { metadata, revisionId, maximumResponseBytes } from './response'
+import { createDraftSummaryApi, type DraftSummary } from './summary-api'
 import type { createGatewayClient } from '../../api/client'
 import type { components } from '../../api/schema'
 import { readRouteJson, RouteNumber, type RouteJson } from '../canvas/json'
 import { routeObject } from '../canvas/codec'
 
+export { revisionId } from './response'
+export type { DraftSummary } from './summary-api'
+
 type Schema = components['schemas']
-export type DraftSummary = Schema['ConfigurationDraftSummary']
 export type Operation = Schema['RuntimeApplicationStatus']
 export type RuntimeState = Schema['ConfigurationRuntimeState']
 export type RecoveryReview = Schema['ConfigurationRecoveryReview']
@@ -56,34 +60,11 @@ export function decodeCurrentImport(body: string): ImportReview | null {
     return raw.review === null ? null : importReview(raw.review)
 }
 
-/** Generated integer metadata permits strings, so large revision numbers need not be rounded. */
-function metadata(value: RouteJson): unknown {
-    if (value instanceof RouteNumber) return value.text
-    if (Array.isArray(value)) return value.map(metadata)
-    if (value !== null && typeof value === 'object')
-        return Object.fromEntries(
-            Object.entries(value).map(([key, item]) => [key, metadata(item)]),
-        )
-    return value
-}
-export function revisionId(value: number | string): string {
-    if (typeof value === 'number' && !Number.isSafeInteger(value))
-        throw new Error('configuration-revision')
-    const text = String(value)
-    if (
-        !/^[1-9]\d*$/.test(text) ||
-        text.length > 19 ||
-        (text.length === 19 && text > '9223372036854775807')
-    )
-        throw new Error('configuration-revision')
-    return text
-}
 // OpenAPI emits numeric path parameters, but openapi-fetch serializes them as text.
 // Keep the validated Int64 decimal at this transport boundary rather than rounding it.
 function revisionPath(value: number | string): number {
     return revisionId(value) as unknown as number
 }
-const maximumResponseBytes = 128 * 1024 * 1024
 
 /** Display configuration values without converting JSON numbers through IEEE-754. */
 export function exactJson(value: RouteJson, depth = 0): string {
@@ -363,26 +344,7 @@ export function createConfigurationApi(
             if (!data) throw new Error('configuration-response')
             return decodeOperation(data)
         },
-        async summary(signal?: AbortSignal) {
-            const { data } = await api.GET(
-                '/api/edge-admin/v1/configuration/draft',
-                { signal, parseAs: 'text' },
-            )
-            if (!data) throw new Error('configuration-response')
-            const summary = metadata(
-                routeObject(readRouteJson(data, maximumResponseBytes, 64)),
-            ) as DraftSummary
-            if (summary.effectiveRevision != null)
-                revisionId(summary.effectiveRevision)
-            if (summary.pendingRevision != null)
-                revisionId(summary.pendingRevision)
-            if (
-                typeof summary.version !== 'string' ||
-                typeof summary.comparisonAvailable !== 'boolean'
-            )
-                throw new Error('configuration-response')
-            return summary
-        },
+        summary: createDraftSummaryApi(api),
         async operations(signal?: AbortSignal) {
             const { data } = await api.GET(
                 '/api/edge-admin/v1/configuration/operations',

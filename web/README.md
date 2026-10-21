@@ -16,12 +16,21 @@ HTTP / MQTT 的[客户端证书表单](../docs/client-certificates.md)支持有�
 - Node.js 22（实际验证 22.23.2），npm **11.21.0**；可用 `npx --yes npm@11.21.0 <command>` 运行固定版本，不必修改系统 npm。
 - `npm ci`：按唯一锁文件安装。
 - `npm run build`：类型检查、生产依赖许可文本和静态构建，输出 `dist/`。
+- 构建同时核对首屏 JS 预算（完整静态依赖图 ≤ 500,000 字节，逐文件 gzip 合计估算 ≤ 165,000 字节），生成 `reports/bundle.json`；超限直接失败。报告以最终输出为准，不放进产品资源。gzip 是比较口径，不代表当前 .NET 静态托管已经启用传输压缩。
 - `npm test`、`npm run lint`、`npm run format:check`：Vitest、oxlint、Prettier。
 - 在仓库根运行 `dotnet build TenonEdge.sln -c Release --no-restore`，再回到 web 执行 `npm run test:e2e`。
   Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的端口（多数仍为回环；客户端证书和凭证核对场景跟随 `TENONEDGE_TEST_URL` 的主机地址），在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
 - HTTPS Token 浏览器用例还需 Linux `openssl` 与 `libnss3-tools` 的 `certutil`（可用 `TENONEDGE_CERTUTIL` 指向在临时目录解包的工具）。用例只信任已与自有 Host 控制台指纹核对的公开证书，在隔离 HOME 中建立 NSS 信任库；不修改开发机信任库、不关闭证书校验，不保留令牌响应的浏览器 trace。
 - `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
   当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。
+
+### 页面加载与文案
+
+会话确认后才加载工作区和对应页面；登录、强制改密及账号安全页面按需加载认证表单。路由页面使用 React.lazy，避免路由器在认证前预加载匹配页面。资源加载失败显示中文提示，由用户明确重新加载；不会自动刷新或重放写入。重新加载会丢失未保存编辑。
+
+全局 `src/lib/i18n.ts` 只放公共、认证及导航文案。业务页面和可内嵌编辑器从所在功能目录的 `i18n.ts` 引入 `useTranslation`，由该入口在模块加载时注册其使用的字典；跨功能引用的文案也在此声明。字典随静态资源离线提供，不额外请求翻译服务器。页头草稿摘要使用独立 `summary-api.ts`，不引入完整配置和迁移客户端。
+
+`tests/page-loading.spec.ts` 在真实 Host 上记录冷登录及恢复会话实际请求的 JS，检查深链文案和失败资源的恢复行为。新增页面时同时关注构建报告和浏览器实际请求，不能仅靠拆小入口文件判断首屏变轻。
 
 ### 最低版本浏览器复验
 

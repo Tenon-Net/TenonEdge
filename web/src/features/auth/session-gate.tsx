@@ -1,9 +1,9 @@
 import { LogoutButton } from './logout-button'
-import { useState } from 'react'
+import { lazy, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { api, restoreSession, useSession } from '../../lib/session'
-import { AuthForm } from './auth-form'
+import { LazyAuthForm } from './lazy-auth-form'
 import { ErrorMessage } from './error-message'
 import { Button } from '../../components/ui/button'
 import {
@@ -13,7 +13,13 @@ import {
     CardTitle,
     CardDescription,
 } from '../../components/ui/card'
-import { Workspace } from '../../components/layout/workspace'
+import { PageBoundary } from '../../components/page-boundary'
+
+const Workspace = lazy(() =>
+    import('../../components/layout/workspace').then(({ Workspace }) => ({
+        default: Workspace,
+    })),
+)
 
 export function SessionGate() {
     const { t } = useTranslation()
@@ -60,7 +66,9 @@ export function SessionGate() {
                         </Button>
                     </div>
                 )}
-                <Workspace />
+                <PageBoundary>
+                    <Workspace />
+                </PageBoundary>
             </>
         )
     const setup = setupQuery.data
@@ -122,7 +130,7 @@ export function SessionGate() {
                             <p role="status">{t('setupClosed')}</p>
                         ) : (
                             (session || setup) && (
-                                <AuthForm
+                                <LazyAuthForm
                                     key={`${mode}:${setup?.resetAccountName ?? ''}`}
                                     mode={mode}
                                     resetAccount={

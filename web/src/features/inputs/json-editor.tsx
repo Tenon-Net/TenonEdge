@@ -2,7 +2,7 @@ import { MqttPreviewPanel } from './mqtt-preview-panel'
 import { HttpPreviewPanel } from './http-preview-panel'
 import { inputRequest } from './model'
 import { SampleEditor } from './sample-editor'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import type { InputForm, JsonField, TimeFormat } from './model'
 

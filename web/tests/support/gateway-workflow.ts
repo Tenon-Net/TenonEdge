@@ -133,7 +133,9 @@ export async function startWorkflowGateway(
             }
         }
         if (exit !== undefined && exit !== 0)
-            throw new Error(`Owned Host exit: ${exit}`)
+            throw new Error(
+                `Owned Host exit: ${exit}; signal: ${host?.exitSignal ?? 'none'}`,
+            )
     }
     try {
         const modbusPort = await listen(modbus)

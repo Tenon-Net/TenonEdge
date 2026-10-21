@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import type { JsonField } from './model'
 import {

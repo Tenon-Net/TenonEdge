@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { create } from 'zustand'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import { useSession } from '../../lib/session'
 import { dateText } from '../diagnostics/view'
@@ -11,13 +11,12 @@ import { migrationQuota } from '../deliveries/migration-api'
 import { ConfigurationError, OperationCard, ReviewContents } from './view'
 import { MigrationDeclarations, Recipient } from './migration-view'
 import {
-    configuration,
-    configurationMigrations,
     summaryKey,
     operationsKey,
     runtimeKey,
     useDraftSummary,
 } from './queries'
+import { configuration, configurationMigrations } from './client'
 import { reviewIsCurrent, type Review } from './api'
 
 const useAttempt = create<{ epoch: number; id?: string }>(() => ({ epoch: -1 }))

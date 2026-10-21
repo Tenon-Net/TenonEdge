@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useBlocker } from '@tanstack/react-router'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import { api, useSession } from '../../lib/session'

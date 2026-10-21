@@ -493,6 +493,11 @@ test('canvas drag/connect, cycle rejection, properties, clipboard and history us
     expect(errors).toEqual([])
     await page.screenshot({ path: 'test-results/canvas.png', fullPage: true })
     await page.getByRole('link', { name: '总览', exact: true }).click()
+    // Wait for the lazy destination to mount. An immediate second navigation
+    // cancels the first and keeps the old canvas (including its open details).
+    await expect(
+        page.getByRole('heading', { name: '总览', exact: true }),
+    ).toBeVisible()
     await page.getByRole('link', { name: '画布交互原型' }).click()
     await page
         .getByText('查看自有格式（定义与布局分离）', { exact: true })

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import type { EventFilter } from './api'

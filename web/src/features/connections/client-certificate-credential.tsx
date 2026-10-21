@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { api } from '../../lib/session'
 import type { components } from '../../api/schema'
 import { Button } from '../../components/ui/button'

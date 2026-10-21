@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { api } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'

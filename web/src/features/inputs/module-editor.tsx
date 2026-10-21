@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import { ParameterFields } from '../parameters/fields'
 import { parameterIssues, type ParameterConnection } from '../parameters/model'

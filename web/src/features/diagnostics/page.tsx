@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { OutputSummary } from './outputs'
 import { DeviceSummary } from './current-values'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { useRuntimeStatus } from './queries'
 import { DiagnosticPanel, dateText } from './view'
 import { RuntimeEvents } from './events'

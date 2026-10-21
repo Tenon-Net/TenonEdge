@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { queryClient } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { type Operation, type RuntimeState } from './api'
-import { configuration, operationsKey, runtimeKey } from './queries'
+import { operationsKey, runtimeKey } from './queries'
+import { configuration } from './client'
 import { ConfigurationError } from './view'
 
 export function ConfigurationRuntime({

@@ -20,7 +20,7 @@ function GatewayName() {
     }, [name, t])
     return (
         <p className="break-words text-sm font-medium">
-            {t('systemSettings.gateway')}：{name || t('systemSettings.unnamed')}
+            {t('shell.gateway')}：{name || t('shell.unnamed')}
         </p>
     )
 }
@@ -66,7 +66,7 @@ export function Workspace() {
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('diagnostics.title')}
+                        {t('shell.diagnostics')}
                     </Link>
                     <Link
                         to="/deliveries"
@@ -74,14 +74,14 @@ export function Workspace() {
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('deliveries.title')}
+                        {t('shell.deliveries')}
                     </Link>
                     <Link
                         to="/system"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('systemSettings.title')}
+                        {t('shell.system')}
                     </Link>
                     {session?.role === 'administrator' && (
                         <Link
@@ -89,7 +89,7 @@ export function Workspace() {
                             className="rounded-md p-2 hover:bg-accent"
                             activeProps={{ className: 'bg-accent font-medium' }}
                         >
-                            {t('audit.title')}
+                            {t('shell.audit')}
                         </Link>
                     )}
                     {session?.role === 'administrator' && (
@@ -98,7 +98,7 @@ export function Workspace() {
                             className="rounded-md p-2 hover:bg-accent"
                             activeProps={{ className: 'bg-accent font-medium' }}
                         >
-                            {t('tokens.title')}
+                            {t('shell.tokens')}
                         </Link>
                     )}
                     {session?.role === 'administrator' && (
@@ -107,7 +107,7 @@ export function Workspace() {
                             className="rounded-md p-2 hover:bg-accent"
                             activeProps={{ className: 'bg-accent font-medium' }}
                         >
-                            {t('users.title')}
+                            {t('shell.users')}
                         </Link>
                     )}
                     <Link
@@ -115,7 +115,7 @@ export function Workspace() {
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('documentation.title')}
+                        {t('shell.documentation')}
                     </Link>
                     <Link
                         to="/account"
@@ -129,34 +129,34 @@ export function Workspace() {
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('points.title')}
+                        {t('shell.points')}
                     </Link>
                     <Link
                         to="/prototypes/canvas"
                         className="rounded-md px-3 py-2 text-sm hover:bg-accent"
                     >
-                        {t('canvas.title')}
+                        {t('shell.canvas')}
                     </Link>
                     <Link
                         to="/routes"
                         className="rounded-md px-3 py-2 text-sm hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('routes.title')}
+                        {t('shell.routes')}
                     </Link>
                     <Link
                         to="/connections"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('connections.title')}
+                        {t('shell.connections')}
                     </Link>
                     <Link
                         to="/devices"
                         className="rounded-md p-2 hover:bg-accent"
                         activeProps={{ className: 'bg-accent font-medium' }}
                     >
-                        {t('devices.title')}
+                        {t('shell.devices')}
                     </Link>
                 </nav>
             </aside>
@@ -192,7 +192,7 @@ export function Workspace() {
                                   ).toLocaleString(),
                                   ip:
                                       session.previousLoginIp ??
-                                      t('users.unknown'),
+                                      t('shell.noRecord'),
                               })
                             : t('noPreviousLogin')}
                     </p>

@@ -4,7 +4,7 @@ import { api } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'
 import type { Connection } from './model'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 
 export function ConnectionDeletionReview({
     connection,

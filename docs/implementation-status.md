@@ -8384,3 +8384,40 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 浏览器停止后，标准目录执行 `dotnet build TenonEdge.sln -c Release --no-restore -m:1 /nodeReuse:false -p:UseSharedCompilation=false`：0 警告/错误；修正新增测试的 switch 格式后，`dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过。`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --logger 'trx;LogFileName=integration.trx' --logger 'console;verbosity=normal' --results-directory /tmp/tenonedge-refinement-TKVIjZ/backend-integration`：**2692/2692，0 失败/跳过，13.69 分钟**。包含真实本地 HTTP、Docker Mosquitto、Modbus 软件对端、配置/队列提交各窗口强制中断及共享 MQTT 部分启动恢复；不是实物、断电或远端 CI 验证。
 
 停止点：查询、构建和进度记录已形成独立职责；余下的活跃运行单元、应用、迁移与停机状态仍由原所有者协调。不为缩短文件而进一步拆散共享锁、事务或资源所有权。前端加载与浏览器回归另见下一节；本节不宣称 T3 整体验收完成。
+
+### 2.311 T3-01、T3-04、T3-05、T3-11 前端按需加载与体积预算（2026-10-21，待验收）
+
+接续 §2.310 的优化授权，前端以 `7fd5939` 为对比基线，最终联调使用 §2.310 的后端实现；不改变依赖版本、认证协议、配置格式或产品范围。
+
+- 页头摘要独立为 `configuration/summary-api.ts`，与完整配置及迁移客户端分开；响应解析和版本校验收拢到 `response.ts`，继续保留 JSON 大整数原文。业务页面通过 `client.ts` 使用完整客户端，查询键及页头摘要查询仍留在轻量入口。
+- 全局 i18n 只保留公共、认证和导航文案；15 个功能目录各自注册所需字典，页面与可内嵌编辑器在模块加载时获得同样的文案。跨功能文案依赖显式声明，不依赖先访问某一路由，也不请求外部翻译服务。修正配置导出说明中的过时“导入尚未实现”文案。
+- 工作区、认证表单和业务页面使用 React.lazy 按实际渲染加载。路由器的 `lazyRouteComponent` 会在会话门控之前预加载匹配页面，还可能在资源缺失时自动刷新，因此不再用于这些页面。业务页面的等待/错误界面由路由器的默认组件按匹配页面管理；认证表单和工作区各有错误边界。失败时保留中文提示、允许切换其他页面，只有显式重新加载才刷新文档，不重放写入。
+- `bundle-budget.ts` 纳入默认构建：沿完整静态入口依赖图去重计量，检查原始 JS ≤ 500,000 字节、逐文件 gzip 合计估算 ≤ 165,000 字节，并拒绝将业务字典、认证表单、工作区及表单/画布/表格重依赖重新放回静态入口。最终输出报告写入忽略的 `web/reports/bundle.json`，不进入产品资源。构建测试核对 Vite 后期动态加载改写后的真实字节，`write: false` 同样执行预算检查。
+
+对比使用同一 Node 22.23.2、固定 npm 11.21.0 和已有锁文件：在临时目录从 `git archive 7fd5939 web` 构建原版，并在 `writeBundle` 后计量；最终报告逐文件与 `dist/` 字节核对一致。
+
+| 指标 | 原版 | 本批最终构建 | 变化 |
+|---|---:|---:|---:|
+| 首屏静态 JS 依赖图 | 727,068 字节 | 439,703 字节 | 减少 39.52% |
+| 该依赖图逐文件 gzip 合计估算 | 238,578 字节 | 143,385 字节 | 减少 39.90% |
+| 冷登录实际请求的 JS | 未测 | 557,543 字节 | 不作同比声明 |
+| 恢复会话进入总览实际请求的 JS | 未测 | 532,251 字节 | 不作同比声明 |
+
+这是首屏加载优化，不把分块后的入口文件单独当作总下载量，也不宣称总安装包同比减少或静态托管已启用 gzip。浏览器请求统计关闭 HTTP 缓存，并校验报告与磁盘文件一致；登录与恢复会话分别检查不加载不需要的工作区/认证表单、配置迁移客户端，以及连接/路线深链文案。
+
+环境及证据仍见 `/tmp/tenonedge-refinement-TKVIjZ/`。在 `web/` 以 `npx --yes npm@11.21.0` 执行 `run build`、`run lint`、`run format:check`、`test -- --reporter=default --reporter=json --outputFile=/tmp/tenonedge-refinement-TKVIjZ/frontend-unit-final-review.json`：构建含类型检查且无原有入口超大警告；**54 文件、735/735 单元测试，0 失败/跳过**。新增 10 项体积图/预算/真实 Vite 输出测试和 1 项按需字典注册测试。`run api:check` 对已编译 Host 通过，仍为 130 个 API 路径，生成文件未修改。`route-boundary-fixed.json` 的真实 Host 浏览器检查 **4/4**，覆盖冷加载、登录资源失败、首次设置成功后工作区资源失败，以及失败业务页面切换/显式刷新恢复。
+
+失败与修正记录保留，不以最终重跑覆盖：
+
+1. 初次 8 项关联浏览器检查有 2 项失败：登录时路由预加载总览造成实际 JS 超预算；另一个测试把同页地址变化也算作文档刷新。改为 React.lazy 并统计实际主文档请求后 **8/8**。初始报告 `loading-browser.json`、`initial-loading-failures/`，修正报告 `loading-browser-fixed.json`。
+2. 首次完整 Chromium 156 套件为 **151/154，3 失败，30.3 分钟**（`browser-full.json`、`full-browser-failures/`），当时尚在使用原后端程序集。画布用例快速点击“总览”后立即返回，取消了尚未完成的导航，旧画布的展开面板随后被再次折叠；定向复现 **3/3 失败**，探针确认正文仍有 1253 字符、面板已关闭。补上目标总览标题的可见等待后原用例 **3/3 通过**，没有删除数据/撤销/剪贴板断言；临时探针已移除。另一个失败是全局字典将“上次登录：无记录”误写成“无记录”，新增断言先失败后通过，逐项核对保留的全局文案后修正，最终用户创建/多会话用例已定向通过。
+3. 同一完整套件的 Modbus 扩展输入流程在业务断言完成后的测试宿主关闭阶段出现一次 `Owned Host exit: null`。保留原 trace；使用同一旧程序集独立启动/停止 **30 次**、原 Modbus 流程 **3 次**均未复现，不能据此推定是环境问题或已修复。测试辅助方法现在同时报告退出信号，仍要求退出码为 0，不接受信号终止为成功。该次偶发退出原因仍未定位。
+4. 字节审计发现早期报告漏计 Vite 后期追加的约 2.9 KB，已改为计量最终输出并加入真实构建测试。新增加的业务页面资源失败测试又暴露外层错误边界重置与路由提交不同步：最初最终冒烟 **5/6**，已改用路由器按匹配页面管理的边界，随后上述 4 项资源检查全部通过。保留 `final-loading-smoke.json` 与 `route-boundary-fixed.json`。
+
+最终联调在上述源码及 §2.310 新编译的后端上顺序执行，期间没有重建或改动产品/测试代码：
+
+- `PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-refinement-TKVIjZ/browser-final-full.json npx --yes npm@11.21.0 run test:e2e -- --workers=1 --reporter=list,json`：Chromium **156.0.8078.4** 完整套件 **155/155，0 失败/跳过/不稳定重试，33.50 分钟**；默认入口 `http://127.0.0.1:18082`，各独立 Host 使用各自临时端口。包括全部既有业务流程与新增 4 项加载场景，本轮 Modbus 扩展输入正常退出；这不构成上述历史偶发退出已修复的证据。日志 `browser-final-full.log`。
+- `TENONEDGE_TEST_URL=http://192.168.0.88:18082 TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/minimum-browser/chrome-linux/chrome PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-refinement-TKVIjZ/browser-minimum.json npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts tests/page-loading.spec.ts tests/inline-references.spec.ts --workers=1 --reporter=list,json`：归档 Chromium **111.0.5563.0** 关联套件 **43/43，0 失败/跳过/不稳定重试，4.08 分钟**；覆盖认证、点表、画布、草稿、现场预览、内嵌引用与资源失败恢复。公共 Host 经物理网卡的非 localhost HTTP 访问，页面加载用例的独立 Host 仍使用回环地址；这是最低版本关联回归，不是 155 项全量复验。日志 `browser-minimum.log`。
+- 分别以 `node scripts/verify-results.mjs /tmp/tenonedge-refinement-TKVIjZ/frontend-unit-final-review.json <浏览器报告路径>` 核对上述两份报告，均确认非零、全部通过且无跳过/不稳定重试。最终逐文件体积报告保存为 `/tmp/tenonedge-refinement-TKVIjZ/bundle-final.json`；两版浏览器实际冷登录及恢复总览的 JS 字节与表中一致。`git diff --check` 和暂存区检查通过。
+
+停止点：静态入口依赖、页面实际加载和回归预算已有可复核证据，继续拆小文件或增加抽象没有明确收益。本批不关闭 §2.308 所列 T3 功能缺项、既有 MQTT 偶发超时、本节记录的单次测试宿主异常退出、实物/断电、真实 Chrome/Edge/Safari、Windows 或远端 CI 验证，不宣称 T3 整体验收完成。

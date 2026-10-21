@@ -6,7 +6,7 @@ import {
     type ColumnDef,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { Button } from '../../components/ui/button'
 import { createPointEditor } from './store'
 import {

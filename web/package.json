@@ -12,7 +12,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "npm run licenses && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src tests scripts",
+    "lint": "oxlint src tests scripts *.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",

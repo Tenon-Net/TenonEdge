@@ -1,34 +1,6 @@
-import { moduleConnectionStrings } from '../features/connections/module-strings'
-import { parameterStrings } from '../features/parameters/strings'
-import { clientCertificateStrings } from '../features/connections/client-certificate-strings'
-import { messageStrings } from '../features/diagnostics/message-strings'
-import { testSendStrings } from '../features/routes/test-send-strings'
-import { documentationStrings } from '../features/documentation/strings'
-import { systemStrings } from '../features/system/strings'
-import { auditStrings } from '../features/audit/strings'
-import { userStrings } from '../features/users/strings'
-import { tokenStrings } from '../features/tokens/strings'
-import { configurationMigrationStrings } from '../features/configuration/migration-strings'
-import { migrationStrings } from '../features/deliveries/migration-strings'
-import { outputControlStrings } from '../features/deliveries/control-strings'
-import { deliveryStrings } from '../features/deliveries/strings'
-import { outputStrings } from '../features/diagnostics/output-strings'
-import { currentValueStrings } from '../features/diagnostics/current-value-strings'
-import { configurationImportStrings } from '../features/configuration/import-strings'
-import { configurationStrings } from '../features/configuration/strings'
-import { diagnosticsStrings } from '../features/diagnostics/strings'
-import { routeStrings } from '../features/routes/strings'
-import { inputStrings } from '../features/inputs/strings'
-import { deviceStrings } from '../features/devices/strings'
-import {
-    connectionStrings,
-    credentialStrings,
-} from '../features/connections/strings'
-import { canvasStrings } from '../features/canvas/strings'
-import { trustStrings } from '../features/connections/trust-strings'
-import { pointStrings } from '../features/points/strings'
 import i18n from 'i18next'
-import { initReactI18next } from 'react-i18next'
+import type { ResourceLanguage } from 'i18next'
+import { initReactI18next, useTranslation } from 'react-i18next'
 void i18n.use(initReactI18next).init({
     lng: 'zh-CN',
     fallbackLng: 'zh-CN',
@@ -36,54 +8,35 @@ void i18n.use(initReactI18next).init({
     resources: {
         'zh-CN': {
             translation: {
-                parameters: parameterStrings,
-                testSend: testSendStrings,
-                systemSettings: systemStrings,
-                documentation: documentationStrings,
-                audit: auditStrings,
-                users: userStrings,
-                tokens: tokenStrings,
                 previousLogin: '上次登录：{{time}}；来源 IP：{{ip}}',
                 noPreviousLogin: '上次登录：无记录',
-                migration: migrationStrings,
-                configurationMigration: configurationMigrationStrings,
-                configuration: configurationStrings,
-                configurationImport: configurationImportStrings,
-                configurationExport: {
-                    title: '配置草稿导出',
-                    notice: '下载网关当前已保存的完整草稿（最多 16 MiB），不是当前运行版本。未保存的页面编辑不在文件中；导出不会应用或修改配置。',
-                    scope: '包含连接、设备、来源/点位和路线，以业务 key 关联。凭证仅标注需重新填写，不含秘密或受信任证书；不含用户、令牌、网关身份、系统参数、队列、审计或版本历史。配置可能含现场地址与业务样本，请妥善保管。当前仅交付导出，导入预检与确认仍在实施中。',
-                    download: '下载已保存草稿 JSON',
-                    ready: '文件已交给浏览器下载；不会自动重试。',
-                    denied: '仅配置人员和管理员可以导出配置。',
-                    referenceMissing:
-                        '草稿含不存在的设备、来源或输出连接引用。请在配置页面修正后重新导出；未生成部分文件。',
-                    credentialConflict:
-                        '连接凭证元数据冲突，无法安全导出。请联系管理员核对；未生成文件。',
-                    tooLarge:
-                        '完整导出文件超过 16 MiB，未生成部分文件。请减少草稿内容后重新导出。',
-                    invalid:
-                        '草稿格式或版本参数无效，未生成文件。请核对配置后重新导出。',
+                shell: {
+                    diagnostics: '运行诊断',
+                    deliveries: '失败区与隔离区',
+                    system: '系统信息与设置',
+                    audit: '审计记录',
+                    tokens: 'API 令牌',
+                    users: '用户管理',
+                    documentation: 'API 文档',
+                    points: '点表交互原型',
+                    canvas: '画布交互原型',
+                    routes: '路线草稿',
+                    connections: '连接',
+                    devices: '设备草稿',
+                    configuration: '配置应用',
+                    gateway: '网关名称',
+                    unnamed: '未命名网关',
+                    noRecord: '无记录',
+                    summary: '有 {{count}} 项未应用的对象修改',
+                    unknownSummary: '未应用修改数量未知，不能按零项处理',
                 },
-                diagnostics: diagnosticsStrings,
-                messages: messageStrings,
-                currentValues: currentValueStrings,
-                outputs: outputStrings,
-                deliveries: deliveryStrings,
-                outputControls: outputControlStrings,
-                routes: routeStrings,
-                devices: deviceStrings,
-                inputs: inputStrings,
-                points: pointStrings,
-                canvas: canvasStrings,
-                connections: connectionStrings,
-                moduleConnections: moduleConnectionStrings,
-                credentials: credentialStrings,
-                clientCertificate: clientCertificateStrings,
-                trust: trustStrings,
                 product: 'TenonEdge',
                 subtitle: '边缘接入与转发网关',
                 loading: '正在读取网关状态…',
+                pageLoading: '正在打开页面…',
+                pageUnavailable:
+                    '页面暂时无法打开，请检查网关连接。重新加载会丢失尚未保存的编辑。',
+                reloadPage: '重新加载页面',
                 retry: '重新查询',
                 lastSessionRefresh: '会话状态上次成功刷新：{{time}}',
                 neverRefreshed: '尚未成功刷新',
@@ -141,3 +94,10 @@ void i18n.use(initReactI18next).init({
     },
 })
 export default i18n
+
+/** Register at feature-module load, before rendering. Inline editors and direct
+ * imports get the same resources as routed pages, without a network backend. */
+export function featureTranslation(resources: ResourceLanguage) {
+    i18n.addResourceBundle('zh-CN', 'translation', resources, true, true)
+    return useTranslation
+}

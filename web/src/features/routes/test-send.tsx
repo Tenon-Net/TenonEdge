@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { api } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { ErrorMessage } from '../auth/error-message'

@@ -131,7 +131,15 @@ export async function startOwnedHost(
         const certificateFingerprint = output.match(
             /SHA-256 指纹 ([0-9A-F]{64})/,
         )?.[1]
-        return { url, httpsUrl, certificateFingerprint, stop }
+        return {
+            url,
+            httpsUrl,
+            certificateFingerprint,
+            stop,
+            get exitSignal() {
+                return child.signalCode
+            },
+        }
     } catch (error) {
         await stop()
         throw error

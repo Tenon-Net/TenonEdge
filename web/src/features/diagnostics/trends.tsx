@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { diagnostics } from './queries'
 import { trendGeometry } from './model'
 import { DiagnosticPanel, dateText } from './view'

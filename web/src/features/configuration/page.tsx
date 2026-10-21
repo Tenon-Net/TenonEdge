@@ -4,17 +4,17 @@ import { useEffect, useState } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from './i18n'
 import { queryClient, useSession } from '../../lib/session'
 import { Button } from '../../components/ui/button'
 import { reviewIsCurrent, type Review } from './api'
 import {
-    configuration,
     operationsKey,
     runtimeKey,
     summaryKey,
     useDraftSummary,
 } from './queries'
+import { configuration } from './client'
 import { ConfigurationError, OperationCard, ReviewContents } from './view'
 import { ConfigurationHistory } from './history'
 import { ConfigurationRuntime } from './runtime'
