@@ -8366,3 +8366,21 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 - `node scripts/verify-results.mjs /tmp/tenonedge-optimization-uuNAtP/web-unit.json /tmp/tenonedge-optimization-uuNAtP/browser.json` 通过，确认前端报告非零、全部通过且无跳过/不稳定重试；`git diff --check` 通过。
 
 范围与剩余事项：本批是质量修复和连接页数据职责整理，未拆分 RuntimeHost/RuntimeCoordinator/DeliveryStore，也未改变后端运行实例、应用、迁移、事务和停机流程。本批没有重新运行完整协议/崩溃集成、全量浏览器、最低浏览器或远端 CI，不用 20 项关联回归代替 §2.308 的完整矩阵。大型后端类及画布编辑器的进一步职责整理仍是维护性改进空间；§2.308 所列 T3 缺项及 MQTT 偶发超时风险保持原状态，本节不宣布 T3 完成。
+
+### 2.310 T1/T3 既有运行时的职责拆分（2026-10-21，待验收）
+
+维护者在 §2.309 后授权继续优化大型后端类和前端加载，起始提交 `7fd5939`，工作区干净。本节只整理已实现的运行时、队列管理与操作进度，不扩展业务阶段，也不改写 T3 的剩余验收范围。
+
+- `DeliveryReader` 从 `DeliveryStore` 接管管理列表、正文预览、队列统计、持久计数读取和导出。每个缓存只创建一个读取器，通过原存储提供的连接工厂完成初始化；不持有活跃连接或事务，不创建第二个写者。Viewer 元数据查询仍不加载正文，正文仍在 SQL 层截断，导出仍按短页读取、在等待暂存文件写入前释放连接与事务。导出核对凭据绑定该缓存的读取器，不能跨缓存使用。发送者读取、迁移写前核对及写事务留在原存储。
+- `RuntimePlanBuilder` 接管工厂登记、冻结计划构建、通道与读取状态创建、重建委托及构建错误脱敏；初次准备和选择性恢复共用同一实现。它使用宿主已有的预算、消息缓存、当前值缓存和输出控制，不拥有监督者、活跃版本或停机任务。每次准备只调用一次计划适配器提供者，监督者重建继续使用原计划工厂与上下文；发送者的初次构建和交接重建也共用构造逻辑。
+- `RuntimeApplicationHistory` 封装最多 20 条不可变操作状态、阶段推进、完成结果和错误码映射。所有访问继续位于协调器的同一把准入锁内；应用、回滚、人工重试、迁移及停机的所有权和后台任务仍由 `RuntimeCoordinator` 管理。取消请求只取消等待，历史不保留异常对象、请求上下文或草稿正文。
+
+三个对象都作为既有对象的内部组成部分使用，没有增加 DI 注册、公共服务接口或新工程。按所有 partial 文件合计，`DeliveryStore` 从 2034 行变为 1570 行，`RuntimeHost` 从 1541 行变为 1339 行，`RuntimeCoordinator` 从 1526 行变为 1488 行；查询、构建和进度规则移入有明确状态与职责的类，行数本身不是质量结论。
+
+验证环境仍为 Linux、.NET SDK 10.0.401；证据根目录 `/tmp/tenonedge-refinement-TKVIjZ/`。为避免覆盖正在执行浏览器测试的 Host，先以 `dotnet build TenonEdge.sln -c Release --artifacts-path /tmp/tenonedge-refinement-TKVIjZ/build -p:RestoreLockedMode=true` 隔离构建；首次编译发现人工重试仍调用原位置的错误码映射，补齐引用后 0 警告/错误。将该构建的 UnitTests 输出复制至仓库忽略的 `artifacts/quality-refinement/`，使工程约定测试仍能沿程序集路径找到仓库，执行 `dotnet test artifacts/quality-refinement/TenonEdge.UnitTests/release/TenonEdge.UnitTests.dll --logger 'trx;LogFileName=unit.trx' --results-directory /tmp/tenonedge-refinement-TKVIjZ/backend-unit`，**1943/1943，0 失败/跳过**。
+
+扩展原损坏数据库恢复用例，从待发读取、管理列表、正文、空连接计数、统计、持久计数和导出七个入口分别首次访问损坏队列；每个入口都须只恢复一次、保留损坏文件且不触碰配置库。隔离输出执行 `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --artifacts-path /tmp/tenonedge-refinement-TKVIjZ/build --no-build --no-restore --filter FullyQualifiedName~FirstQueueReadRecoversInvalidDatabase --logger 'trx;LogFileName=reader-recovery.trx' --results-directory /tmp/tenonedge-refinement-TKVIjZ/reader-recovery`，**7/7**。原导出跨缓存拒绝、等待时不占读事务、权限隔离、工厂只创建一次、单运行时、应用取消及停机互斥用例继续通过公共调用面验证，不另造仅验证新类内部结构的测试。
+
+浏览器停止后，标准目录执行 `dotnet build TenonEdge.sln -c Release --no-restore -m:1 /nodeReuse:false -p:UseSharedCompilation=false`：0 警告/错误；修正新增测试的 switch 格式后，`dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过。`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --logger 'trx;LogFileName=integration.trx' --logger 'console;verbosity=normal' --results-directory /tmp/tenonedge-refinement-TKVIjZ/backend-integration`：**2692/2692，0 失败/跳过，13.69 分钟**。包含真实本地 HTTP、Docker Mosquitto、Modbus 软件对端、配置/队列提交各窗口强制中断及共享 MQTT 部分启动恢复；不是实物、断电或远端 CI 验证。
+
+停止点：查询、构建和进度记录已形成独立职责；余下的活跃运行单元、应用、迁移与停机状态仍由原所有者协调。不为缩短文件而进一步拆散共享锁、事务或资源所有权。前端加载与浏览器回归另见下一节；本节不宣称 T3 整体验收完成。

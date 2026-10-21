@@ -75,26 +75,20 @@ internal sealed partial class RuntimeCoordinator
             if (_stopping is not null || _state is RuntimeCoordinatorState.Starting or RuntimeCoordinatorState.Blocked or RuntimeCoordinatorState.Stopping or RuntimeCoordinatorState.Stopped)
             { throw new RuntimeApplicationUnavailableException(); }
             if (_application is not null)
-            { throw new RuntimeApplicationBusyException(_applications[^1]); }
+            { throw new RuntimeApplicationBusyException(_applications.Latest!); }
             if (_deliveryWrite is not null)
             { throw new RuntimeApplicationUnavailableException(); }
             if (kind == "recovery" && (_state != RuntimeCoordinatorState.RunFailed || runtime.ActiveRevision is not null))
             { throw new RuntimeApplicationUnavailableException(); }
             if (kind == "retry" && _state != RuntimeCoordinatorState.RunFailed)
             { throw new RuntimeApplicationUnavailableException(); }
-            if (_applications.Any(application => application.Id == operationId))
-            { throw new RuntimeApplicationUnavailableException(); }
+            initial = _applications.Start(operationId, kind, account.Name!, draftVersion, targetRevision);
             operation = NewSignal();
-            initial = new(operationId, kind, account.Name!, draftVersion, targetRevision,
-                null, RuntimeApplicationStage.Validating, time.GetUtcNow(), null, false, null, null);
-            _applications.Add(initial);
-            if (_applications.Count > MaximumRecentApplications)
-            { _applications.RemoveAt(0); }
             _application = operation;
         }
         Task<ApplicationOutcome> task;
         using (ExecutionContext.SuppressFlow())
-        { task = Task.Run(() => RunOperationAsync(() => execute(operationId), operation)); }
+        { task = Task.Run(() => RunOperationAsync(operationId, () => execute(operationId), operation)); }
         return new(initial, task);
     }
 

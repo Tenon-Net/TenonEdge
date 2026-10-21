@@ -116,7 +116,7 @@ public sealed partial class RuntimeHost
             }
             var outputs = _outputRecoveryGroups.Where(pair => pair.Value == attempt.Id).Select(pair => pair.Key).ToHashSet();
             var retained = _activeOutputs.ToDictionary(output => output.Target.Id);
-            await using var prepared = PrepareCore(_activeDefinition, _recoverySenderStates, attempt.Inputs, retained, outputs);
+            await using var prepared = _plans.Prepare(_activeDefinition, _recoverySenderStates, attempt.Inputs, retained, outputs);
             prepared.HandOver();
             var dispatchers = attempt.Inputs.Select(id => RuntimeUnitId.Create("delivery.dispatcher", id.Key)).ToHashSet();
             bool Replaced(RuntimeUnitId id) => attempt.Inputs.Contains(id) || outputs.Contains(id) || dispatchers.Contains(id);

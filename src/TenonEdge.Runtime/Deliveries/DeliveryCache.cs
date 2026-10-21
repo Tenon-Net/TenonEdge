@@ -71,7 +71,7 @@ public sealed class DeliveryCache
         PendingCounters.Add($"connection/{connectionId.ToString(System.Globalization.CultureInfo.InvariantCulture)}/mqtt/{reason}");
     }
 
-    public IReadOnlyDictionary<string, long> GetPersistentCounters() => Store.ReadCounters();
+    public IReadOnlyDictionary<string, long> GetPersistentCounters() => Store.Reader.ReadCounters();
     public IReadOnlyDictionary<string, long> GetUnpersistedCounters() => PendingCounters.Snapshot();
     public RuntimeActivityTotals GetActivityTotals() => PendingCounters.ActivitySnapshot();
     internal PendingCounters PendingCounters { get; } = new();
@@ -136,10 +136,10 @@ public sealed class DeliveryCache
         Store.Read(connectionId, afterSeq, limit, DeliveryState.Quarantined);
 
     public DeliveryQueueReport GetQueueReport(IReadOnlyCollection<long> activeConnections, long after = 0, int limit = 100) =>
-        Store.ReadQueueReport(activeConnections, after, limit);
+        Store.Reader.ReadQueueReport(activeConnections, after, limit);
 
     /// <summary>指定连接的待发计数；单次只读查询，不读取正文。最多覆盖两份各500连接的有效/草稿目录。</summary>
-    public IReadOnlyDictionary<long, long> GetPendingCounts(IReadOnlyCollection<long> connectionIds) => Store.ReadPendingCounts(connectionIds);
+    public IReadOnlyDictionary<long, long> GetPendingCounts(IReadOnlyCollection<long> connectionIds) => Store.Reader.ReadPendingCounts(connectionIds);
 
     /// <summary>删除/迁移复核用的精确目标分区计数；短只读快照，不读取正文。</summary>
     public (long Pending, long Failed, long Quarantined) GetTargetStateCounts(long connectionId) => Store.ReadTargetStateCounts(connectionId);
@@ -147,10 +147,10 @@ public sealed class DeliveryCache
     public DeliveryRecoveryCheck CheckRecoveryTargets(Func<long, string, string, string?, bool> allows, CancellationToken token) =>
         Store.CheckRecoveryTargets(allows, token);
 
-    public DeliveryInspectionPage Inspect(DeliveryInspectionQuery query) => Store.Inspect(query);
+    public DeliveryInspectionPage Inspect(DeliveryInspectionQuery query) => Store.Reader.Inspect(query);
 
     /// <summary>管理员迁移选择专用，允许查看待发元数据；不改变普通故障列表的只读边界。</summary>
-    public DeliveryInspectionPage InspectForMigration(DeliveryInspectionQuery query) => Store.Inspect(query, allowPending: true);
+    public DeliveryInspectionPage InspectForMigration(DeliveryInspectionQuery query) => Store.Reader.Inspect(query, allowPending: true);
 
     public IReadOnlyList<DeliveryMigrationCandidate> ReadMigrationCandidates(long connectionId, IReadOnlyList<DeliveryMigrationKey> keys) =>
         Store.ReadMigrationCandidates(connectionId, keys);
@@ -158,17 +158,17 @@ public sealed class DeliveryCache
     public DeliveryMigrationPreflight PreflightMigration(DeliveryMigrationCommand command) => Store.PreflightMigration(command);
 
     /// <summary>调用方必须先执行正文权限校验。仅查看指定失败/隔离区中仍存在的稳定投递编号。</summary>
-    public DeliveryBodyPreview? InspectBody(Guid deliveryId, DeliveryState state) => Store.InspectBody(deliveryId, state);
+    public DeliveryBodyPreview? InspectBody(Guid deliveryId, DeliveryState state) => Store.Reader.InspectBody(deliveryId, state);
 
     /// <summary>仅供已授权管理员核对整个导出范围；不读正文、不写队列、不保留数据库事务。</summary>
     public DeliveryExportReview ReviewExport(DeliveryExportFilter filter, CancellationToken cancellationToken) =>
-        Store.ReviewExport(filter, cancellationToken);
+        Store.Reader.ReviewExport(filter, cancellationToken);
 
     /// <summary>仅供已确认的管理员操作，把完整 JSON Lines 写入调用方的空私有暂存文件。
     /// 不得边生成边下载：仅返回 true 后调用方才可发布文件；false、取消或异常必须丢弃暂存文件。
     /// 不拥有或关闭流；调用方负责磁盘余量、flush/关闭、授权、审计、下载与残留清理。</summary>
     public Task<bool> WriteExportSpoolAsync(DeliveryExportReview review, Stream spool, CancellationToken cancellationToken) =>
-        Store.WriteExportSpoolAsync(review, spool, cancellationToken);
+        Store.Reader.WriteExportSpoolAsync(review, spool, cancellationToken);
 
     /// <summary>授权的管理调用方提供已选择的失败记录代次及当前有效目标指纹。
     /// 全部记录匹配且配额足够时，由唯一写者原子移到队尾；旧 seq 不复用，重复提交不能再次入队。

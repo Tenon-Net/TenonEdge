@@ -6,8 +6,15 @@ namespace TenonEdge.IntegrationTests.Runtime;
 
 public sealed class DeliveryRecoveryTests
 {
-    [Fact]
-    public void InvalidDatabaseIsPreservedAndRebuiltWithoutTouchingConfiguration()
+    [Theory]
+    [InlineData("pending")]
+    [InlineData("inspection")]
+    [InlineData("body")]
+    [InlineData("counts")]
+    [InlineData("report")]
+    [InlineData("counters")]
+    [InlineData("export")]
+    public void FirstQueueReadRecoversInvalidDatabaseOnceWithoutTouchingConfiguration(string firstRead)
     {
         using var data = TemporaryDirectory.Create();
         var path = Path.Combine(data.Path, "queue.db");
@@ -18,6 +25,33 @@ public sealed class DeliveryRecoveryTests
         var cache = Create(data.Path, events);
         try
         {
+            // 管理查询可能早于写者启动；每个入口都必须经过同一个存储初始化/恢复流程。
+            switch (firstRead)
+            {
+                case "pending":
+                    Assert.Empty(cache.ReadPending(1, 0, 10));
+                    break;
+                case "inspection":
+                    Assert.Empty(cache.Inspect(new(DeliveryState.Failed)).Items);
+                    break;
+                case "body":
+                    Assert.Null(cache.InspectBody(Guid.NewGuid(), DeliveryState.Failed));
+                    break;
+                case "counts":
+                    Assert.Empty(cache.GetPendingCounts([]));
+                    break;
+                case "report":
+                    _ = cache.GetQueueReport([], 0, 10);
+                    break;
+                case "counters":
+                    Assert.Empty(cache.GetPersistentCounters());
+                    break;
+                case "export":
+                    Assert.Equal(0, cache.ReviewExport(new(DeliveryState.Failed), TestContext.Current.CancellationToken).Count);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(firstRead));
+            }
             Assert.Empty(cache.ReadPending(1, 0, 10));
             Assert.Empty(cache.GetPersistentCounters());
             var archive = Assert.Single(Directory.GetDirectories(data.Path, "queue.db.corrupt-*"));

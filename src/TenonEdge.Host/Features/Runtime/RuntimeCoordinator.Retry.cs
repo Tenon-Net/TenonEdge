@@ -53,7 +53,7 @@ internal sealed partial class RuntimeCoordinator
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             Fail("人工重试未能激活当前有效版本；请检查配置、存储与运行单元，不自动重放操作。");
-            return new(revision, false, false, ApplicationErrorCode(exception));
+            return new(revision, false, false, RuntimeApplicationHistory.ApplicationErrorCode(exception));
         }
         finally
         {

@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 
 namespace TenonEdge.Runtime.Deliveries;
 
-internal sealed partial class DeliveryStore
+internal sealed partial class DeliveryReader
 {
     private const int ExportPageSize = 16;
     private static readonly UTF8Encoding ExportUtf8 = new(false, true);
@@ -17,9 +17,8 @@ internal sealed partial class DeliveryStore
         ArgumentNullException.ThrowIfNull(filter);
         filter.Validate();
         token.ThrowIfCancellationRequested();
-        EnsureInitialized();
-        var captured = _time.GetUtcNow();
-        using var connection = Open(_readConnectionString);
+        using var connection = openConnection();
+        var captured = time.GetUtcNow();
         using var transaction = connection.BeginTransaction(deferred: true);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -110,7 +109,7 @@ internal sealed partial class DeliveryStore
     private List<(DeliveryInspectionItem Item, byte[] Payload)> ReadExportPage(DeliveryExportFilter filter,
         long after, long through, CancellationToken token)
     {
-        using var connection = Open(_readConnectionString);
+        using var connection = openConnection();
         using var transaction = connection.BeginTransaction(deferred: true);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;

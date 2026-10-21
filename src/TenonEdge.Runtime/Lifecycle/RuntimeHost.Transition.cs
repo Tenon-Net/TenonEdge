@@ -155,8 +155,7 @@ public sealed partial class RuntimeHost
                     ResetSenderProbe(output.State);
                     reset = false;
                 }
-                return new OutputSenderUnit(output.Target, output.State, _deliveries, _time, _events,
-                    new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
+                return _plans.CreateSender(output.Target, output.State);
             }
             if (!_supervisor.TryRestartStopped(output.Target.Id, Build, null, SenderGroup(connection)))
             { throw new InvalidOperationException("发送者交接仍有未撤销的资源占用。"); }

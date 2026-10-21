@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -28,18 +27,14 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     /// <summary>输入单元种类的前缀；业务标识为 deviceKey/inputKey 两段。</summary>
     public const string InputKindPrefix = "input.";
 
-    private readonly Dictionary<string, IInputUnitFactory> _inputFactories;
-    private readonly Dictionary<string, IOutputAdapterFactory> _outputFactories;
-    private readonly IRuntimePlanAdapterProvider[] _planAdapterProviders;
     private readonly List<(RuntimeUnitId InputId, Channel<EdgeMessage> Channel, InputDispatcherState State)> _dispatchers = [];
     private readonly DeliveryCache _deliveries;
-    private readonly IClockSyncStatus _clock;
     private readonly IRuntimeEventSink _events;
     private readonly TimeProvider _time;
     private readonly RuntimeOptions _options;
     private readonly ILogger<RuntimeHost> _logger;
     private readonly UnitSupervisor _supervisor;
-    private readonly Func<double> _random;
+    private readonly RuntimePlanBuilder _plans;
     private readonly IOutputControl? _controls;
     private readonly Lock _lock = new();
     private readonly List<RuntimeUnitStatus> _notStarted = [];
@@ -89,27 +84,8 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         Transforms = transforms ?? TransformCatalog.BuiltIn;
         InputModules = inputModules ?? InputModuleCatalog.Empty;
         OutputModules = outputModules ?? OutputModuleCatalog.Empty;
-        _random = random ?? Random.Shared.NextDouble;
         _controls = controls;
-        _planAdapterProviders = (planAdapterProviders ?? []).ToArray();
-        ArgumentNullException.ThrowIfNull(inputFactories);
-        _inputFactories = new Dictionary<string, IInputUnitFactory>(StringComparer.Ordinal);
-        foreach (var factory in inputFactories.Concat(InputModules.Factories))
-        {
-            if (!factory.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal))
-            {
-                throw new ArgumentException($"输入工厂的种类 {factory.Kind} 应以 {InputKindPrefix} 开头。", nameof(inputFactories));
-            }
-
-            if (!_inputFactories.TryAdd(factory.Kind, factory))
-            {
-                throw new ArgumentException($"单元种类 {factory.Kind} 注册了多个工厂。", nameof(inputFactories));
-            }
-        }
-
-        _outputFactories = (outputFactories ?? []).Concat(OutputModules.Factories).ToDictionary(factory => factory.Kind, StringComparer.Ordinal);
         _deliveries = deliveries;
-        _clock = clock;
         _events = events;
         _time = time;
         _options = options.Validate();
@@ -119,6 +95,9 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         CurrentValues = new CurrentValueCache(time);
         _logger = logger;
         _supervisor = new UnitSupervisor(_options, time, events, logger, random);
+        _plans = new RuntimePlanBuilder(inputFactories, outputFactories ?? [], planAdapterProviders ?? [],
+            InputModules, OutputModules, Transforms, deliveries, clock, events, time, _options, logger, random,
+            controls, InFlight, InputChannels, Messages, CurrentValues);
     }
 
     /// <summary>已激活的配置版本；尚未激活时为空。</summary>
@@ -160,120 +139,7 @@ public sealed partial class RuntimeHost : IAsyncDisposable
     /// <summary>
     /// 只构建、不启动（总设计 §7.4 第 2 步）：不做外部 I/O，不生成消息。返回的计划中列出构建失败的单元及原因。
     /// </summary>
-    public PreparedPlan Prepare(RuntimePlan plan) => PrepareCore(plan, null);
-
-    private PreparedPlan PrepareCore(RuntimePlan plan, IReadOnlyDictionary<long, OutputSenderState>? senderStates,
-        HashSet<RuntimeUnitId>? selectedInputs = null, Dictionary<RuntimeUnitId, PreparedOutput>? retainedOutputs = null, HashSet<RuntimeUnitId>? selectedOutputs = null)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-        var inputFactories = new Dictionary<string, IInputUnitFactory>(_inputFactories, StringComparer.Ordinal);
-        var outputFactories = new Dictionary<string, IOutputAdapterFactory>(_outputFactories, StringComparer.Ordinal);
-        foreach (var provider in _planAdapterProviders)
-        {
-            var adapters = provider.Create();
-            foreach (var factory in adapters.Inputs)
-            {
-                if (!factory.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal) || !inputFactories.TryAdd(factory.Kind, factory))
-                { throw new ArgumentException("计划输入工厂种类无效或重复注册。"); }
-            }
-            foreach (var factory in adapters.Outputs)
-            {
-                if (!factory.Kind.StartsWith("output.", StringComparison.Ordinal) || !outputFactories.TryAdd(factory.Kind, factory))
-                { throw new ArgumentException("计划输出工厂种类无效或重复注册。"); }
-            }
-        }
-        // Bind module protocol delegates to this Prepare's original factories. No
-        // provider is invoked a second time and supervisor rebuilds retain these views.
-        var protocolFactories = inputFactories.Where(pair => !InputModules.Modules.Any(module => module.Kind == pair.Key))
-            .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        foreach (var factory in InputModules.BindPlanFactories(protocolFactories))
-        { inputFactories[factory.Kind] = factory; }
-        var outputProtocols = outputFactories.Where(pair => !OutputModules.Modules.Any(module => module.Kind == pair.Key))
-            .ToImmutableDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        foreach (var factory in OutputModules.BindPlanFactories(outputProtocols))
-        { outputFactories[factory.Kind] = factory; }
-        var activation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var units = new List<PreparedUnit>(plan.Units.Length);
-        foreach (var unit in plan.Units.Where(unit => !unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
-        {
-            if (selectedInputs is null || selectedInputs.Contains(unit.Id))
-            { units.Add(PrepareUnit(unit, activation.Task, inputFactories, plan.Revision)); }
-        }
-
-        var outputs = new List<PreparedOutput>();
-        foreach (var unit in plan.Units.Where(unit => unit.Id.Kind.StartsWith("output.", StringComparison.Ordinal)))
-        {
-            if (selectedOutputs is not null && !selectedOutputs.Contains(unit.Id))
-            {
-                if (retainedOutputs?.TryGetValue(unit.Id, out var retained) == true)
-                { outputs.Add(retained); }
-                continue;
-            }
-            RuntimeUnitId? recoveryGroup = null;
-            try
-            {
-                if (!outputFactories.TryGetValue(unit.Id.Kind, out var factory))
-                {
-                    throw new PlanValidationException("未注册输出模块。");
-                }
-
-                var candidateGroup = factory.RecoveryGroup(unit);
-                recoveryGroup = candidateGroup is not null && units.Any(input => input.RecoveryGroup == candidateGroup) ? candidateGroup : null;
-                var mapping = Transforms.ParsePipeline(unit.Configuration);
-                if (mapping?.WorkingReservationBytes > _options.InFlightBytes)
-                { throw new PlanValidationException("转换工作预算超过全局在途预算。"); }
-                var target = factory.Build(unit);
-                if (target.QuiesceWithInputs && recoveryGroup is null)
-                { throw new PlanValidationException("共用输入会话的输出必须声明对应的恢复分组。"); }
-                if (target.FormattingReservationBytes < 2L * DeliveryDraft.MaximumPayloadBytes || target.FormattingReservationBytes > _options.InFlightBytes)
-                { throw new PlanValidationException("输出格式化预算无效或超过全局在途预算。"); }
-                if (target.MinimumSerializationReservationBytes < 0 || target.MinimumSerializationReservationBytes > _options.InFlightBytes)
-                { throw new PlanValidationException("输出编码暂存预算无效或超过全局在途预算。"); }
-                if (target.Id != unit.Id)
-                {
-                    throw new PlanValidationException("输出工厂标识与计划不一致。");
-                }
-
-                var protocolKind = OutputModuleCatalog.ReadProtocol(unit)?.Id.Kind ?? unit.Id.Kind;
-                var shared = outputs.FirstOrDefault(output => output.Target.ConnectionId == target.ConnectionId);
-                if (shared is not null && (shared.ProtocolKind != protocolKind || shared.RecoveryGroup != recoveryGroup || !shared.Target.CanShareSenderWith(target)))
-                {
-                    throw new PlanValidationException("同一连接的输出参数不一致或协议尚不支持共享发送者。");
-                }
-
-                if (target.ClientId is not null && outputs.Any(output => output.Target.ConnectionId != target.ConnectionId && output.Target.Recipient == target.Recipient && output.Target.ClientId == target.ClientId))
-                {
-                    throw new PlanValidationException("同一 Broker 的 ClientId 冲突。");
-                }
-
-                foreach (var input in target.Inputs)
-                {
-                    if (!plan.Units.Any(definition => definition.Id.Key == input && definition.Id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal)))
-                    {
-                        throw new PlanValidationException("输出引用了不存在的输入。");
-                    }
-
-                    if (outputs.Count(output => output.Target.Inputs.Contains(input, StringComparer.Ordinal)) >= 32)
-                    {
-                        throw new PlanValidationException("单输入最多 32 条投递路径。");
-                    }
-                }
-
-                var state = shared?.State ?? senderStates?.GetValueOrDefault(target.ConnectionId) ?? new OutputSenderState();
-                IRuntimeUnit BuildSender() => new OutputSenderUnit(target, state, _deliveries, _time, _events,
-                    new RestartBackoff(_options.InitialRestartDelay, _options.MaximumRestartDelay, _options.RestartJitter, _random), _controls);
-                outputs.Add(new PreparedOutput(target, protocolKind, mapping, state, recoveryGroup, candidateGroup));
-                if (shared is null)
-                { units.Add(new PreparedUnit(unit.Id, BuildSender(), null, BuildSender, null, null, recoveryGroup)); }
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                units.Add(new PreparedUnit(unit.Id, null, DescribeBuildFailure(exception), null, null, null, recoveryGroup));
-            }
-        }
-
-        return new PreparedPlan(plan, units, outputs, activation);
-    }
+    public PreparedPlan Prepare(RuntimePlan plan) => _plans.Prepare(plan);
 
     /// <summary>启动发送缓存写者；重复调用无效。</summary>
     public void StartCore()
@@ -550,70 +416,6 @@ public sealed partial class RuntimeHost : IAsyncDisposable
         }
     }
 
-    private PreparedUnit PrepareUnit(RuntimeUnitPlan unit, Task activation, Dictionary<string, IInputUnitFactory> factories, long revision)
-    {
-        var id = unit.Id;
-        if (!id.Kind.StartsWith(InputKindPrefix, StringComparison.Ordinal))
-        {
-            return Failed(id, $"本版本不支持单元种类 {id.Kind}：只支持已注册的输入和输出模块。");
-        }
-
-        if (!factories.TryGetValue(id.Kind, out var factory))
-        {
-            return Failed(id, $"没有注册单元种类 {id.Kind}（缺少模块）。");
-        }
-
-        var segments = id.KeySegments;
-        if (segments.Count != 2)
-        {
-            return Failed(id, "输入单元的业务标识应为 deviceKey/inputKey 两段。");
-        }
-
-        var channel = new BudgetedInputChannel(_options.InputChannelCapacity, InFlight, message =>
-        {
-            try
-            { CurrentValues.Capture(id, revision, message); }
-            finally { Messages.CaptureInput(id, revision, message); }
-        }, InputChannels)
-        { UsesDurableHandoff = factory.UsesDurableHandoff };
-        var reads = new InputReadStatus(segments[0], segments[1], _events, _deliveries.PendingCounters);
-        var group = id;
-        try
-        {
-            // Parse once inside the per-input failure boundary. Every supervisor rebuild
-            // captures the same context and frozen references, never the current draft.
-            var context = new InputUnitContext(segments[0], segments[1], _time, _clock, reads, (InputMessageWriter)channel.Writer,
-                activation, _options.InputBufferBytes > 0 ? InFlight : null, InputModuleCatalog.ReadConnections(unit));
-            IRuntimeUnit Build()
-            {
-                var instance = factory.Build(unit, context);
-                if (instance.Id != id)
-                { throw new PlanValidationException("输入工厂标识与计划不一致。"); }
-                return instance;
-            }
-            group = factory.RecoveryGroup(unit) ?? throw new PlanValidationException("输入恢复分组不能为空。");
-            return new PreparedUnit(id, Build(), null, Build, channel, reads, group);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            if (exception is not RuntimeUnitBuildException and not PlanValidationException)
-            { LogUnexpectedBuildError(_logger, id.ToString()); }
-            return new PreparedUnit(id, null, DescribeBuildFailure(exception), null, null, null, group);
-        }
-
-        static PreparedUnit Failed(RuntimeUnitId id, string error) => new(id, null, error, null, null, null);
-    }
-
-    // 只有本类生成的固定验证说明可信；适配器、映射解析器与凭证提供程序的异常可能携带秘密。
-    private sealed class PlanValidationException(string message) : Exception(message);
-
-    private static string DescribeBuildFailure(Exception exception) => exception switch
-    {
-        PlanValidationException validation => validation.Message,
-        RuntimeUnitBuildException => "运行单元构建失败，请检查配置和凭证。",
-        _ => "运行单元构建失败，请检查配置、模块和依赖。",
-    };
-
     private DeliveryWriterUnit CreateWriter() => new(_deliveries, _time, _events, _logger);
 
     private void RecordNotStarted(RuntimeUnitId id, string reason, InputReadStatus? reads)
@@ -707,9 +509,6 @@ public sealed partial class RuntimeHost : IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "运行单元 {UnitId} 没有启动：{Reason}")]
     private static partial void LogUnitNotStarted(ILogger logger, string unitId, string reason);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "构建运行单元 {UnitId} 时发生未预期的错误。")]
-    private static partial void LogUnexpectedBuildError(ILogger logger, string unitId);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "停机步骤“{Step}”出错，继续执行后面的步骤。")]
     private static partial void LogStopStepFailed(ILogger logger, Exception exception, string step);

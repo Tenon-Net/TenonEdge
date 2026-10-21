@@ -5,19 +5,18 @@ using TenonEdge.Abstractions.Contracts;
 
 namespace TenonEdge.Runtime.Deliveries;
 
-internal sealed partial class DeliveryStore
+internal sealed partial class DeliveryReader
 {
     internal DeliveryInspectionPage Inspect(DeliveryInspectionQuery query, bool allowPending = false)
     {
         ArgumentNullException.ThrowIfNull(query);
         query.Validate(allowPending);
-        EnsureInitialized();
-        var captured = _time.GetUtcNow();
-        using var connection = Open(_readConnectionString);
+        using var connection = openConnection();
+        var captured = time.GetUtcNow();
         using var transaction = connection.BeginTransaction(deferred: true);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        // 刻意不复用 SelectColumns/Read：Viewer 查询不能先加载正文再在 DTO 中丢掉。
+        // 不复用 DeliveryStore 的发送者读取：Viewer 查询不能先加载正文再在 DTO 中丢掉。
         var conditions = InspectionConditions(command, query);
         command.CommandText = $"""
             SELECT {InspectionColumns}
@@ -80,8 +79,7 @@ internal sealed partial class DeliveryStore
         new DeliveryInspectionQuery(state).Validate();
         if (deliveryId == Guid.Empty)
         { throw new ArgumentException("投递编号不能为空。", nameof(deliveryId)); }
-        EnsureInitialized();
-        using var connection = Open(_readConnectionString);
+        using var connection = openConnection();
         using var command = connection.CreateCommand();
         // SQL 层截取 BLOB，不把整条报文读到托管内存后再截断。长度与前缀来自同一查询快照。
         command.CommandText = "SELECT length(payload), substr(payload, 1, 65536), length(CAST(response_summary AS BLOB)), substr(CAST(response_summary AS BLOB), 1, 8192) FROM delivery WHERE delivery_id = $id AND state = $state";

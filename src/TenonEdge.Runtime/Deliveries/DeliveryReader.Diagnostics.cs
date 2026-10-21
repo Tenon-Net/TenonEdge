@@ -2,17 +2,16 @@ using Microsoft.Data.Sqlite;
 
 namespace TenonEdge.Runtime.Deliveries;
 
-internal sealed partial class DeliveryStore
+internal sealed partial class DeliveryReader
 {
     internal IReadOnlyDictionary<long, long> ReadPendingCounts(IReadOnlyCollection<long> connectionIds)
     {
         ArgumentNullException.ThrowIfNull(connectionIds);
         if (connectionIds.Count > 1000 || connectionIds.Any(id => id <= 0))
         { throw new ArgumentException("连接计数查询范围无效。", nameof(connectionIds)); }
-        EnsureInitialized();
+        using var connection = openConnection();
         if (connectionIds.Count == 0)
         { return new Dictionary<long, long>(); }
-        using var connection = Open(_readConnectionString);
         using var command = connection.CreateCommand();
         var parameters = new List<string>();
         foreach (var id in connectionIds.Distinct())
@@ -52,9 +51,8 @@ internal sealed partial class DeliveryStore
         ArgumentNullException.ThrowIfNull(activeConnections);
         if (activeConnections.Count > 500 || activeConnections.Any(id => id <= 0) || after < 0 || limit is < 1 or > 100)
         { throw new ArgumentException("队列统计目标或分页参数无效。"); }
-        EnsureInitialized();
-        var captured = _time.GetUtcNow();
-        using var connection = Open(_readConnectionString);
+        using var connection = openConnection();
+        var captured = time.GetUtcNow();
         using var transaction = connection.BeginTransaction(deferred: true);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -130,7 +128,7 @@ internal sealed partial class DeliveryStore
     {
         try
         {
-            return new(new FileInfo(_options.DatabasePath).Length, LengthIfPresent(_options.DatabasePath + "-wal"), LengthIfPresent(_options.DatabasePath + "-shm"));
+            return new(new FileInfo(databasePath).Length, LengthIfPresent(databasePath + "-wal"), LengthIfPresent(databasePath + "-shm"));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         { return null; }
@@ -140,5 +138,20 @@ internal sealed partial class DeliveryStore
             { return new FileInfo(path).Length; }
             catch (FileNotFoundException) { return 0; }
         }
+    }
+
+    internal IReadOnlyDictionary<string, long> ReadCounters()
+    {
+        using var connection = openConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name, value FROM queue_counters ORDER BY name";
+        using var reader = command.ExecuteReader();
+        var counters = new Dictionary<string, long>(StringComparer.Ordinal);
+        while (reader.Read())
+        {
+            counters.Add(reader.GetString(0), reader.GetInt64(1));
+        }
+
+        return counters;
     }
 }

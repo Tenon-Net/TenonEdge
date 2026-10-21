@@ -178,9 +178,17 @@ internal sealed partial class DeliveryStore
             Pooling = true,
             DefaultTimeout = 30,
         }.ToString();
+        Reader = new DeliveryReader(OpenReadConnection, time, options.DatabasePath);
     }
 
     public string FilePath => _options.DatabasePath;
+    internal DeliveryReader Reader { get; }
+
+    private SqliteConnection OpenReadConnection()
+    {
+        EnsureInitialized();
+        return Open(_readConnectionString);
+    }
 
     public DeliveryStoreInfo? Info
     {

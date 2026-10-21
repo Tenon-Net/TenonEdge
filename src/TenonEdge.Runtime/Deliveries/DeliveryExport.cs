@@ -14,7 +14,7 @@ public sealed record DeliveryExportFilter(DeliveryState State, long? ConnectionI
 /// 正文在队列中冻结不变。此凭据不复制正文、不持有数据库连接，也不跨进程恢复。</summary>
 public sealed class DeliveryExportReview
 {
-    internal DeliveryExportReview(DeliveryStore owner, DeliveryExportFilter filter, DateTimeOffset capturedAt,
+    internal DeliveryExportReview(DeliveryReader owner, DeliveryExportFilter filter, DateTimeOffset capturedAt,
         long throughSequence, long count, long payloadBytes, long maximumFileBytes,
         DateTimeOffset? firstCreatedAt, DateTimeOffset? lastCreatedAt, string selectionHash)
     {
@@ -30,7 +30,7 @@ public sealed class DeliveryExportReview
         SelectionHash = selectionHash;
     }
 
-    internal DeliveryStore Owner { get; }
+    internal DeliveryReader Owner { get; }
     internal string SelectionHash { get; }
     public DeliveryExportFilter Filter { get; }
     public DateTimeOffset CapturedAt { get; }
