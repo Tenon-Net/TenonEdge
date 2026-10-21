@@ -4,7 +4,7 @@
 - 独立工作树：`/home/shiny/.cache/tenonedge-product-integration/worktree`；分支 `t3-product-integration`。
 - 来源：`t0-foundation@17c3657` 与 `t3-inline-reference-verification@b1157dc`，共同祖先 `1ac3e99`。两个原分支/工作区保留。
 - 原始证据：`/home/shiny/.cache/tenonedge-product-integration/evidence/20261021/`。`start.json` 保存父线及人工服务 PID/startTicks，后续不触碰人工数据。
-- 当前是整合实施记录，不是 T3 退出或稳定千条能力证明；动态状态统一在 `implementation-status.md` §2.323。
+- 本轮本地集成与完整软件回归已完成，千条档仍失败；这不是 T3 退出或稳定千条能力证明，动态状态统一在 `implementation-status.md` §2.323。
 
 ## 冲突决策
 
@@ -59,3 +59,48 @@ python3 .github/scripts/verify-test-results.py "$E/backend-integration-01" --req
 `E` 为本文证据根；SDK 10.0.401，完整环境见 `dotnet-environment.txt`。**2081/2081 单元、2829/2829 集成**通过，均 0 失败/跳过；集成耗时 13 分 35 秒。两份 TRX 运行级 outcome 均为 Completed，仓库核对脚本通过，日志为 `backend-unit-01.log` / `backend-integration-01.log` 及对应 `*-verified.log`。结束后重新计算冻结清单，2111 个文件均未变。人工试用 Host PID 1060554/startTicks 302364428、fixture PID 1060538/startTicks 302364412 均未变，两个原工作树保持干净。
 
 本次完成本地合并提交后，继续串行执行整合版完整当前浏览器 E2E、最低 Chromium 补充验证与 50/500/1000 档性能。最低 Chromium 不冒充实际 Chrome/Edge111、Safari16.4；当前绿色结果不能关闭历史 MQTT 偶发风险、稳定千条目标或整个 T3 退出。
+
+
+## 完整当前浏览器及最低版测试边界
+
+本地合并为 `d96b781`（父提交 `17c3657` / `b1157dc`）。完整当前 Chromium **188/188**、39.2 分钟，版本 156.0.8078.4；1 worker、retries=0，0 skipped/flaky/unexpected，报告无运行级错误，逐条结果均为单次 Passed。`browser-current-full-01.json` / `*-verified.json`、同前缀日志/artifacts；环境见 `browser-current-environment.txt`。执行后 2111 个冻结文件无变化，产品从本工作树 `web/dist` 提供，没有误用旧外部 dist。
+
+命令（web/，固定 npm 11.21.0）：
+
+```sh
+TENONEDGE_TEST_URL=http://127.0.0.1:18782 \
+TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-product-integration/worktree/web/dist \
+PLAYWRIGHT_JSON_OUTPUT_NAME="$E/browser-current-full-01.json" \
+npm run test:e2e -- --reporter=line,json --output="$E/browser-current-full-01-artifacts"
+```
+
+最低版预检检查了独立启动入口。新增显式版本一致断言后的初始探针 `browser-selection-red.json` 实际 **2/2 通过**：候选不一致没有重现，文件名不表示真实失败。随后重启用例及 TLS helper 显式传入 `TENONEDGE_TEST_EXECUTABLE`，避免依赖隐式 launchOptions 注入；增强后的当前版定向 `browser-selection-current.json` **2/2**、完整 Web `web-unit-selection.json` **836/836**、类型/lint 通过。此为测试证据加强，不是产品故障修复；未修改产品代码或放宽门禁。
+
+测试提交 `c1680a5` 仅更改 `configuration-restart.spec.ts`、`tokens.spec.ts`、`support/trusted-browser.ts`。冻结清单 `integrated-frozen-02.json` / metadata 明确这三个文件与上一清单的差异，所有产品源码、后端二进制、Web dist/bundle 均未变。随后在相同产品构建上完成完整 Chromium 111.0.5563.0 补充回归（`TENONEDGE_TEST_EXECUTABLE=/tmp/tenonedge-t3/chromium111/chrome-linux/chrome`，其余命令同上，报告前缀 `browser-chromium111-full-01`）。**188/188**、42.2 分钟，0 skipped/flaky/unexpected，逐条单次 Passed，报告无运行级错误；`browser-chromium111-full-01-verified.json` 核对通过，2111 个冻结文件未变。实际 binary 版本和 SHA-256 另存 `browser-chromium111-executable.txt`。它不替代实际 Google Chrome / Microsoft Edge111、Safari16.4 和 Excel 来源的外部验收。
+
+
+## 整合版关键性能复测
+
+所有后端/浏览器重型测试结束后，串行运行 50、500、1000 档；当前产品源码、Release bins 与 `web/dist` 均来自本整合树，`integrated-frozen-02-final-verification.json` 核对 2111 个文件全程无变化。共享 Linux 开发机、20 逻辑 CPU、约 61 GiB RAM，swap 接近满；ext4 `/dev/sda2`，实际 queue.db 报 **SQLite 3.53.3 / WAL / synchronous=2（FULL）/ schema9**。环境保存在 `performance-integrated-environment.txt` 和每档 report，不能套用旧分支的 SQLite 版本或把共享机差异归因为合并。
+
+```sh
+export TENONEDGE_TEST_WEBROOT=/home/shiny/.cache/tenonedge-product-integration/worktree/web/dist
+export TENONEDGE_QA_DATA_ROOT=/home/shiny/.cache/tenonedge-product-integration/workloads
+TENONEDGE_QA_INPUTS=50 TENONEDGE_QA_OUTAGE_SECONDS=15 TENONEDGE_QA_RESULTS="$E/integrated-50ps-01" node web/scripts/product-performance.mjs
+TENONEDGE_QA_INPUTS=500 TENONEDGE_QA_OUTAGE_SECONDS=3 TENONEDGE_QA_RESULTS="$E/integrated-500ps-01" node web/scripts/product-performance.mjs
+TENONEDGE_QA_INPUTS=1000 TENONEDGE_QA_OUTAGE_SECONDS=3 TENONEDGE_QA_RESULTS="$E/integrated-1000ps-01" node web/scripts/product-performance.mjs
+```
+
+每档为原产品模拟来源 → 原持久队列 → 单目标真实 loopback HTTP，保留大整数与原编号；普通 HTTP 单请求在途，不是批量数组协议。60 秒稳态后先要求实际收到至少名义输入 95%，通过才进入 503 阶段，再于持续输入下最多等待 60 秒首次清空并观察 15 秒。脚本还要求 overrun、策略/存储丢弃、重复与坏报文均为 0。50 档 15 秒中断与高档 3 秒中断不能混成同一场景或恢复 SLA。
+
+| 输入/s | 稳态收到/s | 稳态末待发 | 稳态 p95/p99 ms | 503 秒 | 首次清空秒 | overrun | 本次结果 |
+|---|---:|---:|---|---|---|---:|---|
+| 50 | 49.988 | 31 | 225/234 | 15 | 16.685 | 0 | 通过 |
+| 500 | 500.865 | 0 | 339/376 | 3 | 15.718 | 0 | 通过 |
+| 1000 | 770.583 | 5498 | 7081/7159 | 未执行 | 未执行 | 17157 | **失败，exit1** |
+
+50/500 档重复接收、坏报文、队列策略丢弃、存储故障/拒绝均 0，Host 正常退出；最终待发分别 0/52。500 档恢复后观察末为 86，不能把一次观测清空或正常在途快照写成“始终无积压”。1000 档低于原 950/s 门禁即终止，没有执行 503/恢复；最终待发 5547，虽仍无队列丢弃/存储失败/重复，来源周期已经跳过 17157 次，不算可靠千条接管。
+
+原始各档 `performance.json`、日志、`.exit-code` 全部保留；`integrated-performance-summary-01.json` 汇总阶段、计数和资源。Host 整段平均 CPU 按单核计为 28.67% / 151.93% / 264.62%，RSS 采样峰 241.27 / 367.52 / 451.86 MiB；不含 Node/浏览器 CPU，不是整机峰值、长期泄漏或工控硬件容量。50/500 仅为本次短软件负载通过；1000 稳定能力、恢复余量及 QA-PERF-01 仍开放。
+
+`preview-protection-after-integration.json` 核对人工试用 Host/fixture PID/startTicks 未变；两个原工作树仍干净，未部署、推送、登录人工账号或修改人工配置。下一步收紧千条反馈环并剖析热路径，单变量验证后重新执行受影响的完整回归，不取消 FULL、放宽配额/门禁或用来源跳过换分数。T3 的实际浏览器、Excel、CI 和维护者验收仍按统一状态 §1.1；本轮不能自行宣布 T3 完成。
