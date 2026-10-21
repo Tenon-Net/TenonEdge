@@ -71,7 +71,7 @@ public sealed record DeliveryWriteResult(DeliveryWriteStatus Status, IReadOnlyLi
 }
 
 /// <summary>
-/// 发送缓存的状态快照（总设计 §8.2、§8.5）；计数只在内存中，重启后从零开始，持久化在 T1-07。
+/// 发送缓存的进程级状态快照（总设计 §8.2、§8.5）；本快照的计数只在内存中，重启后从零开始，不代表持久队列计数或累计丢失计数。
 /// FailedRecords 是因存储异常（回滚、打不开）没有写入的记录；RejectedRecords 是因数据错误（违反约束）被拒绝的记录。
 /// </summary>
 public sealed record DeliveryCacheStatus(

@@ -1,9 +1,14 @@
 import { ModuleCredentialPanel } from './module-credential-panel'
 import { ModuleConnectionEditor } from './module-editor'
 import { ConnectionDeletionReview } from './deletion-review'
-import { moduleConnectionForm, readConnectionList } from './module-model'
+import { moduleConnectionForm } from './module-model'
 import { ConnectionTable } from './list'
-import { connectionRows, connectionSnapshotCurrent } from './list-model'
+import { connectionRows } from './list-model'
+import {
+    connectionDraftsKey,
+    useConnectionData,
+    useSaveConnection,
+} from './queries'
 import { ParameterFields } from '../parameters/fields'
 import { parameterIssues } from '../parameters/model'
 import {
@@ -22,9 +27,9 @@ import { useStore } from 'zustand'
 import { createConnectionEditor } from './store'
 import { useBlocker } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useIsMutating, useMutation, useQuery } from '@tanstack/react-query'
+import { useIsMutating } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { api, queryClient, useSession } from '../../lib/session'
+import { queryClient, useSession } from '../../lib/session'
 import { ApiError } from '../../api/errors'
 import { ErrorMessage } from '../auth/error-message'
 import { Button } from '../../components/ui/button'
@@ -35,30 +40,6 @@ import {
     type ConnectionForm,
 } from './model'
 
-function useParameterSchema(kind: 'modbus' | 'mqtt') {
-    return useQuery({
-        queryKey: ['parameter-schema', kind],
-        queryFn: async ({ signal }) => {
-            const { data } = await api.GET(
-                '/api/edge-admin/v1/parameter-schemas/{id}',
-                {
-                    signal,
-                    params: { path: { id: `connection.${kind}` } },
-                },
-            )
-            if (
-                !data ||
-                data.id !== `connection.${kind}` ||
-                data.scope !== 'connection' ||
-                !data.parameters?.length
-            )
-                throw new Error('missing-parameter-schema')
-            return data
-        },
-    })
-}
-// This cache includes lexical module parameters; do not share the plain DTO query shape.
-const queryKey = ['connection-drafts', 'exact']
 const fieldClass =
     'mt-1 w-full rounded-md border bg-background p-2 disabled:opacity-60'
 export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
@@ -67,59 +48,11 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
     const session = useSession((state) => state.value)
     const canEdit =
         session?.role === 'administrator' || session?.role === 'configurator'
-    const query = useQuery({
-        queryKey,
-        queryFn: async ({ signal }) => {
-            const { data } = await api.GET('/api/edge-admin/v1/connections', {
-                signal,
-                parseAs: 'text',
-            })
-            if (!data) throw new Error('missing-connections')
-            return readConnectionList(data)
-        },
-    })
-    const modules = useQuery({
-        queryKey: ['connection-modules'],
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        queryFn: async ({ signal }) => {
-            const { data } = await api.GET(
-                '/api/edge-admin/v1/connection-modules',
-                { signal },
-            )
-            if (!data) throw new Error('missing-connection-modules')
-            return data
-        },
-    })
-    const runtime = useQuery({
-        queryKey: ['runtime-connections', query.data?.version],
-        enabled: !!query.data,
-        refetchInterval: 5000,
-        refetchIntervalInBackground: false,
-        queryFn: async ({ signal }) => {
-            const { data } = await api.GET(
-                '/api/edge-admin/v1/runtime/connections',
-                {
-                    signal,
-                    params: {
-                        query: { expectedDraftVersion: query.data!.version },
-                    },
-                },
-            )
-            if (!data) throw new Error('missing-runtime-connections')
-            return data
-        },
-    })
-    const current = connectionSnapshotCurrent(
-        query.data?.version,
-        runtime.data,
-        !!runtime.error || !!query.error,
-    )
+    const { query, modules, runtime, current, modbusSchema, mqttSchema } =
+        useConnectionData()
     const [editor] = useState(createConnectionEditor)
     const { form, setForm, moduleForm, setModuleForm, original, setOriginal } =
         useStore(editor)
-    const modbusSchema = useParameterSchema('modbus')
-    const mqttSchema = useParameterSchema('mqtt')
     const schemaQuery = form?.kind === 'mqtt' ? mqttSchema : modbusSchema
     const schemaReady =
         !!schemaQuery.data && !schemaQuery.error && !schemaQuery.isFetching
@@ -159,62 +92,13 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
         enableBeforeUnload: dirty,
         shouldBlockFn: () => !window.confirm(t('connections.discard')),
     })
-    const mutation = useMutation({
-        mutationFn: async (
-            action:
-                | { type: 'save'; form: ConnectionForm }
-                | { type: 'delete'; connection: Connection; version: string },
-        ) => {
-            if (action.type === 'delete') {
-                await api.DELETE(
-                    '/api/edge-admin/v1/connections/{connectionId}',
-                    {
-                        params: {
-                            path: {
-                                connectionId: Number(action.connection.id),
-                            },
-                            query: { expectedVersion: action.version },
-                        },
-                    },
-                )
-            } else {
-                const body = connectionRequest(action.form)
-                if (action.form.id !== undefined)
-                    await api.PUT(
-                        '/api/edge-admin/v1/connections/{connectionId}',
-                        {
-                            params: {
-                                path: { connectionId: Number(action.form.id) },
-                            },
-                            body,
-                        },
-                    )
-                else await api.POST('/api/edge-admin/v1/connections', { body })
-            }
-            return action.type
-        },
-        onSuccess: async (type, action) => {
-            void queryClient.invalidateQueries({
-                queryKey: ['configuration-summary'],
-            })
-            setNotice(
-                t(
-                    type === 'save'
-                        ? 'connections.saved'
-                        : 'connections.deleted',
-                ),
-            )
-            setForm(null)
-            setModuleForm(null)
-            setOriginal('')
-            // Inspect only after the draft was saved; no automatic target connection or policy write.
-            setSavedTarget(
-                action.type === 'save' ? outboundTarget(action.form) : null,
-            )
-            await queryClient.invalidateQueries({
-                queryKey: ['connection-drafts'],
-            })
-        },
+    const mutation = useSaveConnection((saved) => {
+        setNotice(t('connections.saved'))
+        setForm(null)
+        setModuleForm(null)
+        setOriginal('')
+        // Inspect only after the draft was saved; no automatic target connection or policy write.
+        setSavedTarget(outboundTarget(saved))
     })
     function open(connection?: Connection, extended = false) {
         if (outboundBusy || editorBusy) return
@@ -512,7 +396,9 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                     onDeleted={async () => {
                         setDeleting(null)
                         await Promise.all([
-                            queryClient.invalidateQueries({ queryKey }),
+                            queryClient.invalidateQueries({
+                                queryKey: connectionDraftsKey,
+                            }),
                             queryClient.invalidateQueries({
                                 queryKey: ['configuration-summary'],
                             }),
@@ -621,7 +507,7 @@ export function ConnectionsPage({ onReturn }: { onReturn?: () => void } = {}) {
                         try {
                             connectionRequest(form)
                             setLocalError('')
-                            mutation.mutate({ type: 'save', form })
+                            mutation.mutate(form)
                         } catch {
                             setLocalError(t('connections.duplicateHeaders'))
                         }

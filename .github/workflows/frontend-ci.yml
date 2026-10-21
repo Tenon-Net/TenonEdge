@@ -33,6 +33,7 @@ jobs:
           node --version
           npx --yes npm@11.21.0 --version
           npx --yes npm@11.21.0 ci
+          npx --yes npm@11.21.0 run api:check
           npx --yes npm@11.21.0 run format:check
           npx --yes npm@11.21.0 run lint
           npx --yes npm@11.21.0 run build

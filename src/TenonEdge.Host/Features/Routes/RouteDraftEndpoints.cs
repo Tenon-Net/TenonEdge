@@ -13,7 +13,7 @@ internal static class RouteDraftEndpoints
     {
         var group = api.MapGroup("/routes").WithTags("Routes").WithMetadata(new RequestBodyLimit(1024 * 1024));
         group.MapGet("", (RouteDraftStore store) => TypedResults.Ok(store.Read()))
-            .WithName("getRouteDrafts").WithSummary("查看路线草稿摘要，尚未编译，不代表运行状态");
+            .WithName("getRouteDrafts").WithSummary("查看路线草稿摘要、编译错误标记及与有效版本的一致性，不代表实时运行状态");
         group.MapGet("/{routeId:long}", Read).WithName("getRouteDraft").WithSummary("读取自有图草稿及全局版本").ProducesProblem(404);
         group.MapPost("", (RouteDraftRequest request, RouteDraftStore store, HttpContext context) => Write(null, request, store, context))
             .RequireAuthorization(AuthorizationPolicies.Configurator).WithName("createRouteDraft").WithSummary("新建路线草稿，保存不应用")

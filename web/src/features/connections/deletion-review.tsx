@@ -163,7 +163,9 @@ export function ConnectionDeletionReview({
                         onClick={() => {
                             if (
                                 window.confirm(
-                                    `确认删除连接草稿 ${connection.name}？服务端将再次核对全部条件。`,
+                                    t('connections.deletion.confirmMessage', {
+                                        name: connection.name,
+                                    }),
                                 )
                             ) {
                                 setConsumed(true)

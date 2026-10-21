@@ -8339,3 +8339,30 @@ T0-B（文档未规定、由实现确定的部分，均可调整）：
 当前两版Chromium全量浏览器套件在最终151项源码通过，但T3仍未达到退出：T3-10新输出传输语义/协议边界尚待维护者明确；T3-11全部输入×输出/角色组合、编译/异常恢复子项尚待逐项审查，实体与实际Chrome/Edge/Safari未验证；§2.274/2.275 MQTT偶发计数超时仍未定位。T3-07容量仅Linux/ext4有限样本校准（§2.289），不扩展为普适保证。
 
 最终Web工作树复核：`npm test -- --run`为50文件、708/708通过（4.42秒），`npm run typecheck`、`npm run lint`、`npx prettier --check tests/gateway-http-workflow.spec.ts tests/gateway-mqtt-workflow.spec.ts`与`git diff --check`通过。浏览器完整套件之后没有源代码修改，只有实施状态矩阵更新。
+
+### 2.309 T3-01、T3-04、T3-05、T3-11 代码质量优化（2026-10-21，待验收）
+
+维护者在代码质量审查后授权优化，并在验证完成后授权整理提交；起始提交 `2841aea`，工作区干净。本批修复已确认的测试收集、契约漂移、连接页职责集中和注释歧义问题，仍在既有 T3 范围内，按授权整理为本地提交，不推送。
+
+实现：
+
+- Vitest 收集范围加入 TSX/JSX，原先漏收的 `response-summary.test.tsx` 11 项现在随默认命令和 CI 执行；不把此前 708 项的历史记录改写为已覆盖它们。
+- `api:generate` 自动启动 Release Development Host，使用回环随机端口和临时数据目录，带启动/读取超时并在退出时清理；只把 OpenAPI 的服务器地址归一为同源 `/`，以真实文档生成 JSON 和 TypeScript。新增只读 `api:check`，对任一文件缺失/过期报错，接入前端 CI；检查固定使用当前工作区已构建的 Host。手动生成仍可指定 `TENONEDGE_API_URL`。新增 5 项测试覆盖端口无关性、默认值/必填字段保留、契约变化、文件缺失/编辑及拒绝非产品文档。
+- 从真实 Host 重新生成 130 个路径、334 个模型。语义差异仅为 `RouteDraftSummary` 三个布尔字段的默认值/必填列表、路线摘要说明，以及服务器地址；JSON 中文由转义形式变为可读字符，不是额外契约变更。
+- 连接页的数据获取、精确参数读取、运行快照版本绑定及保存后缓存失效集中到 `connections/queries.ts`；页面保留本地编辑、凭证和交互状态。删除不可达的旧 DELETE 分支及无引用文案；当前删除核对流程继续使用原服务端事务。确认文案改用 i18n。连接页从 929 行降至 815 行，职责划分是本次改动的目的，不以拆文件本身作为质量证明。
+- 修正 `ClockState`/`GatewayTimeSource` 注释错位及未知同步状态的含义，说明输出工厂实际构建目标定义、运行计划实际组成、已实现的磁盘保护，并区分进程内发送缓存计数与持久队列/累计丢失计数。路线列表说明改为草稿编译错误和有效版本一致性，避免宣称未编译。
+
+环境：Linux 7.0.0-31-generic、.NET SDK 10.0.401、Node 22.23.2、固定 npm 11.21.0、Playwright 附带 Chromium 156.0.8078.4。本地证据目录 `/tmp/tenonedge-optimization-uuNAtP/`；网络 API 和浏览器测试顺序执行。
+
+验证命令与结果：
+
+- `dotnet build TenonEdge.sln -c Release --no-restore -m:1 /nodeReuse:false -p:UseSharedCompilation=false`：0 警告/错误；`dotnet format TenonEdge.sln --verify-no-changes --no-restore` 通过。
+- `dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-build --logger 'trx;LogFileName=unit.trx' --results-directory /tmp/tenonedge-optimization-uuNAtP/backend-unit`：**1943/1943**，0 失败/跳过。
+- `dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --filter 'FullyQualifiedName~TenonEdge.IntegrationTests.Api|FullyQualifiedName~ConnectionDraftTests|FullyQualifiedName~RouteDraftTests|FullyQualifiedName~TenonEdge.IntegrationTests.Auth.SessionSecurityTests' --logger 'trx;LogFileName=api.trx' --results-directory /tmp/tenonedge-optimization-uuNAtP/backend-api`：**79/79**，0 失败/跳过。
+- 以下 npm 命令均在 `web/` 使用 `npx --yes npm@11.21.0` 执行：`run typecheck`、`run lint`、`run format:check`、`run build` 通过，生产许可文件无变化。构建仍提示原有约 603 kB 入口块超过 500 kB，不宣称已解决包体积问题。
+- `test -- --reporter=default --reporter=json --outputFile=/tmp/tenonedge-optimization-uuNAtP/web-unit.json`：**52 文件、724/724**，含原有 708 项、恢复收集的 11 项及新增契约校验 5 项，0 失败/跳过。
+- `run api:check` 首先在旧文件上按预期失败（退出码 1，报告两个文件过期）；对比前后 SHA-256 证实检查未改写文件。执行 `run api:generate` 后再次 `run api:check` 通过；不同临时端口不产生漂移，临时 Host 数据目录已清理。日志 `api-check-before.log`、`api-check-after.log`，语义差异记录 `contract-changes.json`。
+- `PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-optimization-uuNAtP/browser.json npx --yes npm@11.21.0 run test:e2e -- tests/connection-list.spec.ts tests/connection-modules.spec.ts tests/inline-references.spec.ts tests/parameter-schemas.spec.ts tests/outbound-entry.spec.ts tests/credential-review.spec.ts tests/auth.spec.ts:562 tests/auth.spec.ts:726 tests/auth.spec.ts:811 --workers=1 --reporter=list,json`：**20/20**，约 2.6 分钟，0 失败/跳过/重试。覆盖连接新增/修改/删除、查询失败与冲突保留编辑、真实运行状态、自动参数表单、扩展连接/TCP凭证轮换及重启、凭证核对、路线内嵌引用往返和出站授权。
+- `node scripts/verify-results.mjs /tmp/tenonedge-optimization-uuNAtP/web-unit.json /tmp/tenonedge-optimization-uuNAtP/browser.json` 通过，确认前端报告非零、全部通过且无跳过/不稳定重试；`git diff --check` 通过。
+
+范围与剩余事项：本批是质量修复和连接页数据职责整理，未拆分 RuntimeHost/RuntimeCoordinator/DeliveryStore，也未改变后端运行实例、应用、迁移、事务和停机流程。本批没有重新运行完整协议/崩溃集成、全量浏览器、最低浏览器或远端 CI，不用 20 项关联回归代替 §2.308 的完整矩阵。大型后端类及画布编辑器的进一步职责整理仍是维护性改进空间；§2.308 所列 T3 缺项及 MQTT 偶发超时风险保持原状态，本节不宣布 T3 完成。

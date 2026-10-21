@@ -16,7 +16,7 @@ namespace TenonEdge.Runtime.Deliveries;
 /// <item>请求队列满时提交请求的一方等待，不在内存中无限堆积（总设计 §8.7）。</item>
 /// <item>取消等待只结束调用方的等待，不撤回已经交给写者的请求。</item>
 /// </list>
-/// 失败区、配额、隔离和保留期均经此入口；磁盘存储保护在 T1-07。
+/// 失败区、配额、隔离和保留期均经此入口；磁盘空间保护由 <see cref="StorageProtection"/> 按当前策略判断。
 /// </summary>
 public sealed class DeliveryCache
 {

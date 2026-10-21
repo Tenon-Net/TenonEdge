@@ -1,12 +1,12 @@
 {
   "openapi": "3.1.1",
   "info": {
-    "title": "TenonEdge \u7ba1\u7406 API",
+    "title": "TenonEdge 管理 API",
     "version": "v1"
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:18081/"
+      "url": "/"
     }
   ],
   "paths": {
@@ -15,8 +15,8 @@
         "tags": [
           "Health"
         ],
-        "summary": "\u8fdb\u7a0b\u5b58\u6d3b\u68c0\u67e5",
-        "description": "\u8fdb\u7a0b\u80fd\u591f\u5904\u7406\u8bf7\u6c42\u5373\u8fd4\u56de 200 \u4e0e\u6587\u672c Healthy\u3002",
+        "summary": "进程存活检查",
+        "description": "进程能够处理请求即返回 200 与文本 Healthy。",
         "operationId": "getLiveness",
         "responses": {
           "200": {
@@ -37,8 +37,8 @@
         "tags": [
           "Health"
         ],
-        "summary": "\u5c31\u7eea\u68c0\u67e5",
-        "description": "\u5168\u90e8\u5c31\u7eea\u6761\u4ef6\u6ee1\u8db3\u65f6\u8fd4\u56de 200\uff1b\u4efb\u4e00\u6761\u4ef6\u4e0d\u6ee1\u8db3\u65f6\u8fd4\u56de 503\u3002\u53ea\u8fd4\u56de\u72b6\u6001\u6587\u672c\uff0c\u4e0d\u8fd4\u56de\u539f\u56e0\u3002",
+        "summary": "就绪检查",
+        "description": "全部就绪条件满足时返回 200；任一条件不满足时返回 503。只返回状态文本，不返回原因。",
         "operationId": "getReadiness",
         "responses": {
           "200": {
@@ -69,8 +69,8 @@
         "tags": [
           "Setup"
         ],
-        "summary": "\u9996\u6b21\u8bbe\u7f6e\u72b6\u6001",
-        "description": "\u672a\u767b\u5f55\u5373\u53ef\u67e5\u8be2\uff1a\u5f53\u524d\u72b6\u6001\u3001\u8bbe\u7f6e\u7a97\u53e3\u662f\u5426\u5f00\u653e\u53ca\u5173\u95ed\u65f6\u95f4\uff1b\u91cd\u7f6e\u5f85\u8bbe\u7f6e\u65f6\u7ed9\u51fa\u7b49\u5f85\u8bbe\u7f6e\u65b0\u5bc6\u7801\u7684\u8d26\u53f7\u3002",
+        "summary": "首次设置状态",
+        "description": "未登录即可查询：当前状态、设置窗口是否开放及关闭时间；重置待设置时给出等待设置新密码的账号。",
         "operationId": "getSetupStatus",
         "responses": {
           "200": {
@@ -99,8 +99,8 @@
         "tags": [
           "Setup"
         ],
-        "summary": "\u5b8c\u6210\u9996\u6b21\u8bbe\u7f6e",
-        "description": "\u672a\u521d\u59cb\u5316\u65f6\u521b\u5efa\u7ba1\u7406\u5458\uff1b\u91cd\u7f6e\u5f85\u8bbe\u7f6e\u65f6\u4e3a\u88ab\u91cd\u7f6e\u7684\u8d26\u53f7\u8bbe\u7f6e\u65b0\u5bc6\u7801\u3002\u6210\u529f\u540e\u81ea\u52a8\u767b\u5f55\u3002\u5df2\u6709\u7ba1\u7406\u5458\u6216\u7a97\u53e3\u5df2\u5173\u95ed\u65f6\u8fd4\u56de 409\u3002",
+        "summary": "完成首次设置",
+        "description": "未初始化时创建管理员；重置待设置时为被重置的账号设置新密码。成功后自动登录。已有管理员或窗口已关闭时返回 409。",
         "operationId": "completeSetup",
         "requestBody": {
           "content": {
@@ -161,8 +161,8 @@
         "tags": [
           "Auth"
         ],
-        "summary": "\u767b\u5f55",
-        "description": "\u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef\u65f6\u8fd4\u56de 401\uff0c\u4e0d\u533a\u5206\u8d26\u53f7\u662f\u5426\u5b58\u5728\uff1b\u8fde\u7eed\u5931\u8d25\u8fbe\u5230\u4e0a\u9650\u540e\u8fd4\u56de 429 \u5e76\u5e26 Retry-After\u3002",
+        "summary": "登录",
+        "description": "账号或密码错误时返回 401，不区分账号是否存在；连续失败达到上限后返回 429 并带 Retry-After。",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -223,7 +223,7 @@
         "tags": [
           "Auth"
         ],
-        "summary": "\u767b\u51fa",
+        "summary": "登出",
         "operationId": "logout",
         "responses": {
           "204": {
@@ -247,8 +247,8 @@
         "tags": [
           "Auth"
         ],
-        "summary": "\u5f53\u524d\u4f1a\u8bdd",
-        "description": "\u8fd4\u56de\u5f53\u524d\u8d26\u53f7\u3001\u89d2\u8272\u3001\u662f\u5426\u987b\u5148\u4fee\u6539\u5bc6\u7801\uff0c\u4ee5\u53ca\u5199\u64cd\u4f5c\u987b\u56de\u4f20\u7684\u9632 CSRF \u4ee4\u724c\u3002",
+        "summary": "当前会话",
+        "description": "返回当前账号、角色、是否须先修改密码，以及写操作须回传的防 CSRF 令牌。",
         "operationId": "getSession",
         "responses": {
           "200": {
@@ -279,8 +279,8 @@
         "tags": [
           "Auth"
         ],
-        "summary": "\u4fee\u6539\u81ea\u5df1\u7684\u5bc6\u7801",
-        "description": "\u987b\u8f93\u5165\u539f\u5bc6\u7801\u3002\u6210\u529f\u540e\u8be5\u8d26\u53f7\u7684\u5176\u4ed6\u4f1a\u8bdd\u5931\u6548\uff0c\u5f53\u524d\u4f1a\u8bdd\u91cd\u65b0\u7b7e\u53d1\u3002\u539f\u5bc6\u7801\u8fde\u7eed\u9519\u8bef 5 \u6b21\u65f6\u7ed3\u675f\u8be5\u8d26\u53f7\u7684\u5168\u90e8\u4f1a\u8bdd\uff08\u5305\u62ec\u5f53\u524d\u4f1a\u8bdd\uff09\uff0c\u8fd4\u56de 401\uff1b\u767b\u5f55\u9501\u5b9a\u4e0d\u5f71\u54cd\u5df2\u767b\u5f55\u7684\u7528\u6237\u4fee\u6539\u5bc6\u7801\u3002\u4e0e\u767b\u5f55\u5171\u7528\u6309\u6765\u6e90\u5730\u5740\u7684\u9650\u6d41\uff0c\u8d85\u51fa\u65f6\u8fd4\u56de 429\u3002",
+        "summary": "修改自己的密码",
+        "description": "须输入原密码。成功后该账号的其他会话失效，当前会话重新签发。原密码连续错误 5 次时结束该账号的全部会话（包括当前会话），返回 401；登录锁定不影响已登录的用户修改密码。与登录共用按来源地址的限流，超出时返回 429。",
         "operationId": "changePassword",
         "requestBody": {
           "content": {
@@ -341,8 +341,8 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u505c\u7528/\u5220\u9664\u524d\u6838\u5bf9\u8be5\u6765\u6e90\u8d26\u53f7\u5c1a\u672a\u540a\u9500\u7684\u4ee4\u724c\uff0c\u663e\u5f0f\u9009\u62e9\u4fdd\u7559\u6216\u540a\u9500",
-        "description": "\u5305\u62ec\u7ba1\u7406\u5458\u4ee4\u724c\u4ee3\u5efa\u4e14\u6cbf\u7528\u8be5\u6765\u6e90\u8d26\u53f7\u7684\u4ee4\u724c\uff1b\u4e0d\u662f\u52a8\u6001\u6743\u9650\u7ee7\u627f\u3002Version\u4ec5\u7ed1\u5b9a\u4e0d\u53ef\u53d8\u6e05\u5355\uff0c\u4e0d\u53d7lastUsed\u53d8\u5316\u5f71\u54cd\u3002\u8fc7\u671f\u9879\u4ecd\u663e\u793a\uff1b\u4e0e\u7528\u6237\u4fee\u6539\u4e8b\u52a1\u5185\u91cd\u6838\uff0c\u6e05\u5355\u53d8\u5316\u987b\u91cd\u65b0\u786e\u8ba4\u3002",
+        "summary": "停用/删除前核对该来源账号尚未吊销的令牌，显式选择保留或吊销",
+        "description": "包括管理员令牌代建且沿用该来源账号的令牌；不是动态权限继承。Version仅绑定不可变清单，不受lastUsed变化影响。过期项仍显示；与用户修改事务内重核，清单变化须重新确认。",
         "operationId": "getUserCreatedTokens",
         "parameters": [
           {
@@ -415,8 +415,8 @@
         "tags": [
           "Audit"
         ],
-        "summary": "\u67e5\u8be2\u5ba1\u8ba1\u8bb0\u5f55",
-        "description": "\u4ec5\u7ba1\u7406\u5458\u3002\u6309\u53d1\u751f\u65f6\u95f4\uff08from \u542b\u3001to \u4e0d\u542b\uff09\u3001\u8d26\u53f7\u3001\u64cd\u4f5c\u4ee3\u7801\u3001\u5bf9\u8c61\u7cbe\u786e\u7b5b\u9009\uff0c\u4ece\u65b0\u5230\u65e7\u6392\u5217\uff1b\u4e0b\u4e00\u9875\u4ee5\u4e0a\u4e00\u9875\u8fd4\u56de\u7684 nextCursor \u4f5c\u4e3a before \u53c2\u6570\u3002",
+        "summary": "查询审计记录",
+        "description": "仅管理员。按发生时间（from 含、to 不含）、账号、操作代码、对象精确筛选，从新到旧排列；下一页以上一页返回的 nextCursor 作为 before 参数。",
         "operationId": "listAuditRecords",
         "parameters": [
           {
@@ -530,8 +530,8 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u8be2\u8fd0\u884c\u4e8b\u4ef6",
-        "description": "\u6240\u6709\u89d2\u8272\u53ef\u67e5\u770b\u3002\u6309\u65f6\u95f4\uff08from \u542b\u3001to \u4e0d\u542b\uff1b\u5408\u5e76\u7684\u4e8b\u4ef6\u53ea\u8981\u6709\u4e00\u6b21\u53d1\u751f\u843d\u5728\u533a\u95f4\u5185\u5373\u5217\u51fa\uff09\u3001\u7ea7\u522b\uff08info\u3001warning\u3001error\uff0c\u4e0e\u8fd4\u56de\u503c\u76f8\u540c\uff09\u3001\u7c7b\u578b\u4ee3\u7801\u3001\u5bf9\u8c61\u7b5b\u9009\uff0c\u6309\u9996\u6b21\u53d1\u751f\u4ece\u65b0\u5230\u65e7\u6392\u5217\uff1b\u540c\u4e00\u5bf9\u8c61\u7684\u540c\u7c7b\u4e8b\u4ef6\u5728 5 \u5206\u949f\u5185\u5408\u5e76\u4e3a\u4e00\u6761\u5e76\u8ba1\u6570\u3002\u4e0b\u4e00\u9875\u4ee5\u4e0a\u4e00\u9875\u8fd4\u56de\u7684 nextCursor \u4f5c\u4e3a before \u53c2\u6570\u3002",
+        "summary": "查询运行事件",
+        "description": "所有角色可查看。按时间（from 含、to 不含；合并的事件只要有一次发生落在区间内即列出）、级别（info、warning、error，与返回值相同）、类型代码、对象筛选，按首次发生从新到旧排列；同一对象的同类事件在 5 分钟内合并为一条并计数。下一页以上一页返回的 nextCursor 作为 before 参数。",
         "operationId": "listRuntimeEvents",
         "parameters": [
           {
@@ -635,7 +635,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u770b\u8fd0\u884c\u72b6\u6001\u3001\u5b58\u50a8\u4fdd\u62a4\u548c\u7d2f\u8ba1\u8ba1\u6570",
+        "summary": "查看运行状态、存储保护和累计计数",
         "operationId": "getRuntimeStatus",
         "responses": {
           "200": {
@@ -666,7 +666,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u770b\u672c\u8fdb\u7a0b\u6700\u8fd1\u4e00\u5c0f\u65f6\u7684\u6536\u53d1\u548c\u5931\u8d25\u8d8b\u52bf\u8ba1\u6570",
+        "summary": "查看本进程最近一小时的收发和失败趋势计数",
         "operationId": "getRuntimeTrends",
         "responses": {
           "200": {
@@ -700,7 +700,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u770b\u8fd0\u884c\u8bbe\u5907\u4e0e\u6765\u6e90\u72b6\u6001\uff0c\u5355\u5217\u672a\u5e94\u7528\u8bbe\u5907",
+        "summary": "查看运行设备与来源状态，单列未应用设备",
         "operationId": "getRuntimeDevices",
         "responses": {
           "200": {
@@ -731,7 +731,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u5206\u9875\u67e5\u770b\u8fd0\u884c\u5feb\u7167\u7684\u70b9\u4f4d\u5f53\u524d\u503c\u53ca\u6700\u540e\u6210\u529f\u503c",
+        "summary": "分页查看运行快照的点位当前值及最后成功值",
         "operationId": "getRuntimeCurrentValues",
         "parameters": [
           {
@@ -812,7 +812,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u6838\u5bf9\u6709\u6548\u4e0e\u8349\u7a3f\u8fde\u63a5\u3001\u6b63\u5f0f\u901a\u4fe1\u4e8b\u5b9e\u3001\u4f7f\u7528\u8005\u53ca\u771f\u5b9e\u5f85\u53d1\u8ba1\u6570\uff0c\u4e0d\u89e6\u53d1\u7f51\u7edc\u64cd\u4f5c",
+        "summary": "核对有效与草稿连接、正式通信事实、使用者及真实待发计数，不触发网络操作",
         "operationId": "getRuntimeConnections",
         "parameters": [
           {
@@ -852,7 +852,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u5206\u9875\u67e5\u770b\u8f93\u51fa\u72b6\u6001\u3001\u771f\u5b9e\u961f\u5217\u5360\u7528\u53ca\u5bb9\u91cf\u4f30\u7b97\u8fb9\u754c",
+        "summary": "分页查看输出状态、真实队列占用及容量估算边界",
         "operationId": "getRuntimeOutputs",
         "parameters": [
           {
@@ -921,7 +921,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u770b\u8f93\u51fa\u961f\u5934\u3001\u5931\u8d25\u9694\u79bb\u7edf\u8ba1\u53ca\u6700\u8fd1\u4e00\u5c0f\u65f6\u8d8b\u52bf\uff0c\u4e0d\u8fd4\u56de\u62a5\u6587\u6b63\u6587",
+        "summary": "查看输出队头、失败隔离统计及最近一小时趋势，不返回报文正文",
         "operationId": "getRuntimeOutput",
         "parameters": [
           {
@@ -976,7 +976,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u5206\u9875\u67e5\u770b\u5f53\u524d\u8fd0\u884c\u8f93\u5165\u53ca\u903b\u8f91\u8f93\u51fa\u8282\u70b9\uff1b\u4e0d\u89e6\u53d1\u91c7\u96c6\u6216\u53d1\u9001",
+        "summary": "分页查看当前运行输入及逻辑输出节点；不触发采集或发送",
         "operationId": "getRuntimeMessageObjects",
         "parameters": [
           {
@@ -1035,7 +1035,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u67e5\u770b\u5355\u5bf9\u8c61\u81f3\u591a 100 \u6761\u8bca\u65ad\u5143\u6570\u636e\uff0c\u6240\u6709\u89d2\u8272\u5747\u4e0d\u5728\u6b64\u63a5\u53e3\u53d6\u5f97\u6b63\u6587",
+        "summary": "查看单对象至多 100 条诊断元数据，所有角色均不在此接口取得正文",
         "operationId": "getRuntimeMessages",
         "parameters": [
           {
@@ -1092,7 +1092,7 @@
         "tags": [
           "Runtime"
         ],
-        "summary": "\u663e\u5f0f\u8bfb\u53d6\u6240\u9009\u8bca\u65ad\u8bb0\u5f55\u7684\u81f3\u591a 64 KiB \u6b63\u6587\u524d\u7f00\uff1b\u4e0d\u91cd\u653e\uff0c\u4e0d\u66ff\u6362\u5df2\u6dd8\u6c70\u8bb0\u5f55",
+        "summary": "显式读取所选诊断记录的至多 64 KiB 正文前缀；不重放，不替换已淘汰记录",
         "operationId": "getRuntimeMessageBody",
         "parameters": [
           {
@@ -1184,8 +1184,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u5bfc\u51fa\u5f53\u524d\u5df2\u4fdd\u5b58\u8349\u7a3f\uff1a\u4e1a\u52a1\u6807\u8bc6\u4e0e\u975e\u79d8\u5bc6\u914d\u7f6e\uff0c\u4e0d\u542b\u5185\u90e8\u7f16\u53f7\u3001\u51ed\u8bc1\u6216\u8fd0\u884c\u72b6\u6001",
-        "description": "JSON\u6587\u4ef6\u683c\u5f0f\u7248\u672c1\uff0c\u6700\u591a16MiB\uff1b\u53ef\u9009expectedVersion\u56fa\u5b9a\u6240\u89c1\u8349\u7a3f\u3002\u8d26\u6237\u4ec5\u6709\u4e0d\u53ef\u8ba4\u8bc1\u7684\u6bd4\u8f83\u6458\u8981\u548c\u9700\u91cd\u65b0\u586b\u5199\u6807\u8bb0\u3002\u4e0d\u4f1a\u5e94\u7528\u914d\u7f6e\u6216\u6539\u53d8\u8349\u7a3f\u3002",
+        "summary": "导出当前已保存草稿：业务标识与非秘密配置，不含内部编号、凭证或运行状态",
+        "description": "JSON文件格式版本1，最多16MiB；可选expectedVersion固定所见草稿。账户仅有不可认证的比较摘要和需重新填写标记。不会应用配置或改变草稿。",
         "operationId": "exportConfigurationDraft",
         "parameters": [
           {
@@ -1275,8 +1275,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u67e5\u770b\u7cfb\u7edf\u4fe1\u606f",
-        "description": "\u6240\u6709\u89d2\u8272\u53ef\u67e5\u770b\uff1a\u7248\u672c\u3001NodeId\u3001\u7f51\u5173\u540d\u79f0\u3001\u6570\u636e\u76ee\u5f55\u4e0e\u78c1\u76d8\u7a7a\u95f4\u3001HTTPS \u8bc1\u4e66\u7684 SHA-256 \u6307\u7eb9\u4e0e\u5230\u671f\u65f6\u95f4\u3001\u5b9e\u9645\u52a0\u8f7d\u7684 SQLite \u7248\u672c\u3001\u9996\u6b21\u8bbe\u7f6e\u7684\u65f6\u95f4\u4e0e\u6765\u6e90 IP\uff0c\u4ee5\u53ca\u963b\u6b62\u8fd0\u884c\u65f6\u542f\u52a8\u7684\u539f\u56e0\u3002",
+        "summary": "查看系统信息",
+        "description": "所有角色可查看：版本、NodeId、网关名称、数据目录与磁盘空间、HTTPS 证书的 SHA-256 指纹与到期时间、实际加载的 SQLite 版本、首次设置的时间与来源 IP，以及阻止运行时启动的原因。",
         "operationId": "getSystemInfo",
         "responses": {
           "200": {
@@ -1307,8 +1307,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u7ba1\u7406\u5458\u4fee\u6539\u7f51\u5173\u663e\u793a\u540d\u79f0\u5e76\u8bb0\u5f55\u5ba1\u8ba1",
-        "description": "expectedName\u5fc5\u987b\u7b49\u4e8e\u8bfb\u53d6\u7684gatewayName\uff08\u542bnull\uff09\uff1b\u53ea\u6bd4\u8f83\u6b64\u540d\u79f0\u5b57\u6bb5\uff0c\u4e0d\u4ee3\u8868\u5176\u4ed6\u8bbe\u7f6e\u7248\u672c\u3002\u540d\u79f0\u53bb\u9996\u5c3e\u7a7a\u767d\uff0c\u7a7a\u540d\u79f0\u6e05\u4e3a\u672a\u547d\u540d\uff1b\u4e0d\u6539\u53d8NodeId\u3001\u8349\u7a3f\u6216\u8fd0\u884c\u7248\u672c\u3002\u76f8\u540c\u89c4\u8303\u5316\u540d\u79f0\u4e0d\u91cd\u590d\u5199\u5ba1\u8ba1\u3002",
+        "summary": "管理员修改网关显示名称并记录审计",
+        "description": "expectedName必须等于读取的gatewayName（含null）；只比较此名称字段，不代表其他设置版本。名称去首尾空白，空名称清为未命名；不改变NodeId、草稿或运行版本。相同规范化名称不重复写审计。",
         "operationId": "writeGatewayName",
         "requestBody": {
           "content": {
@@ -1369,8 +1369,8 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u89e3\u6790\u672a\u4fdd\u5b58\u76ee\u6807\u5e76\u6309\u5f53\u524d\u51fa\u7ad9\u89c4\u5219\u68c0\u67e5\uff0c\u4e0d\u8fde\u63a5\u6216\u4fee\u6539\u767d\u540d\u5355",
-        "description": "DNS\u96505\u79d2/32\u5730\u5740\uff1b\u4e0e\u6d4b\u8bd5\u9884\u89c8\u5171\u7528\u5e76\u53d1\u9884\u7b97\u3002\u4ec5\u516c\u7f51\u62d2\u7edd\u751f\u6210/32\u6216/128\u4e3b\u673aCIDR\u5efa\u8bae\uff1b\u7ba1\u7406\u5458\u4ecd\u987b\u786e\u8ba4\u540e\u8c03\u7528\u7248\u672c\u5316\u767d\u540d\u5355\u5199\u63a5\u53e3\u3002\u68c0\u67e5\u4e0d\u4fdd\u8bc1\u4e4b\u540eDNS/\u89c4\u5219\u4e0d\u53d8\uff0c\u5b9e\u9645\u8fde\u63a5\u4ecd\u9010\u6b21\u6821\u9a8c\u3002",
+        "summary": "解析未保存目标并按当前出站规则检查，不连接或修改白名单",
+        "description": "DNS限5秒/32地址；与测试预览共用并发预算。仅公网拒绝生成/32或/128主机CIDR建议；管理员仍须确认后调用版本化白名单写接口。检查不保证之后DNS/规则不变，实际连接仍逐次校验。",
         "operationId": "inspectConnectionOutbound",
         "requestBody": {
           "content": {
@@ -1471,8 +1471,8 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u6838\u5bf9\u5f85\u4e0a\u4f20\u5ba2\u6237\u7aef\u8bc1\u4e66\u7684\u516c\u5f00\u8eab\u4efd\u4e0e\u5f53\u524d\u79ef\u5b58\uff0c\u4e0d\u4fdd\u5b58\u6216\u8054\u7f51",
-        "description": "\u4ec5\u4f9b\u4fdd\u5b58\u524d\u6838\u5bf9\uff0c\u4e0d\u51bb\u7ed3\u961f\u5217\u6216\u6388\u6743\u4fdd\u5b58\u3002\u786e\u8ba4\u4ecd\u8c03\u7528\u539f\u51ed\u8bc1\u5199\u5165\u63a5\u53e3\uff0c\u91cd\u65b0\u9a8c\u8bc1\u8349\u7a3f\u3001\u51ed\u8bc1\u7248\u672c\u3001\u8bc1\u4e66\u548c\u79ef\u5b58\u58f0\u660e\u3002",
+        "summary": "核对待上传客户端证书的公开身份与当前积存，不保存或联网",
+        "description": "仅供保存前核对，不冻结队列或授权保存。确认仍调用原凭证写入接口，重新验证草稿、凭证版本、证书和积存声明。",
         "operationId": "reviewClientCertificateCredential",
         "parameters": [
           {
@@ -1575,8 +1575,8 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u6838\u5bf9\u5bc6\u7801\u3001Token \u6216 API Key \u7684\u516c\u5f00\u8eab\u4efd\u4e0e\u5f53\u524d\u79ef\u5b58\uff0c\u4e0d\u63a5\u6536\u79d8\u5bc6\u6216\u4fdd\u5b58",
-        "description": "\u4ec5\u52a8\u6001\u6838\u5bf9\uff1b\u6700\u7ec8\u4fdd\u5b58\u4ecd\u8c03\u7528\u539f\u51ed\u8bc1\u5199\u5165\u63a5\u53e3\uff0c\u91cd\u65b0\u9a8c\u8bc1\u8349\u7a3f\u3001\u51ed\u8bc1\u7248\u672c\u548c\u8d26\u6237\u58f0\u660e\u3002",
+        "summary": "核对密码、Token 或 API Key 的公开身份与当前积存，不接收秘密或保存",
+        "description": "仅动态核对；最终保存仍调用原凭证写入接口，重新验证草稿、凭证版本和账户声明。",
         "operationId": "reviewCredentialChange",
         "parameters": [
           {
@@ -1679,7 +1679,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u89e3\u6790\u5355\u4e2a CA \u516c\u94a5\u8bc1\u4e66\u4f9b\u7ba1\u7406\u5458\u6838\u5bf9\uff0c\u4e0d\u4fdd\u5b58\u6216\u5efa\u7acb\u7f51\u7edc\u8fde\u63a5",
+        "summary": "解析单个 CA 公钥证书供管理员核对，不保存或建立网络连接",
         "operationId": "inspectConnectionTrustCertificate",
         "requestBody": {
           "content": {
@@ -1740,8 +1740,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u5c06\u9009\u5b9a\u5931\u8d25\u8bb0\u5f55\u539f\u6837\u79fb\u56de\u961f\u5c3e\uff0c\u53ef\u80fd\u4ea7\u751f\u91cd\u590d",
-        "description": "\u7ed1\u5b9a\u6709\u6548\u8fd0\u884c\u7248\u672c\u548c\u6bcf\u6761\u7a33\u5b9a\u7f16\u53f7/seq\u4ee3\u6b21\uff0c\u6700\u591a1000\u6761\uff1b\u5168\u90e8\u72b6\u6001/\u8eab\u4efd/\u914d\u989d\u68c0\u67e5\u901a\u8fc7\u624d\u539f\u5b50\u91cd\u6392\u3002\u53ea\u91cd\u8bd5\u5931\u8d25\u533a\uff0c\u4e0d\u89e3\u9664\u6682\u505c\u3001\u4e0d\u6539\u53d8\u62a5\u6587\u6216\u76ee\u6807\u3002200\u53ea\u4ee3\u8868\u961f\u5217\u5df2\u63d0\u4ea4\uff0c\u4e0d\u4ee3\u8868\u53d1\u9001\u6210\u529f\u3002\u8bf7\u6c42\u8d85\u65f6/\u54cd\u5e94\u4e22\u5931\u53ea\u91cd\u65b0\u67e5\u8be2\uff0c\u4e0d\u81ea\u52a8\u91cd\u653e\uff1b\u65e7\u4ee3\u6b21\u4e0d\u80fd\u91cd\u590d\u6267\u884c\u3002",
+        "summary": "将选定失败记录原样移回队尾，可能产生重复",
+        "description": "绑定有效运行版本和每条稳定编号/seq代次，最多1000条；全部状态/身份/配额检查通过才原子重排。只重试失败区，不解除暂停、不改变报文或目标。200只代表队列已提交，不代表发送成功。请求超时/响应丢失只重新查询，不自动重放；旧代次不能重复执行。",
         "operationId": "retryFailedDeliveries",
         "requestBody": {
           "content": {
@@ -1822,8 +1822,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u7ba1\u7406\u5458\u786e\u8ba4\u540e\u6c38\u4e45\u6e05\u7406\u9009\u5b9a\u7684\u5931\u8d25\u6216\u9694\u79bb\u8bb0\u5f55",
-        "description": "\u6700\u591a1000\u6761\uff0c\u7ed1\u5b9a\u533a\u57df\u3001\u7a33\u5b9a\u7f16\u53f7\u3001seq\u3001\u76ee\u6807\u53ca\u8fc1\u79fb\u4ee3\u6b21\uff1b\u5168\u90e8\u5339\u914d\u624d\u539f\u5b50\u5220\u9664\uff0c\u4e0d\u6309\u6267\u884c\u65f6\u7b5b\u9009\u6269\u5927\u9009\u62e9\uff0c\u4e0d\u6e05\u7a7a\u5f85\u53d1\u3001\u4e0d\u53d1\u9001\u3002\u8bb0\u5f55\u4eba\u5de5\u6e05\u7406\u8ba1\u6570\u53ca\u5ba1\u8ba1\u3002\u54cd\u5e94\u4e22\u5931\u53ea\u91cd\u65b0\u67e5\u8be2\uff0c\u4e0d\u81ea\u52a8\u91cd\u653e\uff1b\u8bf7\u6c42\u53d6\u6d88\u4e0d\u64a4\u9500\u5df2\u63a5\u6536\u64cd\u4f5c\u3002",
+        "summary": "管理员确认后永久清理选定的失败或隔离记录",
+        "description": "最多1000条，绑定区域、稳定编号、seq、目标及迁移代次；全部匹配才原子删除，不按执行时筛选扩大选择，不清空待发、不发送。记录人工清理计数及审计。响应丢失只重新查询，不自动重放；请求取消不撤销已接收操作。",
         "operationId": "cleanupDeliveryRecords",
         "requestBody": {
           "content": {
@@ -1904,8 +1904,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u7ba1\u7406\u5458\u786e\u8ba4\u540e\u6e05\u7a7a\u76ee\u6807\u5168\u90e8\u5f85\u53d1\u8bb0\u5f55",
-        "description": "\u7ed1\u5b9a\u6709\u6548\u7248\u672c\uff1b\u7b49\u5f85\u539f\u53d1\u9001\u8005\u63d0\u4ea4\u5728\u9014\u7ed3\u679c\u540e\uff0c\u5728\u552f\u4e00\u5199\u8005\u4e8b\u52a1\u4e2d\u5220\u9664\u5f53\u65f6\u4ecd\u5f85\u53d1\u7684\u5168\u90e8\u8bb0\u5f55\u5e76\u7d2f\u8ba1\u4eba\u5de5\u4e22\u5f03\u3002\u4e0d\u662f\u6838\u5bf9\u65f6\u7684\u56fa\u5b9a\u6e05\u5355\uff1a\u671f\u95f4\u65b0\u5165\u961f\u8bb0\u5f55\u53ef\u80fd\u5305\u62ec\u5728\u5185\uff0c\u5220\u9664\u8fb9\u754c\u4e4b\u540e\u5165\u961f\u7684\u4fdd\u7559\u3002\u4e0d\u6e05\u7406\u5931\u8d25/\u9694\u79bb\u3001\u4e0d\u6539\u53d8\u6682\u505c\u6216\u9000\u907f\uff1b\u8d85\u65f6\u4e0d\u5220\u9664\u3002\u4e0d\u81ea\u52a8\u91cd\u8bd5\uff0c\u54cd\u5e94\u4e22\u5931\u53ea\u91cd\u65b0\u8bfb\u53d6\u3002\u8bf7\u6c42\u65ad\u5f00\u4e0d\u64a4\u9500\u5df2\u63a5\u53d7\u64cd\u4f5c\u3002",
+        "summary": "管理员确认后清空目标全部待发记录",
+        "description": "绑定有效版本；等待原发送者提交在途结果后，在唯一写者事务中删除当时仍待发的全部记录并累计人工丢弃。不是核对时的固定清单：期间新入队记录可能包括在内，删除边界之后入队的保留。不清理失败/隔离、不改变暂停或退避；超时不删除。不自动重试，响应丢失只重新读取。请求断开不撤销已接受操作。",
         "operationId": "clearPendingDeliveries",
         "parameters": [
           {
@@ -1998,8 +1998,8 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u6d4b\u8bd5\u672a\u4fdd\u5b58\u7684 MQTT \u53c2\u6570\u5230 CONNACK\uff1b\u72ec\u7acb ClientId\uff0c\u4e0d\u4fdd\u5b58\u3001\u4e0d\u8ba2\u9605\u3001\u4e0d\u53d1\u5e03",
-        "description": "\u8ba4\u8bc1\u663e\u5f0f\u9009\u62e9 none\u3001provided \u6216 stored\uff1bstored \u53ea\u5411\u51ed\u8bc1\u5df2\u7ed1\u5b9a\u7684\u63a5\u6536\u65b9\u53d1\u9001\u3002\u8fd4\u56de\u5206\u9636\u6bb5\u7ed3\u679c\u548c\u8131\u654f\u5206\u7c7b\uff1bMQTT 3.1.1 \u8ba4\u8bc1\u4e0e\u534f\u8bae\u63e1\u624b\u5171\u4eab CONNACK \u8017\u65f6\uff0c\u4e0d\u53ef\u76f8\u52a0\u3002",
+        "summary": "测试未保存的 MQTT 参数到 CONNACK；独立 ClientId，不保存、不订阅、不发布",
+        "description": "认证显式选择 none、provided 或 stored；stored 只向凭证已绑定的接收方发送。返回分阶段结果和脱敏分类；MQTT 3.1.1 认证与协议握手共享 CONNACK 耗时，不可相加。",
         "operationId": "testMqttConnection",
         "requestBody": {
           "content": {
@@ -2090,8 +2090,8 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u901a\u8fc7\u5171\u4eab\u4f1a\u8bdd\u4e32\u884c\u6d4b\u8bd5\u672a\u4fdd\u5b58\u7684 HTTP \u53c2\u6570\uff0c\u53ea GET \u57fa\u7840\u5730\u5740\uff0c\u4e0d\u4fdd\u5b58\u3001\u4e0d\u8bfb\u53d6\u6b63\u6587\u6216\u8ddf\u968f\u91cd\u5b9a\u5411",
-        "description": "\u663e\u5f0f\u6d4b\u8bd5\u91cd\u5efa\u8be5\u4f1a\u8bdd\u7a7a\u95f2\u5ba2\u6237\u7aef\uff1b\u8fd0\u884c\u53c2\u6570\u4e0d\u5339\u914d\u65f6\u62d2\u7edd\u501f\u7528\u3002stored \u4f7f\u7528\u5df2\u5b58\u51ed\u8bc1\u4e14\u63a5\u6536\u65b9\u5fc5\u987b\u5339\u914d\u3002HTTP \u72b6\u6001\u4e0d\u80fd\u5355\u72ec\u8bc1\u660e\u8ba4\u8bc1\u6709\u6548\u3002",
+        "summary": "通过共享会话串行测试未保存的 HTTP 参数，只 GET 基础地址，不保存、不读取正文或跟随重定向",
+        "description": "显式测试重建该会话空闲客户端；运行参数不匹配时拒绝借用。stored 使用已存凭证且接收方必须匹配。HTTP 状态不能单独证明认证有效。",
         "operationId": "testHttpConnection",
         "requestBody": {
           "content": {
@@ -2182,8 +2182,8 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u901a\u8fc7\u5171\u4eab\u4f1a\u8bdd\u6d4b\u8bd5\u672a\u4fdd\u5b58\u7684 Modbus \u8fde\u63a5\u53c2\u6570\uff0c\u4e0d\u53d1\u9001\u534f\u8bae\u62a5\u6587\u6216\u4fdd\u5b58\u8349\u7a3f",
-        "description": "\u590d\u7528\u5df2\u6709\u6d41\u4e0d\u4ee3\u8868\u91cd\u65b0\u9a8c\u8bc1\u8fdc\u7aef\u5b58\u6d3b\uff1b\u4ece\u7ad9\u8bfb\u53d6\u987b\u901a\u8fc7\u8bbe\u5907\u9884\u89c8\u3002\u603b\u671f\u9650\u5305\u542b\u5171\u4eab\u4e32\u884c\u961f\u5217\u7b49\u5f85\u3002",
+        "summary": "通过共享会话测试未保存的 Modbus 连接参数，不发送协议报文或保存草稿",
+        "description": "复用已有流不代表重新验证远端存活；从站读取须通过设备预览。总期限包含共享串行队列等待。",
         "operationId": "testModbusConnection",
         "requestBody": {
           "content": {
@@ -2274,7 +2274,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u9759\u6001\u7f16\u8bd1\u5168\u90e8\u542f\u7528\u8def\u7ebf\uff0c\u4e0d\u8054\u7f51\u3001\u4e0d\u51bb\u7ed3\u7248\u672c\u3001\u4e0d\u542f\u52a8\u6216\u5165\u961f",
+        "summary": "静态编译全部启用路线，不联网、不冻结版本、不启动或入队",
         "operationId": "compileRouteDrafts",
         "requestBody": {
           "content": {
@@ -2365,7 +2365,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u5206\u9875\u8bfb\u53d6\u540c\u7248\u672c\u7684\u6765\u6e90\u6216\u8f93\u51fa\u8fde\u63a5\u6458\u8981\uff0c\u4e0d\u8fd4\u56de\u914d\u7f6e\u3001\u70b9\u8868\u3001\u6837\u672c\u6216\u51ed\u8bc1",
+        "summary": "分页读取同版本的来源或输出连接摘要，不返回配置、点表、样本或凭证",
         "operationId": "getRouteCatalog",
         "parameters": [
           {
@@ -2455,7 +2455,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u5206\u6790\u672a\u4fdd\u5b58\u56fe\u4e2d\u6240\u9009\u8282\u70b9\u7684\u4e0a\u6e38\u5b57\u6bb5\uff0c\u4e0d\u4fdd\u5b58\u3001\u4e0d\u8054\u7f51\u6216\u5165\u961f\uff0c\u4e0d\u4ee3\u66ff\u5168\u56fe\u7f16\u8bd1",
+        "summary": "分析未保存图中所选节点的上游字段，不保存、不联网或入队，不代替全图编译",
         "operationId": "analyzeRouteFields",
         "requestBody": {
           "content": {
@@ -2546,8 +2546,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u4f7f\u7528\u624b\u5de5 JSON \u6837\u672c\u9884\u89c8\u672a\u4fdd\u5b58\u8def\u7ebf\uff0c\u4e0d\u8fde\u63a5\u8f93\u5165/\u8f93\u51fa\u3001\u4e0d\u4fdd\u5b58\u3001\u4e0d\u5165\u961f",
-        "description": "MQTT/HTTP \u6309\u6765\u6e90\u7684 JSON \u5b9a\u4f4d\u4e0e\u65f6\u95f4\u89e3\u7801\uff1bModbus/\u6a21\u62df\u6765\u6e90\u63a5\u53d7\u5df2\u89e3\u7801\u5b57\u6bb5\u5bf9\u8c61\uff0c\u4e0d\u505a\u5bc4\u5b58\u5668\u6216\u5b57\u8282\u5e8f\u4eff\u771f\u3002\u6837\u672c\u6700\u591a 64 KiB\uff0c\u6574\u4e2a\u54cd\u5e94\u6700\u591a 64 KiB\uff0c\u622a\u65ad\u7ed3\u679c\u4ec5\u4f9b\u663e\u793a\u3002",
+        "summary": "使用手工 JSON 样本预览未保存路线，不连接输入/输出、不保存、不入队",
+        "description": "MQTT/HTTP 按来源的 JSON 定位与时间解码；Modbus/模拟来源接受已解码字段对象，不做寄存器或字节序仿真。样本最多 64 KiB，整个响应最多 64 KiB，截断结果仅供显示。",
         "operationId": "previewRouteSample",
         "requestBody": {
           "content": {
@@ -2648,8 +2648,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u663e\u5f0f\u8bfb\u53d6\u56fe\u5185 HTTP \u6765\u6e90\u4e00\u6b21\u5e76\u9884\u89c8\u5f53\u524d\u8def\u7ebf\uff1b\u4e0d\u8bbf\u95ee\u8f93\u51fa\u3001\u4e0d\u4fdd\u5b58\u3001\u4e0d\u5165\u961f",
-        "description": "\u590d\u7528\u4e32\u884c HTTP \u4f1a\u8bdd\u3001\u51ed\u8bc1\u4e0e\u51fa\u7ad9\u7b56\u7565\u3002\u8bfb\u53d6\u6700\u591a 1 MiB \u5b8c\u6574 JSON \u5e76\u4fdd\u7cbe\u5ea6\u89e3\u7801\uff0c\u4e0d\u53d7\u8bbe\u5907\u8bca\u65ad\u5c55\u793a\u9884\u7b97\u88c1\u526a\uff1b\u8131\u654f\u3001\u8f93\u5165\u8d85\u9650\u6216\u8bfb\u53d6\u5931\u8d25\u8fd4\u56de 422\u3002\u6574\u6b21 30 \u79d2\u3002",
+        "summary": "显式读取图内 HTTP 来源一次并预览当前路线；不访问输出、不保存、不入队",
+        "description": "复用串行 HTTP 会话、凭证与出站策略。读取最多 1 MiB 完整 JSON 并保精度解码，不受设备诊断展示预算裁剪；脱敏、输入超限或读取失败返回 422。整次 30 秒。",
         "operationId": "previewRouteHttpSample",
         "requestBody": {
           "content": {
@@ -2760,8 +2760,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u663e\u5f0f\u6293\u53d6\u56fe\u5185 MQTT \u6765\u6e90\u4e00\u6761\u6d88\u606f\u5e76\u9884\u89c8\u8def\u7ebf\uff1b\u4e0d\u53d1\u5e03\u3001\u4e0d\u4fdd\u5b58\u3001\u4e0d\u5165\u961f",
-        "description": "\u590d\u7528\u968f\u673a ClientId/CleanSession \u8bca\u65ad\u8ba2\u9605\uff0c\u4e0d\u5f71\u54cd\u6b63\u5f0f\u8ba2\u9605\u3002\u6807\u8bb0\u4fdd\u7559/\u91cd\u590d\u6d88\u606f\uff1b\u5b8c\u6574\u4e14\u672a\u8131\u654f\u624d\u8ba1\u7b97\uff0c\u91c7\u7528\u6b63\u5f0f\u89e3\u7801\u5b8c\u6574\u6d88\u606f\uff0c\u4e0d\u53d7\u8bca\u65ad\u5c55\u793a\u88c1\u526a\uff1b\u5931\u8d25\u3001\u8131\u654f\u6216\u534f\u8bae\u8d85\u9650\u8fd4\u56de 422\u3002\u6574\u6b21 30 \u79d2\u3002",
+        "summary": "显式抓取图内 MQTT 来源一条消息并预览路线；不发布、不保存、不入队",
+        "description": "复用随机 ClientId/CleanSession 诊断订阅，不影响正式订阅。标记保留/重复消息；完整且未脱敏才计算，采用正式解码完整消息，不受诊断展示裁剪；失败、脱敏或协议超限返回 422。整次 30 秒。",
         "operationId": "previewRouteMqttSample",
         "requestBody": {
           "content": {
@@ -2872,8 +2872,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u663e\u5f0f\u8bfb\u53d6\u56fe\u5185 Modbus \u6765\u6e90\u4e00\u6b21\u5e76\u9884\u89c8\u5f53\u524d\u8def\u7ebf\uff1b\u4e0d\u8bbf\u95ee\u8f93\u51fa\u3001\u4e0d\u4fdd\u5b58\u3001\u4e0d\u5165\u961f",
-        "description": "\u590d\u7528\u4e32\u884c Modbus \u4f1a\u8bdd\u548c\u6b63\u5f0f\u70b9\u8868\u89e3\u7801\uff1b\u4fdd\u7559\u90e8\u5206\u5757\u5931\u8d25\u7684\u5b57\u6bb5\u8d28\u91cf\uff0c\u6574\u7ec4\u5931\u8d25\u8fd4\u56de 422\uff0c\u6574\u4f53\u622a\u6b62\u65f6\u95f4 30 \u79d2\u3002\u65e0\u539f\u59cb JSON\uff0c\u4e0d\u6a21\u62df\u91c7\u96c6\u3002",
+        "summary": "显式读取图内 Modbus 来源一次并预览当前路线；不访问输出、不保存、不入队",
+        "description": "复用串行 Modbus 会话和正式点表解码；保留部分块失败的字段质量，整组失败返回 422，整体截止时间 30 秒。无原始 JSON，不模拟采集。",
         "operationId": "previewRouteModbusSample",
         "requestBody": {
           "content": {
@@ -2984,8 +2984,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u5217\u51fa\u56fe\u5185\u6765\u6e90\u7684\u6700\u8fd1\u8fd0\u884c\u8f93\u5165\u8bb0\u5f55\u5143\u6570\u636e\uff1b\u4e0d\u8fd4\u56de\u6b63\u6587\u3001\u4e0d\u89e6\u53d1\u91c7\u96c6",
-        "description": "\u6700\u591a 100 \u6761\uff0c\u6309\u6355\u83b7\u987a\u5e8f\u5012\u5e8f\u3002Executable \u4ec5\u4e3a\u5217\u8868\u65f6\u523b\u63d0\u793a\uff1b\u6267\u884c\u65f6\u91cd\u65b0\u68c0\u67e5\u72b6\u6001\u3001\u7248\u672c\u3001\u622a\u65ad\u53ca\u6dd8\u6c70\u3002",
+        "summary": "列出图内来源的最近运行输入记录元数据；不返回正文、不触发采集",
+        "description": "最多 100 条，按捕获顺序倒序。Executable 仅为列表时刻提示；执行时重新检查状态、版本、截断及淘汰。",
         "operationId": "listRouteRecentMessages",
         "requestBody": {
           "content": {
@@ -3086,8 +3086,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u4f7f\u7528\u660e\u786e\u9009\u4e2d\u7684\u5b8c\u6574\u8fd0\u884c\u8f93\u5165\u8bb0\u5f55\u9884\u89c8\u5f53\u524d\u56fe\uff1b\u4e0d\u91c7\u96c6\u3001\u4e0d\u8fde\u63a5\u8f93\u51fa\u3001\u4e0d\u4fdd\u5b58\u3001\u4e0d\u5165\u961f",
-        "description": "\u8981\u6c42\u8f93\u5165\u6b63\u5728\u8fd0\u884c\u4e14\u8bb0\u5f55\u4ecd\u5728\u5f53\u524d\u8fd0\u884c\u7248\u672c\u7684\u7f13\u5b58\u4e2d\uff1b\u505c\u6b62\u3001\u9000\u907f\u3001\u622a\u65ad\u6216\u6dd8\u6c70\u8fd4\u56de 409\uff0c\u4e0d\u66ff\u6362\u6210\u5176\u4ed6\u8bb0\u5f55\u3002\u6cbf\u7528\u6355\u83b7\u65f6\u7684\u89e3\u7801\u5b57\u6bb5\u4e0e\u65f6\u95f4\uff0c\u4e0d\u91cd\u89e3\u6790\u6765\u6e90\uff1b\u8fd4\u56de\u91c7\u96c6\u5f53\u65f6\u7684\u4e0a\u6e38\u65f6\u95f4\u544a\u8b66\u4e0e MQTT retained/DUP/QoS\uff1b\u672a\u63d0\u4f9b\u544a\u8b66\u5143\u6570\u636e\u65f6 InvalidUpstreamTime \u4e3a null\uff08\u672a\u77e5\uff09\u3002",
+        "summary": "使用明确选中的完整运行输入记录预览当前图；不采集、不连接输出、不保存、不入队",
+        "description": "要求输入正在运行且记录仍在当前运行版本的缓存中；停止、退避、截断或淘汰返回 409，不替换成其他记录。沿用捕获时的解码字段与时间，不重解析来源；返回采集当时的上游时间告警与 MQTT retained/DUP/QoS；未提供告警元数据时 InvalidUpstreamTime 为 null（未知）。",
         "operationId": "previewRouteRecentSample",
         "requestBody": {
           "content": {
@@ -3188,8 +3188,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u6838\u5bf9\u672c\u4f1a\u8bdd\u539f\u9884\u89c8\u7684\u901a\u7528\u8f93\u51fa\u76ee\u6807\u3001\u5b8c\u6574\u5b57\u8282\u6570\u4e0e\u6307\u7eb9\uff1b\u4e0d\u53d1\u9001",
-        "description": "\u53ea\u63a5\u53d7\u670d\u52a1\u7aef\u539f\u9884\u89c8\u7f16\u53f7\uff0c\u4e0d\u63a5\u53d7\u5ba2\u6237\u7aef\u6b63\u6587/\u5730\u5740\u3002\u51c6\u5907\u4e0d\u5ef6\u957f\u4e94\u5206\u949f\u4ea7\u7269\u671f\u9650\uff1b\u518d\u6b21\u51c6\u5907\u4f7f\u65e7\u786e\u8ba4\u5931\u6548\u3002",
+        "summary": "核对本会话原预览的通用输出目标、完整字节数与指纹；不发送",
+        "description": "只接受服务端原预览编号，不接受客户端正文/地址。准备不延长五分钟产物期限；再次准备使旧确认失效。",
         "operationId": "prepareRouteTestSend",
         "requestBody": {
           "content": {
@@ -3280,8 +3280,8 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u786e\u8ba4\u540e\u5411\u539f\u901a\u7528\u8f93\u51fa\u771f\u5b9e\u53d1\u9001\u4e00\u6b21\u5b8c\u6574\u9884\u89c8\u62a5\u6587\uff1b\u4e0d\u5165\u961f\u3001\u4e0d\u91cd\u8bd5",
-        "description": "\u4e00\u6b21\u6d88\u8d39\u786e\u8ba4\u3002\u5305\u62ec\u5c55\u793a\u88ab\u622a\u65ad\u65f6\u7684\u5b8c\u6574\u539f\u62a5\u6587\uff0c\u7f16\u53f7\u548c\u65f6\u95f4\u4e0d\u91cd\u65b0\u751f\u6210\u3002\u7ed3\u679c\u672a\u77e5/\u4e22\u56de\u590d\u4e5f\u4e0d\u80fd\u91cd\u653e\uff1b\u5fc5\u987b\u91cd\u65b0\u9884\u89c8\u5e76\u786e\u8ba4\u3002\u5168\u5c40/\u4f1a\u8bdd\u5171\u4eab\u9884\u89c8\u9884\u7b97\uff0c\u6700\u591a30\u79d2\u3002TenonIoT\u4e0d\u63d0\u4f9b\u3002",
+        "summary": "确认后向原通用输出真实发送一次完整预览报文；不入队、不重试",
+        "description": "一次消费确认。包括展示被截断时的完整原报文，编号和时间不重新生成。结果未知/丢回复也不能重放；必须重新预览并确认。全局/会话共享预览预算，最多30秒。TenonIoT不提供。",
         "operationId": "confirmRouteTestSend",
         "requestBody": {
           "content": {
@@ -3372,8 +3372,8 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u663e\u5f0f\u8bfb\u53d6 Modbus \u8349\u7a3f\u70b9\u8868\u4e00\u6b21\uff0c\u4e0d\u4fdd\u5b58\u3001\u4e0d\u5e94\u7528\u6216\u5165\u53d1\u9001\u961f\u5217",
-        "description": "Source \u63d0\u4f9b\u672a\u4fdd\u5b58\u70b9\u8868\uff1b\u5426\u5219\u6309 InputId \u8bfb\u53d6\u4e00\u7ec4\uff0c\u7701\u7565 InputId \u8bfb\u53d6\u5168\u90e8\u542f\u7528\u7ec4\u3002\u8fde\u63a5\u4e0e UnitId \u53d6\u8be5\u7248\u672c\u7684\u5df2\u5b58\u8bbe\u5907\u8349\u7a3f\uff1b\u5171\u4eab\u603b\u671f\u9650 30 \u79d2\u4e0e 64 KiB \u663e\u793a\u5bb9\u91cf\u3002\u622a\u65ad\u6216\u672a\u5b8c\u6210\u7ec4\u4e0d\u80fd\u5f53\u4f5c\u5b8c\u6574\u6837\u672c\u3002",
+        "summary": "显式读取 Modbus 草稿点表一次，不保存、不应用或入发送队列",
+        "description": "Source 提供未保存点表；否则按 InputId 读取一组，省略 InputId 读取全部启用组。连接与 UnitId 取该版本的已存设备草稿；共享总期限 30 秒与 64 KiB 显示容量。截断或未完成组不能当作完整样本。",
         "operationId": "previewModbusDevice",
         "parameters": [
           {
@@ -3486,8 +3486,8 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u4f7f\u7528\u5df2\u4fdd\u5b58\u8bbe\u5907\u8fde\u63a5\u663e\u5f0f\u91c7\u6837 HTTP \u6765\u6e90\uff0c\u4e0d\u4fdd\u5b58\u3001\u5e94\u7528\u6216\u5165\u53d1\u9001\u961f\u5217",
-        "description": "Source \u4e3a\u672a\u4fdd\u5b58\u6765\u6e90\uff1b\u5426\u5219\u6309 InputId \u6216\u5168\u90e8\u542f\u7528\u6765\u6e90\u8bfb\u53d6\u3002\u6574\u6b21\u5171\u7528 30 \u79d2/64 KiB \u663e\u793a\u5bb9\u91cf\uff0c\u5404\u6765\u6e90\u4ecd\u53d7\u8fde\u63a5\u8d85\u65f6\u9650\u5236\u3002\u622a\u65ad\u6216\u8131\u654f\u6b63\u6587\u4e0d\u53ef\u7528\u4e8e\u6837\u672c\u63a8\u65ad\u3002",
+        "summary": "使用已保存设备连接显式采样 HTTP 来源，不保存、应用或入发送队列",
+        "description": "Source 为未保存来源；否则按 InputId 或全部启用来源读取。整次共用 30 秒/64 KiB 显示容量，各来源仍受连接超时限制。截断或脱敏正文不可用于样本推断。",
         "operationId": "previewHttpDevice",
         "parameters": [
           {
@@ -3600,8 +3600,8 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u4f7f\u7528\u5df2\u4fdd\u5b58\u8bbe\u5907\u8fde\u63a5\u663e\u5f0f\u6293\u53d6 MQTT \u6765\u6e90\u7684\u4e00\u6761\u6d88\u606f\uff0c\u4e0d\u4fdd\u5b58\u3001\u5e94\u7528\u6216\u5165\u53d1\u9001\u961f\u5217",
-        "description": "Source \u4e3a\u672a\u4fdd\u5b58\u6765\u6e90\uff1b\u5426\u5219\u987b\u6309 InputId \u9009\u62e9\u5df2\u4fdd\u5b58\u6765\u6e90\u3002\u72ec\u7acb\u968f\u673a ClientId/CleanSession \u8bca\u65ad\u8ba2\u9605\uff0c\u4e0d\u6539\u53d8\u6b63\u5f0f\u8ba2\u9605\u6216\u5176\u786e\u8ba4\uff1b\u6574\u6b21\u6700\u591a 30 \u79d2\uff0c\u663e\u793a\u6700\u591a 64 KiB\uff0c\u6807\u8bb0\u4fdd\u7559\u6d88\u606f\u3002",
+        "summary": "使用已保存设备连接显式抓取 MQTT 来源的一条消息，不保存、应用或入发送队列",
+        "description": "Source 为未保存来源；否则须按 InputId 选择已保存来源。独立随机 ClientId/CleanSession 诊断订阅，不改变正式订阅或其确认；整次最多 30 秒，显示最多 64 KiB，标记保留消息。",
         "operationId": "previewMqttSource",
         "parameters": [
           {
@@ -3714,8 +3714,8 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u7ba1\u7406\u5458\u5206\u9875\u67e5\u770b\u672c\u5730\u8d26\u53f7\uff0c\u4e0d\u8fd4\u56de\u5bc6\u7801\u54c8\u5e0c\u6216\u5b89\u5168\u6233",
-        "description": "\u6309ID\u5347\u5e8f\uff0c\u6bcf\u9875\u6700\u591a100\u6761\u3002Version\u7ed1\u5b9a\u7ba1\u7406\u5b57\u6bb5\u548c\u9501\u5b9a\u72b6\u6001\uff1b\u4e0d\u662f\u767b\u5f55\u51ed\u636e\u3002\u767b\u5f55\u65f6\u95f4\u53d8\u5316\u4e0d\u4f7f\u7ba1\u7406\u7248\u672c\u5931\u6548\u3002",
+        "summary": "管理员分页查看本地账号，不返回密码哈希或安全戳",
+        "description": "按ID升序，每页最多100条。Version绑定管理字段和锁定状态；不是登录凭据。登录时间变化不使管理版本失效。",
         "operationId": "listUsers",
         "parameters": [
           {
@@ -3810,8 +3810,8 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u521b\u5efa\u4f7f\u7528\u4e34\u65f6\u5bc6\u7801\u7684\u672c\u5730\u8d26\u53f7",
-        "description": "\u8d26\u53f7\u540d\u4e0d\u53ef\u4fee\u6539\u3001\u5ffd\u7565\u5927\u5c0f\u5199\u552f\u4e00\uff1b\u663e\u793a\u540d\u6700\u591a128\u5b57\u7b26\u3002\u5fc5\u987b\u6539\u4e34\u65f6\u5bc6\u7801\u540e\u624d\u80fd\u8fdb\u5165\u7cfb\u7edf\u3002\u64cd\u4f5c\u4e0e\u5ba1\u8ba1\u540c\u4e8b\u52a1\uff0c\u4e0d\u81ea\u52a8\u91cd\u653e\u3002",
+        "summary": "创建使用临时密码的本地账号",
+        "description": "账号名不可修改、忽略大小写唯一；显示名最多128字符。必须改临时密码后才能进入系统。操作与审计同事务，不自动重放。",
         "operationId": "createUser",
         "requestBody": {
           "content": {
@@ -3892,7 +3892,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u4fee\u6539\u663e\u793a\u540d\u3001\u56fa\u5b9a\u89d2\u8272\u53ca\u542f\u505c\u72b6\u6001\uff1b\u5b89\u5168\u53d8\u66f4\u7ed3\u675f\u5168\u90e8\u4f1a\u8bdd",
+        "summary": "修改显示名、固定角色及启停状态；安全变更结束全部会话",
         "operationId": "updateUser",
         "parameters": [
           {
@@ -3983,7 +3983,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u5220\u9664\u672c\u5730\u8d26\u53f7\uff0c\u4fdd\u7559\u539f\u8d26\u53f7\u7684\u5ba1\u8ba1\uff1b\u4e0d\u80fd\u5220\u9664\u81ea\u5df1\u6216\u6700\u540e\u4e00\u4e2a\u542f\u7528\u7ba1\u7406\u5458",
+        "summary": "删除本地账号，保留原账号的审计；不能删除自己或最后一个启用管理员",
         "operationId": "deleteUser",
         "parameters": [
           {
@@ -4095,7 +4095,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u8bbe\u7f6e\u4e34\u65f6\u5bc6\u7801\u5e76\u7ed3\u675f\u5168\u90e8\u4f1a\u8bdd",
+        "summary": "设置临时密码并结束全部会话",
         "operationId": "resetUserPassword",
         "parameters": [
           {
@@ -4188,7 +4188,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u63d0\u524d\u89e3\u9664\u767b\u5f55\u9501\u5b9a\uff0c\u4e0d\u81ea\u52a8\u767b\u5f55\u6216\u542f\u7528\u8d26\u53f7",
+        "summary": "提前解除登录锁定，不自动登录或启用账号",
         "operationId": "unlockUser",
         "parameters": [
           {
@@ -4281,7 +4281,7 @@
         "tags": [
           "Users"
         ],
-        "summary": "\u7ed3\u675f\u8be5\u7528\u6237\u5168\u90e8\u5df2\u7b7e\u53d1\u4f1a\u8bdd\uff0c\u4e0d\u505c\u7528\u8d26\u53f7",
+        "summary": "结束该用户全部已签发会话，不停用账号",
         "operationId": "endUserSessions",
         "parameters": [
           {
@@ -4374,7 +4374,7 @@
         "tags": [
           "Tokens"
         ],
-        "summary": "\u7ba1\u7406\u5458\u5206\u9875\u67e5\u770b\u4ee4\u724c\u5143\u6570\u636e\uff0c\u6c38\u4e0d\u8fd4\u56de\u539f\u6587\u6216\u54c8\u5e0c",
+        "summary": "管理员分页查看令牌元数据，永不返回原文或哈希",
         "operationId": "listApiTokens",
         "parameters": [
           {
@@ -4469,8 +4469,8 @@
         "tags": [
           "Tokens"
         ],
-        "summary": "\u4ec5HTTPS\u521b\u5efa\u56fa\u5b9a\u89d2\u8272\u4ee4\u724c\uff0c\u539f\u6587\u53ea\u8fd4\u56de\u4e00\u6b21",
-        "description": "\u540d\u79f01\u201464\u5b57\u7b26\u4e14\u4e0d\u53ef\u590d\u7528\uff1b\u89d2\u8272\u548c\u6709\u6548\u671f\u4e0d\u53ef\u4fee\u6539\uff0c\u6700\u591a1000\u4e2a\u5c1a\u672a\u540a\u9500\u4ee4\u724c\uff08\u542b\u8fc7\u671f\u9879\uff09\u3002HTTPS Cookie\u4ecd\u987bCSRF\u3002\u54cd\u5e94\u4e22\u5931\u4e0d\u5f97\u81ea\u52a8\u91cd\u653e\uff1a\u6838\u5bf9\u5217\u8868\uff0c\u540a\u9500\u540e\u6362\u540d\u521b\u5efa\u3002\u7ba1\u7406\u5458\u4ee4\u724c\u521b\u5efa\u7684\u4ee4\u724c\u6cbf\u7528\u539f\u6765\u6e90\u8d26\u53f7\u5f52\u5c5e\uff0c\u521b\u5efa\u52a8\u4f5c\u53e6\u8bb0\u64cd\u4f5c\u8005\u4ee4\u724c\uff1b\u4e0d\u7ee7\u627f\u521b\u5efa\u8005\u540e\u7eed\u89d2\u8272/\u542f\u505c\u72b6\u6001\u3002",
+        "summary": "仅HTTPS创建固定角色令牌，原文只返回一次",
+        "description": "名称1—64字符且不可复用；角色和有效期不可修改，最多1000个尚未吊销令牌（含过期项）。HTTPS Cookie仍须CSRF。响应丢失不得自动重放：核对列表，吊销后换名创建。管理员令牌创建的令牌沿用原来源账号归属，创建动作另记操作者令牌；不继承创建者后续角色/启停状态。",
         "operationId": "createApiToken",
         "requestBody": {
           "content": {
@@ -4551,8 +4551,8 @@
         "tags": [
           "Tokens"
         ],
-        "summary": "\u660e\u786e\u786e\u8ba4\u540e\u540a\u9500\u4ee4\u724c\uff0c\u4e0b\u4e00\u8bf7\u6c42\u7acb\u5373\u62d2\u7edd",
-        "description": "\u4e0d\u64a4\u9500\u5df2\u63a5\u7ba1\u7684\u540e\u53f0\u64cd\u4f5c\uff0c\u4e0d\u5220\u9664\u5386\u53f2\u5143\u6570\u636e\u6216\u5ba1\u8ba1\uff1b\u4e0d\u53ef\u53d6\u6d88\u540a\u9500\uff0c\u91cd\u590d\u786e\u8ba4409\u800c\u4e0d\u518d\u6b21\u8bb0\u6210\u529f\u3002",
+        "summary": "明确确认后吊销令牌，下一请求立即拒绝",
+        "description": "不撤销已接管的后台操作，不删除历史元数据或审计；不可取消吊销，重复确认409而不再次记成功。",
         "operationId": "revokeApiToken",
         "parameters": [
           {
@@ -4638,8 +4638,8 @@
         "tags": [
           "Audit"
         ],
-        "summary": "\u786e\u8ba4\u5bfc\u51fa\u6574\u4e2a\u5ba1\u8ba1\u7b5b\u9009\u8303\u56f4\u4e3aCSV",
-        "description": "\u987bconfirmed=true\u3002202\u4ec5\u8868\u793a\u63a5\u6536\uff1b\u540e\u53f0\u51bb\u7ed3\u7f16\u53f7\u4e0a\u754c\uff0c\u5206\u77ed\u9875\u751f\u6210\u5b8c\u6574\u6587\u4ef6\u5e76\u6301\u4e45\u5316\u5bfc\u51fa\u5ba1\u8ba1\u540e\u624d\u53ef\u4e0b\u8f7d\u3002\u5355\u7f51\u5173\u4e00\u4efd\uff0c\u6709\u6548\u671f15\u5206\u949f\uff08\u542b\u751f\u6210\u3001\u7b49\u5f85\u4e0e\u4e0b\u8f7d\uff09\u3002\u54cd\u5e94\u4e22\u5931\u53ea\u67e5\u8be2\uff0c\u4e0d\u81ea\u52a8\u91cd\u653e\u3002",
+        "summary": "确认导出整个审计筛选范围为CSV",
+        "description": "须confirmed=true。202仅表示接收；后台冻结编号上界，分短页生成完整文件并持久化导出审计后才可下载。单网关一份，有效期15分钟（含生成、等待与下载）。响应丢失只查询，不自动重放。",
         "operationId": "startAuditExport",
         "requestBody": {
           "content": {
@@ -4718,7 +4718,7 @@
         "tags": [
           "Audit"
         ],
-        "summary": "\u67e5\u8be2\u5f53\u524d\u4f1a\u8bdd\u6216Token\u62e5\u6709\u7684\u5bfc\u51fa\u72b6\u6001",
+        "summary": "查询当前会话或Token拥有的导出状态",
         "operationId": "getAuditExport",
         "responses": {
           "200": {
@@ -4759,7 +4759,7 @@
         "tags": [
           "Audit"
         ],
-        "summary": "\u53d6\u6d88\u81ea\u5df1\u7684\u5ba1\u8ba1\u5bfc\u51fa\u5e76\u6e05\u7406\u6587\u4ef6",
+        "summary": "取消自己的审计导出并清理文件",
         "operationId": "cancelAuditExport",
         "parameters": [
           {
@@ -4821,8 +4821,8 @@
         "tags": [
           "Audit"
         ],
-        "summary": "\u4e00\u6b21\u6027\u539f\u751f\u4e0b\u8f7d\u5b8c\u6574\u5ba1\u8ba1CSV",
-        "description": "\u540c\u4e00\u4f1a\u8bdd\u6216Token\u4e14\u4ecd\u4e3a\u7ba1\u7406\u5458\u624d\u53ef\u4e0b\u8f7d\uff0cID\u4e0d\u662f\u6388\u6743\u51ed\u8bc1\u3002UTF-8 BOM\u3001CRLF\u3001\u6807\u51c6\u5f15\u53f7\u8f6c\u4e49\uff0c\u5371\u9669\u8868\u683c\u516c\u5f0f\u524d\u7f00\u52a0\u5355\u5f15\u53f7\u3002\u4ec5\u751f\u6210\u65f6\u4e0a\u754c\u4ee5\u5185\u7684\u5b8c\u6574\u7b5b\u9009\u7ed3\u679c\uff0c\u4e0d\u53d7\u5217\u8868\u5206\u9875\u9650\u5236\u3002HTTP\u5199\u51fa\u4e0d\u8868\u793a\u7528\u6237\u5df2\u4fdd\u5b58\u3002",
+        "summary": "一次性原生下载完整审计CSV",
+        "description": "同一会话或Token且仍为管理员才可下载，ID不是授权凭证。UTF-8 BOM、CRLF、标准引号转义，危险表格公式前缀加单引号。仅生成时上界以内的完整筛选结果，不受列表分页限制。HTTP写出不表示用户已保存。",
         "operationId": "downloadAuditExport",
         "parameters": [
           {
@@ -4887,7 +4887,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u67e5\u770b\u5168\u5c40\u8349\u7a3f\u76f8\u5bf9\u6709\u6548\u914d\u7f6e\u7684\u5bf9\u8c61\u4fee\u6539\u6570\uff1b\u4e0d\u7f16\u8bd1\u6216\u5e94\u7528\uff0c\u65e7\u7248\u672c\u65e0\u6cd5\u6bd4\u8f83\u65f6\u6570\u91cf\u4e3a\u672a\u77e5",
+        "summary": "查看全局草稿相对有效配置的对象修改数；不编译或应用，旧版本无法比较时数量为未知",
         "operationId": "getConfigurationDraftSummary",
         "responses": {
           "200": {
@@ -4958,7 +4958,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u4e8c\u6b21\u786e\u8ba4\u540e\u653e\u5f03\u5168\u90e8\u672a\u5e94\u7528\u4fee\u6539\uff1b\u4e0d\u6539\u53d8\u8fd0\u884c\u914d\u7f6e\u3001\u961f\u5217\u6216\u5f53\u524d\u51ed\u8bc1\uff0c\u4e0d\u81ea\u52a8\u91cd\u8bd5",
+        "summary": "二次确认后放弃全部未应用修改；不改变运行配置、队列或当前凭证，不自动重试",
         "operationId": "discardConfigurationDraft",
         "requestBody": {
           "content": {
@@ -5049,8 +5049,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u4e0a\u4f20\u539f\u59cbJSON\u6587\u4ef6\u5e76\u9884\u68c0\u5408\u5e76/\u66ff\u6362\uff1b\u53ea\u8fd4\u56de\u672c\u4f1a\u8bdd\u7684\u5b8c\u6574\u5dee\u5f02\uff0c\u4e0d\u5199\u8349\u7a3f",
-        "description": "\u6700\u591a16MiB\uff0c\u8bfb\u53d6\u524d\u53d6\u5f97\u5171\u4eab\u9884\u89c8\u9884\u7b97\u3002\u9ed8\u8ba4merge\uff1breplace\u5220\u9664\u6587\u4ef6\u5916\u5bf9\u8c61\u3002\u5168\u7f51\u5173\u4e00\u4efd\u5019\u9009\uff0c15\u5206\u949f\u8fc7\u671f\uff0c\u540c\u4f1a\u8bdd\u65b0\u4e0a\u4f20\u4f5c\u5e9f\u65e7\u5019\u9009\u3002expectedVersion\u5fc5\u586b\uff1b\u540cconnectionKey\u4e0d\u53ef\u53d8\u66f4\u534f\u8bae\u7c7b\u578b\u3002",
+        "summary": "上传原始JSON文件并预检合并/替换；只返回本会话的完整差异，不写草稿",
+        "description": "最多16MiB，读取前取得共享预览预算。默认merge；replace删除文件外对象。全网关一份候选，15分钟过期，同会话新上传作废旧候选。expectedVersion必填；同connectionKey不可变更协议类型。",
         "operationId": "prepareConfigurationImport",
         "parameters": [
           {
@@ -5188,7 +5188,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u8bfb\u53d6\u672c\u7ba1\u7406\u4f1a\u8bdd\u7684\u5f85\u786e\u8ba4\u5bfc\u5165\uff1b\u4e0d\u4f1a\u8fd4\u56de\u5176\u4ed6\u4f1a\u8bdd\u7684\u5019\u9009",
+        "summary": "读取本管理会话的待确认导入；不会返回其他会话的候选",
         "operationId": "getCurrentConfigurationImport",
         "responses": {
           "200": {
@@ -5259,7 +5259,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u53d6\u6d88\u672c\u4f1a\u8bdd\u7684\u5bfc\u5165\u5019\u9009\uff0c\u4e0d\u6539\u8349\u7a3f",
+        "summary": "取消本会话的导入候选，不改草稿",
         "operationId": "cancelConfigurationImport",
         "parameters": [
           {
@@ -5334,8 +5334,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u660e\u786e\u786e\u8ba4\u540e\u4e00\u6b21\u6027\u539f\u5b50\u5199\u5165\u8349\u7a3f\u53ca\u5ba1\u8ba1\uff1b\u4e0d\u5e94\u7528\u3001\u4e0d\u6539\u53d8\u51ed\u8bc1\u6216\u961f\u5217",
-        "description": "\u786e\u8ba4\u4e00\u6b21\u6d88\u8d39\uff0c\u4e8b\u52a1\u5185\u91cd\u67e5\u8eab\u4efd\u3001\u8349\u7a3f\u548c\u51ed\u8bc1\u7248\u672c\u3002\u5931\u8d25/\u53d6\u6d88/\u4e22\u56de\u590d\u4e0d\u6062\u590d\u8d44\u683c\uff0c\u4e0d\u81ea\u52a8\u91cd\u8bd5\uff1b\u8bf7\u8bfb\u53d6\u8349\u7a3f\u6838\u5bf9\u3002",
+        "summary": "明确确认后一次性原子写入草稿及审计；不应用、不改变凭证或队列",
+        "description": "确认一次消费，事务内重查身份、草稿和凭证版本。失败/取消/丢回复不恢复资格，不自动重试；请读取草稿核对。",
         "operationId": "confirmConfigurationImport",
         "requestBody": {
           "content": {
@@ -5436,7 +5436,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u67e5\u770b\u672c\u8fdb\u7a0b\u6700\u8fd1 20 \u6b21\u5e94\u7528/\u56de\u6eda\u7684\u8131\u654f\u8fdb\u5ea6\uff1b\u4e0d\u4ee3\u66ff\u6301\u4e45\u5316\u7248\u672c\u5386\u53f2",
+        "summary": "查看本进程最近 20 次应用/回滚的脱敏进度；不代替持久化版本历史",
         "operationId": "listConfigurationOperations",
         "responses": {
           "200": {
@@ -5470,7 +5470,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u67e5\u770b\u6307\u5b9a\u5e94\u7528/\u56de\u6eda\u7684\u8fdb\u5ea6\u548c\u7ed3\u679c\uff1b\u91cd\u542f\u6216\u8d85\u51fa\u4fdd\u7559\u8303\u56f4\u540e\u8fd4\u56de 404",
+        "summary": "查看指定应用/回滚的进度和结果；重启或超出保留范围后返回 404",
         "operationId": "getConfigurationOperation",
         "parameters": [
           {
@@ -5522,7 +5522,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u6309\u7248\u672c\u53f7\u964d\u5e8f\u67e5\u770b\u6301\u4e45\u5316\u5386\u53f2\u5143\u6570\u636e\uff1b\u4e0b\u4e00\u9875\u4f7f\u7528\u672c\u9875\u6700\u540e\u7684 revision \u4f5c\u4e3a beforeRevision",
+        "summary": "按版本号降序查看持久化历史元数据；下一页使用本页最后的 revision 作为 beforeRevision",
         "operationId": "listConfigurationVersions",
         "parameters": [
           {
@@ -5593,7 +5593,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u67e5\u770b\u6821\u9a8c\u54c8\u5e0c\u540e\u7684\u975e\u79d8\u5bc6\u7248\u672c\u5185\u5bb9\uff1b\u65e7\u7248\u672c\u7f3a\u5931\u7684\u5b8c\u6574\u8349\u7a3f\u4e0d\u8865\u9020",
+        "summary": "查看校验哈希后的非秘密版本内容；旧版本缺失的完整草稿不补造",
         "operationId": "getConfigurationVersion",
         "parameters": [
           {
@@ -5686,7 +5686,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u53ea\u8bfb\u6bd4\u8f83\u4e24\u4e2a\u4fdd\u7559\u7248\u672c\uff1brevision \u4e3a\u65e7\u4fa7\uff0cotherRevision \u4e3a\u65b0\u4fa7\uff0c\u4e0d\u6821\u9a8c\u662f\u5426\u53ef\u56de\u6eda",
+        "summary": "只读比较两个保留版本；revision 为旧侧，otherRevision 为新侧，不校验是否可回滚",
         "operationId": "compareConfigurationVersions",
         "parameters": [
           {
@@ -5789,7 +5789,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u53ea\u8bfb\u6bd4\u8f83\u5386\u53f2\u7248\u672c\u4e0e\u6307\u5b9a\u7248\u672c\u53f7\u7684\u5f53\u524d\u5168\u5c40\u8349\u7a3f\uff1b\u8349\u7a3f\u5df2\u53d8\u5316\u65f6\u8fd4\u56de\u51b2\u7a81",
+        "summary": "只读比较历史版本与指定版本号的当前全局草稿；草稿已变化时返回冲突",
         "operationId": "compareConfigurationVersionToDraft",
         "parameters": [
           {
@@ -5890,7 +5890,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u9884\u68c0\u5f53\u524d\u8349\u7a3f\u7684\u914d\u7f6e\u5dee\u5f02\u3001\u8def\u7ebf\u9519\u8bef\u548c\u76ee\u6807\u963b\u65ad\uff1b\u4e0d\u5e94\u7528\u914d\u7f6e",
+        "summary": "预检当前草稿的配置差异、路线错误和目标阻断；不应用配置",
         "operationId": "reviewConfigurationDraft",
         "requestBody": {
           "content": {
@@ -5981,7 +5981,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u9884\u68c0\u56de\u6eda\u76ee\u6807\u4e0e\u5f53\u524d\u8349\u7a3f\u3001\u51ed\u8bc1\u53ca\u79ef\u538b\u8bb0\u5f55\uff1b\u4e0d\u6267\u884c\u56de\u6eda",
+        "summary": "预检回滚目标与当前草稿、凭证及积压记录；不执行回滚",
         "operationId": "reviewConfigurationRollback",
         "parameters": [
           {
@@ -6094,7 +6094,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u786e\u8ba4\u5e76\u63d0\u4ea4\u5f53\u524d\u8349\u7a3f\u7684\u5e94\u7528\u64cd\u4f5c\uff1b202 \u4ec5\u8868\u793a\u5df2\u63a5\u7ba1\uff0c\u8bf7\u6309\u64cd\u4f5c ID \u67e5\u8be2\uff0c\u7981\u6b62\u81ea\u52a8\u91cd\u8bd5",
+        "summary": "确认并提交当前草稿的应用操作；202 仅表示已接管，请按操作 ID 查询，禁止自动重试",
         "operationId": "applyConfigurationDraft",
         "requestBody": {
           "content": {
@@ -6185,7 +6185,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u786e\u8ba4\u5e76\u63d0\u4ea4\u4eba\u5de5\u56de\u6eda\u64cd\u4f5c\uff1b202 \u4e0d\u8868\u793a\u5df2\u751f\u6548\uff0c\u8bf7\u6309\u64cd\u4f5c ID \u67e5\u8be2\uff0c\u7981\u6b62\u81ea\u52a8\u91cd\u8bd5",
+        "summary": "确认并提交人工回滚操作；202 不表示已生效，请按操作 ID 查询，禁止自动重试",
         "operationId": "rollbackConfigurationVersion",
         "parameters": [
           {
@@ -6298,8 +6298,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u6838\u5bf9\u540c\u8fde\u63a5\u6362\u5730\u5740\u7684\u539f\u65b0\u8eab\u4efd\u4e0e\u5b8c\u6574\u914d\u989d\uff1b\u53ea\u51c6\u5907\uff0c\u4e0d\u63d0\u4ea4\u914d\u7f6e\u6216\u8054\u7f51",
-        "description": "\u53ea\u5141\u8bb8\u660e\u786e\u9009\u4e2d\u7684\u53d7\u963b\u8fde\u63a5\u3002\u6e05\u5355\u5305\u542b\u5b8c\u6574\u914d\u7f6e\u5dee\u5f02\u53ca\u9010\u8fde\u63a5\u610f\u56fe\u7f16\u53f7\uff0c\u5c5e\u4e8e\u5f53\u524d\u767b\u5f55\u4f1a\u8bdd\uff0c\u6709\u654815\u5206\u949f\uff1b\u8d85\u989d\u4e0d\u80fd\u786e\u8ba4\u3002\u8fd4\u56deid\u4ea6\u4e3a\u786e\u8ba4\u540e\u7684\u5e94\u7528\u64cd\u4f5c\u7f16\u53f7\uff0c\u54cd\u5e94\u4e22\u5931\u53ea\u67e5\u8be2\uff0c\u4e0d\u91cd\u653e\u3002",
+        "summary": "管理员核对同连接换地址的原新身份与完整配额；只准备，不提交配置或联网",
+        "description": "只允许明确选中的受阻连接。清单包含完整配置差异及逐连接意图编号，属于当前登录会话，有效15分钟；超额不能确认。返回id亦为确认后的应用操作编号，响应丢失只查询，不重放。",
         "operationId": "prepareConfigurationMigration",
         "requestBody": {
           "content": {
@@ -6400,7 +6400,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u6062\u590d\u5f53\u524d\u767b\u5f55\u4f1a\u8bdd\u7684\u8fc1\u79fb\u5e94\u7528\u6838\u5bf9\u6e05\u5355",
+        "summary": "恢复当前登录会话的迁移应用核对清单",
         "operationId": "getConfigurationMigrationPreparation",
         "responses": {
           "200": {
@@ -6441,7 +6441,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u53d6\u6d88\u5c1a\u672a\u6d88\u8d39\u7684\u8fc1\u79fb\u5e94\u7528\u6e05\u5355\uff0c\u4e0d\u5f71\u54cd\u5df2\u63a5\u7ba1\u64cd\u4f5c\u6216\u961f\u5217",
+        "summary": "取消尚未消费的迁移应用清单，不影响已接管操作或队列",
         "operationId": "cancelConfigurationMigrationPreparation",
         "parameters": [
           {
@@ -6506,8 +6506,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u786e\u8ba4\u540c\u4e00\u6570\u636e\u6240\u6709\u8005\u540e\u63a5\u7ba1\u5e94\u7528\uff1b\u539f\u53d1\u9001\u5c4f\u969c\u8de8\u914d\u7f6eCOMMIT\uff0c\u9694\u79bb\u6210\u529f\u540e\u518d\u6fc0\u6d3b",
-        "description": "confirmed\u53casameOwnerConfirmed\u987b\u4e3atrue\uff0c\u58f0\u660e\u6bcf\u4e2a\u6240\u9009\u8fde\u63a5\u7684\u65b0\u65e7\u63a5\u6536\u65b9\u5c5e\u4e8e\u540c\u4e00\u6570\u636e\u6240\u6709\u8005\u3002\u4e00\u6b21\u6d88\u8d39\uff1b202\u4ec5\u8868\u793a\u5df2\u63a5\u7ba1\uff0c\u4e0d\u4fdd\u8bc1\u5df2\u63d0\u4ea4\u6216\u8fc1\u79fb\u3002\u53d6\u6d88\u8bf7\u6c42\u4e0d\u53d6\u6d88\u5df2\u63a5\u7ba1\u64cd\u4f5c\u3002\u6309\u51c6\u5907id\u67e5\u8be2configuration/operations\uff1b\u91cd\u542f\u540e\u6309\u9010\u8fde\u63a5\u610f\u56feid\u67e5\u8be2\u6301\u4e45\u7ed3\u679c\uff0c404\u4e0d\u662f\u672a\u63d0\u4ea4\u8bc1\u660e\u3002",
+        "summary": "管理员确认同一数据所有者后接管应用；原发送屏障跨配置COMMIT，隔离成功后再激活",
+        "description": "confirmed及sameOwnerConfirmed须为true，声明每个所选连接的新旧接收方属于同一数据所有者。一次消费；202仅表示已接管，不保证已提交或迁移。取消请求不取消已接管操作。按准备id查询configuration/operations；重启后按逐连接意图id查询持久结果，404不是未提交证明。",
         "operationId": "confirmConfigurationMigration",
         "parameters": [
           {
@@ -6619,7 +6619,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u67e5\u770b\u6301\u4e45\u8fc1\u79fb\u610f\u56fe\u53ca\u6700\u8fd1\u4e00\u6b21\u5c1d\u8bd5\uff1bcompleted\u4e0d\u4ee3\u8868\u5df2\u53d1\u9001",
+        "summary": "管理员查看持久迁移意图及最近一次尝试；completed不代表已发送",
         "operationId": "getConfigurationMigrationIntent",
         "parameters": [
           {
@@ -6691,7 +6691,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u6309\u6301\u4e45\u7248\u672c/\u8fde\u63a5\u6e38\u6807\u67e5\u770b\u8fc1\u79fb\u610f\u56fe\uff1b\u53ea\u67e5\u5143\u6570\u636e\uff0c\u4e0d\u81ea\u52a8\u91cd\u8bd5",
+        "summary": "管理员按持久版本/连接游标查看迁移意图；只查元数据，不自动重试",
         "operationId": "getConfigurationMigrationIntents",
         "parameters": [
           {
@@ -6809,7 +6809,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u53ea\u8bfb\u6838\u5bf9\u539f\u786e\u8ba4/\u5f53\u524d\u6709\u6548\u63a5\u6536\u65b9\u4e0e\u5f53\u524d\u5b8c\u6574\u914d\u989d\u7f3a\u53e3\uff1b\u4e0d\u662f\u5386\u53f2\u62d2\u7edd\u65f6\u7684\u914d\u989d\uff0c\u4e5f\u4e0d\u6388\u6743\u91cd\u8bd5",
+        "summary": "只读核对原确认/当前有效接收方与当前完整配额缺口；不是历史拒绝时的配额，也不授权重试",
         "operationId": "inspectConfigurationMigrationIntent",
         "parameters": [
           {
@@ -6891,8 +6891,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u91cd\u65b0\u6838\u5bf9\u62d2\u7edd\u6216\u65e7\u7248\u672a\u786e\u8ba4\u610f\u56fe\uff1b\u4e0d\u6539\u53d8\u72b6\u6001\u3001\u4e0d\u542f\u52a8\u8fc1\u79fb",
-        "description": "\u4e00\u4efd\u4f1a\u8bdd\u5f52\u5c5e\u768415\u5206\u949f\u6e05\u5355\u3002\u65b0\u76ee\u6807\u6765\u81ea\u5f53\u524d\u6709\u6548\u8ba1\u5212\uff0c\u4e0d\u662f\u8349\u7a3f\uff1b\u7f3a\u53e3\u975e\u96f6\u4e0d\u53ef\u786e\u8ba4\u3002\u8fd4\u56deid\u4e3a\u65b0\u5c1d\u8bd5\u7f16\u53f7\uff0c\u786e\u8ba4\u56de\u590d\u4e22\u5931\u540e\u4ec5\u67e5\u8be2deliveries/migrations/{id}\u3002",
+        "summary": "管理员重新核对拒绝或旧版未确认意图；不改变状态、不启动迁移",
+        "description": "一份会话归属的15分钟清单。新目标来自当前有效计划，不是草稿；缺口非零不可确认。返回id为新尝试编号，确认回复丢失后仅查询deliveries/migrations/{id}。",
         "operationId": "prepareConfigurationMigrationIntentRetry",
         "parameters": [
           {
@@ -6984,7 +6984,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u6062\u590d\u672c\u767b\u5f55\u4f1a\u8bdd\u5c1a\u672a\u6d88\u8d39\u7684\u610f\u56fe\u91cd\u8bd5\u6838\u5bf9\u6e05\u5355",
+        "summary": "恢复本登录会话尚未消费的意图重试核对清单",
         "operationId": "getConfigurationMigrationIntentRetryPreparation",
         "responses": {
           "200": {
@@ -7025,7 +7025,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u53d6\u6d88\u672a\u6d88\u8d39\u7684\u6838\u5bf9\u6e05\u5355\uff0c\u4e0d\u53d6\u6d88\u540e\u53f0\u5c1d\u8bd5",
+        "summary": "取消未消费的核对清单，不取消后台尝试",
         "operationId": "cancelConfigurationMigrationIntentRetryPreparation",
         "parameters": [
           {
@@ -7090,8 +7090,8 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u4e00\u6b21\u786e\u8ba4\u539f/\u73b0\u63a5\u6536\u65b9\u5c5e\u4e8e\u540c\u4e00\u6240\u6709\u8005\uff0c\u539f\u5b50\u767b\u8bb0\u65b0\u5ba1\u6279\u53ca\u5c1d\u8bd5\uff1b\u4fdd\u7559\u5168\u90e8\u5386\u53f2",
-        "description": "confirmed\u53casameOwnerConfirmed\u987b\u4e3atrue\u3002\u7ed3\u679c\u672a\u77e5\u7684started\u53ca\u5df2\u5b8c\u6210\u610f\u56fe\u4e0d\u53ef\u91cd\u653e\uff1b\u4e0d\u91cd\u65b0\u9009\u62e9\u6216\u6269\u5927\u65e7\u9694\u79bb\u8303\u56f4\uff0c\u4e0d\u89e3\u9664\u624b\u52a8\u6682\u505c\u3002\u8bf7\u6c42\u53d6\u6d88\u4ec5\u7ed3\u675f\u7b49\u5f85\uff0c\u540e\u53f0\u548c\u505c\u673a\u6240\u6709\u6743\u5f52\u539f\u534f\u8c03\u8005\u3002",
+        "summary": "一次确认原/现接收方属于同一所有者，原子登记新审批及尝试；保留全部历史",
+        "description": "confirmed及sameOwnerConfirmed须为true。结果未知的started及已完成意图不可重放；不重新选择或扩大旧隔离范围，不解除手动暂停。请求取消仅结束等待，后台和停机所有权归原协调者。",
         "operationId": "confirmConfigurationMigrationIntentRetry",
         "parameters": [
           {
@@ -7213,7 +7213,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u67e5\u770b\u6301\u4e45\u6709\u6548\u7248\u672c\u4e0e\u8fd0\u884c\u5931\u8d25\u72b6\u6001\uff1b\u635f\u574f\u5feb\u7167\u4e0d\u89c6\u4e3a\u65e0\u914d\u7f6e\uff0c\u4e0d\u6539\u53d8\u914d\u7f6e\u6216\u8fd0\u884c\u65f6",
+        "summary": "查看持久有效版本与运行失败状态；损坏快照不视为无配置，不改变配置或运行时",
         "operationId": "getConfigurationRuntimeState",
         "responses": {
           "200": {
@@ -7254,7 +7254,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u786e\u8ba4\u540e\u6e05\u96f6\u542f\u52a8\u4fdd\u62a4\u6b21\u6570\u5e76\u91cd\u8bd5\u5f53\u524d\u6709\u6548\u5feb\u7167\uff1b\u4e0d\u5e94\u7528\u8349\u7a3f\u6216\u751f\u6210\u7248\u672c\uff0c\u6309\u64cd\u4f5c ID \u67e5\u8be2\u4e14\u7981\u6b62\u81ea\u52a8\u91cd\u8bd5",
+        "summary": "确认后清零启动保护次数并重试当前有效快照；不应用草稿或生成版本，按操作 ID 查询且禁止自动重试",
         "operationId": "retryConfigurationRuntime",
         "requestBody": {
           "content": {
@@ -7345,7 +7345,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u9884\u68c0\u635f\u574f\u6709\u6548\u5feb\u7167\u6062\u590d\uff1b\u5b8c\u6574\u5386\u53f2\u3001\u5f53\u524d\u51ed\u8bc1\u548c\u51bb\u7ed3\u76ee\u6807\u6838\u5bf9\uff0c\u4e0d\u6e05\u7a7a\u6216\u66ff\u6362\u8349\u7a3f",
+        "summary": "管理员预检损坏有效快照恢复；完整历史、当前凭证和冻结目标核对，不清空或替换草稿",
         "operationId": "reviewCorruptSnapshotRecovery",
         "parameters": [
           {
@@ -7448,7 +7448,7 @@
         "tags": [
           "Configuration"
         ],
-        "summary": "\u7ba1\u7406\u5458\u660e\u786e\u786e\u8ba4\u540e\u751f\u6210\u65b0\u6709\u6548\u7248\u672c\uff0c\u4fdd\u7559\u8349\u7a3f\uff1b202\u4ec5\u63a5\u7ba1\uff0c\u6309\u64cd\u4f5cID\u67e5\u8be2\u4e14\u7981\u6b62\u81ea\u52a8\u91cd\u8bd5",
+        "summary": "管理员明确确认后生成新有效版本，保留草稿；202仅接管，按操作ID查询且禁止自动重试",
         "operationId": "recoverCorruptSnapshot",
         "parameters": [
           {
@@ -7551,7 +7551,7 @@
         "tags": [
           "System"
         ],
-        "summary": "\u8bfb\u53d6\u5f53\u524d\u6709\u6548\u7684\u8d44\u6e90\u9884\u7b97\u3001\u8ba1\u5212\u51c6\u5165\u4e0a\u9650\u4e0e\u5ba1\u8ba1\u4fdd\u7559\u671f",
+        "summary": "读取当前有效的资源预算、计划准入上限与审计保留期",
         "operationId": "getRuntimeParameters",
         "responses": {
           "200": {
@@ -7580,8 +7580,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u7ba1\u7406\u5458\u786e\u8ba4\u540e\u6301\u4e45\u5316\u8fd0\u884c\u53c2\u6570\u5e76\u7acb\u5373\u4f9b\u540e\u7eed\u51c6\u5165\u53ca\u6e05\u7406\u91c7\u7528",
-        "description": "\u7248\u672c\u6761\u4ef6\u3001\u786e\u8ba4\u548c\u5ba1\u8ba1\u540c\u4e8b\u52a1\u3002\u964d\u4f4e\u5e76\u53d1\u4e0d\u53d6\u6d88\u5df2\u6709\u79df\u7ea6\uff1b\u5ba1\u8ba1\u4e0d\u5f97\u77ed\u4e8e180\u5929\u6216\u90e8\u7f72\u4e0b\u9650\u3002\u6e05\u7406/\u5bfc\u51fa\u6b63\u5728\u6267\u884c\u65f6\u7acb\u5373\u62d2\u7edd\uff0c\u4e0d\u6392\u961f\u3002\u8c03\u8bd5\u7f13\u5b58\u964d\u4f4e\u9884\u7b97\u5373\u65f6\u6309\u6355\u83b7\u987a\u5e8f\u6dd8\u6c70\u8bca\u65ad\u526f\u672c\uff0c\u5355\u676164KiB\u4e0d\u53d8\u3002\u8ba1\u5212\u4e0a\u9650\u53ea\u7ea6\u675f\u65b0\u7f16\u8bd1/\u65b0\u79cd\u5b50\uff0c\u51bb\u7ed3\u4e0e\u63d0\u4ea4\u590d\u6838\uff1b\u4e0d\u505c\u6b62\u73b0\u6709\u8ba1\u5212\u6216\u4f7f\u5b8c\u6574\u5386\u53f2\u5931\u6548\u3002\u65e0\u8349\u7a3f/\u8fd0\u884c\u7248\u672c\u53d8\u5316\u3002",
+        "summary": "管理员确认后持久化运行参数并立即供后续准入及清理采用",
+        "description": "版本条件、确认和审计同事务。降低并发不取消已有租约；审计不得短于180天或部署下限。清理/导出正在执行时立即拒绝，不排队。调试缓存降低预算即时按捕获顺序淘汰诊断副本，单条64KiB不变。计划上限只约束新编译/新种子，冻结与提交复核；不停止现有计划或使完整历史失效。无草稿/运行版本变化。",
         "operationId": "writeRuntimeParameters",
         "requestBody": {
           "content": {
@@ -7652,7 +7652,7 @@
         "tags": [
           "System"
         ],
-        "summary": "\u8bfb\u53d6\u5f53\u524d\u961f\u5217\u914d\u989d\u3001\u4fdd\u7559\u671f\u548c\u78c1\u76d8\u4fdd\u62a4\u53c2\u6570",
+        "summary": "读取当前队列配额、保留期和磁盘保护参数",
         "operationId": "getQueueParameters",
         "responses": {
           "200": {
@@ -7681,8 +7681,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u7ba1\u7406\u5458\u786e\u8ba4\u540e\u6301\u4e45\u5316\u961f\u5217\u8fd0\u884c\u53c2\u6570\uff0c\u540e\u7eed\u961f\u5217\u4e8b\u52a1\u91c7\u7528\u65b0\u503c",
-        "description": "\u4e0e\u5ba1\u8ba1\u540c\u4e8b\u52a1\uff1b\u7248\u672c\u6761\u4ef6\u3001\u660e\u786e\u786e\u8ba4\u3002\u964d\u4f4e\u914d\u989d\u4e0d\u5220\u9664\u65e7\u8bb0\u5f55\uff1b\u7f29\u77ed\u4fdd\u7559\u671f\u5f71\u54cd\u4e0b\u4e00\u8f6e\u6e05\u7406\u3002\u539f\u961f\u5217\u4e8b\u52a1\u6b63\u5728\u4f7f\u7528\u53c2\u6570\u65f6409\uff0c\u4e0d\u6392\u961f\u3002\u4ec5\u901a\u7528\u8f93\u51fa\uff0c\u5e73\u53f0\u53bb\u91cd\u7a97\u53e3\u5728T4\u8054\u52a8\u3002",
+        "summary": "管理员确认后持久化队列运行参数，后续队列事务采用新值",
+        "description": "与审计同事务；版本条件、明确确认。降低配额不删除旧记录；缩短保留期影响下一轮清理。原队列事务正在使用参数时409，不排队。仅通用输出，平台去重窗口在T4联动。",
         "operationId": "writeQueueParameters",
         "requestBody": {
           "content": {
@@ -7753,7 +7753,7 @@
         "tags": [
           "System"
         ],
-        "summary": "\u67e5\u770b\u7f51\u9875\u4ee3\u7406\u4fe1\u4efb\u4e0e\u53ea\u8bfb\u90e8\u7f72\u4fe1\u4efb\uff1b\u89c4\u5219\u53d6\u5e76\u96c6",
+        "summary": "查看网页代理信任与只读部署信任；规则取并集",
         "operationId": "getTrustedProxies",
         "responses": {
           "200": {
@@ -7782,8 +7782,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u7ba1\u7406\u5458\u6838\u5bf9\u98ce\u9669\u540e\u7248\u672c\u5316\u4fdd\u5b58\u4ee3\u7406\u4fe1\u4efb\uff0c\u540e\u7eed\u8bf7\u6c42\u91c7\u7528\u65b0\u503c",
-        "description": "\u53ea\u4fe1\u4efb\u660e\u786e\u7684IP/CIDR\uff0c\u53ea\u5904\u7406\u4e00\u5c42\u6765\u6e90\u4e0e\u6700\u540e\u4e00\u4e2a\u534f\u8bae\u503c\uff1b\u4e0d\u80fd\u64a4\u9500\u90e8\u7f72\u4fe1\u4efb\u3002\u65b0\u589e\u4fe1\u4efb\u53ef\u6539\u53d8Cookie\u534f\u8bae\u3001Token\u51c6\u5165\u3001\u9650\u6d41\u4e0e\u5ba1\u8ba1\u6765\u6e90\uff0c\u4e0d\u5e94\u4fe1\u4efb\u6574\u4e2a\u5ba2\u6237\u7aef\u7f51\u6bb5\u3002",
+        "summary": "管理员核对风险后版本化保存代理信任，后续请求采用新值",
+        "description": "只信任明确的IP/CIDR，只处理一层来源与最后一个协议值；不能撤销部署信任。新增信任可改变Cookie协议、Token准入、限流与审计来源，不应信任整个客户端网段。",
         "operationId": "writeTrustedProxies",
         "requestBody": {
           "content": {
@@ -7854,7 +7854,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u67e5\u770b MQTT \u51ed\u8bc1\u72b6\u6001\uff08\u4e0d\u8fd4\u56de\u79d8\u5bc6\uff09",
+        "summary": "查看 MQTT 凭证状态（不返回秘密）",
         "operationId": "getMqttCredentialStatus",
         "parameters": [
           {
@@ -7898,8 +7898,8 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u5199\u5165 MQTT \u51ed\u8bc1\u6216\u66f4\u65b0\u63a5\u6536\u65b9\u7ed1\u5b9a",
-        "description": "\u8349\u7a3f\u8fde\u63a5\u987b\u5e26 expectedDraftVersion\uff0c\u534f\u8bae\u53ca\u63a5\u6536\u65b9\u5fc5\u987b\u5339\u914d\u8be5\u7248\u672c\uff1b\u5df2\u6709\u51ed\u8bc1\u53e6\u5e26 expectedVersion\u3002\u51ed\u8bc1\u7acb\u5373\u751f\u6548\uff0c\u4e0d\u63a8\u8fdb\u8349\u7a3f\u7248\u672c\u3002\u79cd\u5b50\u7f16\u53f7\u9884\u7f6e\u5165\u53e3\u4ecd\u4fdd\u7559\uff1bretainExisting \u4ec5\u7ba1\u7406\u5458\u53ef\u7528\u3002",
+        "summary": "写入 MQTT 凭证或更新接收方绑定",
+        "description": "草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。",
         "operationId": "writeMqttCredential",
         "parameters": [
           {
@@ -7990,7 +7990,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u6e05\u9664\u672a\u88ab\u4fdd\u7559\u8fd0\u884c\u7248\u672c\u5f15\u7528\u7684\u8349\u7a3f\u8fde\u63a5\u8ba4\u8bc1\u51ed\u8bc1",
+        "summary": "清除未被保留运行版本引用的草稿连接认证凭证",
         "operationId": "clearMqttCredential",
         "parameters": [
           {
@@ -8062,7 +8062,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u67e5\u770b HTTP \u51ed\u8bc1\u72b6\u6001\uff08\u4e0d\u8fd4\u56de\u79d8\u5bc6\uff09",
+        "summary": "查看 HTTP 凭证状态（不返回秘密）",
         "operationId": "getHttpCredentialStatus",
         "parameters": [
           {
@@ -8106,8 +8106,8 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u5199\u5165 HTTP \u51ed\u8bc1\u6216\u66f4\u65b0\u63a5\u6536\u65b9\u7ed1\u5b9a",
-        "description": "\u8349\u7a3f\u8fde\u63a5\u987b\u5e26 expectedDraftVersion\uff0c\u534f\u8bae\u53ca\u63a5\u6536\u65b9\u5fc5\u987b\u5339\u914d\u8be5\u7248\u672c\uff1b\u5df2\u6709\u51ed\u8bc1\u53e6\u5e26 expectedVersion\u3002\u51ed\u8bc1\u7acb\u5373\u751f\u6548\uff0c\u4e0d\u63a8\u8fdb\u8349\u7a3f\u7248\u672c\u3002\u79cd\u5b50\u7f16\u53f7\u9884\u7f6e\u5165\u53e3\u4ecd\u4fdd\u7559\uff1bretainExisting \u4ec5\u7ba1\u7406\u5458\u53ef\u7528\u3002",
+        "summary": "写入 HTTP 凭证或更新接收方绑定",
+        "description": "草稿连接须带 expectedDraftVersion，协议及接收方必须匹配该版本；已有凭证另带 expectedVersion。凭证立即生效，不推进草稿版本。种子编号预置入口仍保留；retainExisting 仅管理员可用。",
         "operationId": "writeHttpCredential",
         "parameters": [
           {
@@ -8198,7 +8198,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u6e05\u9664\u672a\u88ab\u4fdd\u7559\u8fd0\u884c\u7248\u672c\u5f15\u7528\u7684\u8349\u7a3f\u8fde\u63a5\u8ba4\u8bc1\u51ed\u8bc1",
+        "summary": "清除未被保留运行版本引用的草稿连接认证凭证",
         "operationId": "clearHttpCredential",
         "parameters": [
           {
@@ -8270,7 +8270,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u67e5\u770b\u6269\u5c55\u8fde\u63a5\u51ed\u8bc1\u72b6\u6001\uff0c\u4e0d\u8fd4\u56de\u79d8\u5bc6",
+        "summary": "查看扩展连接凭证状态，不返回秘密",
         "operationId": "getModuleCredentialStatus",
         "parameters": [
           {
@@ -8314,7 +8314,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u72ec\u7acb\u5199\u5165\u6269\u5c55\u8fde\u63a5\u51ed\u8bc1\uff0c\u8865\u9f50\u5bfc\u5165\u5f85\u8865\u6807\u8bb0\u65f6\u66f4\u65b0\u8349\u7a3f\u7248\u672c",
+        "summary": "独立写入扩展连接凭证，补齐导入待补标记时更新草稿版本",
         "operationId": "writeModuleCredential",
         "parameters": [
           {
@@ -8405,7 +8405,7 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u6e05\u9664\u672a\u88ab\u8fd0\u884c\u7248\u672c\u5f15\u7528\u4e14\u65e0\u6295\u9012\u7684\u6269\u5c55\u8fde\u63a5\u51ed\u8bc1",
+        "summary": "清除未被运行版本引用且无投递的扩展连接凭证",
         "operationId": "clearModuleCredential",
         "parameters": [
           {
@@ -8477,8 +8477,8 @@
         "tags": [
           "Credentials"
         ],
-        "summary": "\u6838\u5bf9\u6269\u5c55\u51ed\u8bc1\u7684\u975e\u79d8\u5bc6\u63a5\u6536\u65b9\u3001\u8d26\u6237\u53ca\u52a8\u6001\u79ef\u5b58\uff0c\u4e0d\u63a5\u6536\u79d8\u5bc6\u3001\u4e0d\u4fdd\u5b58\u6216\u8054\u7f51",
-        "description": "\u6838\u5bf9\u4e0d\u51bb\u7ed3\u961f\u5217\u6216\u6388\u6743\u4fdd\u5b58\uff0c\u786e\u8ba4\u4ecd\u7531\u539f\u5199\u5165\u4e8b\u52a1\u91cd\u65b0\u68c0\u67e5\u7248\u672c\u53ca\u8d26\u6237\u58f0\u660e\u3002",
+        "summary": "核对扩展凭证的非秘密接收方、账户及动态积存，不接收秘密、不保存或联网",
+        "description": "核对不冻结队列或授权保存，确认仍由原写入事务重新检查版本及账户声明。",
         "operationId": "reviewModuleCredential",
         "parameters": [
           {
@@ -8571,7 +8571,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u8bfb\u53d6\u8fde\u63a5\u7ea7\u670d\u52a1\u5668\u4fe1\u4efb\u7684\u5143\u6570\u636e\uff0c\u4e0d\u8fd4\u56de\u8bc1\u4e66\u5185\u5bb9\u6216\u4efb\u4f55\u79c1\u94a5",
+        "summary": "读取连接级服务器信任的元数据，不返回证书内容或任何私钥",
         "operationId": "getConnectionTlsTrust",
         "parameters": [
           {
@@ -8615,8 +8615,8 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u7ba1\u7406\u5458\u6838\u5bf9\u6307\u7eb9\u540e\u4fdd\u5b58\u8fde\u63a5\u7ea7\u56fa\u5b9a\u670d\u52a1\u5668\u8bc1\u4e66\u6216 CA \u4fe1\u4efb",
-        "description": "\u7acb\u5373\u5f71\u54cd\u540e\u7eed\u8fde\u63a5\u64cd\u4f5c\uff0c\u4e0d\u5e94\u7528\u8349\u7a3f\uff1b\u4fdd\u7559\u540d\u79f0/\u65f6\u95f4/\u7528\u9014\u6821\u9a8c\uff0c\u7cfb\u7edf/\u8fde\u63a5\u4fe1\u4efb\u5747\u79bb\u7ebf\u5efa\u94fe\uff0c\u4e0d\u63d0\u4f9b\u5ffd\u7565\u9519\u8bef\u3002\u4fe1\u4efb\u7248\u672c\u53d8\u5316\u540e\u91cd\u5efa\u8fde\u63a5\uff1b\u4e0d\u64a4\u9500\u5df2\u7ecf\u5728\u9014\u7684\u8bf7\u6c42\u3002",
+        "summary": "管理员核对指纹后保存连接级固定服务器证书或 CA 信任",
+        "description": "立即影响后续连接操作，不应用草稿；保留名称/时间/用途校验，系统/连接信任均离线建链，不提供忽略错误。信任版本变化后重建连接；不撤销已经在途的请求。",
         "operationId": "writeConnectionTlsTrust",
         "parameters": [
           {
@@ -8689,7 +8689,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u786e\u8ba4\u6e05\u9664\u672a\u88ab\u4fdd\u7559\u8fd0\u884c\u7248\u672c\u5f15\u7528\u7684\u8fde\u63a5\u4fe1\u4efb\uff0c\u6062\u590d\u7cfb\u7edf\u4fe1\u4efb",
+        "summary": "确认清除未被保留运行版本引用的连接信任，恢复系统信任",
         "operationId": "clearConnectionTlsTrust",
         "parameters": [
           {
@@ -8745,7 +8745,7 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u67e5\u770b\u76ee\u6807\u624b\u52a8\u6682\u505c\u72b6\u6001",
+        "summary": "查看目标手动暂停状态",
         "operationId": "getOutputControl",
         "parameters": [
           {
@@ -8786,8 +8786,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u786e\u8ba4\u540e\u624b\u52a8\u6682\u505c\u6216\u6062\u590d\u76ee\u6807",
-        "description": "\u6682\u505c\u6301\u4e45\u4fdd\u5b58\uff1b\u5df2\u7ecf\u5728\u9014\u7684\u4e00\u6761\u53d1\u9001\u5141\u8bb8\u5728\u534f\u8bae\u8d85\u65f6\u5185\u7ed3\u675f\u3002\u6062\u590d\u4e5f\u4f1a\u91cd\u65b0\u63a2\u6d4b\u81ea\u52a8\u6682\u505c\u7684\u76ee\u6807\u3002",
+        "summary": "确认后手动暂停或恢复目标",
+        "description": "暂停持久保存；已经在途的一条发送允许在协议超时内结束。恢复也会重新探测自动暂停的目标。",
         "operationId": "writeOutputControl",
         "parameters": [
           {
@@ -8860,8 +8860,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u8bf7\u6c42\u8df3\u8fc7\u5f53\u524d\u9000\u907f\u5e76\u63a2\u6d4b\u4e00\u6761\uff0c\u4e0d\u89e3\u9664\u6682\u505c",
-        "description": "\u65e0\u9700\u4e8c\u6b21\u786e\u8ba4\uff1b\u7ed1\u5b9a\u8fd0\u884c\u7248\u672c\u53ca\u5f53\u524d\u9000\u907f\u7a97\u53e3\uff0c\u91cd\u590d\u4fe1\u53f7\u5408\u5e76\uff0c\u4e0d\u6392\u961f\u5230\u4e0b\u4e00\u6b21\u9000\u907f\u3002202\u4ec5\u8868\u793a\u5df2\u63a5\u53d7\u5185\u5b58\u4fe1\u53f7\uff0c\u4e0d\u627f\u8bfa\u5df2\u53d1\u9001\u6216\u6536\u5230\u4e1a\u52a1\u786e\u8ba4\u3002\u624b\u52a8/\u81ea\u52a8\u6682\u505c\u3001\u505c\u6b62\u3001\u7a97\u53e3\u8fc7\u671f\u6216\u7248\u672c\u5207\u6362\u62d2\u7edd\u3002",
+        "summary": "请求跳过当前退避并探测一条，不解除暂停",
+        "description": "无需二次确认；绑定运行版本及当前退避窗口，重复信号合并，不排队到下一次退避。202仅表示已接受内存信号，不承诺已发送或收到业务确认。手动/自动暂停、停止、窗口过期或版本切换拒绝。",
         "operationId": "retryOutputNow",
         "parameters": [
           {
@@ -8937,8 +8937,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u7b5b\u9009\u5931\u8d25\u533a\u6216\u9694\u79bb\u533a\u5143\u6570\u636e\uff0c\u4e0d\u8bfb\u53d6\u6b63\u6587",
-        "description": "state \u5fc5\u987b\u662f failed \u6216 quarantined\uff1b\u6309 seq \u5347\u5e8f\uff0c\u6bcf\u9875\u6700\u591a 100\u3002deviceKey \u7cbe\u786e\u5339\u914d\uff1breason \u4e3a\u533a\u5206\u5927\u5c0f\u5199\u7684\u5b57\u9762\u5b50\u4e32\u3002from\uff08\u5305\u542b\uff09/to\uff08\u4e0d\u5305\u542b\uff09\u7b5b\u9009\u9996\u6b21\u5165\u961f\u65f6\u95f4\u3002\u72ec\u7acb\u9875\u9762\u4e0d\u662f\u8de8\u9875\u4e00\u81f4\u5feb\u7167\uff0c\u671f\u95f4\u8bb0\u5f55\u53ef\u80fd\u8fc7\u671f\u6216\u88ab\u64cd\u4f5c\u3002",
+        "summary": "筛选失败区或隔离区元数据，不读取正文",
+        "description": "state 必须是 failed 或 quarantined；按 seq 升序，每页最多 100。deviceKey 精确匹配；reason 为区分大小写的字面子串。from（包含）/to（不包含）筛选首次入队时间。独立页面不是跨页一致快照，期间记录可能过期或被操作。",
         "operationId": "getDeliveryRecords",
         "parameters": [
           {
@@ -9064,8 +9064,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u6309\u7a33\u5b9a\u6295\u9012\u7f16\u53f7\u67e5\u770b\u6700\u591a 64 KiB \u6b63\u6587",
-        "description": "\u6307\u5b9a failed \u6216 quarantined \u533a\u57df\uff1b\u8bb0\u5f55\u5220\u9664\u6216\u72b6\u6001\u53d8\u5316\u8fd4\u56de 404\u3002\u975e UTF-8 \u524d\u7f00\u8fd4\u56de\u663e\u5f0f Base64\u3002\u53ea\u8bfb\u89d2\u8272\u7981\u6b62\u8bbf\u95ee\uff1b\u4e0d\u8fd4\u56de\u5934\u3001\u51ed\u8bc1\u6216\u6307\u7eb9\u3002responseSummary \u4e3a\u4e0a\u6b21\u8bb0\u5f55\u7684 HTTP \u54cd\u5e94\u8bca\u65ad\uff1a\u5b8c\u6574\u6709\u754c\u6b63\u6587\u7ecf\u51ed\u8bc1\u56de\u663e\u68c0\u67e5\u540e\u6700\u591a\u4fdd\u7559 1024 UTF-8 \u5b57\u8282\uff1b\u4ec5\u6309\u6b63\u6587\u6743\u9650\u63d0\u4f9b\uff0c\u4e0d\u8fdb\u5165\u5217\u8868/\u65e5\u5fd7/\u5bfc\u51fa\uff0c\u4e0d\u80fd\u4fdd\u8bc1\u8bc6\u522b\u672a\u77e5\u79d8\u5bc6\u6216\u4efb\u610f\u7f16\u7801\u3002\u65e7\u8bb0\u5f55\u6216\u672a\u53d6\u5f97\u54cd\u5e94\u65f6\u4e3a null\uff0c\u9690\u85cf/\u8d85\u9650/\u4e0d\u53ef\u8bfb\u53d6\u7b49\u72b6\u6001\u4e0d\u6539\u53d8\u6295\u9012\u5206\u7c7b\u3002",
+        "summary": "按稳定投递编号查看最多 64 KiB 正文",
+        "description": "指定 failed 或 quarantined 区域；记录删除或状态变化返回 404。非 UTF-8 前缀返回显式 Base64。只读角色禁止访问；不返回头、凭证或指纹。responseSummary 为上次记录的 HTTP 响应诊断：完整有界正文经凭证回显检查后最多保留 1024 UTF-8 字节；仅按正文权限提供，不进入列表/日志/导出，不能保证识别未知秘密或任意编码。旧记录或未取得响应时为 null，隐藏/超限/不可读取等状态不改变投递分类。",
         "operationId": "getDeliveryBody",
         "parameters": [
           {
@@ -9154,8 +9154,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u6838\u5bf9\u6574\u4e2a\u5931\u8d25\uff0f\u9694\u79bb\u7b5b\u9009\u8303\u56f4",
-        "description": "\u4e00\u53f0\u7f51\u5173\u6700\u591a\u4e00\u4efd\u4e34\u65f6\u5bfc\u51fa\uff0c\u6709\u6548\u671f15\u5206\u949f\uff08\u542b\u51c6\u5907\u3001\u751f\u6210\u548c\u4e0b\u8f7d\uff09\u3002202\u53ea\u8868\u793a\u5df2\u63a5\u6536\uff1b\u4f7f\u7528\u540c\u4e00\u767b\u5f55\u4f1a\u8bdd\u67e5\u8be2\u72b6\u6001\u3002\u6761\u6570\u4e0d\u5957\u7528\u5217\u8868\u5206\u9875\u4e0a\u9650\uff0c\u786e\u8ba4\u524d\u4e0d\u751f\u6210\u6b63\u6587\u6587\u4ef6\u3002",
+        "summary": "核对整个失败／隔离筛选范围",
+        "description": "一台网关最多一份临时导出，有效期15分钟（含准备、生成和下载）。202只表示已接收；使用同一登录会话查询状态。条数不套用列表分页上限，确认前不生成正文文件。",
         "operationId": "prepareDeliveryExport",
         "requestBody": {
           "content": {
@@ -9234,7 +9234,7 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u6062\u590d\u5f53\u524d\u4f1a\u8bdd\u7684\u5bfc\u51fa\u72b6\u6001\uff0c\u4e0d\u91cd\u65b0\u751f\u6210",
+        "summary": "恢复当前会话的导出状态，不重新生成",
         "operationId": "getDeliveryExport",
         "responses": {
           "200": {
@@ -9275,8 +9275,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u660e\u786e\u786e\u8ba4\u540e\u751f\u6210\u5b8c\u6574\u79c1\u6709JSON Lines\u6587\u4ef6",
-        "description": "\u987b confirmed=true\u3002\u53ea\u6709ready\u72b6\u6001\u53ef\u4e0b\u8f7d\uff1b\u9009\u62e9\u53d8\u5316\u3001\u7a7a\u95f4\u4e0d\u8db3\u6216IO\u5931\u8d25\u6574\u4efd\u62d2\u7edd\u3002\u751f\u6210\u8bb0\u5ba1\u8ba1\uff1b\u54cd\u5e94\u4e22\u5931\u53ea\u67e5\u8be2\u72b6\u6001\uff0c\u4e0d\u91cd\u590d\u786e\u8ba4\u3002",
+        "summary": "明确确认后生成完整私有JSON Lines文件",
+        "description": "须 confirmed=true。只有ready状态可下载；选择变化、空间不足或IO失败整份拒绝。生成记审计；响应丢失只查询状态，不重复确认。",
         "operationId": "confirmDeliveryExport",
         "parameters": [
           {
@@ -9368,7 +9368,7 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u53d6\u6d88\u672c\u4f1a\u8bdd\u7684\u5bfc\u51fa\u5e76\u6e05\u9664\u6682\u5b58\u6587\u4ef6",
+        "summary": "取消本会话的导出并清除暂存文件",
         "operationId": "cancelDeliveryExport",
         "parameters": [
           {
@@ -9430,8 +9430,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u4e0b\u8f7d\u5df2\u751f\u6210\u6587\u4ef6\uff0c\u7ed3\u675f\u540e\u6e05\u9664\u6682\u5b58",
-        "description": "\u7ba1\u7406\u5458\u4e14\u5fc5\u987b\u662f\u521b\u5efa\u8d44\u6e90\u7684\u767b\u5f55\u4f1a\u8bdd\uff1bID\u4e0d\u662f\u6388\u6743\u4ee4\u724c\u3002\u539f\u751f\u4e0b\u8f7d\uff0c\u4e0d\u5728\u7ba1\u7406API\u5ba2\u6237\u7aef\u4e2d\u5168\u91cf\u7f13\u5b58\u3002\u4e00\u6b21\u4e0b\u8f7d\uff0c\u5931\u8d25\u540e\u91cd\u65b0\u51c6\u5907\u3002HTTP\u5199\u51fa\u4e0d\u7b49\u4e8e\u7528\u6237\u5df2\u4fdd\u5b58\u3002",
+        "summary": "下载已生成文件，结束后清除暂存",
+        "description": "管理员且必须是创建资源的登录会话；ID不是授权令牌。原生下载，不在管理API客户端中全量缓存。一次下载，失败后重新准备。HTTP写出不等于用户已保存。",
         "operationId": "downloadDeliveryExport",
         "parameters": [
           {
@@ -9496,8 +9496,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u7ba1\u7406\u5458\u9009\u62e9\u540c\u4e00\u6e90\u76ee\u6807\u7684\u5f85\u53d1\u3001\u5931\u8d25\u6216\u9694\u79bb\u8bb0\u5f55",
-        "description": "\u4ec5\u5143\u6570\u636e\uff0c\u6bcf\u9875\u6700\u591a100\uff1b\u4e0d\u8bfb\u53d6\u6b63\u6587\u6216\u8eab\u4efd\u6458\u8981\u3002\u7ffb\u9875\u4e0d\u662f\u4e00\u81f4\u5feb\u7167\uff0c\u51c6\u5907\u65f6\u9010\u6761\u91cd\u65b0\u6838\u5bf9\u9009\u62e9\u3002",
+        "summary": "管理员选择同一源目标的待发、失败或隔离记录",
+        "description": "仅元数据，每页最多100；不读取正文或身份摘要。翻页不是一致快照，准备时逐条重新核对选择。",
         "operationId": "getMigrationDeliveryRecords",
         "parameters": [
           {
@@ -9605,8 +9605,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u6838\u5bf9\u8fc1\u79fb\u9009\u62e9\u3001\u539f\u63a5\u6536\u65b9\u548c\u6709\u6548\u540c\u7c7b\u76ee\u6807",
-        "description": "\u6700\u591a1000\u6761\uff0c\u8eab\u4efd\u5143\u6570\u636e\u603b\u8ba1\u6700\u591a4MiB\uff0c\u8d85\u9650\u6574\u6279\u62d2\u7edd\u800c\u4e0d\u622a\u65ad\u3002\u9010\u6761\u6309\u51bb\u7ed3\u6458\u8981\u5224\u5b9a\u539f\u534f\u8bae\uff0c\u4e0d\u4ece\u5f53\u524d\u6e90\u8fde\u63a5\u731c\u6d4b\u3002\u8fd4\u56de\u8d26\u6237/\u5ba2\u6237\u7aef\u8bc1\u4e66\u662f\u5426\u5df2\u8bb0\u5f55\u53ca\u914d\u989d\u7f3a\u53e3\uff1b\u51c6\u5907\u4e0d\u8fc1\u79fb\u3001\u4e0d\u5ba1\u8ba1\u5f00\u59cb\u3001\u4e0d\u6682\u505c\u53d1\u9001\u8005\u3002\u5168\u7f51\u5173\u4e00\u4efd\u786e\u8ba4\u6e05\u5355\uff0c\u5c5e\u4e8e\u521b\u5efa\u5b83\u7684\u767b\u5f55\u4f1a\u8bdd\uff0c\u6709\u6548\u671f15\u5206\u949f\u3002",
+        "summary": "核对迁移选择、原接收方和有效同类目标",
+        "description": "最多1000条，身份元数据总计最多4MiB，超限整批拒绝而不截断。逐条按冻结摘要判定原协议，不从当前源连接猜测。返回账户/客户端证书是否已记录及配额缺口；准备不迁移、不审计开始、不暂停发送者。全网关一份确认清单，属于创建它的登录会话，有效期15分钟。",
         "operationId": "prepareDeliveryMigration",
         "requestBody": {
           "content": {
@@ -9687,7 +9687,7 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u6062\u590d\u5f53\u524d\u767b\u5f55\u4f1a\u8bdd\u5c1a\u672a\u6d88\u8d39\u7684\u8fc1\u79fb\u786e\u8ba4\u6e05\u5355",
+        "summary": "恢复当前登录会话尚未消费的迁移确认清单",
         "operationId": "getDeliveryMigrationPreparation",
         "responses": {
           "200": {
@@ -9728,7 +9728,7 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u53d6\u6d88\u672c\u767b\u5f55\u4f1a\u8bdd\u7684\u8fc1\u79fb\u51c6\u5907\uff0c\u4e0d\u6539\u53d8\u961f\u5217",
+        "summary": "取消本登录会话的迁移准备，不改变队列",
         "operationId": "cancelDeliveryMigrationPreparation",
         "parameters": [
           {
@@ -9793,8 +9793,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u786e\u8ba4\u540c\u4e00\u6570\u636e\u6240\u6709\u8005\u540e\u6267\u884c\u51bb\u7ed3\u9009\u62e9\u7684\u539f\u5b50\u8fc1\u79fb",
-        "description": "sameOwnerConfirmed\u5fc5\u987b\u4e3atrue\u3002\u670d\u52a1\u5668\u6d88\u8d39\u539f\u786e\u8ba4\u6e05\u5355\uff0c\u590d\u6838\u6709\u6548\u7248\u672c\u548c\u76ee\u6807\u8eab\u4efd\uff1b\u53cc\u53d1\u9001\u8005\u9759\u9ed8\u540e\u518d\u6838\u5bf9\u8bb0\u5f55\u4ee3\u6b21\u4e0e\u5b8c\u6574\u914d\u989d\u3002\u672aACK\u8bb0\u5f55\u4fdd\u6301\u539f\u6b63\u6587\u3001\u7f16\u53f7\u3001\u4e3b\u9898/\u8def\u5f84\u3001\u5934\u548cFIFO\uff0c\u5931\u8d25\u8bb0\u5f55\u4ecd\u5728\u5931\u8d25\u533a\u3002\u53d6\u6d88\u7b49\u5f85\u4e0d\u53d6\u6d88\u540e\u53f0\u6267\u884c\uff1b\u54cd\u5e94\u4e22\u5931\u53ea\u6309\u64cd\u4f5c\u7f16\u53f7\u67e5\u8be2\uff0c\u4e0d\u91cd\u653e\u786e\u8ba4\u3002",
+        "summary": "确认同一数据所有者后执行冻结选择的原子迁移",
+        "description": "sameOwnerConfirmed必须为true。服务器消费原确认清单，复核有效版本和目标身份；双发送者静默后再核对记录代次与完整配额。未ACK记录保持原正文、编号、主题/路径、头和FIFO，失败记录仍在失败区。取消等待不取消后台执行；响应丢失只按操作编号查询，不重放确认。",
         "operationId": "confirmDeliveryMigration",
         "parameters": [
           {
@@ -9896,8 +9896,8 @@
         "tags": [
           "Deliveries"
         ],
-        "summary": "\u7ba1\u7406\u5458\u6309\u64cd\u4f5c\u7f16\u53f7\u67e5\u8be2\u6301\u4e45\u8fc1\u79fb\u7ed3\u679c",
-        "description": "\u5f00\u59cb/\u7ed3\u679c\u4e0e\u542f\u52a8\u6062\u590d\u7531\u6301\u4e45\u8fc1\u79fb\u8bb0\u5f55\u548cqueue.db\u6536\u636e\u6838\u5bf9\uff1bcompleted\u8868\u793a\u5df2\u8fc1\u79fb\uff0c\u4e0d\u8868\u793a\u5df2\u53d1\u9001\u3002404\u4e0d\u662f\u8fc1\u79fb\u5931\u8d25\u8bc1\u660e\uff0c\u53ef\u80fd\u5c1a\u672a\u767b\u8bb0\u5f00\u59cb\u3002",
+        "summary": "管理员按操作编号查询持久迁移结果",
+        "description": "开始/结果与启动恢复由持久迁移记录和queue.db收据核对；completed表示已迁移，不表示已发送。404不是迁移失败证明，可能尚未登记开始。",
         "operationId": "getDeliveryMigrationOutcome",
         "parameters": [
           {
@@ -9959,8 +9959,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u5206\u522b\u67e5\u770b\u7f51\u9875\u6301\u4e45\u548c\u90e8\u7f72\u51fa\u7ad9\u89c4\u5219\u4e0e\u672c\u673a\u7aef\u53e3\u4f8b\u5916",
-        "description": "\u90e8\u7f72\u53c2\u6570\u89c4\u5219\u989d\u5916\u751f\u6548\uff0c\u4e0d\u4f1a\u88ab\u672c\u63a5\u53e3\u5220\u9664\uff1bdeployment\u4e3anull\u8868\u793a\u90e8\u7f72\u89c4\u5219\u65e0\u6548\u3001\u51fa\u7ad9\u62d2\u7edd\uff0c\u4e0d\u53ef\u5f53\u6210\u7a7a\u767d\u540d\u5355\u3002\u672c\u673a\u7ba1\u7406\u7aef\u53e3\u548c\u5371\u9669\u5730\u5740\u59cb\u7ec8\u7981\u6b62\u3002",
+        "summary": "分别查看网页持久和部署出站规则与本机端口例外",
+        "description": "部署参数规则额外生效，不会被本接口删除；deployment为null表示部署规则无效、出站拒绝，不可当成空白名单。本机管理端口和危险地址始终禁止。",
         "operationId": "getOutboundPolicy",
         "responses": {
           "200": {
@@ -9989,8 +9989,8 @@
         "tags": [
           "System"
         ],
-        "summary": "\u7ba1\u7406\u5458\u66f4\u65b0\u51fa\u7ad9\u767d\u540d\u5355\u5e76\u8bb0\u5f55\u5ba1\u8ba1",
-        "description": "\u4ec5\u5f71\u54cd\u4e4b\u540e\u5efa\u7acb\u7684\u8fde\u63a5\uff1b\u5df2\u5efa\u7acb\u7684\u8fde\u63a5\u4e0d\u4f1a\u88ab\u672c\u6b21\u66f4\u65b0\u5f3a\u5236\u4e2d\u65ad\u3002",
+        "summary": "管理员更新出站白名单并记录审计",
+        "description": "仅影响之后建立的连接；已建立的连接不会被本次更新强制中断。",
         "operationId": "writeOutboundPolicy",
         "requestBody": {
           "content": {
@@ -10049,7 +10049,7 @@
     "/api/edge-admin/v1/parameter-schemas/{id}": {
       "get": {
         "tags": [
-          "\u53c2\u6570\u58f0\u660e"
+          "参数声明"
         ],
         "operationId": "getParameterSchema",
         "parameters": [
@@ -10099,7 +10099,7 @@
     "/api/edge-admin/v1/transform-modules": {
       "get": {
         "tags": [
-          "\u8f6c\u6362\u6a21\u5757"
+          "转换模块"
         ],
         "operationId": "getTransformModules",
         "responses": {
@@ -10132,7 +10132,7 @@
     "/api/edge-admin/v1/input-modules": {
       "get": {
         "tags": [
-          "\u8f93\u5165\u6a21\u5757"
+          "输入模块"
         ],
         "operationId": "getInputModules",
         "responses": {
@@ -10165,7 +10165,7 @@
     "/api/edge-admin/v1/output-modules": {
       "get": {
         "tags": [
-          "\u8f93\u51fa\u6a21\u5757"
+          "输出模块"
         ],
         "operationId": "getOutputModules",
         "responses": {
@@ -10198,7 +10198,7 @@
     "/api/edge-admin/v1/connection-modules": {
       "get": {
         "tags": [
-          "\u8fde\u63a5\u6a21\u5757"
+          "连接模块"
         ],
         "operationId": "getConnectionModules",
         "responses": {
@@ -10233,7 +10233,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u67e5\u770b\u8fde\u63a5\u8349\u7a3f\u53ca\u5168\u5c40\u8349\u7a3f\u7248\u672c\uff0c\u4e0d\u4ee3\u8868\u8fd0\u884c\u72b6\u6001",
+        "summary": "查看连接草稿及全局草稿版本，不代表运行状态",
         "operationId": "getConnectionDrafts",
         "responses": {
           "200": {
@@ -10262,7 +10262,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u65b0\u5efa\u8fde\u63a5\u8349\u7a3f\uff0c\u4fdd\u5b58\u4e0d\u6539\u53d8\u8fd0\u884c\u914d\u7f6e",
+        "summary": "新建连接草稿，保存不改变运行配置",
         "operationId": "createConnectionDraft",
         "requestBody": {
           "content": {
@@ -10333,7 +10333,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u6838\u5bf9\u8fde\u63a5\u5220\u9664\u6d89\u53ca\u7684\u8bbe\u5907\u3001\u8def\u7ebf\u3001\u4fdd\u7559\u7248\u672c\u548c\u961f\u5217\u8bb0\u5f55\uff1b\u4e0d\u6388\u6743\u6216\u6267\u884c\u5220\u9664",
+        "summary": "核对连接删除涉及的设备、路线、保留版本和队列记录；不授权或执行删除",
         "operationId": "getConnectionDeletionReview",
         "parameters": [
           {
@@ -10424,7 +10424,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u66f4\u65b0\u8fde\u63a5\u8349\u7a3f\uff0ckey \u4e0e\u534f\u8bae\u7c7b\u578b\u4e0d\u53ef\u4fee\u6539",
+        "summary": "更新连接草稿，key 与协议类型不可修改",
         "operationId": "updateConnectionDraft",
         "parameters": [
           {
@@ -10515,7 +10515,7 @@
         "tags": [
           "Connections"
         ],
-        "summary": "\u5220\u9664\u672a\u88ab\u5f15\u7528\u4e14\u65e0\u53d1\u9001\u8bb0\u5f55\u7684\u8fde\u63a5\u8349\u7a3f",
+        "summary": "删除未被引用且无发送记录的连接草稿",
         "operationId": "deleteConnectionDraft",
         "parameters": [
           {
@@ -10596,7 +10596,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "\u67e5\u770b\u8bbe\u5907\u8349\u7a3f\u53ca\u5168\u5c40\u8349\u7a3f\u7248\u672c\uff0c\u4e0d\u4ee3\u8868\u8fd0\u884c\u72b6\u6001",
+        "summary": "查看设备草稿及全局草稿版本，不代表运行状态",
         "operationId": "getDeviceDrafts",
         "responses": {
           "200": {
@@ -10625,7 +10625,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "\u65b0\u5efa\u8bbe\u5907\u8349\u7a3f\uff0c\u4fdd\u5b58\u4e0d\u6539\u53d8\u8fd0\u884c\u914d\u7f6e",
+        "summary": "新建设备草稿，保存不改变运行配置",
         "operationId": "createDeviceDraft",
         "requestBody": {
           "content": {
@@ -10696,7 +10696,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "\u6838\u5bf9\u5220\u9664\u8bbe\u5907\u8349\u7a3f\u7684\u8def\u7ebf\u53ca\u4fdd\u7559\u7248\u672c\u5f15\u7528\uff0c\u4e0d\u6388\u6743\u6216\u6267\u884c\u5220\u9664",
+        "summary": "核对删除设备草稿的路线及保留版本引用，不授权或执行删除",
         "operationId": "getDeviceDeletionReview",
         "parameters": [
           {
@@ -10777,7 +10777,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "\u66f4\u65b0\u8bbe\u5907\u8349\u7a3f\uff0ckey \u4e0d\u53ef\u4fee\u6539",
+        "summary": "更新设备草稿，key 不可修改",
         "operationId": "updateDeviceDraft",
         "parameters": [
           {
@@ -10868,7 +10868,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "\u5220\u9664\u672a\u88ab\u5f15\u7528\u7684\u8bbe\u5907\u8349\u7a3f",
+        "summary": "删除未被引用的设备草稿",
         "operationId": "deleteDeviceDraft",
         "parameters": [
           {
@@ -10949,7 +10949,7 @@
         "tags": [
           "Devices"
         ],
-        "summary": "\u539f\u5b50\u590d\u5236\u8bbe\u5907\u53ca\u6765\u6e90\u70b9\u4f4d\uff0c\u526f\u672c\u9ed8\u8ba4\u505c\u7528\uff0c\u6700\u591a 20 \u4efd",
+        "summary": "原子复制设备及来源点位，副本默认停用，最多 20 份",
         "operationId": "copyDeviceDraft",
         "parameters": [
           {
@@ -11042,7 +11042,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u67e5\u770b\u8def\u7ebf\u8349\u7a3f\u6458\u8981\uff0c\u5c1a\u672a\u7f16\u8bd1\uff0c\u4e0d\u4ee3\u8868\u8fd0\u884c\u72b6\u6001",
+        "summary": "查看路线草稿摘要、编译错误标记及与有效版本的一致性，不代表实时运行状态",
         "operationId": "getRouteDrafts",
         "responses": {
           "200": {
@@ -11071,7 +11071,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u65b0\u5efa\u8def\u7ebf\u8349\u7a3f\uff0c\u4fdd\u5b58\u4e0d\u5e94\u7528",
+        "summary": "新建路线草稿，保存不应用",
         "operationId": "createRouteDraft",
         "requestBody": {
           "content": {
@@ -11152,7 +11152,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u8bfb\u53d6\u81ea\u6709\u56fe\u8349\u7a3f\u53ca\u5168\u5c40\u7248\u672c",
+        "summary": "读取自有图草稿及全局版本",
         "operationId": "getRouteDraft",
         "parameters": [
           {
@@ -11203,7 +11203,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u4fdd\u5b58\u8def\u7ebf\u8349\u7a3f\uff0ckey \u4e0d\u53ef\u4fee\u6539",
+        "summary": "保存路线草稿，key 不可修改",
         "operationId": "updateRouteDraft",
         "parameters": [
           {
@@ -11304,7 +11304,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u5220\u9664\u8349\u7a3f\uff0c\u4e0d\u6539\u53d8\u8fd0\u884c\u914d\u7f6e\u6216\u64a4\u56de\u6295\u9012",
+        "summary": "删除草稿，不改变运行配置或撤回投递",
         "operationId": "deleteRouteDraft",
         "parameters": [
           {
@@ -11395,7 +11395,7 @@
         "tags": [
           "Routes"
         ],
-        "summary": "\u590d\u5236\u8def\u7ebf\u56fe\u53ca\u5f15\u7528\uff0c\u526f\u672c\u9ed8\u8ba4\u505c\u7528",
+        "summary": "复制路线图及引用，副本默认停用",
         "operationId": "copyRouteDraft",
         "parameters": [
           {
@@ -11498,7 +11498,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u67e5\u770b\u8bbe\u5907\u6765\u6e90\u8349\u7a3f\u548c\u89c4\u8303\u5316\u70b9\u8868",
+        "summary": "查看设备来源草稿和规范化点表",
         "operationId": "getInputDrafts",
         "parameters": [
           {
@@ -11539,7 +11539,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u65b0\u5efa\u8bbe\u5907\u6765\u6e90\u8349\u7a3f\uff0c\u4e0d\u5f00\u59cb\u91c7\u96c6",
+        "summary": "新建设备来源草稿，不开始采集",
         "operationId": "createInputDraft",
         "parameters": [
           {
@@ -11602,7 +11602,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u4fdd\u5b58\u8bbe\u5907\u6765\u6e90\u3001\u5b57\u6bb5\u6216\u96f6\u57fa\u504f\u79fb\u70b9\u8868\uff0c\u4e0d\u6539\u53d8\u8fd0\u884c\u914d\u7f6e",
+        "summary": "保存设备来源、字段或零基偏移点表，不改变运行配置",
         "operationId": "updateInputDraft",
         "parameters": [
           {
@@ -11673,7 +11673,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u5220\u9664\u672a\u88ab\u4fdd\u7559\u8fd0\u884c\u7248\u672c\u5f15\u7528\u7684\u6765\u6e90\u8349\u7a3f",
+        "summary": "删除未被保留运行版本引用的来源草稿",
         "operationId": "deleteInputDraft",
         "parameters": [
           {
@@ -11734,7 +11734,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u5bfc\u51fa\u6240\u9009\u8bbe\u5907\u7684\u8349\u7a3f\u70b9\u8868\u6216\u6a21\u677f\uff0cUTF-8 BOM\uff0c\u6587\u4ef6\u6807\u6ce8\u5730\u5740\u5199\u6cd5",
+        "summary": "导出所选设备的草稿点表或模板，UTF-8 BOM，文件标注地址写法",
         "operationId": "exportDevicePointCsv",
         "parameters": [
           {
@@ -11790,7 +11790,7 @@
         "tags": [
           "Inputs"
         ],
-        "summary": "\u6309 key \u8986\u76d6\u6216\u589e\u91cf\u5bfc\u5165\u8bbe\u5907\u70b9\u8868\uff1b\u6709\u9519\u8bef\u6574\u6279\u4e0d\u5199\uff0c\u4e0d\u5e94\u7528\u914d\u7f6e",
+        "summary": "按 key 覆盖或增量导入设备点表；有错误整批不写，不应用配置",
         "operationId": "importDevicePointCsv",
         "parameters": [
           {
@@ -20908,10 +20908,7 @@
           "enabled",
           "nodeCount",
           "updatedBy",
-          "updatedAt",
-          "effective",
-          "hasErrors",
-          "hasUnappliedChanges"
+          "updatedAt"
         ],
         "type": "object",
         "properties": {
@@ -20961,13 +20958,16 @@
             "format": "int64"
           },
           "effective": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": false
           },
           "hasErrors": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": false
           },
           "hasUnappliedChanges": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": true
           }
         }
       },
@@ -24371,19 +24371,19 @@
       "name": "Tokens"
     },
     {
-      "name": "\u53c2\u6570\u58f0\u660e"
+      "name": "参数声明"
     },
     {
-      "name": "\u8f6c\u6362\u6a21\u5757"
+      "name": "转换模块"
     },
     {
-      "name": "\u8f93\u5165\u6a21\u5757"
+      "name": "输入模块"
     },
     {
-      "name": "\u8f93\u51fa\u6a21\u5757"
+      "name": "输出模块"
     },
     {
-      "name": "\u8fde\u63a5\u6a21\u5757"
+      "name": "连接模块"
     },
     {
       "name": "Devices"

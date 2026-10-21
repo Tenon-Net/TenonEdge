@@ -56,9 +56,12 @@ node scripts/minimum-firefox-smoke.mjs
 
 ## 类型生成
 
-用独立临时数据目录启动 Development Host（HTTP 127.0.0.1:18081，HTTPS 端口 0），执行 `npm run api:generate`。
-脚本只读真实 `/api/edge-admin/v1/openapi/v1.json` 并保存 `openapi.json`，openapi-typescript 据此生成 `src/api/schema.d.ts`。
-可设置 `TENONEDGE_API_URL`。不手写接口结构，不在脚本中写生产会话或密码。新增后端契约时重新生成并审查 diff。
+先在仓库根执行 `dotnet build TenonEdge.sln -c Release --no-restore`，再在 `web/` 执行 `npm run api:generate`。
+脚本自动启动编译后的 Development Host，使用独立临时数据目录及系统分配的回环端口，结束时关闭并清理；读取真实 `/api/edge-admin/v1/openapi/v1.json`，同时生成 `openapi.json` 和 `src/api/schema.d.ts`。文档的 `servers` 固定为同源相对地址 `/`，避免临时端口产生无关差异。
+
+`npm run api:check` 使用相同的隔离 Host 比较两个生成文件，任何文件缺失或过期都失败，且不修改文件。前端 CI 在构建后端、安装前端依赖后执行此检查。不手写接口结构；变更后端契约后重新生成并审查 diff。
+
+手动生成可设置 `TENONEDGE_API_URL` 指向自己启动的 Development Host；`api:check` 始终校验当前工作区的已编译 Host，不采用此覆盖地址。脚本不使用生产会话或密码，启动和读取都有超时。检查前须重新构建后端，以免核对旧程序集。
 
 ## 同源部署
 

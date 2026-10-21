@@ -12,7 +12,7 @@ namespace TenonEdge.Abstractions.Contracts;
 /// <item>默认工厂是进程级无状态对象；需要输入/输出共同绑定的协议由 IRuntimePlanAdapterProvider 创建计划范围工厂，不能将其注册为进程级可变单例。
 /// 每次调用返回新单元实例：单元故障后，监督者用同一计划工厂与上下文重新构建。</item>
 /// </list>
-/// 输出单元（发送者）需要发送缓存与凭证解析，随 T1-04 的第一个输出另行定义工厂。
+/// 输出目标定义由 <see cref="IOutputAdapterFactory"/> 构建，再由目标创建发送适配器；发送缓存与发送者生命周期由运行时管理。
 /// </summary>
 public interface IInputUnitFactory
 {

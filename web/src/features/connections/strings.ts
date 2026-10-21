@@ -215,7 +215,6 @@ export const connectionStrings = {
     refresh: '刷新连接列表',
     reload: '重新载入此连接',
     discard: '放弃尚未保存的编辑？',
-    deleteConfirm: '删除此连接草稿？被引用或有发送记录的连接不能删除。',
     deletion: {
         title: '删除前核对',
         disclaimer:
@@ -236,6 +235,7 @@ export const connectionStrings = {
         quarantined: '隔离 {{count}}',
         blocked: '仍有引用或积存记录，不能删除。',
         confirm: '确认删除',
+        confirmMessage: '确认删除连接草稿 {{name}}？服务端将再次核对全部条件。',
         refresh: '重新核对',
         cancel: '取消',
     },

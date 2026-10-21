@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "api:generate": "node scripts/export-openapi.mjs && openapi-typescript openapi.json -o src/api/schema.d.ts",
+    "api:generate": "node scripts/export-openapi.mjs",
+    "api:check": "node scripts/export-openapi.mjs --check",
     "licenses": "node scripts/licenses.mjs"
   },
   "dependencies": {

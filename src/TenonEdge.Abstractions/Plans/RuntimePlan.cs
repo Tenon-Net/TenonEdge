@@ -4,7 +4,7 @@ namespace TenonEdge.Abstractions.Plans;
 
 /// <summary>
 /// 不可变的运行计划（总设计 §3.2、§7.4）：Host 把有效快照编译为运行计划交给 Runtime，这是二者之间唯一的配置契约，
-/// Runtime 不读取 Host 的配置实体。本批只含版本号与运行单元，路径、连接与目标的组成随 T1—T3 的使用者补充。
+/// Runtime 不读取 Host 的配置实体。计划包含版本号、运行单元及输出诊断归属；各单元的冻结配置由对应工厂解析。
 /// 运行单元按标识排序保存；同一标识只能出现一次，这是单实例规则的前提。
 /// </summary>
 public sealed class RuntimePlan

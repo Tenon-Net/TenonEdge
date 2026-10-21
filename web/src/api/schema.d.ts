@@ -2331,7 +2331,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 查看路线草稿摘要，尚未编译，不代表运行状态 */
+        /** 查看路线草稿摘要、编译错误标记及与有效版本的一致性，不代表实时运行状态 */
         get: operations["getRouteDrafts"];
         put?: never;
         /** 新建路线草稿，保存不应用 */
@@ -4457,8 +4457,11 @@ export interface components {
             updatedBy: null | string;
             /** Format: int64 */
             updatedAt: number | string;
+            /** @default false */
             effective: boolean;
+            /** @default false */
             hasErrors: boolean;
+            /** @default true */
             hasUnappliedChanges: boolean;
         };
         RouteFieldPage: {
