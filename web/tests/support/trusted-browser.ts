@@ -70,6 +70,7 @@ export async function startTrustedBrowser() {
             ])
         }
         const browser = await chromium.launch({
+            executablePath: process.env.TENONEDGE_TEST_EXECUTABLE,
             env: { ...process.env, HOME: home },
         })
         const context = await browser.newContext({ ignoreHTTPSErrors: false })

@@ -62,9 +62,12 @@ function bearer(
         request.end()
     })
 }
-test('trusted TLS browser creates once-only tokens, enforces role, revokes and rejects HTTP creation', async () => {
+test('trusted TLS browser creates once-only tokens, enforces role, revokes and rejects HTTP creation', async ({
+    browser,
+}) => {
     const host = await startTrustedBrowser()
     try {
+        expect(host.browser.version()).toBe(browser.version())
         const page = await host.context.newPage()
         await setup(page, host.url)
         const secret = await create(page, 'MES browser')

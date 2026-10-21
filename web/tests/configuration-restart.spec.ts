@@ -6,6 +6,7 @@ import { startOwnedHost } from './support/owned-host'
 
 test('fresh browser login after a normal Host restart reads persistent draft and history without replaying an application', async ({
     playwright,
+    browser,
 }) => {
     test.setTimeout(120_000)
     const data = await mkdtemp(join(tmpdir(), 'tenonedge-browser-restart-'))
@@ -15,7 +16,10 @@ test('fresh browser login after a normal Host restart reads persistent draft and
     try {
         host = await startOwnedHost(data)
         const url = host.url
-        first = await playwright.chromium.launch()
+        first = await playwright.chromium.launch({
+            executablePath: process.env.TENONEDGE_TEST_EXECUTABLE,
+        })
+        expect(first.version()).toBe(browser.version())
         const context = await first.newContext({ baseURL: url })
         context.setDefaultTimeout(15_000)
         context.setDefaultNavigationTimeout(30_000)
@@ -103,7 +107,10 @@ test('fresh browser login after a normal Host restart reads persistent draft and
         host = undefined
         host = await startOwnedHost(data, Number(new URL(url).port))
         expect(host.url).toBe(url)
-        second = await playwright.chromium.launch()
+        second = await playwright.chromium.launch({
+            executablePath: process.env.TENONEDGE_TEST_EXECUTABLE,
+        })
+        expect(second.version()).toBe(browser.version())
         const restored = await second.newContext({ baseURL: url })
         restored.setDefaultTimeout(15_000)
         restored.setDefaultNavigationTimeout(30_000)
