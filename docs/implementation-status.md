@@ -9551,3 +9551,10 @@ PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-controlled-20261022/current-full.
 - 随后仅执行一次模块关联浏览器回归：`PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-controlled-20261022/module-browser-green.json npx --yes npm@11.21.0 run test:e2e -- tests/connection-modules.spec.ts tests/input-module-protocols.spec.ts tests/output-modules.spec.ts tests/transform-modules.spec.ts --workers=1 --output=/tmp/tenonedge-e2e-controlled-20261022/module-browser-green-output --reporter=list,json`，**8/8通过，0失败/跳过/flaky，2.6分钟**。包括原失败完整流程，以及真实MQTT/Modbus输入、HTTP/MQTT输出、转换模块与重启；日志`module-browser-green.log`。
 
 当前只确定本次完整报告中有明确调用栈的停止异常根因，不能反推所有历史`Owned Host exit: null`均为同一原因；§2.325的Modbus非预期请求和§2.274—§2.275的MQTT计数超时仍保留为未定位风险。早先29项失败也没有被抹除。修正后的完整后端/浏览器回归尚待执行，不将2项或8项定向通过当成188项全量或T3退出；真实最低产品浏览器、Excel来源、实际CI与维护者验收边界不变。不推送、不发布、不进入T4/T5/G1。
+
+
+上述修正已本地提交为`cb3fc2b`。随后在该候选上串行执行完整Release构建（0警告/错误）、`dotnet test tests/UnitTests/TenonEdge.UnitTests.csproj -c Release --no-build --no-restore --logger 'trx;LogFileName=unit.trx' --results-directory /tmp/tenonedge-e2e-controlled-20261022/final-candidate/unit`及`dotnet test tests/IntegrationTests/TenonEdge.IntegrationTests.csproj -c Release --no-build --no-restore --blame-hang-timeout 5m --blame-hang-dump-type none --logger 'trx;LogFileName=integration.trx' --results-directory /tmp/tenonedge-e2e-controlled-20261022/final-candidate/integration`：**2108/2108单元、2852/2852集成，均0失败/跳过**；集成12分41秒，含新增2项关闭竞态及原MQTT恢复用例，本次未复现历史MQTT超时，不代表其根因已修复。`final-candidate/backend-exit.txt=0`，前后源码/产品及测试输出哈希核对通过。
+
+之后仅为新回归中由测试自身创建的`ControlledBackgroundService`补上显式`using`所有权释放（容器不拥有外部登记实例），未改产品文件或测试断言；重新构建并执行同两项回归仍 **2/2、0失败/跳过**，报告`final-candidate/module-stop-owned/`。因此完整后端计数严格对应`cb3fc2b`，最终测试资源释放这一行的差异由补充2项覆盖，不伪称先前全量已运行之后的文件。
+
+在后端网络测试全部结束后，以固定npm11.21.0执行前端`run typecheck`、`run lint`、`run format:check`、`test -- --reporter=default --reporter=json --outputFile=/tmp/tenonedge-e2e-controlled-20261022/final-candidate/web-unit.json`及`run api:check`：静态/格式/OpenAPI检查通过，**64文件、845/845单元，0失败/跳过/todo**。日志与JSON均在`final-candidate/`。下一步为这次修正后完整188项Chromium验证，仍未预写通过。

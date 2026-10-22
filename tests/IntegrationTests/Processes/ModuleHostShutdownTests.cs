@@ -15,7 +15,7 @@ public sealed class ModuleHostShutdownTests
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "模块测试宿主的信号登记要求 Linux。");
         using var data = TemporaryDirectory.Create();
-        var background = new ControlledBackgroundService();
+        using var background = new ControlledBackgroundService();
         await using var factory = new FixedDataDirectoryApplicationFactory(data.Path, new Dictionary<string, string>
         {
             ["TenonEdge:Http:Address"] = "127.0.0.1",
