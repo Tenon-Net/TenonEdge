@@ -45,10 +45,20 @@ jobs:
         run: npx --yes npm@11.21.0 test -- --reporter=default --reporter=json --outputFile=reports/unit.json
       - name: Prepare MQTT browser test broker image
         run: docker pull eclipse-mosquitto:2.1.2-alpine
+      # Hosted runners keep /tmp on disk. Provision a real, isolated tmpfs rather
+      # than skipping the uncalibrated-filesystem scenario or moving all test data.
+      - name: Prepare tmpfs browser fixture
+        run: |
+          directory="$RUNNER_TEMP/tenonedge-browser-tmpfs"
+          mkdir -p "$directory"
+          sudo mount -t tmpfs -o "size=2G,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$directory"
+          test "$(findmnt --target "$directory" --noheadings --output FSTYPE)" = tmpfs
+          df -B1 "$directory"
       - name: Browser on HTTP and trusted TLS against actual host
         working-directory: web
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: reports/browser.json
+          TENONEDGE_TEST_TMPFS_ROOT: ${{ runner.temp }}/tenonedge-browser-tmpfs
         run: |
           sudo apt-get update
           sudo apt-get install -y libnss3-tools openssl
@@ -68,3 +78,13 @@ jobs:
             web/test-results/
             web/reports/
           if-no-files-found: error
+      - name: Release tmpfs browser fixture
+        if: ${{ always() }}
+        run: |
+          directory="$RUNNER_TEMP/tenonedge-browser-tmpfs"
+          if mountpoint --quiet -- "$directory"; then
+            sudo umount -- "$directory"
+          fi
+          if [ -d "$directory" ]; then
+            rmdir -- "$directory"
+          fi

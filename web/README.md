@@ -23,6 +23,7 @@ HTTP / MQTT 的[客户端证书表单](../docs/client-certificates.md)支持有�
 - 在仓库根运行 `dotnet build TenonEdge.sln -c Release --no-restore`，再回到 web 执行 `npm run test:e2e`。
   Playwright 启动真实 .NET Production Host，使用独立临时数据目录及 18082 端口，退出时清理；正常重启场景另用系统分配的端口（多数仍为回环；客户端证书和凭证核对场景跟随 `TENONEDGE_TEST_URL` 的主机地址），在同端口重启独立临时 Host，并完整关闭/新建浏览器后重新登录。先执行 `npx playwright install chromium`。
 - HTTPS Token 浏览器用例还需 Linux `openssl` 与 `libnss3-tools` 的 `certutil`（可用 `TENONEDGE_CERTUTIL` 指向在临时目录解包的工具）。用例只信任已与自有 Host 控制台指纹核对的公开证书，在隔离 HOME 中建立 NSS 信任库；不修改开发机信任库、不关闭证书校验，不保留令牌响应的浏览器 trace。
+- 输出容量诊断的两项 Linux 用例分别要求真实 tmpfs 和 ext4。tmpfs 用例可通过 `TENONEDGE_TEST_TMPFS_ROOT=/absolute/path/on/tmpfs` 指定独立目录；未设置时使用系统临时目录，但不假定 `/tmp` 一定是 tmpfs。用例会先用 `findmnt` 核对真实类型，缺少夹具的跳过不能通过严格报告核查。CI 在临时 runner 上单独挂载 2 GiB tmpfs（高于产品默认 500 MB 磁盘保留阈值），运行后卸载；不会修改产品存储策略、开发机挂载或全局 `TMPDIR`。
 - `TENONEDGE_TEST_URL=http://<本机网卡IP>:18082 npm run test:e2e`：经非 localhost 的 HTTP 运行相同场景。
   当前 Playwright 浏览器不是 Chrome/Edge 111 或 Safari 16.4，不能替代最低版本验收。
 

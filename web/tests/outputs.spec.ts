@@ -10,7 +10,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { startOwnedHost } from './support/owned-host'
 
 for (const deployment of [
-    { fileSystem: 'tmpfs', parent: tmpdir() },
+    {
+        fileSystem: 'tmpfs',
+        parent: process.env.TENONEDGE_TEST_TMPFS_ROOT ?? tmpdir(),
+    },
     {
         fileSystem: 'ext4',
         parent: fileURLToPath(new URL('../../artifacts/', import.meta.url)),

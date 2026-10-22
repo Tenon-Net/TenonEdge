@@ -1,6 +1,6 @@
 # TenonEdge 实现状态与验证证据
 
-> **2026-10-22 开发分支调整**：维护者已允许推送及运行实际 CI，并指定后续在 `dev` 开发；此最新授权取代下文历史记录中的“未获推送授权”，不授权修改 `main`、强推、创建 PR、发版或部署。`dev` 已快进到已验证整合提交 `287229f`；当前 CI 接续见 §2.330，T3 尚未完成。
+> **2026-10-22 开发分支调整与首轮实际 CI**：维护者已允许推送及运行实际 CI，并指定后续在 `dev` 开发；此最新授权取代下文历史记录中的“未获推送授权”，不授权修改 `main`、强推、创建 PR、发版或部署。整合版及 CI 触发调整已推送为 `56b015f`；后端实际 CI 2108/2850 全通过，前端845单元通过、浏览器187通过/1跳过，被原零跳过门禁正确拒绝。tmpfs夹具已本地红绿复现并修正，完整远端复验仍待执行，见 §2.330；T3 尚未完成。
 
 > **2026-10-22 收口接续：重复千条门禁与当前完整浏览器188/188通过，T3尚未退出**：在独立`t3-product-integration`工作树汇合`17c3657`与`b1157dc`。同一产品候选完整后端2108单元/2850集成通过，两次600秒平均1000.358/1000.649条/秒、恢复15.299/16.067秒，50/500也通过。最新有限前端序列exit0：Web840、完整当前Chromium188、归档Chromium111及实际Chrome152关联各9项通过，零跳过/重试；历史停止异常和Modbus非预期请求仍未定位，正文跨记录断言已修正。独立冒烟脚本补真实退出码/信号检查后，Web845通过，实际Firefox128双协议各6阶段、Chrome155默认HTTP3阶段也已通过。候选已本地提交为`6e9b0e7`（§2.329），未推送/部署。最新证据见§2.324—§2.329，不代表生产性能或T3验收。两条分支重复使用的历史证据编号分开保留：原隔离分支沿用§2.288—§2.322，原主分支另以§M-2.xxx标识；这是证据别名，不改变T/GW/AT/FS等任务或验收ID。
 
@@ -141,7 +141,20 @@ Web验证：`npm run typecheck`、`npm run lint`、`npm test -- --run`通过，5
 
 远端核查时仅有 `main@27db103`，没有远端 `dev`；GitHub 尚无已登记工作流，现有两份 CI 又仅对 `main` 的 push 触发。因此只将 `.github/workflows/backend-ci.yml` 与 `frontend-ci.yml` 的 push 分支扩为 `[main, dev]`，沿用原测试、零用例/跳过拒绝、45分钟作业时限、5分钟后端挂起门禁、权限和仅上传证据的边界。不增加发布物上传或部署。
 
-本地验证使用 Python 3 / PyYAML 6.0.3 的 `BaseLoader` 对比提交前后解析结果：除 `on.push.branches` 外全部结构相同，jobs/steps/permissions/timeout 未变；`git diff --check` 通过。`git push --dry-run --porcelain origin HEAD:refs/heads/dev` 成功，仅预检新建 `dev`，不是实际推送或 CI 通过。证据目录为 `/home/shiny/.cache/tenonedge-product-integration/evidence/20261022/dev-ci-01`（两份前后工作流及 `workflow-trigger-validation.json`）。接下来将明确目标、非强制推送 `dev` 并核对真实 run；实际结果尚未产生，不复用本地回归冒充远端通过。
+本地验证使用 Python 3 / PyYAML 6.0.3 的 `BaseLoader` 对比提交前后解析结果：除 `on.push.branches` 外全部结构相同，jobs/steps/permissions/timeout 未变；`git diff --check` 通过。`git push --dry-run --porcelain origin HEAD:refs/heads/dev` 预检成功后，实际通过 `git push --porcelain --set-upstream origin HEAD:refs/heads/dev` 非强制推送 **`56b015f18ae4545f0399295d589185449d0dc088`**。远端 `main` 仍为 `27db103`。证据目录为 `/home/shiny/.cache/tenonedge-product-integration/evidence/20261022/dev-ci-01`；Git 缓存凭据仅在内存中供本仓库 API/证据下载使用，不输出或持久化秘密，不修改登录配置。
+
+**首轮实际 CI（同一 `dev@56b015f`，不改写失败结果）：**
+
+| 工作流 | 实际结果 | 原始证据与边界 |
+|---|---|---|
+| [Backend CI / 39699691116](https://github.com/Tenon-Net/TenonEdge/actions/runs/39699691116) | **success**；Unit **2108/2108**、Integration **2850/2850**，0失败/跳过 | Ubuntu24.04.5/SDK10.0.401；locked restore、格式/Release构建、真实Broker、原5分钟挂起门禁、独立发布和干净容器全部通过。下载TRX再经原脚本核对通过；制品仅环境、测试和发布核对证据，未上传程序包 |
+| [Frontend CI / 39699691215](https://github.com/Tenon-Net/TenonEdge/actions/runs/39699691215) | **failure**；Web **845/845**，浏览器 **187通过/1跳过**、34.117分钟，0失败/flaky/重试 | Node22.23.2/npm11.21.0；locked安装/契约/格式/lint/build通过。浏览器步骤exit0不算全通过：原报告核查步骤exit1正确拒绝tmpfs缺失；完整日志、JSON、trace和制品保留。下载ZIP的SHA256与GitHub登记一致 |
+
+**tmpfs夹具根因及最小修正：** `outputs.spec.ts` 将 `os.tmpdir()` 当成tmpfs；实际runner的该目录为ext4，启动此用例的业务Host之前即按既有规则跳过。没有产品文件系统识别或容量放行错误的证据。新增仅测试侧的 `TENONEDGE_TEST_TMPFS_ROOT`，仍先用`findmnt`核对真实类型；CI只在临时runner上挂载独立2GiB tmpfs（高于原500MB磁盘保护阈值），运行后`always()`卸载。不改全局TMPDIR、产品磁盘保护、容量档案、两场景断言、重试数或任何原门禁。PyYAML比较确认删除新增准备/清理步骤及这一个测试环境变量后，原工作流结构逐项完全相同，全部run块`bash -n`通过。
+
+**本地红绿复现（`filesystem-fixture/`）：** 全新原仓库locked restore及Release构建0警告/错误；第一次Web构建因旧node_modules缺`@floating-ui/core`失败，固定npm11.21.0执行`ci`后构建成功，锁文件未改。安装另报告2项moderate，未强制升级依赖或宣称零漏洞，后续须核查实际公告。将`TMPDIR`显式放到仓库忽略的ext4目录、`TENONEDGE_TEST_TMPFS_ROOT=/tmp`（本机真实tmpfs），以原`outputs.spec.ts --grep 'on tmpfs'`执行：修正前**0通过/1跳过**，Playwright exit0而原报告核查exit1，2.956秒稳定复现。修正后相同ext4临时目录，运行完整`outputs.spec.ts`，真实tmpfs/ext4 **2/2、71.274秒、0失败/跳过/重试**，报告核查exit0。其后typecheck/format:check/lint/api:check及完整Web **845/845**通过；不是新版本188项全量或远端修正已通过，不以局部绿色覆盖首轮失败。
+
+**并行工作区变更保护：** 等待首轮CI期间，当前`dev`另出现本地文档提交`d9164a3`、`d40fb4c`（§M-2.331），仅变更本文件，记录中写有“本次不推送”。这两条不是本轮CI夹具修正产生的提交；保留其内容和历史，不重置、改写或擅自合并说明。此前`56b015f`的已授权推送和真实CI结果仍有效；针对当前分支新增记录与原推送授权的歧义，已另向维护者确认后续推送范围。夹具修正先本地整理，追加推送及新完整远端CI尚未执行，不能记为通过。
 
 此次分支调整和 CI 验证不批准候选只读通道正式纳入，不关闭历史停止/Modbus/MQTT偶发风险，也不替代实际 Chrome111/Edge111/Safari16.4、Excel 来源和维护者验收；不进入 T4/T5/G1。
 
