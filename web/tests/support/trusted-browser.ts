@@ -11,9 +11,9 @@ const run = promisify(execFile)
 // Linux Chromium trusts only this test's isolated NSS database. No ignoreHTTPSErrors,
 // --ignore-certificate-errors, global certificate installation, or application bypass.
 // certutil comes from libnss3-tools (or TENONEDGE_CERTUTIL for an extracted local package).
-export async function startTrustedBrowser() {
+export async function startTrustedBrowser(httpAddress = '127.0.0.1') {
     const directory = await mkdtemp(join(tmpdir(), 'tenonedge-token-browser-'))
-    const host = await startOwnedHost(directory)
+    const host = await startOwnedHost(directory, 0, [], httpAddress)
     try {
         if (!host.httpsUrl || !host.certificateFingerprint)
             throw new Error('missing-owned-host-certificate')

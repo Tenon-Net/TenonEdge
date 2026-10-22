@@ -12,11 +12,12 @@
     "dev": "vite --host 127.0.0.1",
     "build": "npm run licenses && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src tests scripts *.ts",
+    "lint": "oxlint src tests acceptance scripts *.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:excel": "playwright test --config=playwright.excel.config.ts",
     "api:generate": "node scripts/export-openapi.mjs",
     "api:check": "node scripts/export-openapi.mjs --check",
     "licenses": "node scripts/licenses.mjs"
