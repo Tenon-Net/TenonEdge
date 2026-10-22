@@ -51,14 +51,27 @@ internal static class TransformModuleProcessHost
                 { PeriodMs = 1000 }));
         factory.UseKestrel();
         factory.StartServer();
-        var lifetime = factory.Services.GetRequiredService<IHostApplicationLifetime>();
+        return await WaitForShutdownAsync(factory.Services);
+    }
+
+    internal static async Task<int> WaitForShutdownAsync(IServiceProvider services)
+    {
+        var lifetime = services.GetRequiredService<IHostApplicationLifetime>();
         var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var registration = lifetime.ApplicationStopped.Register(() => stopped.TrySetResult());
+        var exitCode = HostExitCodes.Success;
+        using var registration = lifetime.ApplicationStopped.Register(() =>
+        {
+            // Program.RunAsync may dispose the provider before the asynchronous
+            // waiter resumes. Match the product Host's shutdown boundary instead
+            // of resolving services from that already-disposed provider.
+            exitCode = HostExitCodes.AfterShutdown(services.GetServices<IHostedService>());
+            stopped.TrySetResult();
+        });
         using var signal = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; lifetime.StopApplication(); });
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         using var timeout = deadline.Token.Register(lifetime.StopApplication);
         await stopped.Task;
-        return HostExitCodes.AfterShutdown(factory.Services.GetServices<IHostedService>());
+        return exitCode;
     }
 
     private static ConnectionModuleDefinition BrowserConnection() => new("authwire", 1, "测试凭证连接",
