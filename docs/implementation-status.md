@@ -9517,6 +9517,8 @@ PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-auth-diagnostic-20261022.json \
 ```
 该隔离用例 **1/1通过，7.7秒**；trace保存在同一外部证据目录、SHA-256 `82753c8d0189e0489fdb711fc63da1e02cc2bfb48313265284604b78ae87460b`。这只能说明该失败没有在孤立执行中复现，不能抵销全套失败或证明根因。未重跑全套、未放宽断言、未增加重试。
 
+第二个隔离诊断针对全套中 `auth.spec.ts:3848` 的预览正文控件缺失，同样单次执行：`PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-route-preview-diagnostic-20261022.json npx --yes npm@11.21.0 run test:e2e -- tests/auth.spec.ts:3848 --workers=1 --trace=on --output=/tmp/tenonedge-e2e-route-preview-diagnostic-output --reporter=list,json`，**1/1通过，10.7秒**；trace SHA-256 `5618adaa21d10385812b197ac94e35cdb9301c3aaa93120307774ec17093bb0f`。同样只是孤立未复现，不解释整套失败。两个隔离报告与trace均复制到仓库外证据目录。
+
 运行窗口只读环境核查：同机 `journalctl` 在全套期间记录多个默认 `docker0` veth加入/拆除（本地约09:06、09:09、09:15），但与整个42.5分钟内29项失败没有完成逐失败因果绑定；同时Release `TenonEdge.Host.dll`与Runtime程序集mtime约09:11，晚于套件启动，未能确认当时是否有外部构建过程。故把环境干扰列为待调查假设，不把它写成失败根因，也不将产品回归失败归咎于浏览器/资源压力。完整筛选后的journal证据保存在上述外部目录`docker-network.log`。此结果覆盖§2.327历史188/188的当前Chromium全套绿色，但不删除当时通过记录；当前状态以本节最新全套159/188为准。
 
 在 `6b0a8fa` 后仅对容量页面两个浏览器用例作一次当前候选定向验证（不重跑全套）：`TENONEDGE_TEST_TMPFS_ROOT=/tmp PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-outputs-20261022.json npx --yes npm@11.21.0 run test:e2e -- tests/outputs.spec.ts --workers=1 --reporter=list,json --output=/tmp/tenonedge-e2e-outputs-20261022-output`，HeadlessChromium156，真实Host、真实tmpfs和ext4目录，**2/2通过、0失败/跳过/flaky，70.5秒**；JSON SHA-256 `dc5963d833a9502bb9d496dd458eff68fe73532b6e04676c53350b7196f5be69`。该结果确认新版环境夹具下两种容量页面场景可运行，但不改变前述d40全套失败，也不替代当前188项全量回归。
