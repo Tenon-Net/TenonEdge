@@ -8,14 +8,14 @@ name: Backend CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# 只取消同一拉取请求中被新提交取代的运行；推送到 main 的每个提交都保留完整的 CI 结果。
+# 只取消同一拉取请求中被新提交取代的运行；推送到 main/dev 的每个提交都保留完整的 CI 结果。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

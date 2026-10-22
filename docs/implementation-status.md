@@ -1,5 +1,7 @@
 # TenonEdge 实现状态与验证证据
 
+> **2026-10-22 开发分支调整**：维护者已允许推送及运行实际 CI，并指定后续在 `dev` 开发；此最新授权取代下文历史记录中的“未获推送授权”，不授权修改 `main`、强推、创建 PR、发版或部署。`dev` 已快进到已验证整合提交 `287229f`；当前 CI 接续见 §2.330，T3 尚未完成。
+
 > **2026-10-22 收口接续：重复千条门禁与当前完整浏览器188/188通过，T3尚未退出**：在独立`t3-product-integration`工作树汇合`17c3657`与`b1157dc`。同一产品候选完整后端2108单元/2850集成通过，两次600秒平均1000.358/1000.649条/秒、恢复15.299/16.067秒，50/500也通过。最新有限前端序列exit0：Web840、完整当前Chromium188、归档Chromium111及实际Chrome152关联各9项通过，零跳过/重试；历史停止异常和Modbus非预期请求仍未定位，正文跨记录断言已修正。独立冒烟脚本补真实退出码/信号检查后，Web845通过，实际Firefox128双协议各6阶段、Chrome155默认HTTP3阶段也已通过。候选已本地提交为`6e9b0e7`（§2.329），未推送/部署。最新证据见§2.324—§2.329，不代表生产性能或T3验收。两条分支重复使用的历史证据编号分开保留：原隔离分支沿用§2.288—§2.322，原主分支另以§M-2.xxx标识；这是证据别名，不改变T/GW/AT/FS等任务或验收ID。
 
 ## T3 连续收口工作清单（2026-10-19，授权接续自 4983d28）
@@ -132,6 +134,16 @@ Web验证：`npm run typecheck`、`npm run lint`、`npm test -- --run`通过，5
 第四项原检查两次HTTP输出请求复用同一TCP连接；全量中响应成功但业务成功规则为空，客户端按既有`MaxResponseDrainSize=0`不读取无界正文并释放连接，服务端使用JSON响应导致不保证连接复用。未放宽断言或改生产逻辑；将该测试配置为既有有界JSON业务成功规则`/counter == 9007199254740993`，使它实际验证响应正文已读取后的连接复用。第一次针对性修复误用非RFC6901的`counter`指针，得到第二次失败证据`/tmp/tenonedge-t3/inventory-and-cert-reuse/inventory-and-cert-reuse.trx`；更正为`/counter`后4项全通过。此根因是测试刺激条件问题，不代表HTTP任何响应都应复用TCP。
 
 完整集成尚未全绿：上述4项之后未重跑全量，因此当前统计仍为2681/2685；浏览器不得与下一轮后端网络集成并行。既有§2.274/§2.275 MQTT偶发计数超时风险仍独立保留、未定位。
+
+### 2.330 T3-01 / T3-11 dev 分支与实际 CI 接续（2026-10-22，执行中）
+
+维护者明确指定在 `dev` 工作。原仓库 `/home/shiny/project/github/TenonEdge` 的干净 `dev@17c3657` 已通过 `git merge --ff-only t3-product-integration` 快进到 `287229f`，不创建合并提交；缓存整合工作树保留为验证快照。两个人工试用进程的 PID/startTicks 仍为 `1060554/302364428`、`1060538/302364412`，未重启、部署或改动其配置。
+
+远端核查时仅有 `main@27db103`，没有远端 `dev`；GitHub 尚无已登记工作流，现有两份 CI 又仅对 `main` 的 push 触发。因此只将 `.github/workflows/backend-ci.yml` 与 `frontend-ci.yml` 的 push 分支扩为 `[main, dev]`，沿用原测试、零用例/跳过拒绝、45分钟作业时限、5分钟后端挂起门禁、权限和仅上传证据的边界。不增加发布物上传或部署。
+
+本地验证使用 Python 3 / PyYAML 6.0.3 的 `BaseLoader` 对比提交前后解析结果：除 `on.push.branches` 外全部结构相同，jobs/steps/permissions/timeout 未变；`git diff --check` 通过。`git push --dry-run --porcelain origin HEAD:refs/heads/dev` 成功，仅预检新建 `dev`，不是实际推送或 CI 通过。证据目录为 `/home/shiny/.cache/tenonedge-product-integration/evidence/20261022/dev-ci-01`（两份前后工作流及 `workflow-trigger-validation.json`）。接下来将明确目标、非强制推送 `dev` 并核对真实 run；实际结果尚未产生，不复用本地回归冒充远端通过。
+
+此次分支调整和 CI 验证不批准候选只读通道正式纳入，不关闭历史停止/Modbus/MQTT偶发风险，也不替代实际 Chrome111/Edge111/Safari16.4、Excel 来源和维护者验收；不进入 T4/T5/G1。
 
 ### 2.329 T3 高吞吐候选已本地整理提交（2026-10-22）
 
