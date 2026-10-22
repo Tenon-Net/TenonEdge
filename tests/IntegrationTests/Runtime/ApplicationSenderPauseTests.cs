@@ -110,10 +110,27 @@ public sealed class ApplicationSenderPauseTests
             Assert.Equal(RuntimeUnitState.Running, runtime.GetStatus().Units.Single(unit => unit.Id == InputId).State);
             Assert.Equal(1, target.Creates);
             Assert.Equal(0, target.Disposes);
+            // 超时静默不是提交屏障。用真实写锁固定“下一条已发送、上一条ACK仍待删除”的合法窗口，
+            // 不能把第二次 SendAsync 当作唯一写者完成提交的信号。
+            using var database = new SqliteConnection($"Data Source={Path.Combine(data.Path, "queue.db")};Pooling=False");
+            database.Open();
+            using var transaction = database.BeginTransaction(deferred: false);
             target.Result.TrySetResult(new(OutputSendStatus.Ack));
             await Until(() => target.Messages.Count == 2);
+            Assert.Collection(target.Messages,
+                message => Assert.Equal("first", Body(message)),
+                message => Assert.Equal("second", Body(message)));
+            Assert.Equal(2, runtime.Deliveries.ReadPending(1, 0, 10).Count);
+            Assert.Equal(0, runtime.Deliveries.GetPersistentCounters().GetValueOrDefault("acknowledgedRecords"));
+            Assert.Equal(0, runtime.Deliveries.GetStatus().DeletedRecords);
+            transaction.Rollback();
+            await Until(() => runtime.Deliveries.GetStatus().DeletedRecords == 1);
             Assert.Equal(1, runtime.Deliveries.GetStatus().DeletedRecords);
+            Assert.Equal(1, runtime.Deliveries.GetPersistentCounters()["acknowledgedRecords"]);
+            Assert.Equal("second", System.Text.Encoding.UTF8.GetString(Assert.Single(runtime.Deliveries.ReadPending(1, 0, 10)).Payload.Span));
+            Assert.Equal(2, target.Messages.Count);
             Assert.Equal(1, target.Creates);
+            Assert.Equal(0, target.Disposes);
         }
         finally { target.Release(); }
     }

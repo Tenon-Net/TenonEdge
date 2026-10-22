@@ -7,15 +7,112 @@ using MQTTnet.Formatter;
 using TenonEdge.Abstractions.Contracts;
 using TenonEdge.Adapters.Diagnostics;
 using TenonEdge.Adapters.Mqtt;
+using TenonEdge.Host.Features.Runtime;
 using TenonEdge.IntegrationTests.Adapters;
+using TenonEdge.IntegrationTests.Infrastructure;
 using TenonEdge.IntegrationTests.Probes.Mqtt;
 using TenonEdge.Runtime.Connections;
 using TenonEdge.Runtime.Diagnostics;
+using TenonEdge.Runtime.Lifecycle;
 
 namespace TenonEdge.IntegrationTests.Runtime;
 
-public sealed class MqttReceiveBufferTests
+public sealed class MqttReceiveBufferTests(ITestOutputHelper output)
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RetainedOnEitherSideOfSubackIsIgnoredAndPersistedOnce(bool buffered, bool retainedBeforeSuback)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        var token = deadline.Token;
+        using var data = TemporaryDirectory.Create();
+        using var config = TestConfigStore.Create();
+        config.Initialize();
+        var subscriptions = new MqttSubscriptionStore(config.Database);
+        // 与产品 Host 一样划出原始缓冲分区；RuntimeTesting 的通用默认分区为 0。
+        await using var runtime = RuntimeTesting.CreateRuntime([], data.Path, options: new RuntimeOptions { InputBufferBytes = 8L * 1024 * 1024 });
+        Assert.Equal(8L * 1024 * 1024, runtime.InFlight.BufferCapacity);
+        runtime.StartCore();
+        await OutputPipelineTests.UntilAsync(() => runtime.Deliveries.GetStatus().Store is not null);
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var settings = new MqttConnectionSettings { ConnectionId = 1, Host = "127.0.0.1", Port = ((IPEndPoint)listener.LocalEndpoint).Port };
+        var identity = new MqttSessionIdentity(settings.Recipient, "retained-suback-order");
+        var handoffs = 0;
+        var input = new MqttInputReceiver([new("a", 1, (_, _) =>
+        {
+            Interlocked.Increment(ref handoffs);
+            return Task.FromResult(InputHandoffStatus.Committed);
+        })], TimeProvider.System, reason => runtime.Deliveries.RecordMqttInputDiagnostic(1, reason), subscriptions, identity,
+            buffered ? runtime.InFlight : null);
+        await using (var session = new MqttSession(settings, identity.ClientId, new NoCredentials(), TimeProvider.System,
+            new OutboundConnector(new ConnectionTrustTests.LoopbackPolicy()), input))
+        {
+            var maintaining = session.MaintainAsync(token);
+            using var peer = await listener.AcceptTcpClientAsync(token);
+            var stream = peer.GetStream();
+            Assert.Equal(0x10, (await ReadPacketAsync(stream, token)).Header);
+            await stream.WriteAsync(new byte[] { 0x20, 2, 0, 0 }, token);
+            var subscribe = await ReadPacketAsync(stream, token);
+            Assert.Equal(0x82, subscribe.Header);
+            Assert.Equal(new byte[] { 0, 1, (byte)'a', 1 }, subscribe.Body[2..]);
+            Assert.Equal(new("a", 1, false), Assert.Single(subscriptions.Read(identity)));
+            Assert.False(maintaining.IsCompleted);
+
+            if (retainedBeforeSuback)
+            { await RetainedAsync(); }
+            // 真正的网络屏障：仅在上一分支收到保留消息的 PUBACK 后发送 SUBACK，
+            // 不以 sleep 或调度概率冒充“消息早于订阅确认”。另一分支先完成订阅落盘。
+            await stream.WriteAsync(new byte[] { 0x90, 3, subscribe.Body[0], subscribe.Body[1], 1 }, token);
+            Assert.Equal(OutputSendStatus.Ack, (await maintaining).Status);
+            Assert.Equal(new("a", 1, true), Assert.Single(subscriptions.Read(identity)));
+            if (!retainedBeforeSuback)
+            { await RetainedAsync(); }
+
+            // 没有业务入队请求；仍须由原唯一写者的空闲计数提交路径落盘，沿用原 15 秒等待。
+            try
+            { await OutputPipelineTests.UntilAsync(() => Counter("retainedIgnored") == 1 && Counter("acknowledged") == 1 && Counter("subscribed") == 1); }
+            catch
+            {
+                output.WriteLine($"buffered={buffered}, retainedBeforeSuback={retainedBeforeSuback}, connected={session.IsConnected}, handoffs={Volatile.Read(ref handoffs)}");
+                output.WriteLine("persisted: " + System.Text.Json.JsonSerializer.Serialize(runtime.Deliveries.GetPersistentCounters()));
+                output.WriteLine("unpersisted: " + System.Text.Json.JsonSerializer.Serialize(runtime.Deliveries.GetUnpersistedCounters()));
+                throw;
+            }
+            Assert.True(session.IsConnected);
+            Assert.Equal(0, Volatile.Read(ref handoffs));
+            Assert.Empty(runtime.Deliveries.ReadPending(1, 0, 10));
+            Assert.Equal(0, Counter("handoffFailed"));
+            Assert.Equal(0, Counter("bufferFailed"));
+            Assert.Equal(0, Counter("sessionLost"));
+            Assert.Equal(0, runtime.InFlight.Status.ReservedBytes);
+
+            async Task RetainedAsync()
+            {
+                await stream.WriteAsync(new byte[] { 0x33, 6, 0, 1, (byte)'a', 0x12, 0x34, 42 }, token);
+                var ack = await ReadPacketAsync(stream, token);
+                Assert.Equal(0x40, ack.Header);
+                Assert.Equal(new byte[] { 0x12, 0x34 }, ack.Body);
+                if (retainedBeforeSuback)
+                {
+                    Assert.False(maintaining.IsCompleted);
+                    Assert.Equal(new("a", 1, false), Assert.Single(subscriptions.Read(identity)));
+                }
+            }
+        }
+        await runtime.StopAsync(token);
+        Assert.Empty(runtime.Deliveries.GetUnpersistedCounters());
+        Assert.Equal(1, Counter("retainedIgnored"));
+        Assert.Equal(1, Counter("acknowledged"));
+        Assert.Equal(1, Counter("subscribed"));
+
+        long Counter(string reason) => runtime.Deliveries.GetPersistentCounters().GetValueOrDefault("connection/1/mqtt/" + reason);
+    }
+
     [Theory]
     [InlineData(false, false, false)]
     [InlineData(false, true, false)]
@@ -238,6 +335,11 @@ public sealed class MqttReceiveBufferTests
     }
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private sealed class NoCredentials : ICredentialResolver
+    {
+        public MqttCredentialIdentity? DescribeMqtt(long connectionId) => null;
+        public MqttCredential? ResolveMqtt(long connectionId, string recipient) => null;
+    }
     private static async Task<(int Header, byte[] Body)> ReadPacketAsync(Stream stream, CancellationToken token)
     {
         var one = new byte[1];
