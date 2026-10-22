@@ -9500,6 +9500,8 @@ V-03最低版本与当前实际 Chrome 补验：先以 SHA-256=`e655cc69971058b6
 
 回应“能否执行 E2E”：**能，本轮已实际执行项目 Playwright 全套，不是静态/模拟测试。** 在 `web/`、Linux、本地真实 Release Host（`web/scripts/test-host.mjs` 启动 `src/TenonEdge.Host/bin/Release/net10.0/TenonEdge.Host.dll`）、构建后的 `web/dist`、默认 `http://127.0.0.1:18082` 上，使用 Node 22.23.2、npm 11.21.0、Playwright 1.64.0、HeadlessChromium 156.0.8078.4；单worker、`retries=0`。无后端网络集成由本轮启动。
 
+全套命令开始时工作区HEAD为 `d40fb4c`。运行结束前另有 `6b0a8fa` 本地提交（只变更 CI tmpfs 环境夹具、相关测试与文档），发生于本全套输出测试之后；该提交不包含在全套本次执行快照中。产品源代码在本轮没有改动。
+
 全套命令：
 ```bash
 PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-current-20261022.json \
@@ -9517,4 +9519,6 @@ PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-auth-diagnostic-20261022.json \
 
 运行窗口只读环境核查：同机 `journalctl` 在全套期间记录多个默认 `docker0` veth加入/拆除（本地约09:06、09:09、09:15），但与整个42.5分钟内29项失败没有完成逐失败因果绑定；同时Release `TenonEdge.Host.dll`与Runtime程序集mtime约09:11，晚于套件启动，未能确认当时是否有外部构建过程。故把环境干扰列为待调查假设，不把它写成失败根因，也不将产品回归失败归咎于浏览器/资源压力。完整筛选后的journal证据保存在上述外部目录`docker-network.log`。此结果覆盖§2.327历史188/188的当前Chromium全套绿色，但不删除当时通过记录；当前状态以本节最新全套159/188为准。
 
-停止点：当前完整Chromium E2E未通过，T3-01/T3-11不能退出。应先依据保留的JSON失败详情、缺失的原trace、套件期间veth事件与Release文件mtime定位原因；当前不启动Chromium111第二轮全套，避免在原因未明时扩大混淆。源代码未因本轮测试修改，未生成本地产品修复提交；浏览器报告/证据位于仓库外，不纳入提交。`git diff --check`通过。本节记录失败和一次有界隔离诊断，不表示T3完成。
+在 `6b0a8fa` 后仅对容量页面两个浏览器用例作一次当前候选定向验证（不重跑全套）：`TENONEDGE_TEST_TMPFS_ROOT=/tmp PLAYWRIGHT_JSON_OUTPUT_NAME=/tmp/tenonedge-e2e-outputs-20261022.json npx --yes npm@11.21.0 run test:e2e -- tests/outputs.spec.ts --workers=1 --reporter=list,json --output=/tmp/tenonedge-e2e-outputs-20261022-output`，HeadlessChromium156，真实Host、真实tmpfs和ext4目录，**2/2通过、0失败/跳过/flaky，70.5秒**；JSON SHA-256 `dc5963d833a9502bb9d496dd458eff68fe73532b6e04676c53350b7196f5be69`。该结果确认新版环境夹具下两种容量页面场景可运行，但不改变前述d40全套失败，也不替代当前188项全量回归。
+
+停止点：当前完整Chromium E2E未通过，T3-01/T3-11不能退出。应先依据保留的JSON失败详情、缺失的原trace、套件期间veth事件与Release文件mtime定位原因；当前不启动Chromium111第二轮全套，避免在原因未明时扩大混淆。源代码未因本轮测试修改，未生成本地产品修复提交；浏览器报告/证据位于仓库外，不纳入提交。`git diff --check`通过。本节记录失败、一次有界隔离诊断和后续修正夹具定向通过，不表示T3完成。
