@@ -95,7 +95,7 @@
 
 已补正的内部缺口：T3-01 / FE-D01 §3 的布局/侧栏/页头源码复用现已补齐（§2.316），其余页面统一重设计后完成816 Web及完整177项当前Chromium回归（§2.319）。最新845 Web/完整188项Chromium见§M-2.334—335；本机当前系统浏览器按维护者本日决定补验，历史旧版要求不再作为门槛，也不改写为通过。
 1. **V-03 / V-10 / FE-AT-06 本机浏览器已补验：** 本机Google Chrome152.0.7977.82的网卡HTTP关键9项（§2.327）与新增可信HTTPS交互/权限专项各1/1，以及Firefox158.0.1网卡HTTP/HTTPS各6/6阶段通过（§M-2.336）。Chrome155默认HTTP的3阶段证据仍见§2.328。只说明这些系统/版本/子场景，原型不冒充保存/采集或整套业务；不再要求旧版Chrome/Edge/Safari/Firefox，不宣称未测的Edge/Safari或其他系统受支持。
-2. **功能§3.7 / V-10：** 真正从Excel复制100行，逐行错误/修正/批改及保存草稿；生成TSV或自动化paste不核销复制源。
+2. **功能§3.7 / V-10：** 真正从Excel复制100行，逐行错误/修正/批改及保存草稿；生成TSV或自动化paste不核销复制源。维护者已同意 Linux 的 Excel 网页版来源，不要求桌面版或 Windows；官方入口可达，但创建工作簿进入微软登录页，尚无可操作的登录会话，见§M-2.337。
 3. **V-02 / T3-11 实际CI分项：** §2.330已保留`dev@56b015f`实际locked安装/构建通过和Backend CI成功，不能再称其“未执行”；但Frontend CI整体因1跳过仍失败，tmpfs夹具及本轮测试宿主修正后的远端完整复验未执行。当前本轮只授权本地提交、不推送，不擅自触发发布、push或workflow dispatch；本地188/188不冒充远端工作流成功。
 4. **PLAN-01 §11.2：** 指定维护者按以上任务、实际证据及剩余风险检查，不能由Agent自报替代。§2.315为证据关联审计，不代签逐条验收。
 
@@ -9646,3 +9646,24 @@ Chrome命令首次误从仓库根调用npm，尚未发现/执行用例即ENOENT�
 运行前2487文件冻结至Firefox结束只变化`web/README.md`及Firefox脚本；Chrome专项前另冻结新增用例，共2488文件，三组专项结束逐文件核对无变化。产品源码、全部Release与83个dist均未改变，因此复用§M-2.333—335的产品回归边界，不声称本轮重跑后端。随后`run typecheck`、`run lint`（无警告）、`run format:check`及完整Vitest **64文件/845项、0失败/跳过/todo**通过；JSON经非零/计数核对，`git diff --check`通过。最后仅文档记录变化，无运行中的本轮浏览器/Host；人工试用Host PID1060554/startTicks302364428保持不变，没有重启/部署。
 
 **当前停止边界不是T3完成：** 已取消的旧浏览器要求不再索取。当前可独立补齐的本机浏览器证据与夹具修正已落实，仍缺功能§3.7的**真实Microsoft Excel复制100行、错误修正/批改/保存的双协议来源证据**，以及修正后当前提交的**远端完整CI**（本轮禁止push/dispatch，首轮失败报告保持失败）。最小外部输入为实际Excel执行环境/可核对报告，以及单独确认的CI执行途径；不以LibreOffice、生成TSV或本地等效流程代替。还需维护者按§1.1检查并决定历史风险；MQTT retainedIgnored计数超时、旧Modbus非预期请求及无相同堆栈的旧Host退出仍未定位，未被本轮绿色核销。不推送、不发布、不进入T4/T5/G1。
+
+
+### M-2.337 T3-02/04/11 Excel 网页版来源准入、访问实测与输入夹具（2026-10-22）
+
+维护者在确认本机浏览器范围后，进一步同意在 Linux 使用 **Microsoft Excel 网页版**完成真实来源复制。此来源不要求 Windows/macOS 或桌面版安装；也不宣称桌面 Excel 已验证。已在`t3-browser-acceptance.md`补充专用会话、人工登录、云端人工数据、真实复制/粘贴、截图脱敏和来源范围。旧记录中缺少Excel仍是当时未执行，不改为通过。
+
+开工核对`dev@0b72be29251e688a2fd64e4f7736e2c628728be3`、工作区干净，无`.codegraph/`；本轮不改产品/依赖/静态产物，不推送、发版或启动其他阶段。当前执行环境无`DISPLAY`/`WAYLAND_DISPLAY`，终端会话没有可用的自有图形桌面或已配置远控工具；没有访问日常浏览器profile或尝试控制登录界面。人工试用Host PID1060554/startTicks302364428保持不变，本轮未启动或部署产品Host，也未与后端网络集成并跑浏览器。
+
+实测使用本机`/usr/bin/google-chrome` **152.0.7977.82**、Playwright1.64.0，新建一次性上下文、正常HTTPS校验。证据归档`/home/shiny/.cache/tenonedge-t3-excel-web-20261022/`：
+
+| 实际执行 | 结果 | 不能替代的证据 |
+|---|---|---|
+| `node …/access-probe.mjs` | `https://excel.cloud.microsoft/`官方入口HTTP200，标题`Edit spreadsheets online for free — Microsoft Excel for the Web`（页面原文用竖线分隔），无请求失败；`access-result.json`、`entry.png`，执行器exit0 | 这是公开入口访问，不是Excel编辑、复制或T3通过 |
+| `node …/create-workbook-entry-probe.mjs` | 从全新会话点击一次`Create blank workbook`后进入`login.microsoftonline.com`，标题`Sign in to your account`；`create-workbook-entry-result.json`、`account-gate.png`，执行器exit0 | 停在账号输入之前；没有登录、账号创建、验证码绕过、读取现有云端文件或上传数据 |
+| `python3 …/create-workbook.py` | 标准库生成10,348字节测试xlsx；ZIP/XML逐项解析、四张表的完整单元格类型/值及空列核对通过；`workbook-structure-check.json` | 只是仓库外输入夹具结构自检，不是项目测试用例，更不是Excel已打开/已复制 |
+
+工作簿`tenonedge-excel-acceptance.xlsx`只含人工点位：`paste100_with_errors`为100行/9列，第51行key=`bad/key`、第76行偏移=`65536`；`paste100_valid`为100行合法数据；`replacement_one`/`replacement_two`为覆盖1行/数量冲突2行。F/G空列、单位和字符串`true`均按原验收列序，不含账号、客户数据、宏、公式或外部链接。SHA-256：`ab24fea305f84c08797373ac0f58d564b77909bf91da1fc2a5740ccface830ee`。生成文件后仍须在实际Excel中打开，真正复制指定选区；不能直接从xlsx解析文本写入网关剪贴板并记为Excel来源。
+
+两个浏览器进程均已正常关闭；日志仅保留公开页面文本、无查询参数的来源/路径，不保存认证请求或trace。`acceptance-status.json`明确写入**Excel复制流程未执行、TenonEdge流程未执行、T3未完成**，并关联原始文件哈希。没有运行新的项目单测/集成/E2E用例，不把两次入口探针或结构自检算为用例通过。文档`git diff --check`通过。
+
+维护者随后明确只能在另一台电脑登录。已提出不远控、无需账号密码的最小接续方式：维护者在另一台电脑新建仅供测试的空白Excel工作簿，若账号允许，提供“任何人可编辑”的共享入口；只操作该人工测试文件，测试结束撤销共享。共享链接属于访问凭据，不入库、不写日志或截图；不共享现有业务文件，也不要求修改组织的共享策略。当前尚未收到可编辑入口，未访问其他电脑或现有云端文件。另已准备仅本机图形桌面适用的仓库外专用浏览器启动脚本（不适用于维护者已说明的另一台电脑）：语法检查通过，当前无桌面环境按设计exit2且未启动浏览器，`desktop-guard.log`保留；它不是验收用例或已接通远控。后续得到会话后继续真实Excel选区复制→原生粘贴→错误修正/批改/覆盖→保存/刷新，并分别记录HTTP/HTTPS；当前不将登录阻塞改写为产品失败或来源通过。远端当前CI和维护者验收仍按§1.1保留；历史MQTT/Modbus/无同栈Host退出风险未因本轮访问成功消除。
