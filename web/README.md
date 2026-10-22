@@ -134,6 +134,8 @@ npx --yes npm@11.21.0 run test:e2e -- workspace.spec.ts
 
 `npm run test:excel` 是独立的外部来源验收，不加入默认离线 E2E/CI，不以缺少工作簿时跳过来制造绿色。先按 [浏览器验收 §4](../docs/t3-browser-acceptance.md) 准备仅含人工数据、允许在隔离浏览器中编辑的专用 Microsoft Excel 网页工作簿：`Sheet1!A1:I100` 为九列错误样例；101—102 行留空，103—104 行为单行/两行覆盖样例。此入口**不写入 Excel 或剪贴板**，输入准备必须先完成。不要提供业务文件、账号密码或日常浏览器 profile。
 
+维护者于 2026-10-22 确认：真实 Excel 来源闭环不再重复验 HTTPS。下面仅选 HTTP 用例；未筛选的入口仍运行两项，HTTPS 可显式补充，但不作为 T3 退出必测项。这不取消系统浏览器的双协议冒烟或任何 HTTPS 安全要求。已有 HTTP 完整流程及最新共享夹具失败分别见实施状态 §M-2.338—§M-2.339；入口存在不等于当前夹具已通过，也不要求为 T3 退出专门恢复 OneDrive 来源访问。
+
 执行前已有 Release 后端与 `web/dist`（或独立的 `TENONEDGE_TEST_WEBROOT`）。安装 `certutil`（Linux `libnss3-tools`），指定本机实际 Chrome；HTTPS 只将自有 Host 公开证书核对后登记到一次性 NSS 库，仍正常验证证书。HTTP 必须指定本机非回环网卡 IP。
 
 ```bash
@@ -142,8 +144,8 @@ read -rsp '专用人工 Excel 工作簿共享入口：' TENONEDGE_EXCEL_TEST_LIN
 export TENONEDGE_EXCEL_TEST_LINK
 TENONEDGE_EXCEL_HTTP_ADDRESS=192.168.0.88 \
   TENONEDGE_TEST_EXECUTABLE=/usr/bin/google-chrome \
-  npx --yes npm@11.21.0 run test:excel -- --reporter=list
+  npx --yes npm@11.21.0 run test:excel -- --grep 'to http point draft' --reporter=list
 unset TENONEDGE_EXCEL_TEST_LINK
 ```
 
-两项测试串行、零重试，共用一次真正打开的 Excel 编辑会话和同一个自有双协议 Host/临时数据/隔离浏览器；换协议分别登录并创建不同设备来源，不重复打开共享入口：真实 Excel「Clipboard → Copy」（trusted 点击）→ 原生 trusted Ctrl+V → 100行/两个定位错误 → 修正/两行批改 → 单行覆盖/数量不符拒绝 → 真实连接/设备/来源草稿保存 → 刷新重开并逐项核对100点；原型与真实来源分别执行。不测试连接、不读取设备、不应用草稿，也不证明 PLC 接入。源码只旁观浏览器事件，不构造 `ClipboardEvent`、写 store 或通过 API 创建业务对象；只读 GET 辅助核对全部保存内容。来源/工作簿不可用时明确失败，错误中脱敏链接；访问入口只留测试 worker 内存，不继承到 Host/浏览器子进程。完成 Excel 内外页 load 后执行一次复制，只旁观原剪贴板 API 的 Promise 完成，不替换文本或重试复制。不录 trace、视频或整页 Excel 截图，并关闭锁定 Playwright 版本会自动附加的源页面 ARIA 快照。测试后的专用共享可由所有者撤销；当前结果与已知失败统一见实施状态，入口存在不等于通过。
+测试串行、零重试；如显式选择两项，则共用一次真正打开的 Excel 编辑会话和同一个自有双协议 Host/临时数据/隔离浏览器，换协议分别登录并创建不同设备来源，不重复打开共享入口。每项流程为：真实 Excel「Clipboard → Copy」（trusted 点击）→ 原生 trusted Ctrl+V → 100行/两个定位错误 → 修正/两行批改 → 单行覆盖/数量不符拒绝 → 真实连接/设备/来源草稿保存 → 刷新重开并逐项核对100点；原型与真实来源分别执行。不测试连接、不读取设备、不应用草稿，也不证明 PLC 接入。源码只旁观浏览器事件，不构造 `ClipboardEvent`、写 store 或通过 API 创建业务对象；只读 GET 辅助核对全部保存内容。来源/工作簿不可用时明确失败，错误中脱敏链接；访问入口只留测试 worker 内存，不继承到 Host/浏览器子进程。完成 Excel 内外页 load 后执行一次复制，只旁观原剪贴板 API 的 Promise 完成，不替换文本或重试复制。不录 trace、视频或整页 Excel 截图，并关闭锁定 Playwright 版本会自动附加的源页面 ARIA 快照。测试后的专用共享可由所有者撤销；当前结果与已知失败统一见实施状态，入口存在不等于通过。
