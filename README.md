@@ -31,7 +31,7 @@
 - 部署：一个 .NET 服务，自带 Web 界面，本地配置和有限发送缓存。只支持 MQTT 的设备需要直连时，可在同一台机器上附带一个 Mosquitto。
 - 后端：.NET 10、ASP.NET Core 分组 Minimal API；Host、Runtime、Adapters、Abstractions 四工程；SQLite 配置库与发送缓存分离，具体依赖仍须 T0 验证。
 - 管理：本地账号与三种角色（管理员、配置人员、只读），首次访问时设置管理员；不依赖 TenonAdmin。
-- 界面：裁剪复用 shadcn-admin，采用 React 19、shadcn/ui、Tailwind CSS 4、TanStack Router 与 TanStack Query；路线画布使用 React Flow。需要 Chrome/Edge 111 及以上的浏览器，其他浏览器边界见设计文档；实际兼容性在 T3 验证。
+- 界面：裁剪复用 shadcn-admin，采用 React 19、shadcn/ui、Tailwind CSS 4、TanStack Router 与 TanStack Query；路线画布使用 React Flow。以本机系统当前使用的现代浏览器为支持目标，不要求安装旧版浏览器；实际产品、版本、协议和验证边界见实施状态。
 
 LoRa／LoRaWAN 优先接入现有无线网关或网络服务器已经处理好的应用数据，不自研无线协议栈。Node-RED 官方嵌入仅记录为待评估选项，首版不实施。
 

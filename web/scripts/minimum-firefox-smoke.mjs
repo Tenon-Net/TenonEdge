@@ -1,4 +1,4 @@
-// Firefox minimum-version UI smoke via W3C WebDriver and Gecko clipboard setup.
+// Native Firefox UI smoke via W3C WebDriver and Gecko clipboard setup.
 // No production API seeds or driver/browser patches; Linux headless fixtures only.
 // An external, loopback WebDriver is required; this script owns a fresh temporary Host.
 import assert from 'node:assert/strict'
@@ -387,6 +387,11 @@ try {
         } finally {
             await run('moz/context', { context: 'content' })
         }
+        // Establish real content focus before Ctrl+V. In system Firefox 158,
+        // privileged script focus alone delivered trusted keys but no paste;
+        // a native WebDriver click matches the user's gesture. Do not replace
+        // the trusted paste with a constructed ClipboardEvent or app-state write.
+        await click(css('[data-testid=point-grid]'))
         await js(`const grid=document.querySelector('[data-testid=point-grid]'); grid.focus();
           window.__minimumPaste = null;
           grid.addEventListener('paste', event => { window.__minimumPaste = { trusted:event.isTrusted, length:event.clipboardData.getData('text/plain').length }; }, {once:true,capture:true});`)

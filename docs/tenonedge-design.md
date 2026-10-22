@@ -121,7 +121,7 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
 
 | 能力 | 默认选择 | 地址 | 使用约束 |
 |---|---|---|---|
-| 前端界面 | React 19 + shadcn/ui + Tailwind CSS 4 | https://ui.shadcn.com | shadcn/ui 组件源码拷入 web/ 自行维护；数据表格用 TanStack Table，表单用 react-hook-form + zod。Tailwind 4 要求 Chrome/Edge 111+、Safari 16.4+、Firefox 128+，不支持 Win7 上的 Chrome 109 |
+| 前端界面 | React 19 + shadcn/ui + Tailwind CSS 4 | https://ui.shadcn.com | shadcn/ui 组件源码拷入 web/ 自行维护；数据表格用 TanStack Table，表单用 react-hook-form + zod。Tailwind 4 自身的技术下限为 Chrome/Edge 111+、Safari 16.4+、Firefox 128+，不支持 Win7 上的 Chrome 109；不是产品最低兼容承诺，现行浏览器验收见 §3.1 |
 | 画布 | React Flow（@xyflow/react） | https://reactflow.dev | 只提供前端编辑能力；运行逻辑属于 TenonEdge。节点外观可复用 React Flow UI 组件（https://reactflow.dev/ui ，基于 shadcn/ui 与 Tailwind）；复制组件源码前核实其许可，并按第 17 节记录 |
 | MQTT | MQTTnet（≥ 5.2.0） | https://github.com/dotnet/MQTTnet | 包装在适配器中。v5 已移除 ManagedClient，重连自行实现；默认协议是 MQTT 5.0，须显式指定 3.1.1；PublishAsync 没有默认超时，须传入带超时的取消令牌。不低于 5.2.0：更早的版本在已取消或超时的发布收到迟到的 PUBACK 时会断开连接。持续发布时保活可能检测不到断线（MQTTnet issue #2244，核查时未修复），发布连续超时后由网关主动断开重连。TLS 证书校验显式配置，不依赖库的默认行为。核查来源见 `docs/development-readiness.md` 第 5.1 节 |
 | Modbus | NModbus 3.0.83（T0 比较后，维护者于 2026-10-09 确认） | https://github.com/NModbus/NModbus | 优先验证 Modbus TCP 与 RTU over TCP 的读取、超时和字节序；不直接声明支持所有设备。NModbus 读写超时默认无限、库内默认重试 3 次、Async 方法不支持取消：须显式设置超时，库内重试设为 0 或 1，连接循环使用专用线程。NModbus 还有三点须由适配器处理：从站忙（SlaveDeviceBusy）默认无限重试；TCP 事务号不符时抛异常并重发请求，不跳过旧帧；RTU over TCP 时库在发送前的清空缓冲对网络流无效，残留字节要自行排空。FluentModbus 5.3 起提供 RTU over TCP 客户端（仓库中没有它的测试与文档），异步方法支持取消，但 TCP 客户端不校验事务号。核查来源见 `docs/development-readiness.md` 第 5.1 节 |
@@ -150,7 +150,7 @@ LoRa 参考另见第 21.7 节：ChirpStack 官方应用事件、设备配置及�
 ```
 
 - 后端使用 .NET 10。前端是独立工程，放在本仓库 web/：React 19、TypeScript、Vite、shadcn/ui + Tailwind CSS 4、React Flow、TanStack Table、react-hook-form + zod、react-router、zustand、react-i18next。API 客户端用 openapi-typescript + openapi-fetch 从 OpenAPI 生成；测试用 Vitest 与 Playwright，静态检查用 oxlint。新建精简工程，沿用 TenonAdmin React 模板的这套工具链，不复制其页面。构建产物由 .NET 宿主作为静态文件提供，与管理 API 同源，不需要 CORS。
-- 界面文案一律经 i18n，首版只提供中文。浏览器最低 Chrome/Edge 111、Safari 16.4、Firefox 128（Tailwind 4 的要求），不支持 Win7 上的 Chrome 109；T3 用最低支持版本的浏览器做一次冒烟测试。
+- 界面文案一律经 i18n，首版只提供中文。维护者于 2026-10-22 确认：以本机系统当前使用的现代浏览器为支持与 T3 验收目标，不再要求 Chrome/Edge 111、Safari 16.4、Firefox 128 等旧版本兼容验收或安装包。记录实际浏览器产品、完整版本、操作系统及 HTTP/HTTPS 结果；未经测试的浏览器或系统不宣称支持。HTTP 仍须经网卡地址验证非安全上下文；登录、画布、点表与权限要求不变。Tailwind 的技术下限和保留的较低构建目标不是产品最低版本兼容承诺。
 - 首版 Node.js 只用于前端构建，发布后浏览器资源由 .NET 宿主提供；产品运行时不要求 Node.js。第 20 节候选记录不改变这项部署约束。
 - 网关无强制外部数据库、Redis、消息服务器或中心平台依赖。用户选择 MQTT 时可以使用现场已有的 Broker。现场没有 Broker、又有只支持 MQTT 的设备时，在同一台机器上附带一个现成的独立 Broker（默认 Mosquitto）。它和网关是两个进程：网关重启或升级期间，Broker 继续接收消息，并在其积存上限、会话过期和持久化设置的范围内为网关的持久会话暂存（部署检查项见第 8.5 节）。附带的 Broker 禁止匿名登录，每台设备使用单独账号，并开启消息持久化。也可以换成其他 Broker，只要满足五项要求：MQTT 3.1.1 与 QoS 1 持久会话；用户名密码认证与主题权限，能禁止匿名；消息持久化；能在 Linux x64 上运行；许可允许随安装包和整机镜像分发。备选为 NanoMQ（MIT）；它是否满足第一、三项（持久会话下的离线 QoS 1 消息落盘）没有找到官方文档依据，社区 issue 中还有相关缺陷报告，采用前须按第 8.5 节实测。EMQX 5.9 起采用 BSL 1.1，禁止以嵌入方式提供给第三方，不能附带；客户已有 EMQX 时可以直接连接。附带 Broker 是可选项，不改变下一条“默认只启动一个服务”的约定。
 - 默认只启动一个服务；运行模块和界面在代码上隔离，不要求拆进程。
@@ -1757,5 +1757,6 @@ application/{applicationId}/device/{devEui}/event/up
 | 配置库独立客户端工厂（2026-10-21） | 维护者批准用统一连接配置工厂直接创建独立 SqlSugarClient，替代高频 SqlSugarScope.CopyNew 的上下文查找。保留单例 Scope、SqlSugar、短操作独立客户端、30 秒命令超时、WAL / synchronous=FULL / busy_timeout 回读及事务隔离；不缓存身份/凭证，不引入第二套运行时 | §2.3；后端实施规范 §4；实现证据见 implementation-status §2.322 |
 | 发送者独占读连接（2026-10-21） | 维护者确认运行中的发送者可独占复用SQLite读连接和预编译队头查询，退出/故障时释放；每次只读当前已提交队头，读事务在网络发送前结束，不预取正文、不跨发送保留快照或缓存安全状态。管理查询仍用短连接/短事务，FIFO、唯一写者/发送者、管理屏障及实时身份/暂停检查不变；不同于配置库客户端工厂替代 | §8发送缓存；后端实施规范 §4；实现及有限软件验证见 implementation-status §2.324；不代表T3验收或生产性能承诺 |
 | 发送者配置库专用只读通道（2026-10-21） | 维护者授权验证；完整后端安全回归及两次600秒原门禁负载通过，最新当前188项及两组关联各9项浏览器已通过（implementation-status §2.327—§2.328），但历史模块Host退出null与Modbus异常仍未定位（implementation-status §2.325—§2.326），当前仅候选验证、暂不正式纳入。只复用非池化只读连接与预编译身份/暂停SELECT，每次仍读当前提交值，读取后结束短事务；不缓存安全状态，不改常规SqlSugar访问/写入、秘密解密、TLS检查或第二次暂停检查；循环退出/故障释放，不增加运行时/发送者。不是生产性能或T3完成批准 | §2.3、§8.5；后端实施规范§4；软件证据及适用边界见 implementation-status §2.324 |
+| 浏览器验收范围调整（2026-10-22） | 维护者确认支持本机系统当前使用的现代浏览器即可，不要求旧版本兼容验收；取代前端选型记录中的最低产品浏览器门槛。实际版本/系统/双协议/关键交互逐项留证，未测产品不宣称兼容；保留原工具技术下限和保守构建目标，不代表旧版通过，也不改变 Excel 来源、权限、离线或阶段边界 | §3.1；前端基线 §1/2/7/8；开发准备 V-03/10 |
 
 待维护者确认的事项见 `docs/development-readiness.md` 第 4 节；确认前按该节“未确认前按”一列实现，不自行扩展。
